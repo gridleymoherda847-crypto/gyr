@@ -216,7 +216,7 @@ type WeChatContextValue = {
   listenTogether: ListenTogetherState
   
   // 角色操作
-  addCharacter: (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode' | 'unreadCount' | 'bubbleSyncEnabled' | 'memoryRounds' | 'memorySummary' | 'memorySummaryUpdatedAt' | 'timeSyncEnabled' | 'manualTime' | 'isTyping' | 'typingUpdatedAt'>) => WeChatCharacter
+  addCharacter: (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode' | 'bubbleSyncEnabled' | 'memoryRounds' | 'memorySummary' | 'memorySummaryUpdatedAt' | 'timeSyncEnabled' | 'manualTime' | 'isTyping' | 'typingUpdatedAt'>) => WeChatCharacter
   updateCharacter: (id: string, updates: Partial<WeChatCharacter>) => void
   deleteCharacter: (id: string) => void
   getCharacter: (id: string) => WeChatCharacter | undefined
@@ -515,7 +515,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
 
   // ==================== 角色操作 ====================
   
-  const addCharacter = (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode' | 'unreadCount' | 'bubbleSyncEnabled' | 'memoryRounds' | 'memorySummary' | 'memorySummaryUpdatedAt' | 'timeSyncEnabled' | 'manualTime' | 'isTyping' | 'typingUpdatedAt'>): WeChatCharacter => {
+  const addCharacter = (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode' | 'bubbleSyncEnabled' | 'memoryRounds' | 'memorySummary' | 'memorySummaryUpdatedAt' | 'timeSyncEnabled' | 'manualTime' | 'isTyping' | 'typingUpdatedAt'>): WeChatCharacter => {
     const newCharacter: WeChatCharacter = {
       ...character,
       id: `char_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -524,7 +524,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       isPinned: false,
       isHiddenFromChat: false,
       selectedUserPersonaId: null,
-      unreadCount: 0,
+      unreadCount: character.unreadCount ?? 0,
       autoReplyMode: true, // 默认自动回复
       isBlocked: false, // 默认未拉黑
       blockedAt: null, // 拉黑时间戳
