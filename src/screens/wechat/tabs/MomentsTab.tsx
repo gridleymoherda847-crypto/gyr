@@ -1,0 +1,640 @@
+import { useMemo, useState, useRef } from 'react'
+import { useWeChat } from '../../../context/WeChatContext'
+import { useOS } from '../../../context/OSContext'
+import WeChatDialog from '../components/WeChatDialog'
+import { getGlobalPresets } from '../../PresetScreen'
+
+type Props = {
+  onBack: () => void
+}
+
+export default function MomentsTab({ onBack }: Props) {
+  const { llmConfig, callLLM } = useOS()
+  const { moments, characters, userSettings, updateUserSettings, addMoment, likeMoment, deleteMoment, addMomentComment, getCurrentPersona, getMessagesByCharacter } = useWeChat()
+  const currentPersona = getCurrentPersona()
+  const [showPostModal, setShowPostModal] = useState(false)
+  const [postContent, setPostContent] = useState('')
+  const [postImages, setPostImages] = useState<string[]>([])
+  const coverInputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [dialog, setDialog] = useState<{ open: boolean; title?: string; message?: string }>({ open: false })
+  const [commentDraftByMoment, setCommentDraftByMoment] = useState<Record<string, string>>({})
+  const [replyTarget, setReplyTarget] = useState<{ momentId: string; commentId: string; authorId: string; authorName: string } | null>(null)
+  const [coverShrink, setCoverShrink] = useState(0)
+
+  const hasApiConfig = llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel
+
+  const displayNameById = useMemo(() => {
+    const map: Record<string, string> = {}
+    map['user'] = currentPersona?.name || '我'
+    for (const c of characters) map[c.id] = c.name
+    return map
+  }, [characters, currentPersona?.name])
+
+  const fileToBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (event) => resolve((event.target?.result as string) || '')
+      reader.onerror = () => reject(new Error('读取图片失败'))
+      reader.readAsDataURL(file)
+    })
+
+  const handleChangeCover = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      fileToBase64(file)
+        .then((base64) => updateUserSettings({ momentsBackground: base64 }))
+        .catch(() => setDialog({ open: true, title: '失败', message: '封面读取失败，请重试' }))
+    }
+  }
+
+  const handleAddImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files) {
+      const list = Array.from(files).slice(0, Math.max(0, 9 - postImages.length))
+      Promise.all(list.map(fileToBase64))
+        .then((imgs) => setPostImages(prev => [...prev, ...imgs].slice(0, 9)))
+        .catch(() => setDialog({ open: true, title: '失败', message: '图片读取失败，请重试' }))
+    }
+  }
+
+  const handleRefresh = async () => {
+    if (refreshing) return
+    if (!hasApiConfig) {
+      setDialog({ open: true, title: '需要先配置API', message: '请到：手机主屏 → 设置App → API 配置，配置好后再刷新朋友圈。' })
+      return
+    }
+    if (characters.length === 0) {
+      setDialog({ open: true, title: '还没有好友', message: '先去微信创建几个角色，刷新才能刷到好友动态/评论。' })
+      return
+    }
+    setRefreshing(true)
+    try {
+      const friend = characters[Math.floor(Math.random() * characters.length)]
+      const anyPosts = moments
+      const willComment = anyPosts.length > 0 && Math.random() < 0.8
+      const globalPresets = getGlobalPresets()
+      const recentChat = getMessagesByCharacter(friend.id).slice(-8).map(m => `${m.isUser ? '我' : friend.name}：${m.content}`).join('\n')
+      const now = Date.now()
+      const randomPastMs = (minMin: number, maxMin: number) => {
+        const min = minMin * 60 * 1000
+        const max = maxMin * 60 * 1000
+        return now - (min + Math.random() * (max - min))
+      }
+
+      if (willComment) {
+        // 过滤掉自己发的朋友圈，好友只能评论别人的帖子
+        const postsToComment = anyPosts.filter(p => p.authorId !== friend.id)
+        if (postsToComment.length === 0) {
+          // 没有可评论的帖子，改为发动态
+          setRefreshing(false)
+          return
+        }
+        const target = postsToComment[Math.floor(Math.random() * postsToComment.length)]
+        // 有概率回复某条评论（楼中楼），但不回复自己的评论
+        const otherComments = target.comments.filter(c => c.authorId !== friend.id)
+        const willReplyComment = otherComments.length > 0 && Math.random() < 0.6
+        const replyTo = willReplyComment ? otherComments[Math.floor(Math.random() * otherComments.length)] : null
+        const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈“评论/回复”的方式发言。
+你是：${friend.name}
+你的人设：${friend.prompt || '（未设置）'}
+最近聊天片段（可用来贴合语境）：
+${recentChat || '（暂无）'}
+
+朋友圈发布者：${target.authorName}
+朋友圈内容：
+${target.content || '（图片）'}
+
+${replyTo ? `你要回复的评论：@${replyTo.authorName}：${replyTo.content}` : ''}
+
+请写1条朋友圈评论：
+- 口语化、短（<=30字）
+- 不要动作描写/旁白
+- 只输出评论内容，不要加引号，不要换行`
+        const text = await callLLM([{ role: 'user', content: prompt }], undefined, { maxTokens: 90, timeoutMs: 600000 })
+        addMomentComment(target.id, {
+          authorId: friend.id,
+          authorName: friend.name,
+          content: text.trim(),
+          replyToCommentId: replyTo?.id,
+          replyToAuthorName: replyTo?.authorName,
+          timestamp: randomPastMs(1, 30), // 评论时间改为1~30分钟内，更合理
+        })
+      } else {
+        // 获取最近聊天的时间，用于生成合理的发帖时间
+        const recentMessages = getMessagesByCharacter(friend.id).slice(-10)
+        const lastMsgTime = recentMessages.length > 0 ? recentMessages[recentMessages.length - 1].timestamp : now
+        // 发帖时间在最近消息之后的1~30分钟内，但不能超过当前时间
+        const baseTime = Math.min(lastMsgTime, now - 60 * 1000)
+        const postTime = Math.min(baseTime + Math.random() * 30 * 60 * 1000, now - 60 * 1000)
+        
+        const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈“发布动态”的方式发言。
+你是：${friend.name}
+你的人设：${friend.prompt || '（未设置）'}
+最近聊天片段（可用来贴合语境）：
+${recentChat || '（暂无）'}
+
+请写1条朋友圈动态：
+- 口语化、自然（<=80字）
+- 不要动作描写/旁白
+- 只输出动态内容，不要加引号，不要换行`
+        const text = await callLLM([{ role: 'user', content: prompt }], undefined, { maxTokens: 140, timeoutMs: 600000 })
+        addMoment({
+          authorId: friend.id,
+          authorName: friend.name,
+          authorAvatar: friend.avatar || '',
+          content: text.trim(),
+          images: [],
+          timestamp: postTime,
+        })
+      }
+    } catch (e: any) {
+      setDialog({ open: true, title: '刷新失败', message: e?.message || '模型调用失败，请稍后重试' })
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const handlePost = async () => {
+    if (!postContent.trim() && postImages.length === 0) return
+    
+    const newMomentContent = postContent
+    const newMoment = addMoment({
+      authorId: 'user',
+      authorName: currentPersona?.name || '我',
+      authorAvatar: currentPersona?.avatar || '',
+      content: postContent,
+      images: postImages,
+    })
+    
+    setPostContent('')
+    setPostImages([])
+    setShowPostModal(false)
+    
+    // 用户发朋友圈后，随机让1-2个好友来评论
+    if (hasApiConfig && characters.length > 0) {
+      const newMomentId = newMoment.id
+      
+      const numCommenters = Math.min(characters.length, Math.random() < 0.5 ? 1 : 2)
+      const shuffled = [...characters].sort(() => Math.random() - 0.5)
+      const commenters = shuffled.slice(0, numCommenters)
+      
+      // 延迟执行，等待新帖子添加完成
+      window.setTimeout(async () => {
+        for (const friend of commenters) {
+          // 60%概率评论
+          if (Math.random() > 0.6) continue
+          
+          const globalPresets = getGlobalPresets()
+          const recentChat = getMessagesByCharacter(friend.id).slice(-8).map(m => `${m.isUser ? '我' : friend.name}：${m.content}`).join('\n')
+          
+          try {
+            const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈"评论"的方式发言。
+你是：${friend.name}
+你的人设：${friend.prompt || '（未设置）'}
+最近聊天片段：
+${recentChat || '（暂无）'}
+
+你的好友刚发了一条朋友圈：
+${newMomentContent || '（图片）'}
+
+请写1条朋友圈评论：
+- 口语化、短（<=30字）
+- 不要动作描写/旁白
+- 只输出评论内容，不要加引号，不要换行`
+            
+            const text = await callLLM([{ role: 'user', content: prompt }], undefined, { maxTokens: 90, timeoutMs: 600000 })
+            
+            // 延迟添加评论，模拟真实场景
+            window.setTimeout(() => {
+              addMomentComment(newMomentId, {
+                authorId: friend.id,
+                authorName: friend.name,
+                content: text.trim(),
+                timestamp: Date.now() - Math.random() * 5 * 60 * 1000, // 0~5分钟前
+              })
+            }, 500 + Math.random() * 1500)
+          } catch {
+            // ignore
+          }
+        }
+      }, 100)
+    }
+  }
+
+  const maybeAutoReplyToUserComment = async (params: { momentId: string; friendId: string; friendName: string; friendPrompt: string; userText: string; replyToCommentId: string; replyToAuthorName: string }) => {
+    if (!hasApiConfig) return
+    // 70% 概率回一句（提高回复率）
+    if (Math.random() > 0.7) return
+    const globalPresets = getGlobalPresets()
+    try {
+      const now = Date.now()
+      // 回复时间应该是"刚刚"到几分钟前，因为是实时互动
+      const replyTimestamp = now - Math.random() * (5 * 60 * 1000) // 0~5分钟前
+      const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈“回复评论”的方式发言。
+你是：${params.friendName}
+你的人设：${params.friendPrompt || '（未设置）'}
+
+对方刚刚评论/回复了你：${params.userText}
+
+请写1条回复：
+- 口语化、短（<=30字）
+- 不要动作描写/旁白
+- 只输出回复内容，不要加引号，不要换行`
+      const text = await callLLM([{ role: 'user', content: prompt }], undefined, { maxTokens: 90, timeoutMs: 600000 })
+      // 稍微延迟，像真人看到通知再回
+      window.setTimeout(() => {
+        addMomentComment(params.momentId, {
+          authorId: params.friendId,
+          authorName: params.friendName,
+          content: text.trim(),
+          replyToCommentId: params.replyToCommentId,
+          replyToAuthorName: params.replyToAuthorName,
+          timestamp: replyTimestamp,
+        })
+      }, 900 + Math.random() * 1800)
+    } catch {
+      // ignore
+    }
+  }
+
+  const formatTime = (timestamp: number) => {
+    const diff = Date.now() - timestamp
+    const mins = Math.floor(diff / 60000)
+    const hours = Math.floor(diff / 3600000)
+    const days = Math.floor(diff / 86400000)
+    
+    if (mins < 1) return '刚刚'
+    if (mins < 60) return `${mins}分钟前`
+    if (hours < 24) return `${hours}小时前`
+    if (days < 7) return `${days}天前`
+    return new Date(timestamp).toLocaleDateString('zh-CN')
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-transparent">
+      {/* 封面区域 */}
+      <div 
+        className="relative bg-cover bg-center transition-[height] duration-100 ease-out"
+        style={{ height: `${Math.max(140, 256 - coverShrink)}px`, backgroundImage: userSettings.momentsBackground ? `url(${userSettings.momentsBackground})` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+        onClick={() => coverInputRef.current?.click()}
+      >
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleChangeCover}
+        />
+        
+        {/* 左上角返回 */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            onBack()
+          }}
+          onTouchEnd={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            onBack()
+          }}
+          className="absolute top-2 left-3 flex items-center gap-0.5 text-white drop-shadow-lg z-10"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          <span className="text-[13px] font-medium">返回</span>
+        </button>
+        
+        {/* 用户信息 */}
+        <div className="absolute bottom-4 right-4 flex items-center gap-3">
+          <span className="text-white font-semibold text-lg drop-shadow-lg">
+            {currentPersona?.name || '我'}
+          </span>
+          <div className="w-16 h-16 rounded-lg overflow-hidden border-2 border-white shadow-lg">
+            {currentPersona?.avatar ? (
+              <img src={currentPersona.avatar} alt="头像" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-2xl text-white">
+                {(currentPersona?.name || '我')[0]}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 发布按钮 */}
+        <div className="absolute top-2 right-3 flex items-center gap-2">
+          {/* 刷新 */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleRefresh()
+            }}
+            className="w-8 h-8 rounded-full bg-black/30 backdrop-blur flex items-center justify-center text-white"
+            title="刷新"
+          >
+            <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20 8a8 8 0 00-14.828-3M4 16a8 8 0 0014.828 3" />
+            </svg>
+          </button>
+          {/* 发布 */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowPostModal(true)
+            }}
+            className="w-8 h-8 rounded-full bg-black/30 backdrop-blur flex items-center justify-center text-white"
+            title="发布"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* 动态列表 */}
+      <div
+        className="flex-1 overflow-y-auto bg-transparent"
+        onScroll={(e) => {
+          const top = (e.currentTarget as HTMLDivElement).scrollTop
+          // 增大收缩力度：滚动距离乘以2.5倍，最大收缩到116px（从256到140）
+          setCoverShrink(Math.min(116, Math.max(0, top * 2.5)))
+        }}
+      >
+        {moments.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-gray-400 text-sm">
+            <span>暂无动态</span>
+            <span className="text-xs mt-1">点击右上角相机发布第一条朋友圈</span>
+          </div>
+        ) : (
+          [...moments].sort((a, b) => b.timestamp - a.timestamp).map(moment => (
+            <div key={moment.id} className="px-4 py-4 border-b border-gray-100">
+              <div className="flex gap-3">
+                {/* 头像 */}
+                <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+                  {moment.authorAvatar ? (
+                    <img src={moment.authorAvatar} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-lg text-white">
+                      {moment.authorName[0]}
+                    </div>
+                  )}
+                </div>
+                
+                {/* 内容 */}
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-[#576B95]">{moment.authorName}</div>
+                  {moment.content && (
+                    <div className="text-[#000] text-sm mt-1 whitespace-pre-wrap">{moment.content}</div>
+                  )}
+                  
+                  {/* 图片 */}
+                  {moment.images.length > 0 && (
+                    <div className={`mt-2 grid gap-1 ${moment.images.length === 1 ? 'grid-cols-1 w-48' : moment.images.length <= 4 ? 'grid-cols-2 w-40' : 'grid-cols-3 w-52'}`}>
+                      {moment.images.map((img, i) => (
+                        <img key={i} src={img} alt="" className="w-full aspect-square object-cover rounded" />
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* 底部操作 */}
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-400">{formatTime(moment.timestamp)}</span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => likeMoment(moment.id, 'user')}
+                        className="text-gray-400 text-sm flex items-center gap-1"
+                      >
+                        <span>{moment.likes.includes('user') ? '❤️' : '🤍'}</span>
+                        {moment.likes.length > 0 && <span>{moment.likes.length}</span>}
+                      </button>
+                      {moment.authorId === 'user' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteId(moment.id)
+                          }}
+                          className="text-gray-400 text-xs"
+                        >
+                          删除
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 点赞/评论展示 */}
+                  {(moment.likes.length > 0 || moment.comments.length > 0) && (
+                    <div className="mt-2 rounded bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                      {moment.likes.length > 0 && (
+                        <div className="mb-1 text-gray-600">
+                          赞：{moment.likes.map(id => id === 'user' ? (currentPersona?.name || '我') : id).join('、')}
+                        </div>
+                      )}
+                      {moment.comments.length > 0 && (
+                        <div className="space-y-1">
+                          {moment.comments.slice(-5).map(c => (
+                            <div
+                              key={c.id}
+                              className="cursor-pointer active:opacity-70"
+                              onClick={() => setReplyTarget({ momentId: moment.id, commentId: c.id, authorId: c.authorId, authorName: c.authorName })}
+                              title="点击回复"
+                            >
+                              <span className="text-[#576B95]">{c.authorName}</span>
+                              {c.replyToAuthorName && (
+                                <span className="text-gray-500"> 回复 </span>
+                              )}
+                              {c.replyToAuthorName && (
+                                <span className="text-[#576B95]">{c.replyToAuthorName}</span>
+                              )}
+                              ：{c.content}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 评论输入 */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      value={commentDraftByMoment[moment.id] || ''}
+                      onChange={(e) => setCommentDraftByMoment(prev => ({ ...prev, [moment.id]: e.target.value }))}
+                      placeholder="评论…"
+                      className="flex-1 min-w-0 px-3 py-1.5 rounded-full bg-gray-100 text-[#000] text-xs outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = (commentDraftByMoment[moment.id] || '').trim()
+                        if (!text) return
+                        const newC = addMomentComment(moment.id, {
+                          authorId: 'user',
+                          authorName: displayNameById['user'] || '我',
+                          content: text,
+                        })
+                        setCommentDraftByMoment(prev => ({ ...prev, [moment.id]: '' }))
+                        // 如果我评论的是好友动态，让好友有概率回复我
+                        if (moment.authorId !== 'user') {
+                          const friend = characters.find(c => c.id === moment.authorId)
+                          if (friend) {
+                            maybeAutoReplyToUserComment({
+                              momentId: moment.id,
+                              friendId: friend.id,
+                              friendName: friend.name,
+                              friendPrompt: friend.prompt,
+                              userText: text,
+                              replyToCommentId: newC.id,
+                              replyToAuthorName: displayNameById['user'] || '我',
+                            })
+                          }
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-full bg-[#07C160] text-white text-xs font-medium"
+                    >
+                      发送
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 发布弹窗 */}
+      {showPostModal && (
+        <div className="absolute inset-0 bg-white z-50 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b">
+            <button type="button" onClick={() => setShowPostModal(false)} className="text-gray-500">
+              取消
+            </button>
+            <span className="font-semibold text-[#000]">发表图文</span>
+            <button 
+              type="button" 
+              onClick={handlePost}
+              className="text-[#07C160] font-medium"
+              disabled={!postContent.trim() && postImages.length === 0}
+            >
+              发表
+            </button>
+          </div>
+          
+          <div className="flex-1 p-4 overflow-y-auto">
+            <textarea
+              placeholder="这一刻的想法..."
+              value={postContent}
+              onChange={(e) => setPostContent(e.target.value)}
+              className="w-full h-32 resize-none outline-none text-[#000]"
+            />
+            
+            {/* 图片预览 */}
+            <div className="grid grid-cols-3 gap-2 mt-4">
+              {postImages.map((img, i) => (
+                <div key={i} className="relative aspect-square">
+                  <img src={img} alt="" className="w-full h-full object-cover rounded" />
+                  <button
+                    type="button"
+                    onClick={() => setPostImages(prev => prev.filter((_, idx) => idx !== i))}
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-black/60 rounded-full text-white text-xs flex items-center justify-center"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {postImages.length < 9 && (
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  className="aspect-square bg-gray-100 rounded flex items-center justify-center text-gray-400 text-2xl"
+                >
+                  +
+                </button>
+              )}
+            </div>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleAddImages}
+            />
+          </div>
+        </div>
+      )}
+
+      <WeChatDialog
+        open={!!deleteId}
+        title="删除这条动态？"
+        message="删除后无法恢复哦～"
+        confirmText="删除"
+        cancelText="取消"
+        danger
+        onCancel={() => setDeleteId(null)}
+        onConfirm={() => {
+          if (deleteId) deleteMoment(deleteId)
+          setDeleteId(null)
+        }}
+      />
+
+      <WeChatDialog
+        open={dialog.open}
+        title={dialog.title}
+        message={dialog.message}
+        confirmText="知道了"
+        onConfirm={() => setDialog({ open: false })}
+      />
+
+      {/* 回复评论弹窗 */}
+      <WeChatDialog
+        open={!!replyTarget}
+        title="回复评论"
+        message={replyTarget ? `回复 @${replyTarget.authorName}` : ''}
+        confirmText="发送"
+        cancelText="取消"
+        onCancel={() => setReplyTarget(null)}
+        onConfirm={() => {
+          if (!replyTarget) return
+          const text = (commentDraftByMoment[replyTarget.momentId] || '').trim()
+          if (!text) {
+            setReplyTarget(null)
+            return
+          }
+          const newC = addMomentComment(replyTarget.momentId, {
+            authorId: 'user',
+            authorName: displayNameById['user'] || '我',
+            content: text,
+            replyToCommentId: replyTarget.commentId,
+            replyToAuthorName: replyTarget.authorName,
+          })
+          setCommentDraftByMoment(prev => ({ ...prev, [replyTarget.momentId]: '' }))
+          setReplyTarget(null)
+
+          // 让被回复的人（如果是好友）有概率再回我一句（楼中楼）
+          const friend = characters.find(c => c.id === replyTarget.authorId)
+          if (friend) {
+            maybeAutoReplyToUserComment({
+              momentId: replyTarget.momentId,
+              friendId: friend.id,
+              friendName: friend.name,
+              friendPrompt: friend.prompt,
+              userText: text,
+              replyToCommentId: newC.id,
+              replyToAuthorName: displayNameById['user'] || '我',
+            })
+          }
+        }}
+      />
+    </div>
+  )
+}

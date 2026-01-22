@@ -1,0 +1,270 @@
+/* 导入多款可爱字体 - 必须在 @tailwind 之前 */
+@import url('https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Ma+Shan+Zheng&family=ZCOOL+QingKe+HuangYou&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Baloo+2:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* 默认使用可爱圆体 */
+  --app-font: 'ZCOOL KuaiLe', 'Baloo 2', cursive;
+  
+  color: #1f2937;
+  background-color: #0b0c10;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none; /* 禁止弹跳 */
+  overscroll-behavior-x: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: manipulation;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh; /* 动态视口高度，适配移动端地址栏 */
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  inset: 0;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* 移动端全屏适配 */
+@media (max-width: 767px) {
+  #root {
+    padding: 0;
+  }
+  
+  body {
+    background: #000; /* 移动端简洁黑色背景 */
+  }
+}
+
+/* 桌面端保持居中样式 */
+@media (min-width: 768px) {
+  #root {
+    padding: 16px 12px;
+    align-items: center;
+  }
+}
+
+/* 隐藏滚动条 */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 自定义滚动条样式 */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* 动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes bounce-gentle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.animate-bounce-gentle {
+  animation: bounce-gentle 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* 玻璃态效果 */
+.glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.glass-dark {
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* iOS 风格阴影 */
+.shadow-ios {
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.shadow-ios-lg {
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.15),
+    0 12px 40px rgba(0, 0, 0, 0.2);
+}
+
+/* 按压效果 */
+.press-effect {
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.press-effect:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+/* 输入框焦点效果 */
+input:focus, textarea:focus {
+  outline: none;
+}
+
+/* 选择禁用 */
+.select-none {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 聊天界面布局 */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-messages {
+  flex: 1;
+  min-height: 0; /* 重要：允许flex子元素收缩 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-input-area {
+  flex-shrink: 0;
+}
