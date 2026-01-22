@@ -67,9 +67,9 @@ const getPresetContent = () => {
 export default function StarGravityScreen({ onBack }: Props) {
   const navigate = useNavigate()
   const { 
-    starGravityPersons, starGravityShakeCount,
+    starGravityPersons,
     addStarGravityPerson, updateStarGravityPerson, addStarGravityMessage,
-    matchWithPerson, incrementShakeCount, resetShakeCountIfNewDay, removeStarGravityPerson,
+    matchWithPerson, resetShakeCountIfNewDay, removeStarGravityPerson,
     walletBalance, updateWalletBalance, addWalletBill,
     updateCharacter,
     getCurrentPersona
@@ -146,17 +146,6 @@ export default function StarGravityScreen({ onBack }: Props) {
         // 从首页右滑，返回到微信"我"界面
         onBack()
       }
-    }
-  }
-
-  // 点击返回按钮处理
-  const handleBack = () => {
-    if (currentView === 'chat') {
-      setCurrentView('profile')
-    } else if (currentView === 'profile') {
-      setCurrentView('home')
-    } else {
-      onBack()
     }
   }
 

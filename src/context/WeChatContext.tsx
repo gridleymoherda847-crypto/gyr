@@ -216,7 +216,7 @@ type WeChatContextValue = {
   listenTogether: ListenTogetherState
   
   // 角色操作
-  addCharacter: (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode'>) => WeChatCharacter
+  addCharacter: (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode' | 'unreadCount' | 'bubbleSyncEnabled' | 'memoryRounds' | 'memorySummary' | 'memorySummaryUpdatedAt' | 'timeSyncEnabled' | 'manualTime' | 'isTyping' | 'typingUpdatedAt'>) => WeChatCharacter
   updateCharacter: (id: string, updates: Partial<WeChatCharacter>) => void
   deleteCharacter: (id: string) => void
   getCharacter: (id: string) => WeChatCharacter | undefined
@@ -253,7 +253,7 @@ type WeChatContextValue = {
   addMoment: (moment: Omit<MomentPost, 'id' | 'timestamp' | 'likes' | 'comments'> & { timestamp?: number }) => MomentPost
   deleteMoment: (id: string) => void
   likeMoment: (momentId: string, userId: string) => void
-  addMomentComment: (momentId: string, comment: Omit<MomentComment, 'id'> & { timestamp?: number }) => MomentComment
+  addMomentComment: (momentId: string, comment: Omit<MomentComment, 'id' | 'timestamp'> & { timestamp?: number }) => MomentComment
   
   // 用户设置
   updateUserSettings: (settings: Partial<WeChatUserSettings>) => void
@@ -515,7 +515,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
 
   // ==================== 角色操作 ====================
   
-  const addCharacter = (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode'>): WeChatCharacter => {
+  const addCharacter = (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode' | 'unreadCount' | 'bubbleSyncEnabled' | 'memoryRounds' | 'memorySummary' | 'memorySummaryUpdatedAt' | 'timeSyncEnabled' | 'manualTime' | 'isTyping' | 'typingUpdatedAt'>): WeChatCharacter => {
     const newCharacter: WeChatCharacter = {
       ...character,
       id: `char_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -731,7 +731,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     }))
   }
 
-  const addMomentComment = (momentId: string, comment: Omit<MomentComment, 'id'> & { timestamp?: number }): MomentComment => {
+  const addMomentComment = (momentId: string, comment: Omit<MomentComment, 'id' | 'timestamp'> & { timestamp?: number }): MomentComment => {
     const newComment: MomentComment = {
       ...comment,
       id: `comment_${Date.now()}_${Math.random().toString(36).slice(2)}`,
