@@ -202,6 +202,40 @@ export type WeChatUserSettings = {
 
 // ==================== Context ====================
 
+type AddCharacterInput = Omit<
+  WeChatCharacter,
+  | 'id'
+  | 'createdAt'
+  | 'isSpecialCare'
+  | 'isPinned'
+  | 'isHiddenFromChat'
+  | 'selectedUserPersonaId'
+  | 'autoReplyMode'
+  | 'isBlocked'
+  | 'blockedAt'
+  | 'offlineMode'
+  | 'unreadCount'
+  | 'bubbleSyncEnabled'
+  | 'memoryRounds'
+  | 'memorySummary'
+  | 'memorySummaryUpdatedAt'
+  | 'timeSyncEnabled'
+  | 'manualTime'
+  | 'isTyping'
+  | 'typingUpdatedAt'
+> & Partial<Pick<
+  WeChatCharacter,
+  | 'unreadCount'
+  | 'bubbleSyncEnabled'
+  | 'memoryRounds'
+  | 'memorySummary'
+  | 'memorySummaryUpdatedAt'
+  | 'timeSyncEnabled'
+  | 'manualTime'
+  | 'isTyping'
+  | 'typingUpdatedAt'
+>>
+
 type WeChatContextValue = {
   // 数据
   characters: WeChatCharacter[]
@@ -216,7 +250,7 @@ type WeChatContextValue = {
   listenTogether: ListenTogetherState
   
   // 角色操作
-  addCharacter: (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode' | 'bubbleSyncEnabled' | 'memoryRounds' | 'memorySummary' | 'memorySummaryUpdatedAt' | 'timeSyncEnabled' | 'manualTime' | 'isTyping' | 'typingUpdatedAt'>) => WeChatCharacter
+  addCharacter: (character: AddCharacterInput) => WeChatCharacter
   updateCharacter: (id: string, updates: Partial<WeChatCharacter>) => void
   deleteCharacter: (id: string) => void
   getCharacter: (id: string) => WeChatCharacter | undefined
@@ -515,7 +549,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
 
   // ==================== 角色操作 ====================
   
-  const addCharacter = (character: Omit<WeChatCharacter, 'id' | 'createdAt' | 'isSpecialCare' | 'isPinned' | 'isHiddenFromChat' | 'selectedUserPersonaId' | 'autoReplyMode' | 'isBlocked' | 'blockedAt' | 'offlineMode' | 'bubbleSyncEnabled' | 'memoryRounds' | 'memorySummary' | 'memorySummaryUpdatedAt' | 'timeSyncEnabled' | 'manualTime' | 'isTyping' | 'typingUpdatedAt'>): WeChatCharacter => {
+  const addCharacter = (character: AddCharacterInput): WeChatCharacter => {
     const newCharacter: WeChatCharacter = {
       ...character,
       id: `char_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -529,14 +563,14 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       isBlocked: false, // 默认未拉黑
       blockedAt: null, // 拉黑时间戳
       offlineMode: false, // 默认关闭线下模式
-      bubbleSyncEnabled: false,
-      memoryRounds: 100,
-      memorySummary: '',
-      memorySummaryUpdatedAt: null,
-      timeSyncEnabled: true,
-      manualTime: '',
-      isTyping: false,
-      typingUpdatedAt: null,
+      bubbleSyncEnabled: character.bubbleSyncEnabled ?? false,
+      memoryRounds: character.memoryRounds ?? 100,
+      memorySummary: character.memorySummary ?? '',
+      memorySummaryUpdatedAt: character.memorySummaryUpdatedAt ?? null,
+      timeSyncEnabled: character.timeSyncEnabled ?? true,
+      manualTime: character.manualTime ?? '',
+      isTyping: character.isTyping ?? false,
+      typingUpdatedAt: character.typingUpdatedAt ?? null,
     }
     setCharacters(prev => [...prev, newCharacter])
     return newCharacter
