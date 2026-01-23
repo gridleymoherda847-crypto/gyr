@@ -395,7 +395,48 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           }
         }
         
-        const response = await callLLM(llmMessages, undefined, { maxTokens: 420, timeoutMs: 600000 })
+        const shouldForceNudge = !hasNewUserMessage && silenceSinceUserMs >= 2 * 60 * 60 * 1000
+        const shouldForceAcknowledge =
+          (hasNewUserMessage && gapMs >= 2 * 60 * 60 * 1000) || shouldForceNudge
+
+        const requiredGapStr = shouldForceNudge ? formatGapPrecise(silenceSinceUserMs) : formatGapPrecise(gapMs)
+        const mustPrefix = `（间隔：${requiredGapStr}）`
+
+        // 给模型一个更硬的“首句格式”要求（仍可能被忽略，因此后面还会做校验）
+        if (shouldForceAcknowledge) {
+          llmMessages.unshift({
+            role: 'system',
+            content:
+              `【首句强制要求】你的第一条回复必须以“${mustPrefix}”开头，` +
+              `并且第一条必须包含一个追问/关心（例如“怎么这么久/在忙吗/为什么没回/去哪了”等）。` +
+              `不满足则视为失败，需要你重写。`,
+          })
+        }
+
+        let response = await callLLM(llmMessages, undefined, { maxTokens: 420, timeoutMs: 600000 })
+
+        // 强制校验：避免“重生成后不问了/不提时间差”
+        if (shouldForceAcknowledge) {
+          const firstLine = ((response || '').trim().split('\n').map(s => s.trim()).filter(Boolean)[0]) || ''
+          const hasPrefix = firstLine.startsWith(mustPrefix)
+          const hasQuestion =
+            /[？?]/.test(firstLine) ||
+            /(怎么|为何|为什么|在忙|忙吗|去哪|哪儿|怎么这么久|这么久)/.test(firstLine)
+
+          if (!hasPrefix || !hasQuestion) {
+            const fixPrompt =
+              `你刚才没有严格遵守时间规则。现在必须重写你的回复：\n` +
+              `- 第一条必须以“${mustPrefix}”开头\n` +
+              `- 第一条必须包含一个追问/关心（带问句）\n` +
+              `- 其余内容再正常接着聊\n` +
+              `只输出重写后的回复内容（多条用换行分隔）。`
+            response = await callLLM(
+              [...llmMessages, { role: 'user', content: fixPrompt }],
+              undefined,
+              { maxTokens: 420, timeoutMs: 600000 }
+            )
+          }
+        }
         
         // 分割回复为多条消息（最多15条；即便模型只回一大段也能拆成多条）
         const replies = splitToReplies(response)
