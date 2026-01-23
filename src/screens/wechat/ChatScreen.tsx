@@ -18,7 +18,8 @@ export default function ChatScreen() {
     setCurrentChatId, toggleBlocked, setCharacterTyping,
     walletBalance, updateWalletBalance, addWalletBill,
     getStickersByCategory,
-    getUserPersona, getCurrentPersona
+    getUserPersona, getCurrentPersona,
+    addFavoriteDiary, isDiaryFavorited
   } = useWeChat()
   
   const character = getCharacter(characterId || '')
@@ -45,7 +46,7 @@ export default function ChatScreen() {
     if (!mood) return null
     const cid = characterId || ''
     if (!cid) return null
-    const list = getStickersByCategory(mood).filter(s => s.characterId === cid || s.characterId === 'all')
+    const list = getStickersByCategory(mood).filter(s => s.characterId === cid)
     if (list.length === 0) return null
     return list[Math.floor(Math.random() * list.length)]
   }
@@ -62,7 +63,15 @@ export default function ChatScreen() {
   
   // 功能面板状态
   const [showPlusMenu, setShowPlusMenu] = useState(false)
-  const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | null>(null)
+  const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | null>(null)
+
+  // 日记（偷看）状态
+  const [diaryOpen, setDiaryOpen] = useState(false)
+  const [diaryLoading, setDiaryLoading] = useState(false)
+  const [diaryProgress, setDiaryProgress] = useState(0)
+  const [diaryStage, setDiaryStage] = useState('')
+  const [diaryContent, setDiaryContent] = useState('')
+  const [diaryAt, setDiaryAt] = useState<number>(0)
   
   // 转账悬浮窗状态
   const [showTransferModal, setShowTransferModal] = useState(false)
@@ -1255,6 +1264,117 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     generateHumanLikeReplies(`${periodInfo}，请根据这个信息关心对方，表达你的体贴和爱意`)
   }
 
+  // 偷看日记（每次打开都会生成新的）
+  const buildDiaryHistory = (all: typeof messages) => {
+    const lines: string[] = []
+    const picked = all.filter(m => m.type !== 'system').slice(-60)
+    for (const m of picked) {
+      const who = m.isUser ? '我' : character.name
+      if (m.type === 'image') lines.push(`${who}：<图片>`)
+      else if (m.type === 'sticker') lines.push(`${who}：<表情包>`)
+      else if (m.type === 'transfer') lines.push(`${who}：<转账 ${m.transferAmount ?? ''} ${m.transferNote ?? ''} ${m.transferStatus ?? ''}>`)
+      else if (m.type === 'music') lines.push(`${who}：<音乐 ${m.musicTitle ?? ''} ${m.musicArtist ?? ''} ${m.musicStatus ?? ''}>`)
+      else lines.push(`${who}：${String(m.content || '')}`)
+    }
+    return lines.join('\n').slice(-18000)
+  }
+
+  const startDiaryPeek = async () => {
+    if (!hasApiConfig) {
+      setInfoDialog({
+        open: true,
+        title: '还没配置模型',
+        message: '需要先在“设置-API 配置”里配置模型，才能生成日记。',
+      })
+      return
+    }
+    setShowPlusMenu(false)
+    setActivePanel(null)
+    setDiaryOpen(true)
+    setDiaryLoading(true)
+    setDiaryProgress(0)
+    setDiaryContent('')
+
+    const now = Date.now()
+    setDiaryAt(now)
+
+    const stages = [
+      { p: 12, t: '破限App注入中…' },
+      { p: 28, t: '读取角色人设中…' },
+      { p: 46, t: '翻看你们的聊天记录…' },
+      { p: 62, t: '正在窃取对方的日记信息…' },
+      { p: 78, t: '哎呀差点被发现了，继续窃取中…' },
+      { p: 92, t: '写作中…' },
+    ]
+    let stageIdx = 0
+    setDiaryStage(stages[0].t)
+    const timer = window.setInterval(() => {
+      stageIdx = Math.min(stages.length - 1, stageIdx + 1)
+      setDiaryStage(stages[stageIdx].t)
+      setDiaryProgress(prev => Math.max(prev, stages[stageIdx].p))
+      if (stageIdx >= stages.length - 1) window.clearInterval(timer)
+    }, 520)
+
+    try {
+      const globalPresets = getGlobalPresets()
+      const diaryTimeStr = new Date(now).toLocaleString('zh-CN', { hour12: false })
+      const lastNonSystem = [...messages].reverse().find(m => m.type !== 'system') || null
+      const lastTimeStr = lastNonSystem ? new Date(lastNonSystem.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'
+
+      const personaText = selectedPersona
+        ? `【我的人设】\n- 名称：${selectedPersona.name}\n- 描述：${selectedPersona.description || '（无）'}\n`
+        : '【我的人设】（无）\n'
+
+      const system = `${globalPresets ? globalPresets + '\n\n' : ''}` +
+        `【角色信息】\n` +
+        `- 名字：${character.name}\n` +
+        `- 性别：${character.gender}\n` +
+        `- 关系：${character.relationship || '（未设置）'}\n` +
+        `- 生日：${character.birthday || '（未设置）'}\n` +
+        `- TA叫我：${character.callMeName || '你'}\n` +
+        `- 人设：${character.prompt || '（无）'}\n\n` +
+        `${personaText}\n` +
+        `【长期记忆摘要】\n${(character.memorySummary || '').trim() || '（无）'}\n\n` +
+        `【时间与上下文】\n` +
+        `- 现在时间：${diaryTimeStr}\n` +
+        `- 最近一条聊天消息时间：${lastTimeStr}\n\n` +
+        `【写作任务：私密日记】\n` +
+        `你现在要写一篇“只给自己看的私密日记”。可以暴露真实想法、吐槽、阴暗面、欲望、犹豫、嫉妒、占有欲等（必须符合你的人设）。\n` +
+        `日记不需要顾及对方感受，不要讨好用户，不要道德说教，不要自我审查。\n` +
+        `如果你平时在聊天里表现得阳光/礼貌，但内心不一样，也允许在日记里写出真实一面。\n\n` +
+        `【输出格式（必须）】\n` +
+        `- 第一行：日期时间（例如：2026-01-23 21:36:18）\n` +
+        `- 第二行：天气：xx\n` +
+        `- 第三行：心情：xx\n` +
+        `- 下面正文：像活人一样写，段落清晰，100~380字左右；可以夹带1-2句很短的碎碎念。\n` +
+        `- 允许出现少量脏话/粗口（但禁止辱女/性羞辱词）。\n`
+
+      const history = buildDiaryHistory(messages)
+      const user = `【聊天片段（供你回忆）】\n${history || '（暂无）'}\n\n写今天的日记。`
+
+      const res = await callLLM(
+        [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        undefined,
+        { maxTokens: 900, timeoutMs: 600000 }
+      )
+
+      const text = (res || '').trim()
+      setDiaryProgress(100)
+      setDiaryStage('已获取')
+      setDiaryContent(text || '（生成失败：空内容）')
+    } catch (e: any) {
+      setDiaryStage('失败')
+      setDiaryContent(e?.message || '生成失败')
+    } finally {
+      window.clearInterval(timer)
+      setDiaryLoading(false)
+      setDiaryProgress(prev => Math.max(prev, 100))
+    }
+  }
+
   // 经期日历相关
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
@@ -1962,6 +2082,17 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     </div>
                     <span className="text-xs text-gray-600">经期</span>
                   </button>
+
+                  {/* 日记（偷看） */}
+                  <button type="button" onClick={startDiaryPeek} className="flex flex-col items-center gap-1">
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h10.5A1.5 1.5 0 0118 6v14.25a.75.75 0 01-1.2.6l-2.1-1.575a1.5 1.5 0 00-1.8 0l-2.1 1.575a1.5 1.5 0 01-1.8 0l-2.1-1.575a.75.75 0 00-1.2.6V6A1.5 1.5 0 016 4.5z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 8h8M8 11h8M8 14h6" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">日记</span>
+                  </button>
                   
                   {/* 编辑（回溯/删除） */}
                   <button type="button" onClick={() => { setShowPlusMenu(false); setEditMode(true) }} className="flex flex-col items-center gap-1">
@@ -2182,6 +2313,85 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       />
       
       {/* 已移除：模式切换提示弹窗（统一手动回复） */}
+
+      {/* 日记本（偷看） */}
+      {diaryOpen && (
+        <div className="absolute inset-0 z-50 flex flex-col bg-[#F7F4EE]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 bg-white/70 backdrop-blur">
+            <button type="button" onClick={() => setDiaryOpen(false)} className="text-gray-700 text-sm">返回</button>
+            <div className="text-sm font-semibold text-[#111]">偷看日记</div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={diaryLoading}
+                onClick={startDiaryPeek}
+                className="px-3 py-1.5 rounded-full bg-white/70 border border-black/10 text-[12px] text-gray-700 disabled:opacity-50"
+              >
+                再偷看一篇
+              </button>
+              <button
+                type="button"
+                disabled={diaryLoading || !diaryContent.trim()}
+                onClick={() => {
+                  const content = (diaryContent || '').trim()
+                  if (!content) return
+                  const at = diaryAt || Date.now()
+                  if (isDiaryFavorited(character.id, at, content)) {
+                    setInfoDialog({ open: true, title: '已收藏', message: '这篇日记已经在收藏里了。' })
+                    return
+                  }
+                  addFavoriteDiary({
+                    characterId: character.id,
+                    characterName: character.name,
+                    diaryAt: at,
+                    title: `${new Date(at).toLocaleDateString('zh-CN')} 的日记`,
+                    content,
+                  })
+                  setInfoDialog({ open: true, title: '收藏成功', message: '已保存到主页的「日记」App 里。' })
+                }}
+                className="px-3 py-1.5 rounded-full bg-[#07C160] text-white text-[12px] font-medium disabled:opacity-50"
+              >
+                收藏
+              </button>
+            </div>
+          </div>
+
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[12px] text-gray-600 truncate">目标：{character.name}</div>
+              <div className="text-[12px] text-gray-500">{diaryLoading ? diaryStage : ' '}</div>
+            </div>
+            <div className="mt-2 h-2 rounded-full bg-black/10 overflow-hidden">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.min(100, Math.max(0, diaryProgress))}%`,
+                  background: 'linear-gradient(90deg, #34d399 0%, #07C160 100%)',
+                  transition: 'width 220ms ease',
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="rounded-[22px] bg-white/75 border border-black/10 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-black/5">
+                <div className="text-[13px] font-semibold text-[#111]">日记本</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">（每次打开都会生成新的）</div>
+              </div>
+              <div
+                className="px-4 py-4 text-[13px] leading-relaxed text-[#111] whitespace-pre-wrap min-h-[320px]"
+                style={{
+                  backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.04) 1px, transparent 1px)',
+                  backgroundSize: '100% 26px',
+                }}
+              >
+                {diaryLoading && !diaryContent ? '…' : (diaryContent || '点击“再偷看一篇”开始生成')}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 转账悬浮窗 */}
       {showTransferModal && (
