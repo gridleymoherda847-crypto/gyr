@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import PageContainer from '../components/PageContainer'
 import AppHeader from '../components/AppHeader'
 import { useWeChat } from '../context/WeChatContext'
+import WeChatDialog from './wechat/components/WeChatDialog'
 
 export default function DiaryVaultScreen() {
   const navigate = useNavigate()
@@ -11,6 +12,7 @@ export default function DiaryVaultScreen() {
   const [shareOpen, setShareOpen] = useState(false)
   const [shareDiaryId, setShareDiaryId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [shareResult, setShareResult] = useState<{ open: boolean; targetId: string | null }>({ open: false, targetId: null })
 
   const selected = useMemo(() => favoriteDiaries.find(d => d.id === selectedId) || null, [favoriteDiaries, selectedId])
 
@@ -33,14 +35,13 @@ export default function DiaryVaultScreen() {
       diaryAuthorName: d.characterName,
       diaryAt: d.diaryAt,
       diaryTitle: d.title,
-      diaryExcerpt: (d.content || '').replace(/\s+/g, ' ').slice(0, 60),
+      diaryExcerpt: (d.content || '').replace(/\s+/g, ' ').slice(0, 40),
       diaryContent: d.content,
       diaryNote: d.note,
     })
-    setToast('已分享')
-    window.setTimeout(() => setToast(null), 1600)
     setShareOpen(false)
     setShareDiaryId(null)
+    setShareResult({ open: true, targetId: targetCharacterId })
   }
 
   return (
@@ -184,6 +185,20 @@ export default function DiaryVaultScreen() {
             </div>
           </div>
         )}
+
+        <WeChatDialog
+          open={shareResult.open}
+          title="已分享"
+          message="已把日记文件分享出去啦。要现在去聊天看看吗？"
+          confirmText="去聊天"
+          cancelText="稍后再去"
+          onCancel={() => setShareResult({ open: false, targetId: null })}
+          onConfirm={() => {
+            const id = shareResult.targetId
+            setShareResult({ open: false, targetId: null })
+            if (id) navigate(`/apps/wechat/chat/${encodeURIComponent(id)}`)
+          }}
+        />
       </div>
     </PageContainer>
   )

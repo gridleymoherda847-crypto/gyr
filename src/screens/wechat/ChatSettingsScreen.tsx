@@ -808,7 +808,7 @@ export default function ChatSettingsScreen() {
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 mb-3">
-                  AI会根据对话情绪，自动发送对应分类的表情包
+                  AI会随机夹带你为本角色配置的表情包（不再按情绪关键词匹配）。
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {stickerCategories.length === 0 ? (
@@ -1092,7 +1092,17 @@ export default function ChatSettingsScreen() {
                             <span className="text-[#000]">{cat.name}</span>
                             <button
                               type="button"
-                              onClick={() => removeStickerCategory(cat.id)}
+                              onClick={() => {
+                                setDialog({
+                                  open: true,
+                                  title: '删除分类？',
+                                  message: `确定删除「${cat.name}」分类吗？\n（不会删除表情包图片，但会清空它们的分类标签）`,
+                                  confirmText: '删除',
+                                  cancelText: '取消',
+                                  danger: true,
+                                  onConfirm: () => removeStickerCategory(cat.id),
+                                })
+                              }}
                               className="text-red-500 text-xs"
                             >
                               删除

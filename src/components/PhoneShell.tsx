@@ -3,7 +3,7 @@ import { useOS } from '../context/OSContext'
 import BottomHomeBar from './BottomHomeBar'
 
 export default function PhoneShell({ children }: PropsWithChildren) {
-  const { wallpaper, currentFont, fontColor, fontScale, isLocked, lockWallpaper, notifications, markNotificationRead } = useOS()
+  const { wallpaper, currentFont, fontColor, isLocked, lockWallpaper, notifications, markNotificationRead } = useOS()
   
   const currentWallpaper = isLocked ? lockWallpaper : wallpaper
   const timerRef = useRef<Record<string, number>>({})
@@ -28,7 +28,8 @@ export default function PhoneShell({ children }: PropsWithChildren) {
         className="md:hidden fixed inset-0 select-none overflow-hidden"
         style={{
           fontFamily: currentFont.fontFamily,
-          fontSize: `${Math.round(16 * (fontScale || 1))}px`,
+          // 整机字体略微变大（锁屏不动）
+          fontSize: isLocked ? undefined : '17px',
           color: fontColor.value,
           backgroundImage: `url(${currentWallpaper})`,
           backgroundSize: 'cover',
@@ -78,7 +79,8 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           className="relative rounded-[50px] bg-[#1a1a1a] p-[3px] shadow-[0_25px_60px_rgba(0,0,0,0.4)]"
           style={{ 
             fontFamily: currentFont.fontFamily,
-            fontSize: `${Math.round(16 * (fontScale || 1))}px`,
+            // 整机字体略微变大（锁屏不动）
+            fontSize: isLocked ? undefined : '17px',
             color: fontColor.value,
             width: '390px',
             height: '844px',

@@ -17,7 +17,6 @@ export default function ChatScreen() {
     removePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether, stopListenTogether,
     setCurrentChatId, toggleBlocked, setCharacterTyping,
     walletBalance, updateWalletBalance, addWalletBill,
-    getStickersByCategory,
     getUserPersona, getCurrentPersona,
     addFavoriteDiary, isDiaryFavorited
   } = useWeChat()
@@ -32,24 +31,7 @@ export default function ChatScreen() {
     ? getUserPersona(character.selectedUserPersonaId)
     : getCurrentPersona()
 
-  // 从AI输出里识别情绪，并从对应分类里随机挑一个表情包
-  const pickStickerByMood = (text: string) => {
-    const t = (text || '').toLowerCase()
-    const mood =
-      /哭|难过|委屈|心碎|崩溃|想哭|呜呜|伤心/.test(t) ? '哭' :
-      /开心|快乐|高兴|哈哈|笑死|甜|心动/.test(t) ? '开心' :
-      /生气|烦|火大|气死|讨厌|怒/.test(t) ? '生气' :
-      /害羞|脸红|不好意思|羞/.test(t) ? '害羞' :
-      /撒娇|求你|拜托|想要|贴贴/.test(t) ? '撒娇' :
-      null
-
-    if (!mood) return null
-    const cid = characterId || ''
-    if (!cid) return null
-    const list = getStickersByCategory(mood).filter(s => s.characterId === cid)
-    if (list.length === 0) return null
-    return list[Math.floor(Math.random() * list.length)]
-  }
+  // 表情包：不按情绪匹配，随机使用本角色已配置的
   
   const [inputText, setInputText] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -662,9 +644,9 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                 type: 'text',
               })
 
-              // 按情绪夹带表情包（只要配置了，就必须在本次回复里尽量发出）
+              // 夹带表情包（不按情绪匹配：随机挑本角色已配置的）
               if (stickerPool.length > 0 && chosenStickerIdx.has(index)) {
-                const sticker = pickStickerByMood(trimmedContent) || pickRandomSticker()
+                const sticker = pickRandomSticker()
                 if (sticker) {
                   safeTimeoutEx(() => {
                     addMessage({
@@ -709,7 +691,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                   isUser: false,
                   type: 'transfer',
                   transferAmount: amount,
-                  transferNote: willAccept ? '已领取' : '已退还',
+                  // 避免“已领取/已退还”与卡片底部状态重复显示
+                  transferNote: transfer.transferNote || '转账',
                   transferStatus: willAccept ? 'received' : 'refunded',
                 })
 
@@ -1073,7 +1056,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       isUser: true,
       type: 'transfer',
       transferAmount: amount,
-      transferNote: action === 'receive' ? '已领取' : '已退还',
+      // 避免“已领取/已退还”与卡片底部状态重复显示
+      transferNote: note,
       transferStatus: action === 'receive' ? 'received' : 'refunded',
     })
 
@@ -1492,10 +1476,10 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         <button
           type="button"
           onClick={() => setOpenDiaryShare(msg)}
-          className="min-w-[200px] max-w-[260px] rounded-xl bg-white/80 border border-black/10 overflow-hidden text-left active:scale-[0.99] transition"
+          className="min-w-[160px] max-w-[220px] rounded-xl bg-white/80 border border-black/10 overflow-hidden text-left active:scale-[0.99] transition"
         >
-          <div className="px-3 py-2 flex items-center gap-2 border-b border-black/5">
-            <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+          <div className="px-2.5 py-2 flex items-center gap-2 border-b border-black/5">
+            <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
               <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 4h9l3 3v13a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 11h6M9 14h6M9 17h4" />
@@ -1506,7 +1490,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               <div className="text-[11px] text-gray-500 truncate">{authorName}{at ? ` · ${at}` : ''}</div>
             </div>
           </div>
-          <div className="px-3 py-2 text-[12px] text-gray-700">
+          <div className="px-2.5 py-2 text-[12px] text-gray-700">
             <div className="truncate">{(msg.diaryExcerpt || '').trim() || '（点击查看）'}</div>
             {note && <div className="text-[11px] text-gray-500 truncate mt-1">备注：{note}</div>}
           </div>
