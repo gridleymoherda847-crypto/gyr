@@ -2,7 +2,6 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PageContainer from '../../components/PageContainer'
 import AppHeader from '../../components/AppHeader'
-import { SettingsGroup, SettingsItem } from '../../components/SettingsGroup'
 import { useWeChat } from '../../context/WeChatContext'
 
 type StickerPackV1 = {
@@ -42,26 +41,35 @@ export default function StickerManagerScreen() {
     addStickerCategory,
   } = useWeChat()
 
-  const [selectedCategoryName, setSelectedCategoryName] = useState<string>(stickerCategories[0]?.name || '')
   const [newCategoryName, setNewCategoryName] = useState('')
-  const [importPackText, setImportPackText] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [importingCategory, setImportingCategory] = useState<string | null>(null)
+  const [importPackText, setImportPackText] = useState('')
 
   const imgInputRef = useRef<HTMLInputElement>(null)
   const packInputRef = useRef<HTMLInputElement>(null)
+  const pendingImportCategoryRef = useRef<string>('')
 
   const categories = useMemo(() => {
     const names = stickerCategories.map(c => c.name)
     return names.sort((a, b) => a.localeCompare(b, 'zh-CN'))
   }, [stickerCategories])
 
-  const selectedCategoryStickers = useMemo(() => {
-    if (!selectedCategoryName) return []
-    return stickers
-      .filter(s => s.category === selectedCategoryName)
-      .sort((a, b) => (a.keyword || '').localeCompare(b.keyword || '', 'zh-CN'))
-  }, [stickers, selectedCategoryName])
+  const stickersByCategory = useMemo(() => {
+    const map: Record<string, typeof stickers> = {}
+    for (const s of stickers) {
+      const cat = (s.category || '').trim()
+      if (!cat) continue
+      if (!map[cat]) map[cat] = []
+      map[cat].push(s)
+    }
+    for (const k of Object.keys(map)) {
+      map[k].sort((a, b) => (a.keyword || '').localeCompare(b.keyword || '', 'zh-CN'))
+    }
+    return map
+  }, [stickers])
 
   const targetLabel = useMemo(() => {
     if (targetCharacterId === 'all') return '所有角色'
@@ -69,10 +77,10 @@ export default function StickerManagerScreen() {
     return c ? `角色：${c.name}` : '指定角色'
   }, [characters, targetCharacterId])
 
-  const exportPack = (): StickerPackV1 | null => {
-    const cat = safeName(selectedCategoryName)
+  const exportPack = (categoryName: string): StickerPackV1 | null => {
+    const cat = safeName(categoryName)
     if (!cat) return null
-    const list = selectedCategoryStickers.map(s => ({
+    const list = (stickersByCategory[cat] || []).map(s => ({
       keyword: s.keyword,
       imageUrl: s.imageUrl,
     })).filter(x => !!x.keyword && !!x.imageUrl)
@@ -100,7 +108,7 @@ export default function StickerManagerScreen() {
     URL.revokeObjectURL(url)
   }
 
-  const importPack = async (raw: string) => {
+  const importPack = async (raw: string, forcedCategory?: string) => {
     const txt = (raw || '').trim()
     if (!txt) return
     let pack: StickerPackV1
@@ -116,14 +124,13 @@ export default function StickerManagerScreen() {
       window.setTimeout(() => setToast(null), 2200)
       return
     }
-    const catName = safeName(pack.categoryName)
+    const catName = safeName(forcedCategory || pack.categoryName)
     if (!catName) return
 
     // 确保分类存在
     if (!stickerCategories.some(c => c.name === catName)) {
       addStickerCategory(catName)
     }
-    setSelectedCategoryName(catName)
 
     // 导入：写入到目标（默认 all，或从 query 传入角色）
     const targetId = targetCharacterId
@@ -142,13 +149,13 @@ export default function StickerManagerScreen() {
       })
     }
 
-    setToast(`已导入：${catName}（${items.length}张）→ ${targetId === 'all' ? '所有角色' : '该角色'}`)
+    setToast(`已导入：${catName}（${items.length}张）`)
     window.setTimeout(() => setToast(null), 2200)
   }
 
-  const handleBatchImportImages = async (files: FileList | null) => {
+  const handleBatchImportImages = async (categoryName: string, files: FileList | null) => {
     if (!files || files.length === 0) return
-    const cat = safeName(selectedCategoryName)
+    const cat = safeName(categoryName)
     if (!cat) {
       setToast('请先选择/创建一个分类')
       window.setTimeout(() => setToast(null), 2000)
@@ -167,7 +174,7 @@ export default function StickerManagerScreen() {
           category: cat,
         })
       }
-      setToast(`已导入 ${list.length} 张 → ${targetLabel}`)
+      setToast(`已导入 ${list.length} 张到「${cat}」`)
       window.setTimeout(() => setToast(null), 2000)
     } catch (e: any) {
       setToast(e?.message || '导入失败')
@@ -181,12 +188,12 @@ export default function StickerManagerScreen() {
     const name = safeName(newCategoryName)
     if (!name) return
     if (stickerCategories.some(c => c.name === name)) {
-      setSelectedCategoryName(name)
+      setExpanded(prev => ({ ...prev, [name]: true }))
       setNewCategoryName('')
       return
     }
     addStickerCategory(name)
-    setSelectedCategoryName(name)
+    setExpanded(prev => ({ ...prev, [name]: true }))
     setNewCategoryName('')
   }
 
@@ -196,44 +203,21 @@ export default function StickerManagerScreen() {
         <AppHeader title="表情包管理" onBack={() => navigate('/apps/settings')} />
 
         <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4">
-          <SettingsGroup title="目标">
-            <SettingsItem label="导入到" value={targetLabel} showArrow={false} />
-            {targetCharacterId !== 'all' && (
-              <div className="px-1 pb-2 text-[11px] text-gray-500">
-                这是从聊天设置跳转过来的：导入会写入该角色专用表情包。
-              </div>
-            )}
-          </SettingsGroup>
-
-          <SettingsGroup title="分类">
-            <div className="px-1 pb-2 text-[11px] text-gray-500">
-              先选一个分类，再批量导入图片；也可以导出/分享整个分类。
+          {targetCharacterId !== 'all' && (
+            <div className="mb-3 rounded-2xl border border-white/35 bg-white/70 px-3 py-2 text-[12px] text-gray-700">
+              当前从聊天设置跳转：导入会写入 <span className="font-medium">{targetLabel}</span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {categories.length === 0 ? (
-                <div className="text-sm text-gray-400">暂无分类</div>
-              ) : (
-                categories.map(name => (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => setSelectedCategoryName(name)}
-                    className={`px-3 py-1.5 rounded-full text-xs border ${
-                      selectedCategoryName === name ? 'bg-[#07C160] text-white border-[#07C160]' : 'bg-white/70 text-gray-700 border-black/10'
-                    }`}
-                  >
-                    {name}
-                  </button>
-                ))
-              )}
-            </div>
+          )}
 
-            <div className="mt-3 flex items-center gap-2">
+          {/* 新建分类 */}
+          <div className="rounded-2xl border border-white/35 bg-white/70 p-3">
+            <div className="text-sm font-semibold text-[#111]">分类</div>
+            <div className="mt-2 flex items-center gap-2">
               <input
                 value={newCategoryName}
                 onChange={(e) => setNewCategoryName(e.target.value)}
                 placeholder="新建分类名（如：开心）"
-                className="flex-1 px-3 py-2 rounded-xl bg-white/70 border border-black/10 outline-none text-sm text-[#111]"
+                className="flex-1 px-3 py-2 rounded-xl bg-white/80 border border-black/10 outline-none text-sm text-[#111]"
               />
               <button
                 type="button"
@@ -244,144 +228,188 @@ export default function StickerManagerScreen() {
                 新建
               </button>
             </div>
-          </SettingsGroup>
+          </div>
 
-          <SettingsGroup title="批量导入">
-            <SettingsItem
-              label="批量导入图片"
-              value={selectedCategoryName ? `分类：${selectedCategoryName}` : '请先选分类'}
-              onClick={() => imgInputRef.current?.click()}
-              showArrow={false}
-            />
-            <input
-              ref={imgInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                handleBatchImportImages(e.target.files)
-                e.currentTarget.value = ''
-              }}
-            />
-
-            <SettingsItem
-              label="导入分类包（JSON）"
-              value="粘贴或选择文件"
-              onClick={() => packInputRef.current?.click()}
-              showArrow={false}
-            />
-            <input
-              ref={packInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={async (e) => {
-                const f = e.target.files?.[0]
-                if (!f) return
-                const text = await f.text()
-                setImportPackText(text)
-                await importPack(text)
-                e.currentTarget.value = ''
-              }}
-            />
-
-            <textarea
-              value={importPackText}
-              onChange={(e) => setImportPackText(e.target.value)}
-              placeholder="把别人分享给你的分类包 JSON 粘贴到这里，然后点“导入”"
-              className="mt-2 w-full h-32 px-3 py-2 rounded-xl bg-white/70 border border-black/10 outline-none text-xs text-[#111] resize-none"
-            />
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => importPack(importPackText)}
-                className="flex-1 px-4 py-2 rounded-xl bg-[#07C160] text-white text-sm font-medium disabled:opacity-50"
-                disabled={!importPackText.trim() || busy}
-              >
-                导入
-              </button>
-              <button
-                type="button"
-                onClick={() => setImportPackText('')}
-                className="px-4 py-2 rounded-xl bg-white/70 border border-black/10 text-sm text-gray-700"
-              >
-                清空
-              </button>
-            </div>
-          </SettingsGroup>
-
-          <SettingsGroup title="导出分享">
-            <SettingsItem
-              label="导出当前分类包"
-              value={selectedCategoryName ? `${selectedCategoryStickers.length} 张` : '未选择分类'}
-              showArrow={false}
-            />
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const pack = exportPack()
-                  if (!pack) return
-                  const text = JSON.stringify(pack)
-                  copyToClipboard(text)
-                }}
-                className="flex-1 px-4 py-2 rounded-xl bg-white/70 border border-black/10 text-sm text-gray-700"
-                disabled={!selectedCategoryName}
-              >
-                复制JSON
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const pack = exportPack()
-                  if (!pack) return
-                  const filename = `stickers_${safeName(pack.categoryName) || 'category'}_${Date.now()}.json`
-                  downloadText(filename, JSON.stringify(pack, null, 2))
-                  setToast('已下载分类包')
-                  window.setTimeout(() => setToast(null), 1800)
-                }}
-                className="flex-1 px-4 py-2 rounded-xl bg-[#111]/90 text-white text-sm font-medium disabled:opacity-50"
-                disabled={!selectedCategoryName}
-              >
-                下载JSON
-              </button>
-            </div>
-          </SettingsGroup>
-
-          <SettingsGroup title="当前分类内容">
-            <div className="px-1 pb-2 text-[11px] text-gray-500">
-              说明：当前实现是“关键词触发表情”。你发消息包含关键字，就会被渲染为表情图片。
-            </div>
-            {selectedCategoryName ? (
-              selectedCategoryStickers.length === 0 ? (
-                <div className="text-sm text-gray-400">这个分类还没有表情包</div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2">
-                  {selectedCategoryStickers.slice(0, 60).map(s => (
-                    <div key={s.id} className="rounded-xl bg-white/70 border border-black/10 p-2">
-                      <div className="w-full aspect-square rounded-lg overflow-hidden bg-gray-100">
-                        <img src={s.imageUrl} alt="" className="w-full h-full object-cover" />
-                      </div>
-                      <div className="mt-1 text-[11px] text-gray-700 truncate" title={s.keyword}>
-                        {s.keyword}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeSticker(s.id)}
-                        className="mt-1 w-full text-[11px] text-red-500"
-                      >
-                        删除
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )
+          {/* 分类列表：折叠/展开 */}
+          <div className="mt-3 space-y-2">
+            {categories.length === 0 ? (
+              <div className="text-sm text-gray-400 px-1">暂无分类，先新建一个。</div>
             ) : (
-              <div className="text-sm text-gray-400">请先选择一个分类</div>
+              categories.map((cat) => {
+                const isOpen = !!expanded[cat]
+                const list = stickersByCategory[cat] || []
+                return (
+                  <div key={cat} className="rounded-2xl border border-white/35 bg-white/70 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(prev => ({ ...prev, [cat]: !prev[cat] }))}
+                      className="w-full px-3 py-3 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-semibold text-[#111] truncate">{cat}</span>
+                        <span className="text-[11px] text-gray-500">{list.length} 张</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-gray-500">{isOpen ? '收起' : '展开'}</span>
+                        <svg className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </button>
+
+                    {isOpen && (
+                      <div className="px-3 pb-3">
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              pendingImportCategoryRef.current = cat
+                              imgInputRef.current?.click()
+                            }}
+                            className="px-3 py-1.5 rounded-full bg-[#07C160] text-white text-xs font-medium disabled:opacity-50"
+                          >
+                            添加图片
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pack = exportPack(cat)
+                              if (!pack) return
+                              const filename = `stickers_${safeName(pack.categoryName) || 'category'}_${Date.now()}.json`
+                              downloadText(filename, JSON.stringify(pack, null, 2))
+                              setToast('已下载分类包')
+                              window.setTimeout(() => setToast(null), 1800)
+                            }}
+                            className="px-3 py-1.5 rounded-full bg-white/80 border border-black/10 text-xs text-gray-700"
+                          >
+                            导出
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              pendingImportCategoryRef.current = cat
+                              setImportingCategory(cat)
+                              setImportPackText('')
+                            }}
+                            className="px-3 py-1.5 rounded-full bg-white/80 border border-black/10 text-xs text-gray-700"
+                          >
+                            导入
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pack = exportPack(cat)
+                              if (!pack) return
+                              copyToClipboard(JSON.stringify(pack))
+                            }}
+                            className="px-3 py-1.5 rounded-full bg-white/80 border border-black/10 text-xs text-gray-700"
+                          >
+                            复制包
+                          </button>
+                        </div>
+
+                        {list.length === 0 ? (
+                          <div className="text-sm text-gray-400">这个分类还没有表情包</div>
+                        ) : (
+                          <div className="grid grid-cols-3 gap-2">
+                            {list.slice(0, 60).map(s => (
+                              <div key={s.id} className="rounded-xl bg-white/80 border border-black/10 p-2">
+                                <div className="w-full aspect-square rounded-lg overflow-hidden bg-gray-100">
+                                  <img src={s.imageUrl} alt="" className="w-full h-full object-cover" />
+                                </div>
+                                <div className="mt-1 text-[11px] text-gray-600 truncate" title={s.keyword}>
+                                  {s.keyword || '表情'}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeSticker(s.id)}
+                                  className="mt-1 w-full text-[11px] text-red-500"
+                                >
+                                  删除
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
             )}
-          </SettingsGroup>
+          </div>
         </div>
+
+        {/* 隐藏 input：按分类导入 */}
+        <input
+          ref={imgInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const cat = pendingImportCategoryRef.current
+            handleBatchImportImages(cat, e.target.files)
+            e.currentTarget.value = ''
+          }}
+        />
+        <input
+          ref={packInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={async (e) => {
+            const f = e.target.files?.[0]
+            if (!f) return
+            const text = await f.text()
+            setImportPackText(text)
+            const cat = pendingImportCategoryRef.current
+            await importPack(text, cat)
+            e.currentTarget.value = ''
+          }}
+        />
+
+        {/* 导入弹窗（按分类） */}
+        {importingCategory && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
+            <div className="absolute inset-0 bg-black/35" onClick={() => setImportingCategory(null)} role="presentation" />
+            <div className="relative w-full max-w-[340px] rounded-[22px] border border-white/35 bg-white/85 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+              <div className="text-[15px] font-semibold text-[#111] text-center">导入到「{importingCategory}」</div>
+              <div className="mt-2 text-[12px] text-gray-600 text-center">粘贴 JSON 或选择文件导入</div>
+              <textarea
+                value={importPackText}
+                onChange={(e) => setImportPackText(e.target.value)}
+                placeholder="粘贴分类包 JSON…"
+                className="mt-3 w-full h-32 px-3 py-2 rounded-xl bg-white/80 border border-black/10 outline-none text-xs text-[#111] resize-none"
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    pendingImportCategoryRef.current = importingCategory
+                    packInputRef.current?.click()
+                  }}
+                  className="flex-1 rounded-full border border-black/10 bg-white/70 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+                >
+                  选择文件
+                </button>
+                <button
+                  type="button"
+                  disabled={!importPackText.trim() || busy}
+                  onClick={async () => {
+                    await importPack(importPackText, importingCategory)
+                    setImportingCategory(null)
+                  }}
+                  className="flex-1 rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98] disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
+                >
+                  导入
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {toast && (
           <div className="pointer-events-none absolute bottom-16 left-0 right-0 flex justify-center">

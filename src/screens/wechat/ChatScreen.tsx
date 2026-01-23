@@ -488,6 +488,13 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         
         // 分割回复为多条消息（最多15条；即便模型只回一大段也能拆成多条）
         const replies = splitToReplies(response)
+
+        // 表情包策略（活人感必须项）：
+        // - 不再做“关键词替换文本”
+        // - 只要角色配置了表情包，就尽量在一组回复里夹带 1~N 条表情包消息
+        const stickerPool = stickers.filter(s => s.characterId === character.id || s.characterId === 'all')
+        const stickerCandidates: number[] = []
+        const pickRandomSticker = () => stickerPool[Math.floor(Math.random() * stickerPool.length)]
         
         // 检查是否有待处理的用户转账
         const pendingUserTransfers = workingMessages.filter(m => 
@@ -534,6 +541,34 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           const hit = musicPlaylist.find(s => s.title === single || s.title.includes(single) || single.includes(s.title))
           if (hit) return { title: hit.title, artist: hit.artist }
           return { title: single, artist: '' }
+        }
+
+        // 预扫描：找出适合插表情包的“文本回复行”
+        if (stickerPool.length > 0) {
+          for (let i = 0; i < replies.length; i++) {
+            const t = (replies[i] || '').trim()
+            if (!t) continue
+            if (parseTransferCommand(t)) continue
+            if (parseMusicCommand(t)) continue
+            stickerCandidates.push(i)
+          }
+        }
+        const desiredStickerCount =
+          stickerPool.length > 0
+            ? Math.min(
+                Math.max(1, Math.ceil(replies.length / 4)), // 1条起步，回复越多越可能多插
+                3,
+                stickerCandidates.length
+              )
+            : 0
+        const chosenStickerIdx = new Set<number>()
+        if (desiredStickerCount > 0) {
+          // 优先让第一句“情绪明显”的后面更可能跟表情
+          const shuffled = [...stickerCandidates].sort(() => Math.random() - 0.5)
+          for (const idx of shuffled) {
+            chosenStickerIdx.add(idx)
+            if (chosenStickerIdx.size >= desiredStickerCount) break
+          }
         }
 
         replies.forEach((content, index) => {
@@ -598,17 +633,19 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                 type: 'text',
               })
 
-              // 有概率夹杂情绪表情包（需要用户配置分类表情包）
-              const sticker = pickStickerByMood(trimmedContent)
-              if (sticker && Math.random() < 0.35) {
-                safeTimeoutEx(() => {
-                  addMessage({
-                    characterId: character.id,
-                    content: sticker.imageUrl,
-                    isUser: false,
-                    type: 'sticker',
-                  })
-                }, 220, { background: true })
+              // 按情绪夹带表情包（只要配置了，就必须在本次回复里尽量发出）
+              if (stickerPool.length > 0 && chosenStickerIdx.has(index)) {
+                const sticker = pickStickerByMood(trimmedContent) || pickRandomSticker()
+                if (sticker) {
+                  safeTimeoutEx(() => {
+                    addMessage({
+                      characterId: character.id,
+                      content: sticker.imageUrl,
+                      isUser: false,
+                      type: 'sticker',
+                    })
+                  }, 220 + Math.random() * 220, { background: true })
+                }
               }
             }
             
@@ -1280,6 +1317,10 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     if (msg.type === 'image') {
       return <img src={msg.content} alt="图片" className="max-w-[50%] rounded-lg" />
     }
+
+    if (msg.type === 'sticker') {
+      return <img src={msg.content} alt="表情" className="w-28 h-28 object-contain" />
+    }
     
     if (msg.type === 'transfer') {
       const status = msg.transferStatus || 'pending'
@@ -1346,24 +1387,6 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       )
     }
     
-    // 文本消息
-    for (const sticker of stickers) {
-      if (msg.content.includes(sticker.keyword)) {
-        const parts = msg.content.split(sticker.keyword)
-        return (
-          <div>
-            {parts.map((part, i) => (
-              <span key={i}>
-                {part}
-                {i < parts.length - 1 && (
-                  <img src={sticker.imageUrl} alt="表情" className="inline-block w-16 h-16 object-contain" />
-                )}
-              </span>
-            ))}
-          </div>
-        )
-      }
-    }
     return <span>{msg.content}</span>
   }
 
