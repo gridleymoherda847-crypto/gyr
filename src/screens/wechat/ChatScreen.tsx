@@ -103,7 +103,7 @@ export default function ChatScreen() {
   const [calendarMonth, setCalendarMonth] = useState(new Date())
   
   // 手动模式下待发送的消息数量（保留用于显示/以后扩展）
-  const [, setPendingCount] = useState(0)
+  const [pendingCount, setPendingCount] = useState(0)
   
   // AI正在输入
   const [aiTyping, setAiTyping] = useState(false)
@@ -224,7 +224,10 @@ export default function ChatScreen() {
   const hasApiConfig = llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel
 
   // 根据性格/情绪/经期生成1-15条回复，每条间隔1-8秒（按字数）
-  const generateAIReplies = useCallback(async (messagesOverride?: typeof messages) => {
+  const pendingCountRef = useRef(pendingCount)
+  useEffect(() => { pendingCountRef.current = pendingCount }, [pendingCount])
+
+  const generateAIReplies = useCallback(async (messagesOverride?: typeof messages, opts?: { forceNudge?: boolean }) => {
     if (aiTyping || !character) return
     safeSetTyping(true)
     setCharacterTyping(character.id, true)
@@ -338,7 +341,8 @@ export default function ChatScreen() {
           : 0
         const silenceSinceUserMs = lastUserInHistory ? Math.max(0, nowTs - lastUserInHistory.timestamp) : 0
         const silenceSinceAssistantMs = lastAssistantInHistory ? Math.max(0, nowTs - lastAssistantInHistory.timestamp) : 0
-        const hasNewUserMessage = !!(lastMsg && lastMsg.isUser)
+        // 重要：用户“没发新消息，只是点箭头”时也要算作无新发言（否则会把昨天那条当成“新消息”，错过“消失很久”的追问）
+        const hasNewUserMessage = !!(lastMsg && lastMsg.isUser) && !opts?.forceNudge
         const formatGapPrecise = (ms: number) => {
           const totalSec = Math.max(0, Math.floor(ms / 1000))
           const days = Math.floor(totalSec / 86400)
@@ -352,6 +356,28 @@ export default function ChatScreen() {
           parts.push(`${secs}秒`)
           return parts.join('')
         }
+
+        // 最近消息时间线：让模型“看得见每条的时间”，避免把“领钱/转账”时间搞反
+        const fmtTs = (ts: number) => new Date(ts).toLocaleString('zh-CN', { hour12: false })
+        const summarizeMsg = (m: any) => {
+          if (m.type === 'transfer') {
+            const amt = typeof m.transferAmount === 'number' ? `¥${m.transferAmount.toFixed(2)}` : '¥0.00'
+            const st = m.transferStatus || 'pending'
+            const note = (m.transferNote || '转账').replace(/\s+/g, ' ').slice(0, 18)
+            return `转账 ${amt}（${st}｜${note}）`
+          }
+          if (m.type === 'music') {
+            const title = (m.musicTitle || '音乐').replace(/\s+/g, ' ').slice(0, 18)
+            const st = m.musicStatus || 'pending'
+            return `音乐（${st}｜${title}）`
+          }
+          if (m.type === 'diary') return `日记（${(m.diaryTitle || '日记').replace(/\s+/g, ' ').slice(0, 18)}）`
+          if (m.type === 'couple') return `情侣空间卡片（${m.coupleStatus || 'pending'}）`
+          if (m.type === 'image') return '图片'
+          if (m.type === 'sticker') return '表情包'
+          return (m.content || '').replace(/\s+/g, ' ').slice(0, 28) || '（空）'
+        }
+        const recentTimeline = nonSystem.slice(-12).map(m => `- ${fmtTs(m.timestamp)} ${m.isUser ? '我' : 'TA'}：${summarizeMsg(m)}`).join('\n')
 
         // 说话“活人感”风格（即使人设很简陋也要像真人）
         const styleSeed = `${character.id}|${character.name}|${character.gender}`
@@ -392,6 +418,9 @@ ${character.memorySummary ? character.memorySummary : '（暂无）'}
 
 【当前时间（精确到秒）】
 ${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN', { hour12: false }) : (character.manualTime ? new Date(character.manualTime).toLocaleString('zh-CN', { hour12: false }) : new Date().toLocaleString('zh-CN', { hour12: false }))}
+
+【最近消息时间线（必须参考，尤其是转账/已领取的时间，不能搞反）】
+${recentTimeline || '（无）'}
 
 【时间感（必须严格遵守，否则算失败）】
 - 上一条消息时间：${prevMsg ? new Date(prevMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
@@ -475,7 +504,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         // - 如果用户刚发了新消息：正常回复即可（历史末尾应为 user）
         // - 如果用户没有新发言：根据“距离用户上次发言”的时长，决定是“继续补几句”还是“主动追问”
         const lastRole = llmMessages.length > 0 ? llmMessages[llmMessages.length - 1].role : ''
-        if (lastRole !== 'user') {
+        if (lastRole !== 'user' || opts?.forceNudge) {
           // silenceSinceUserMs 小：说明用户刚聊过但想让你再多说几句
           if (silenceSinceUserMs < 10 * 60 * 1000) {
             llmMessages.push({ role: 'user', content: '再多说几句，像真人一样自然延展（不要重复）。' })
@@ -485,9 +514,9 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           }
         }
         
+        // 时间感知强制触发条件：用户很久没回（>=2小时）必须先提到并追问
         const shouldForceNudge = !hasNewUserMessage && silenceSinceUserMs >= 2 * 60 * 60 * 1000
-        const shouldForceAcknowledge =
-          (hasNewUserMessage && gapMs >= 2 * 60 * 60 * 1000) || shouldForceNudge
+        const shouldForceAcknowledge = (hasNewUserMessage && gapMs >= 2 * 60 * 60 * 1000) || shouldForceNudge
 
         const pickTimeAckRegex = (ms: number) => {
           const h = ms / 3600000
@@ -840,6 +869,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
   // 手动触发回复（随时可按，不需要先发消息）
   const triggerReply = async () => {
+    const pendingBefore = pendingCountRef.current
     // 触发回复时也自动滚到底部，确保看得到“正在输入…”
     forceScrollRef.current = true
     nearBottomRef.current = true
@@ -850,7 +880,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     setPendingCount(0)
     
     // 生成AI回复
-    generateAIReplies(messagesRef.current)
+    generateAIReplies(messagesRef.current, { forceNudge: pendingBefore <= 0 })
   }
 
   const formatTime = (timestamp: number) => {
@@ -1136,9 +1166,14 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     const amount = transferActionMsg.transferAmount || 0
     const note = transferActionMsg.transferNote || '转账'
     
-    // 不修改原转账消息（美化框A保持原样）
+    // 关键修复：
+    // - 必须把原始“对方发给我的转账”标记为已处理，否则它会一直保持 pending、一直可点
+    // - 用户第二天再点一次就会产生一个“新的已收款消息（timestamp=现在）”，导致时间感误判成“你刚刚才领”
+    updateMessage(transferActionMsg.id, { transferStatus: action === 'receive' ? 'received' : 'refunded' })
+
+    // 不修改原转账消息的展示外观（美化框A仍然是转账卡片），但状态要变
     // 用户生成一条新的转账消息显示收款/退款状态（美化框B）
-    addMessage({
+    const receiptMsg = addMessage({
       characterId: character.id,
       content: action === 'receive' ? `已收款 ¥${amount.toFixed(2)}` : `已退还 ¥${amount.toFixed(2)}`,
       isUser: true,
@@ -1148,6 +1183,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       transferNote: note,
       transferStatus: action === 'receive' ? 'received' : 'refunded',
     })
+    // 立即同步 ref，避免用户立刻点箭头时拿到旧 messages（导致模型没看到“已收款”这一条）
+    messagesRef.current = [...messagesRef.current, receiptMsg]
 
     // 钱包：只有“收款”才加钱；“退还”不加钱（因为未入账）
     if (action === 'receive') {
@@ -2096,8 +2133,15 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
   return (
     <WeChatLayout>
-      <div className="flex flex-col h-full" style={chatBgStyle}>
-        {character.chatBackground && <div className="pointer-events-none absolute inset-0 bg-white/35 backdrop-blur-[1px]" />}
+      {/* 背景必须与内容分层，否则部分设备会把整页合成导致文字发糊 */}
+      <div className="relative isolate flex flex-col h-full overflow-hidden">
+        {character.chatBackground && (
+          <>
+            <div className="pointer-events-none absolute inset-0 -z-10" style={chatBgStyle} />
+            {/* 仅做轻遮罩，绝不做 blur */}
+            <div className="pointer-events-none absolute inset-0 -z-10 bg-white/35" />
+          </>
+        )}
         
         {/* 一起听浮窗 */}
         {isListeningWithThisCharacter && (

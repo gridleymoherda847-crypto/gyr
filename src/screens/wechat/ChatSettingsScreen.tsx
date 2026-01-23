@@ -4,6 +4,7 @@ import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
 import WeChatLayout from './WeChatLayout'
 import WeChatDialog from './components/WeChatDialog'
+import { compressImageFileToDataUrl } from '../../utils/image'
 
 export default function ChatSettingsScreen() {
   const navigate = useNavigate()
@@ -81,6 +82,18 @@ export default function ChatSettingsScreen() {
     open: false,
     lang: 'zh',
   })
+  const [langPickerOpen, setLangPickerOpen] = useState(false)
+
+  const languageLabel = (id: 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de') => {
+    if (id === 'zh') return '中文'
+    if (id === 'en') return '英语'
+    if (id === 'ru') return '俄语'
+    if (id === 'fr') return '法语'
+    if (id === 'ja') return '日语'
+    if (id === 'ko') return '韩语'
+    if (id === 'de') return '德语'
+    return id
+  }
 
   // 记忆功能状态（草稿）
   const [memoryRoundsDraft, setMemoryRoundsDraft] = useState<number>(character?.memoryRounds || 100)
@@ -270,13 +283,30 @@ export default function ChatSettingsScreen() {
   const handleBgChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // 使用 FileReader 转换为 base64
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const base64 = event.target?.result as string
-        updateCharacter(character.id, { chatBackground: base64 })
-      }
-      reader.readAsDataURL(file)
+      ;(async () => {
+        try {
+          const base64 = await compressImageFileToDataUrl(file, { maxSide: 1440, mimeType: 'image/jpeg', quality: 0.86 })
+          // localStorage 容量有限，过大会导致“看似设置成功，但刷新就没了”
+          if ((base64 || '').length > 1_400_000) {
+            setDialog({
+              open: true,
+              title: '背景图太大',
+              message: '这张图太大，可能导致刷新后丢失。建议换一张更小的图片，或先截图/压缩后再选。',
+              confirmText: '知道了',
+            })
+            return
+          }
+          updateCharacter(character.id, { chatBackground: base64 })
+        } catch {
+          setDialog({
+            open: true,
+            title: '设置失败',
+            message: '读取图片失败，请换一张图片再试试。',
+            confirmText: '好的',
+          })
+        }
+      })()
+      e.target.value = ''
     }
   }
 
@@ -1174,6 +1204,49 @@ export default function ChatSettingsScreen() {
         }}
       />
 
+      <WeChatDialog
+        open={langPickerOpen}
+        title="选择语言"
+        message="选择后，角色会强制使用该语言输出。"
+        hideDefaultActions
+        footer={
+          <button
+            type="button"
+            className="w-full rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+            onClick={() => setLangPickerOpen(false)}
+          >
+            取消
+          </button>
+        }
+        onCancel={() => setLangPickerOpen(false)}
+      >
+        <div className="flex flex-col gap-2">
+          {(['zh', 'en', 'ru', 'fr', 'ja', 'ko', 'de'] as const).map((lang) => (
+            <button
+              key={lang}
+              type="button"
+              className={`w-full rounded-xl px-3 py-2 text-[13px] text-left border active:scale-[0.99] ${
+                editLanguage === lang ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white/60 border-black/10 text-[#111]'
+              }`}
+              onClick={() => {
+                setLangPickerOpen(false)
+                if (lang === 'zh') {
+                  prevEditLangRef.current = 'zh'
+                  setEditLanguage('zh')
+                  setEditChatTranslationEnabled(false)
+                  return
+                }
+                prevEditLangRef.current = editLanguage || 'zh'
+                setEditLanguage(lang)
+                setLangDialog({ open: true, lang })
+              }}
+            >
+              {languageLabel(lang)}
+            </button>
+          ))}
+        </div>
+      </WeChatDialog>
+
       {/* 记忆功能设置弹窗 */}
       {showMemorySettings && (
         <div className="absolute inset-0 z-50 flex flex-col bg-white">
@@ -1826,31 +1899,16 @@ ${history}`
             {/* 语言/国家 */}
             <div>
               <label className="text-sm text-gray-600 block mb-1">语言</label>
-              <select
-                value={editLanguage}
-                onChange={(e) => {
-                  const next = e.target.value as any
-                  const prev = editLanguage
-                  if (next !== 'zh') {
-                    prevEditLangRef.current = prev
-                    setEditLanguage(next)
-                    setLangDialog({ open: true, lang: next })
-                  } else {
-                    prevEditLangRef.current = 'zh'
-                    setEditLanguage('zh')
-                    setEditChatTranslationEnabled(false)
-                  }
-                }}
-                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 outline-none"
+              <button
+                type="button"
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 outline-none flex items-center justify-between active:scale-[0.99]"
+                onClick={() => setLangPickerOpen(true)}
               >
-                <option value="zh">中文</option>
-                <option value="en">英语</option>
-                <option value="ru">俄语</option>
-                <option value="fr">法语</option>
-                <option value="ja">日语</option>
-                <option value="ko">韩语</option>
-                <option value="de">德语</option>
-              </select>
+                <span>{languageLabel(editLanguage)}</span>
+                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
               <div className="mt-1 text-[11px] text-gray-400">
                 语言会影响聊天/日记/朋友圈/情侣空间。翻译仅聊天可选，其他界面请用浏览器翻译。
               </div>

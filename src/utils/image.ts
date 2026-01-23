@@ -1,0 +1,50 @@
+export async function compressImageFileToDataUrl(
+  file: File,
+  options?: {
+    maxSide?: number
+    mimeType?: 'image/jpeg' | 'image/webp'
+    quality?: number
+  }
+): Promise<string> {
+  const maxSide = Math.max(320, Math.min(4096, options?.maxSide ?? 1280))
+  const mimeType = options?.mimeType ?? 'image/jpeg'
+  const quality = Math.max(0.5, Math.min(0.95, options?.quality ?? 0.86))
+
+  const originalDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('read_error'))
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.readAsDataURL(file)
+  })
+
+  // 用 Image + canvas 压缩（避免 blob: URL 刷新失效、也避免 localStorage 超限）
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = () => reject(new Error('image_load_error'))
+    el.src = originalDataUrl
+  })
+
+  const w = img.naturalWidth || img.width || 0
+  const h = img.naturalHeight || img.height || 0
+  if (!w || !h) return originalDataUrl
+
+  const scale = Math.min(1, maxSide / Math.max(w, h))
+  const tw = Math.max(1, Math.round(w * scale))
+  const th = Math.max(1, Math.round(h * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = tw
+  canvas.height = th
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return originalDataUrl
+
+  ctx.drawImage(img, 0, 0, tw, th)
+
+  try {
+    return canvas.toDataURL(mimeType, quality)
+  } catch {
+    return originalDataUrl
+  }
+}
+
