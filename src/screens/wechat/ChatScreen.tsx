@@ -296,11 +296,15 @@ export default function ChatScreen() {
         const nonSystem = workingMessages.filter(m => m.type !== 'system')
         const lastMsg = nonSystem.length > 0 ? nonSystem[nonSystem.length - 1] : null
         const prevMsg = nonSystem.length > 1 ? nonSystem[nonSystem.length - 2] : null
+        const lastUserInHistory = [...nonSystem].reverse().find(m => m.isUser) || null
+        const lastAssistantInHistory = [...nonSystem].reverse().find(m => !m.isUser) || null
         // 关键：如果用户隔了很久才回，lastMsg 是“用户新发的这条”，gap 应该看它和 prevMsg 的间隔
         const gapMs = lastMsg
           ? (lastMsg.isUser && prevMsg ? Math.max(0, lastMsg.timestamp - prevMsg.timestamp) : Math.max(0, nowTs - lastMsg.timestamp))
           : 0
-        const lastUserMsg = [...nonSystem].reverse().find(m => m.isUser) || null
+        const silenceSinceUserMs = lastUserInHistory ? Math.max(0, nowTs - lastUserInHistory.timestamp) : 0
+        const silenceSinceAssistantMs = lastAssistantInHistory ? Math.max(0, nowTs - lastAssistantInHistory.timestamp) : 0
+        const hasNewUserMessage = !!(lastMsg && lastMsg.isUser)
         const formatGapPrecise = (ms: number) => {
           const totalSec = Math.max(0, Math.floor(ms / 1000))
           const days = Math.floor(totalSec / 86400)
@@ -338,11 +342,15 @@ ${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN', { hour12: false
 - 上一条消息时间：${prevMsg ? new Date(prevMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 这条消息时间：${lastMsg ? new Date(lastMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 精确间隔（天/时/分/秒）：${formatGapPrecise(gapMs)}
-- 用户上一条发言时间：${lastUserMsg ? new Date(lastUserMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
+- 用户上一条发言时间：${lastUserInHistory ? new Date(lastUserInHistory.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
+- 距离用户上次发言过去：${formatGapPrecise(silenceSinceUserMs)}
+- 距离你上次发言过去：${formatGapPrecise(silenceSinceAssistantMs)}
+- 这次是否“用户刚发了新消息”：${hasNewUserMessage ? '是' : '否（用户没有新发言，只是触发你主动回复）'}
 - 强规则：无论你“重写/重生成/改口”多少次，只要以上时间事实成立，你都必须在本次回复的第一条消息里再次提到“精确间隔（天/时/分/秒）”，不能装作没发生
 - 强规则：如果间隔 >= 2小时，第一条回复必须先提到“你很久没回/刚刚在忙吗”等
 - 强规则：如果间隔 >= 1天，第一条回复必须带一点点情绪（担心/委屈/吐槽/想你），并追问原因
 - 强规则：如果间隔 >= 2天，第一条回复必须明确说出“都两天了”或“好几天了”，并要求对方解释（语气可按人设）
+- 新增规则：当“用户没有新发言”且距离用户上次发言 >= 2小时，你必须主动发一条“催一催/关心/追问”的微信消息（不要继续机械接上一次话题）
 
 【回复要求】
 - 用自然、亲切的语气回复，像真人聊天
@@ -373,10 +381,18 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           ...chatHistory
         ]
 
-        // 允许“连续点箭头继续生成”：如果最后一条不是用户发言，补一个“继续聊”的用户指令
+        // 允许“连续点箭头生成”：区分两种情况
+        // - 如果用户刚发了新消息：正常回复即可（历史末尾应为 user）
+        // - 如果用户没有新发言：根据“距离用户上次发言”的时长，决定是“继续补几句”还是“主动追问”
         const lastRole = llmMessages.length > 0 ? llmMessages[llmMessages.length - 1].role : ''
         if (lastRole !== 'user') {
-          llmMessages.push({ role: 'user', content: '继续接着刚才的话题聊几句，像真人一样自然延展。' })
+          // silenceSinceUserMs 小：说明用户刚聊过但想让你再多说几句
+          if (silenceSinceUserMs < 10 * 60 * 1000) {
+            llmMessages.push({ role: 'user', content: '再多说几句，像真人一样自然延展（不要重复）。' })
+          } else {
+            // silenceSinceUserMs 大：用户很久没说话，应该主动追问/关心，而不是继续机械接上次话题
+            llmMessages.push({ role: 'user', content: '用户没有新发言，请你根据时间差主动发一条关心/追问/吐槽的微信消息。' })
+          }
         }
         
         const response = await callLLM(llmMessages, undefined, { maxTokens: 420, timeoutMs: 600000 })
