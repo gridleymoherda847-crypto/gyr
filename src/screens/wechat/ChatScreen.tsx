@@ -399,16 +399,23 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         const shouldForceAcknowledge =
           (hasNewUserMessage && gapMs >= 2 * 60 * 60 * 1000) || shouldForceNudge
 
-        const requiredGapStr = shouldForceNudge ? formatGapPrecise(silenceSinceUserMs) : formatGapPrecise(gapMs)
-        const mustPrefix = `（间隔：${requiredGapStr}）`
+        const pickTimeAckRegex = (ms: number) => {
+          const h = ms / 3600000
+          const d = ms / 86400000
+          if (d >= 2) return /(两天|这两天|好几天|几天|这么多天|都两天了|都好几天了)/
+          if (d >= 1) return /(一天|昨天|昨晚|前天|这一天|都一天了|都一天多了)/
+          if (h >= 2) return /(这么久|好久|这么长时间|怎么这么久|都这么久了|都好久了)/
+          return /(刚刚|刚才|一会儿|刚聊完)/
+        }
+        const timeAckRe = pickTimeAckRegex(shouldForceNudge ? silenceSinceUserMs : gapMs)
 
-        // 给模型一个更硬的“首句格式”要求（仍可能被忽略，因此后面还会做校验）
+        // 给模型更硬的“首句行为”要求（仍可能被忽略，因此后面还会做校验）
         if (shouldForceAcknowledge) {
           llmMessages.unshift({
             role: 'system',
             content:
-              `【首句强制要求】你的第一条回复必须以“${mustPrefix}”开头，` +
-              `并且第一条必须包含一个追问/关心（例如“怎么这么久/在忙吗/为什么没回/去哪了”等）。` +
+              `【首句强制要求】你必须在第一条回复里用“自然语言”提到时间差并追问/关心（带问句）。` +
+              `严禁输出任何“间隔：xx小时xx分xx秒”或括号元信息，不能报时长数字，必须像真人。` +
               `不满足则视为失败，需要你重写。`,
           })
         }
@@ -418,16 +425,18 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         // 强制校验：避免“重生成后不问了/不提时间差”
         if (shouldForceAcknowledge) {
           const firstLine = ((response || '').trim().split('\n').map(s => s.trim()).filter(Boolean)[0]) || ''
-          const hasPrefix = firstLine.startsWith(mustPrefix)
           const hasQuestion =
             /[？?]/.test(firstLine) ||
             /(怎么|为何|为什么|在忙|忙吗|去哪|哪儿|怎么这么久|这么久)/.test(firstLine)
+          const hasTimeAck = timeAckRe.test(firstLine)
+          const hasNoLeakyInterval = !/（\s*间隔[:：]|^\s*\(间隔[:：]|间隔[:：]\s*\d/.test(firstLine)
 
-          if (!hasPrefix || !hasQuestion) {
+          if (!hasQuestion || !hasTimeAck || !hasNoLeakyInterval) {
             const fixPrompt =
               `你刚才没有严格遵守时间规则。现在必须重写你的回复：\n` +
-              `- 第一条必须以“${mustPrefix}”开头\n` +
+              `- 第一条必须用自然语言提到“很久没回/昨天/前天/这两天/好几天”等（不要报具体数字时长）\n` +
               `- 第一条必须包含一个追问/关心（带问句）\n` +
+              `- 严禁输出“（间隔：xx小时xx分xx秒）”这类内容\n` +
               `- 其余内容再正常接着聊\n` +
               `只输出重写后的回复内容（多条用换行分隔）。`
             response = await callLLM(
