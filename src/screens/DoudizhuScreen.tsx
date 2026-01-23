@@ -31,6 +31,8 @@ interface GameResult {
   multiplier: number
   baseScore: number
   bidScore: number
+  isWin: boolean
+  landlordPlayer: Player
 }
 
 const loadStats = (): DoudizhuStats => {
@@ -149,6 +151,129 @@ function PlayerAvatar({
   )
 }
 
+// 分享战绩弹窗组件
+function ShareDialog({ 
+  gameResult, 
+  stats,
+  onClose 
+}: { 
+  gameResult: GameResult
+  stats: DoudizhuStats
+  onClose: () => void 
+}) {
+  const navigate = useNavigate()
+  const { characters, addMessage } = useWeChat()
+  const [selectedCharacter, setSelectedCharacter] = useState<string | null>(null)
+  const [shared, setShared] = useState(false)
+  
+  const roleText = gameResult.landlordPlayer === 0 ? '地主' : '农民'
+  const resultText = gameResult.isWin ? '胜利' : '失败'
+  const coinChange = gameResult.playerCoins[0]
+  
+  const handleShare = () => {
+    if (!selectedCharacter) return
+    
+    // 生成战报消息
+    const battleReport = `🃏 斗地主战报\n` +
+      `━━━━━━━━━━\n` +
+      `身份：${roleText}\n` +
+      `结果：${resultText} ${gameResult.isWin ? '🎉' : '😢'}\n` +
+      `底分：${gameResult.baseScore}\n` +
+      `倍数：${gameResult.multiplier}倍${gameResult.bombCount > 0 ? ` (💣×${gameResult.bombCount})` : ''}\n` +
+      `金币：${coinChange > 0 ? '+' : ''}${coinChange}\n` +
+      `━━━━━━━━━━\n` +
+      `当前金币：💰${stats.coins}`
+    
+    // 发送消息到选中的角色
+    addMessage({
+      characterId: selectedCharacter,
+      content: battleReport,
+      isUser: true,
+      type: 'text'
+    })
+    
+    setShared(true)
+    setTimeout(() => {
+      onClose()
+      navigate(`/apps/wechat/chat/${selectedCharacter}`)
+    }, 1000)
+  }
+  
+  return (
+    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl p-4 w-72 max-h-[80%] flex flex-col shadow-2xl">
+        <h3 className="text-center font-bold text-lg mb-3">📤 分享战绩</h3>
+        
+        {shared ? (
+          <div className="flex-1 flex flex-col items-center justify-center py-8">
+            <div className="text-4xl mb-2">✅</div>
+            <p className="text-green-600 font-medium">分享成功！</p>
+          </div>
+        ) : (
+          <>
+            {/* 战报预览 */}
+            <div className="bg-gray-100 rounded-xl p-3 mb-3 text-xs">
+              <div className="font-bold text-center mb-1">🃏 斗地主战报</div>
+              <div className="text-gray-600 space-y-0.5">
+                <div>身份：{roleText} | 结果：{resultText} {gameResult.isWin ? '🎉' : '😢'}</div>
+                <div>底分：{gameResult.baseScore} | 倍数：{gameResult.multiplier}倍</div>
+                <div>金币变化：<span className={coinChange > 0 ? 'text-green-600' : 'text-red-600'}>{coinChange > 0 ? '+' : ''}{coinChange}</span></div>
+              </div>
+            </div>
+            
+            {/* 选择好友 */}
+            <p className="text-sm text-gray-600 mb-2">选择要分享的好友：</p>
+            <div className="flex-1 overflow-y-auto space-y-1 mb-3 max-h-32">
+              {characters.filter(c => !c.isHiddenFromChat).map(char => (
+                <button
+                  key={char.id}
+                  onClick={() => setSelectedCharacter(char.id)}
+                  className={`w-full flex items-center gap-2 p-2 rounded-lg transition-all ${
+                    selectedCharacter === char.id 
+                      ? 'bg-green-100 border-2 border-green-500' 
+                      : 'bg-gray-50 hover:bg-gray-100'
+                  }`}
+                >
+                  <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
+                    {char.avatar ? (
+                      <img src={char.avatar} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                        {char.name.slice(0, 1)}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-sm font-medium truncate">{char.name}</span>
+                  {selectedCharacter === char.id && <span className="ml-auto text-green-500">✓</span>}
+                </button>
+              ))}
+              {characters.filter(c => !c.isHiddenFromChat).length === 0 && (
+                <p className="text-center text-gray-400 text-sm py-4">暂无好友</p>
+              )}
+            </div>
+            
+            <div className="flex gap-2">
+              <button 
+                onClick={onClose} 
+                className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-xl text-sm font-medium"
+              >
+                取消
+              </button>
+              <button 
+                onClick={handleShare}
+                disabled={!selectedCharacter}
+                className="flex-1 py-2 bg-green-500 text-white rounded-xl text-sm font-bold disabled:opacity-50"
+              >
+                发送
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function DoudizhuScreen() {
   const navigate = useNavigate()
   const { userPersonas, walletBalance, updateWalletBalance, addWalletBill } = useWeChat()
@@ -181,6 +306,7 @@ export default function DoudizhuScreen() {
   const [bombCount, setBombCount] = useState(0)
   const [aiCoins, setAiCoins] = useState<[number, number]>([0, 0])
   const [gameResult, setGameResult] = useState<GameResult | null>(null)
+  const [showShareDialog, setShowShareDialog] = useState(false)
   
   const stateRef = useRef({
     phase: 'idle' as GamePhase,
@@ -421,28 +547,24 @@ export default function DoudizhuScreen() {
       farmerIndices.forEach(fi => { playerCoins[fi] = perFarmer })
     }
     
-    return { playerCoins, bombCount: finalBombCount, multiplier, baseScore: s.baseScore, bidScore: s.bidScore || 1 }
+    const isWin = (winnerSide === 'landlord' && landlordIdx === 0) || (winnerSide === 'farmer' && landlordIdx !== 0)
+    return { playerCoins, bombCount: finalBombCount, multiplier, baseScore: s.baseScore, bidScore: s.bidScore || 1, isWin, landlordPlayer: landlordIdx as Player }
   }
   
   const doPlayCards = useCallback((player: Player, cards: Card[]) => {
     if (cards.length > 0) playSound('card')
     
-    // 更新出牌记录
+    // 更新出牌记录 - 先清除自己上一轮的牌，再设置新牌
     setPlayedCards(prev => {
       const newMap = new Map(prev)
-      newMap.set(player, cards)
+      // 清除自己上一轮的牌
+      newMap.delete(player)
+      // 设置新出的牌
+      if (cards.length > 0) {
+        newMap.set(player, cards)
+      }
       return newMap
     })
-    
-    // 轮到玩家时，清除玩家上一轮的牌
-    if (player === 0) {
-      setPlayedCards(prev => {
-        const newMap = new Map(prev)
-        newMap.delete(0)
-        newMap.set(player, cards)
-        return newMap
-      })
-    }
     
     let newBombCount = stateRef.current.bombCount
     
@@ -563,7 +685,21 @@ export default function DoudizhuScreen() {
       setTimeout(() => {
         const player = stateRef.current.currentPlayer
         const needToBeat = stateRef.current.lastPlayPlayer !== null && stateRef.current.lastPlayPlayer !== player
-        const cards = aiDecide(stateRef.current.hands[player], needToBeat ? stateRef.current.lastPlay : null, player === stateRef.current.landlord, 'normal')
+        // 传递上下文信息给AI，让它更聪明
+        const context = {
+          lastPlayPlayer: stateRef.current.lastPlayPlayer ?? undefined,
+          currentPlayer: player,
+          landlordPlayer: stateRef.current.landlord ?? 0,
+          playerHandCount: stateRef.current.hands[0].length,
+          teammateHandCount: player === 1 ? stateRef.current.hands[2].length : stateRef.current.hands[1].length
+        }
+        const cards = aiDecide(
+          stateRef.current.hands[player], 
+          needToBeat ? stateRef.current.lastPlay : null, 
+          player === stateRef.current.landlord, 
+          'normal',
+          context
+        )
         setMessage('')
         doPlayCards(player, cards || [])
       }, thinkTime)
@@ -980,52 +1116,64 @@ export default function DoudizhuScreen() {
         </div>
       )}
       
-      {/* 结算界面 */}
+      {/* 结算界面 - 紧凑版 */}
       {phase === 'ended' && gameResult && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-4">
-          <div className="text-5xl">{gameResult.playerCoins[0] > 0 ? '🎉' : '😢'}</div>
-          <h2 className="text-white text-2xl font-bold">{gameResult.playerCoins[0] > 0 ? '恭喜你赢了！' : '很遗憾，你输了'}</h2>
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 px-4 py-2">
+          <div className="flex items-center gap-2">
+            <span className="text-3xl">{gameResult.isWin ? '🎉' : '😢'}</span>
+            <h2 className="text-white text-xl font-bold">{gameResult.isWin ? '恭喜你赢了！' : '很遗憾，你输了'}</h2>
+          </div>
           
-          <div className="bg-black/40 backdrop-blur rounded-2xl p-4 w-full max-w-sm border border-white/10">
-            <div className="text-white/70 text-sm text-center mb-3">
+          <div className="bg-black/40 backdrop-blur rounded-xl p-3 w-full max-w-xs border border-white/10">
+            <div className="text-white/70 text-xs text-center mb-2">
               底分{gameResult.baseScore} × 叫分{gameResult.bidScore} × {gameResult.multiplier}倍
               {gameResult.bombCount > 0 && ` (💣×${gameResult.bombCount})`}
             </div>
             
-            <div className="space-y-2">
-              <div className="flex justify-between items-center bg-white/5 rounded-lg px-3 py-2">
-                <span className="text-white font-medium">我</span>
-                <span className={`font-bold text-lg ${gameResult.playerCoins[0] > 0 ? 'text-green-400' : 'text-red-400'}`}>
+            <div className="space-y-1">
+              <div className="flex justify-between items-center bg-white/5 rounded px-2 py-1.5">
+                <span className="text-white text-sm">{gameResult.landlordPlayer === 0 ? '👑我(地主)' : '我(农民)'}</span>
+                <span className={`font-bold text-sm ${gameResult.playerCoins[0] > 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {gameResult.playerCoins[0] > 0 ? '+' : ''}{gameResult.playerCoins[0]}
                 </span>
               </div>
-              <div className="flex justify-between items-center bg-white/5 rounded-lg px-3 py-2">
-                <span className="text-white/70">电脑A</span>
-                <span className={`font-bold ${gameResult.playerCoins[1] > 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <div className="flex justify-between items-center bg-white/5 rounded px-2 py-1.5">
+                <span className="text-white/70 text-sm">{gameResult.landlordPlayer === 1 ? '👑电脑A' : '电脑A'}</span>
+                <span className={`font-bold text-sm ${gameResult.playerCoins[1] > 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {gameResult.playerCoins[1] > 0 ? '+' : ''}{gameResult.playerCoins[1]}
                 </span>
               </div>
-              <div className="flex justify-between items-center bg-white/5 rounded-lg px-3 py-2">
-                <span className="text-white/70">电脑B</span>
-                <span className={`font-bold ${gameResult.playerCoins[2] > 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <div className="flex justify-between items-center bg-white/5 rounded px-2 py-1.5">
+                <span className="text-white/70 text-sm">{gameResult.landlordPlayer === 2 ? '👑电脑B' : '电脑B'}</span>
+                <span className={`font-bold text-sm ${gameResult.playerCoins[2] > 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {gameResult.playerCoins[2] > 0 ? '+' : ''}{gameResult.playerCoins[2]}
                 </span>
               </div>
             </div>
             
-            <div className="border-t border-white/20 mt-3 pt-3">
+            <div className="border-t border-white/20 mt-2 pt-2">
               <div className="flex justify-between items-center">
-                <span className="text-white font-medium">我的金币</span>
-                <span className="text-yellow-300 font-bold text-lg">💰 {stats.coins}</span>
+                <span className="text-white text-sm">我的金币</span>
+                <span className="text-yellow-300 font-bold">💰 {stats.coins}</span>
               </div>
             </div>
           </div>
           
-          <div className="flex gap-4 mt-3">
-            <button onClick={() => setPhase('selectBase')} className="px-6 py-2.5 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-full shadow-xl active:scale-95 hover:shadow-2xl transition-all">再来一局</button>
-            <button onClick={() => navigate(-1)} className="px-6 py-2.5 bg-white/10 backdrop-blur text-white font-medium rounded-full active:scale-95 hover:bg-white/20 transition-colors">返回</button>
+          <div className="flex gap-2 mt-1">
+            <button onClick={() => setShowShareDialog(true)} className="px-4 py-2 bg-green-500 text-white font-bold rounded-full text-sm shadow-lg active:scale-95">📤 分享战绩</button>
+            <button onClick={() => setPhase('selectBase')} className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-full text-sm shadow-lg active:scale-95">再来一局</button>
+            <button onClick={() => navigate(-1)} className="px-4 py-2 bg-white/10 text-white font-medium rounded-full text-sm active:scale-95">返回</button>
           </div>
         </div>
+      )}
+      
+      {/* 分享战绩弹窗 */}
+      {showShareDialog && gameResult && (
+        <ShareDialog 
+          gameResult={gameResult} 
+          stats={stats}
+          onClose={() => setShowShareDialog(false)} 
+        />
       )}
       
       <style>{`

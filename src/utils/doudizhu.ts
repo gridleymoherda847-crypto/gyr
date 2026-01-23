@@ -556,12 +556,19 @@ function evaluateHandStrength(hand: Card[]): number {
   return score
 }
 
-// 智能AI决策
+// 智能AI决策 - 增强版
 export function aiDecide(
   hand: Card[], 
   lastPlay: PlayResult | null, 
   isLandlord: boolean,
-  _difficulty: 'easy' | 'normal' | 'hard' = 'normal'
+  _difficulty: 'easy' | 'normal' | 'hard' = 'normal',
+  context?: {
+    lastPlayPlayer?: number  // 上家是谁出的牌 (0=玩家, 1=电脑A, 2=电脑B)
+    currentPlayer?: number   // 当前是谁 (1=电脑A, 2=电脑B)
+    landlordPlayer?: number  // 地主是谁
+    playerHandCount?: number // 玩家剩余牌数
+    teammateHandCount?: number // 队友剩余牌数
+  }
 ): Card[] | null {
   const validPlays = findValidPlays(hand, lastPlay)
   
@@ -571,6 +578,14 @@ export function aiDecide(
   
   const handStrength = evaluateHandStrength(hand)
   const counts = countRanks(hand)
+  
+  // 判断上家是否是队友
+  const isTeammatePlay = context && !isLandlord && context.lastPlayPlayer !== undefined && 
+    context.landlordPlayer !== undefined && context.lastPlayPlayer !== context.landlordPlayer && 
+    context.lastPlayPlayer !== context.currentPlayer
+  
+  // 判断地主是否快赢了（牌少）
+  const landlordDanger = context && context.landlordPlayer === 0 && (context.playerHandCount || 20) <= 3
   
   // 评估每种出牌的策略分数
   const scored = validPlays.map(cards => {
@@ -601,39 +616,55 @@ export function aiDecide(
         // 手牌少时可以炸
         score += 50
       }
-      // 如果对手只剩几张牌，要炸
-      if (lastPlay && hand.length <= 6) {
-        score += 40
+      // 地主快赢了，必须炸
+      if (landlordDanger) {
+        score += 100
       }
     }
     
-    // 地主策略：更激进
+    // 地主策略：更激进，压制农民
     if (isLandlord) {
-      // 地主优先出三带
+      // 地主优先出三带（清牌快）
       if (result.type === 'triple_one' || result.type === 'triple_two') {
-        score += 20
+        score += 25
+      }
+      // 地主优先出顺子、连对、飞机
+      if (result.type === 'straight' || result.type === 'pair_straight') {
+        score += 30
+      }
+      if (result.type === 'plane' || result.type === 'plane_single' || result.type === 'plane_pair') {
+        score += 35
       }
       // 地主手牌强时可以压制
       if (handStrength > 40 && result.mainRank >= 12) {
+        score += 20
+      }
+      // 地主手牌少时更激进出大牌
+      if (hand.length <= 8 && result.mainRank >= 13) {
         score += 15
       }
     } else {
       // 农民策略：配合队友
-      // 如果队友出的牌，不要压
-      // 优先出单张和对子清牌
-      if (result.type === 'single' || result.type === 'pair') {
-        score += 10
+      
+      // 如果上家是队友出的牌，不要压（让队友走牌）
+      if (isTeammatePlay) {
+        score -= 50 // 大幅降低压队友牌的意愿
       }
-    }
-    
-    // 顺子和连对优先出（清牌快）
-    if (result.type === 'straight' || result.type === 'pair_straight') {
-      score += 25
-    }
-    
-    // 飞机优先出
-    if (result.type === 'plane' || result.type === 'plane_single' || result.type === 'plane_pair') {
-      score += 30
+      
+      // 农民优先出单张和对子（给队友接牌机会）
+      if (result.type === 'single' || result.type === 'pair') {
+        score += 15
+      }
+      
+      // 农民也要出顺子连对清牌
+      if (result.type === 'straight' || result.type === 'pair_straight') {
+        score += 20
+      }
+      
+      // 地主快赢了，农民要拼命压
+      if (landlordDanger) {
+        score += result.mainRank * 2 // 出大牌压制
+      }
     }
     
     // 保护大牌：如果有2和王，不要轻易出
@@ -669,16 +700,22 @@ export function aiDecide(
   // 是否选择不出
   if (lastPlay) {
     const bestScore = scored[0].score
+    
+    // 如果上家是队友，更倾向于不出
+    if (isTeammatePlay && bestScore < 60) {
+      return null // 让队友走
+    }
+    
     // 如果最好的选择分数很低，考虑不出
     if (bestScore < 20 && hand.length > 6) {
-      // 30%概率不出
       if (Math.random() < 0.3) {
         return null
       }
     }
-    // 如果要出炸弹但手牌还很多，更可能不出
+    
+    // 如果要出炸弹但手牌还很多且地主不危险，更可能不出
     const bestResult = analyzeHand(scored[0].cards)
-    if ((bestResult.type === 'bomb' || bestResult.type === 'rocket') && hand.length > 10) {
+    if ((bestResult.type === 'bomb' || bestResult.type === 'rocket') && hand.length > 10 && !landlordDanger) {
       if (Math.random() < 0.6) {
         return null
       }
