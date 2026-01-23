@@ -11,7 +11,7 @@ export default function ChatScreen() {
   const { fontColor, musicPlaylist, llmConfig, callLLM, pauseMusic, playSong } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
-    getCharacter, getMessagesByCharacter, addMessage, updateMessage, deleteMessage, deleteMessagesAfter,
+    getCharacter, getMessagesByCharacter, addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter,
     getStickersByCharacter, deleteCharacter, clearMessages,
     addTransfer, getPeriodRecords, addPeriodRecord,
     removePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether, stopListenTogether,
@@ -92,10 +92,16 @@ export default function ChatScreen() {
   const [aiTyping, setAiTyping] = useState(false)
   const showTyping = aiTyping || !!character?.isTyping
   
-  // 回溯模式
-  const [rewindMode, setRewindMode] = useState(false)
-  const [rewindSelectedId, setRewindSelectedId] = useState<string | null>(null)
-  const [showRewindConfirm, setShowRewindConfirm] = useState(false)
+  // 编辑/回溯模式：可勾选双方消息、批量删除；也可“回溯到某条”
+  const [editMode, setEditMode] = useState(false)
+  const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set())
+
+  // 退出编辑模式时清空选择，避免残留导致卡顿/误触
+  useEffect(() => {
+    if (!editMode) setSelectedMsgIds(new Set())
+  }, [editMode])
+  const [showEditDeleteConfirm, setShowEditDeleteConfirm] = useState(false)
+  const [showEditRewindConfirm, setShowEditRewindConfirm] = useState(false)
   
   // 清空消息确认
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -333,6 +339,7 @@ ${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN', { hour12: false
 - 这条消息时间：${lastMsg ? new Date(lastMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 精确间隔（天/时/分/秒）：${formatGapPrecise(gapMs)}
 - 用户上一条发言时间：${lastUserMsg ? new Date(lastUserMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
+- 强规则：无论你“重写/重生成/改口”多少次，只要以上时间事实成立，你都必须在本次回复的第一条消息里再次提到“精确间隔（天/时/分/秒）”，不能装作没发生
 - 强规则：如果间隔 >= 2小时，第一条回复必须先提到“你很久没回/刚刚在忙吗”等
 - 强规则：如果间隔 >= 1天，第一条回复必须带一点点情绪（担心/委屈/吐槽/想你），并追问原因
 - 强规则：如果间隔 >= 2天，第一条回复必须明确说出“都两天了”或“好几天了”，并要求对方解释（语气可按人设）
@@ -1010,13 +1017,24 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     generateHumanLikeReplies(`关闭了和你一起听《${songTitle}》的功能`)
   }
 
-  // 回溯功能：选择一条消息后删除它之后的所有消息
-  const handleRewind = () => {
-    if (!rewindSelectedId) return
-    deleteMessagesAfter(character.id, rewindSelectedId)
-    setRewindMode(false)
-    setRewindSelectedId(null)
-    setShowRewindConfirm(false)
+  // 编辑模式：批量删除
+  const handleDeleteSelected = () => {
+    const ids = Array.from(selectedMsgIds)
+    if (ids.length === 0) return
+    deleteMessagesByIds(ids)
+    setSelectedMsgIds(new Set())
+    setShowEditDeleteConfirm(false)
+    setEditMode(false)
+  }
+
+  // 编辑模式：回溯到某条（只允许选择 1 条）
+  const handleRewindToSelected = () => {
+    const ids = Array.from(selectedMsgIds)
+    if (ids.length !== 1) return
+    deleteMessagesAfter(character.id, ids[0])
+    setSelectedMsgIds(new Set())
+    setShowEditRewindConfirm(false)
+    setEditMode(false)
   }
 
   // 清空所有消息
@@ -1486,28 +1504,38 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         
         {/* 头部 - 参考 ChatsTab 的结构 */}
         <div className="flex items-center justify-between px-3 py-2.5 bg-transparent mt-1">
-          {rewindMode ? (
-            // 回溯模式头部
+          {editMode ? (
             <>
-              <button 
-                type="button" 
-                onClick={() => { setRewindMode(false); setRewindSelectedId(null) }}
+              <button
+                type="button"
+                onClick={() => { setEditMode(false); setSelectedMsgIds(new Set()) }}
                 className="text-gray-500 text-sm"
               >
                 取消
               </button>
-              <span className="font-semibold text-[#000]">选择回溯点</span>
-              <button 
-                type="button" 
-                onClick={() => rewindSelectedId && setShowRewindConfirm(true)}
-                disabled={!rewindSelectedId}
-                className={`text-sm font-medium ${rewindSelectedId ? 'text-pink-500' : 'text-gray-300'}`}
-              >
-                确认
-              </button>
+              <span className="font-semibold text-[#000]">
+                已选 {selectedMsgIds.size}
+              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={selectedMsgIds.size !== 1}
+                  onClick={() => setShowEditRewindConfirm(true)}
+                  className={`text-sm font-medium ${selectedMsgIds.size === 1 ? 'text-pink-500' : 'text-gray-300'}`}
+                >
+                  回溯
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedMsgIds.size === 0}
+                  onClick={() => setShowEditDeleteConfirm(true)}
+                  className={`text-sm font-medium ${selectedMsgIds.size > 0 ? 'text-red-500' : 'text-gray-300'}`}
+                >
+                  删除
+                </button>
+              </div>
             </>
           ) : (
-            // 正常模式头部
             <>
               <button 
                 type="button" 
@@ -1566,7 +1594,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               开始和{character.name}聊天吧~
             </div>
           ) : (
-            messages.map((msg, index) => {
+            messages.map((msg) => {
               
               // 系统消息特殊渲染
               if (msg.type === 'system') {
@@ -1585,22 +1613,29 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                 character.blockedAt && 
                 msg.timestamp > character.blockedAt
               
-              // 判断是否被选中（回溯模式）
-              const isSelected = rewindSelectedId === msg.id
-              const isAfterSelected = rewindSelectedId && messages.findIndex(m => m.id === rewindSelectedId) < index
+              // 编辑模式：是否被选中
+              const isSelected = selectedMsgIds.has(msg.id)
               
               return (
-                <div key={msg.id} className={`${isAfterSelected ? 'opacity-40' : ''}`}>
+                <div key={msg.id}>
                   <div className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
-                    {/* 回溯模式下显示选择圆圈（只在用户消息左边显示） */}
-                    {rewindMode && msg.isUser && (
+                    {/* 编辑模式：可勾选双方消息 */}
+                    {editMode && (
                       <button
                         type="button"
-                        onClick={() => setRewindSelectedId(isSelected ? null : msg.id)}
+                        onClick={() => {
+                          setSelectedMsgIds(prev => {
+                            const next = new Set(prev)
+                            if (next.has(msg.id)) next.delete(msg.id)
+                            else next.add(msg.id)
+                            return next
+                          })
+                        }}
                         className="flex items-center self-center"
+                        title="选择消息"
                       >
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                          isSelected ? 'border-pink-500 bg-pink-500' : 'border-gray-400'
+                          isSelected ? 'border-pink-500 bg-pink-500' : 'border-gray-400 bg-white/70'
                         }`}>
                           {isSelected && (
                             <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -1799,14 +1834,14 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     <span className="text-xs text-gray-600">经期</span>
                   </button>
                   
-                  {/* 回溯 */}
-                  <button type="button" onClick={() => { setShowPlusMenu(false); setRewindMode(true) }} className="flex flex-col items-center gap-1">
+                  {/* 编辑（回溯/删除） */}
+                  <button type="button" onClick={() => { setShowPlusMenu(false); setEditMode(true) }} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">回溯</span>
+                    <span className="text-xs text-gray-600">编辑</span>
                   </button>
                   
                   {/* 清空 */}
@@ -2209,16 +2244,28 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         </div>
       )}
 
-      {/* 回溯确认弹窗 */}
+      {/* 编辑模式：删除确认 */}
       <WeChatDialog
-        open={showRewindConfirm}
-        title="确认回溯？"
-        message="选中消息之后的所有对话将被永久删除，记忆也会被清除，此操作不可逆！"
+        open={showEditDeleteConfirm}
+        title="删除选中的消息？"
+        message="删除后不可恢复。"
+        confirmText="删除"
+        cancelText="取消"
+        danger
+        onCancel={() => setShowEditDeleteConfirm(false)}
+        onConfirm={handleDeleteSelected}
+      />
+
+      {/* 编辑模式：回溯确认（选中 1 条时可用） */}
+      <WeChatDialog
+        open={showEditRewindConfirm}
+        title="回溯到这条消息？"
+        message="这条消息之后的所有对话将被永久删除，此操作不可逆！"
         confirmText="确认回溯"
         cancelText="取消"
         danger
-        onCancel={() => setShowRewindConfirm(false)}
-        onConfirm={handleRewind}
+        onCancel={() => setShowEditRewindConfirm(false)}
+        onConfirm={handleRewindToSelected}
       />
 
       {/* 清空消息确认弹窗 */}

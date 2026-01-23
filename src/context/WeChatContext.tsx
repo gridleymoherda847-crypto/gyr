@@ -266,6 +266,7 @@ type WeChatContextValue = {
   addMessage: (message: Omit<WeChatMessage, 'id' | 'timestamp'>) => WeChatMessage
   updateMessage: (id: string, updates: Partial<WeChatMessage>) => void
   deleteMessage: (id: string) => void
+  deleteMessagesByIds: (ids: string[]) => void
   deleteMessagesAfter: (characterId: string, messageId: string) => void
   getMessagesByCharacter: (characterId: string) => WeChatMessage[]
   getLastMessage: (characterId: string) => WeChatMessage | undefined
@@ -669,6 +670,12 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     setMessages(prev => prev.filter(m => m.id !== id))
   }
 
+  const deleteMessagesByIds = (ids: string[]) => {
+    if (!ids || ids.length === 0) return
+    const set = new Set(ids)
+    setMessages(prev => prev.filter(m => !set.has(m.id)))
+  }
+
   const deleteMessagesAfter = (characterId: string, messageId: string) => {
     const charMessages = getMessagesByCharacter(characterId)
     const targetIndex = charMessages.findIndex(m => m.id === messageId)
@@ -1020,7 +1027,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     transfers, anniversaries, periods, listenTogether,
     addCharacter, updateCharacter, deleteCharacter, getCharacter,
     togglePinned, toggleSpecialCare, toggleBlocked, hideFromChat, showInChat, setCurrentChatId, setCharacterTyping,
-    addMessage, updateMessage, deleteMessage, deleteMessagesAfter, getMessagesByCharacter, getLastMessage, clearMessages,
+    addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter, getMessagesByCharacter, getLastMessage, clearMessages,
     addSticker, removeSticker, getStickersByCharacter, addStickerToCharacter, addStickerToAll,
     addMoment, deleteMoment, likeMoment, addMomentComment,
     updateUserSettings,
