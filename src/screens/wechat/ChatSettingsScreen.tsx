@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useState, useRef } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
 import WeChatLayout from './WeChatLayout'
@@ -7,6 +7,7 @@ import WeChatDialog from './components/WeChatDialog'
 
 export default function ChatSettingsScreen() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { fontColor, llmConfig, callLLM } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
@@ -39,6 +40,14 @@ export default function ChatSettingsScreen() {
   const [showEditCharacter, setShowEditCharacter] = useState(false)
   const [showMemorySettings, setShowMemorySettings] = useState(false)
   const [showTimeSyncSettings, setShowTimeSyncSettings] = useState(false)
+
+  // 星引力：添加好友后提示“记忆已导入”
+  const [postAddTipOpen, setPostAddTipOpen] = useState(false)
+  useEffect(() => {
+    if (searchParams.get('postAdd') === '1') {
+      setPostAddTipOpen(true)
+    }
+  }, [searchParams])
   
   // 编辑角色信息状态
   const [editName, setEditName] = useState(character?.name || '')
@@ -998,6 +1007,20 @@ export default function ChatSettingsScreen() {
           const cb = dialog.onConfirm
           setDialog({ open: false })
           cb?.()
+        }}
+      />
+
+      {/* 星引力：添加好友后的提示（记忆已导入） */}
+      <WeChatDialog
+        open={postAddTipOpen}
+        title="已自动导入"
+        message={'人物设定与自动导入：星引力的对话要点已经导入到聊天设置里的「记忆功能」。'}
+        confirmText="去查看记忆"
+        cancelText="不看了"
+        onCancel={() => setPostAddTipOpen(false)}
+        onConfirm={() => {
+          setPostAddTipOpen(false)
+          setShowMemorySettings(true)
         }}
       />
 

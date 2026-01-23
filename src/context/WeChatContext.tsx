@@ -559,7 +559,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       isHiddenFromChat: false,
       selectedUserPersonaId: null,
       unreadCount: character.unreadCount ?? 0,
-      autoReplyMode: true, // 默认自动回复
+      autoReplyMode: false, // 默认手动回复（由用户点击触发）
       isBlocked: false, // 默认未拉黑
       blockedAt: null, // 拉黑时间戳
       offlineMode: false, // 默认关闭线下模式

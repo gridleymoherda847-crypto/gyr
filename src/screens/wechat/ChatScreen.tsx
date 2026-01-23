@@ -13,7 +13,7 @@ export default function ChatScreen() {
   const { 
     getCharacter, getMessagesByCharacter, addMessage, updateMessage, deleteMessage, deleteMessagesAfter,
     getStickersByCharacter, deleteCharacter, clearMessages,
-    updateCharacter, addTransfer, getPeriodRecords, addPeriodRecord,
+    addTransfer, getPeriodRecords, addPeriodRecord,
     removePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether, stopListenTogether,
     setCurrentChatId, toggleBlocked, setCharacterTyping,
     walletBalance, updateWalletBalance, addWalletBill,
@@ -58,6 +58,7 @@ export default function ChatScreen() {
   const navLockRef = useRef(0)
   const [showMenu, setShowMenu] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [infoDialog, setInfoDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
   
   // 功能面板状态
   const [showPlusMenu, setShowPlusMenu] = useState(false)
@@ -84,10 +85,7 @@ export default function ChatScreen() {
   // 经期日历状态
   const [calendarMonth, setCalendarMonth] = useState(new Date())
   
-  // 回复模式切换提示
-  const [modeTip, setModeTip] = useState<string | null>(null)
-  
-  // 手动模式下待发送的消息数量（保留用于显示，但箭头随时可按）
+  // 手动模式下待发送的消息数量（保留用于显示/以后扩展）
   const [, setPendingCount] = useState(0)
   
   // AI正在输入
@@ -162,14 +160,6 @@ export default function ChatScreen() {
     }
   }, [characterId, setCurrentChatId])
 
-  // 模式切换提示自动消失
-  useEffect(() => {
-    if (modeTip) {
-      const timer = setTimeout(() => setModeTip(null), 3000)
-      return () => clearTimeout(timer)
-    }
-  }, [modeTip])
-
   useEffect(() => {
     aliveRef.current = true
     return () => {
@@ -192,34 +182,8 @@ export default function ChatScreen() {
     )
   }
 
-  const isAutoMode = character.autoReplyMode !== false
-  
-  // 模式切换弹窗
-  const [modeDialog, setModeDialog] = useState<{
-    open: boolean
-    title: string
-    message: string
-  }>({ open: false, title: '', message: '' })
-
-  // 切换回复模式
-  const toggleReplyMode = () => {
-    const newMode = !isAutoMode
-    updateCharacter(character.id, { autoReplyMode: newMode })
-    if (newMode) {
-      setModeDialog({
-        open: true,
-        title: '已切换为自动回复',
-        message: '对方会立即回复你的每条消息',
-      })
-      setPendingCount(0)
-    } else {
-      setModeDialog({
-        open: true,
-        title: '已切换为手动回复',
-        message: '你可以连续发送多条消息，点击输入框旁的三角箭头触发对方回复',
-      })
-    }
-  }
+  // 统一手动回复：移除自动/手动切换
+  const isAutoMode = false
 
   const safeSetTyping = (value: boolean) => {
     if (aliveRef.current) setAiTyping(value)
@@ -319,7 +283,24 @@ export default function ChatScreen() {
         // 获取可用歌曲列表
         const availableSongs = musicPlaylist.map(s => `${s.title}-${s.artist}`).join('、')
         
-        // 构建系统提示（严格顺序：预设 → 角色设定 → 我的人设 → 长期记忆摘要 → 输出）
+        // 计算时间差（增强“活人感”）
+        const nowTs = character.timeSyncEnabled !== false
+          ? Date.now()
+          : (character.manualTime ? new Date(character.manualTime).getTime() : Date.now())
+        const lastNonSystem = [...workingMessages].reverse().find(m => m.type !== 'system')
+        const lastUserMsg = [...workingMessages].reverse().find(m => m.type !== 'system' && m.isUser)
+        const gapMs = lastNonSystem ? Math.max(0, nowTs - lastNonSystem.timestamp) : 0
+        const formatGap = (ms: number) => {
+          const mins = Math.floor(ms / 60000)
+          if (mins < 1) return '不到1分钟'
+          if (mins < 60) return `${mins}分钟`
+          const hours = Math.floor(mins / 60)
+          if (hours < 24) return `${hours}小时`
+          const days = Math.floor(hours / 24)
+          return `${days}天`
+        }
+
+        // 构建系统提示（严格顺序：预设 → 角色设定 → 我的人设 → 长期记忆摘要 → 时间感 → 输出）
         let systemPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}【角色信息】
 你的名字：${character.name}
 你的性别：${character.gender === 'male' ? '男性' : character.gender === 'female' ? '女性' : '其他'}
@@ -337,6 +318,11 @@ ${character.memorySummary ? character.memorySummary : '（暂无）'}
 
 【当前时间】
 ${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN') : (character.manualTime ? new Date(character.manualTime).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'))}
+
+【时间感（非常重要）】
+- 距离上一条消息过去了：${formatGap(gapMs)}
+- 用户上一条发言时间：${lastUserMsg ? new Date(lastUserMsg.timestamp).toLocaleString('zh-CN') : '（无）'}
+- 如果时间间隔较久（例如 >=2小时 / >=1天），先像真人一样自然寒暄，并顺口问一句“你刚刚在忙什么/怎么这么久没回/去哪了”等，不要生硬
 
 【回复要求】
 - 用自然、亲切的语气回复，像真人聊天
@@ -366,6 +352,12 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           { role: 'system', content: systemPrompt },
           ...chatHistory
         ]
+
+        // 允许“连续点箭头继续生成”：如果最后一条不是用户发言，补一个“继续聊”的用户指令
+        const lastRole = llmMessages.length > 0 ? llmMessages[llmMessages.length - 1].role : ''
+        if (lastRole !== 'user') {
+          llmMessages.push({ role: 'user', content: '继续接着刚才的话题聊几句，像真人一样自然延展。' })
+        }
         
         const response = await callLLM(llmMessages, undefined, { maxTokens: 420, timeoutMs: 600000 })
         
@@ -399,9 +391,24 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           return { amount, note, status: status as 'pending' | 'received' | 'refunded' }
         }
         const parseMusicCommand = (text: string) => {
-          const m = text.match(/[【\[]\s*音乐\s*[:：]\s*([^:：\]】]+)\s*[:：]\s*([^】\]]+)\s*[】\]]/)
+          // 兼容：
+          // - [音乐:歌名:歌手] / 【音乐：歌名：歌手】
+          // - [音乐:歌名] / 【音乐：歌名】（此时从曲库自动匹配歌手）
+          // - [音乐:歌名 - 歌手]（弱兼容）
+          const m = text.match(/[【\[]\s*音乐\s*[:：]\s*([^\]】]+)\s*[】\]]/)
           if (!m) return null
-          return { title: (m[1] || '').trim(), artist: (m[2] || '').trim() }
+          const body = (m[1] || '').trim()
+          if (!body) return null
+          const parts = body.split(/[:：]/).map(s => s.trim()).filter(Boolean)
+          if (parts.length >= 2) return { title: parts[0], artist: parts.slice(1).join('：') }
+          const single = parts[0]
+          // 尝试用 “-” 拆歌手
+          const dash = single.split(/\s*-\s*/).map(s => s.trim()).filter(Boolean)
+          if (dash.length >= 2) return { title: dash[0], artist: dash.slice(1).join(' - ') }
+          // 只给了歌名：从曲库匹配
+          const hit = musicPlaylist.find(s => s.title === single || s.title.includes(single) || single.includes(s.title))
+          if (hit) return { title: hit.title, artist: hit.artist }
+          return { title: single, artist: '' }
         }
 
         replies.forEach((content, index) => {
@@ -416,11 +423,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             if (!m) return null
             return { amount: parseFloat(m[1]), note: (m[2] || '').trim(), status: 'pending' as const }
           })()
-          const musicCmd = parseMusicCommand(trimmedContent) || (() => {
-            const m = trimmedContent.match(/\[音乐:(.+?):(.+?)\]/)
-            if (!m) return null
-            return { title: (m[1] || '').trim(), artist: (m[2] || '').trim() }
-          })()
+          const musicCmd = parseMusicCommand(trimmedContent)
           
           safeTimeoutEx(() => {
             if (transferCmd) {
@@ -540,7 +543,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         safeSetTyping(false)
         setCharacterTyping(character.id, false)
         if (aliveRef.current) {
-          setModeDialog({
+          setInfoDialog({
             open: true,
             title: '回复失败',
             message: `模型调用失败：${error instanceof Error ? error.message : '未知错误'}\n请到：设置App → API 配置 检查网络/Key/模型，然后重试。`,
@@ -550,7 +553,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     } else {
       safeSetTyping(false)
       setCharacterTyping(character.id, false)
-      setModeDialog({
+      setInfoDialog({
         open: true,
         title: '需要先配置API',
         message: '请到：手机主屏 → 设置App → API 配置，填写 Base URL / API Key 并选择模型后再聊天。',
@@ -575,14 +578,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     })
 
     setInputText('')
-
-    if (isAutoMode) {
-      // 自动模式：立即回复
-      generateAIReplies()
-    } else {
-      // 手动模式：累计消息数量
-      setPendingCount(prev => prev + 1)
-    }
+    // 统一手动：累计待回复数量（点击箭头触发）
+    setPendingCount(prev => prev + 1)
   }
 
   // 手动触发回复（随时可按，不需要先发消息）
@@ -601,7 +598,14 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
   }
 
   const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    const d = new Date(timestamp)
+    const now = new Date()
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`
   }
 
   // 生成多条真人式回复（用于+号功能，遵守自动/手动模式）
@@ -703,9 +707,9 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           // 检查是否是转账消息
           const transferMatch = trimmedLine.match(/\[转账:(\d+(?:\.\d+)?):(.+?)\]/)
           const transferAltMatch = trimmedLine.match(/[【\[]\s*转账\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*([^】\]]+)\s*[】\]]/)
-          // 检查是否是音乐邀请
-          const musicMatch = trimmedLine.match(/\[音乐:(.+?):(.+?)\]/)
-          const musicAltMatch = trimmedLine.match(/[【\[]\s*音乐\s*[:：]\s*([^:：\]】]+)\s*[:：]\s*([^】\]]+)\s*[】\]]/)
+          // 检查是否是音乐邀请（兼容 [音乐:歌名] / [音乐:歌名:歌手] / 【音乐：...】）
+          const musicMatch = trimmedLine.match(/\[音乐:([^\]]+?)\]/)
+          const musicAltMatch = trimmedLine.match(/[【\[]\s*音乐\s*[:：]\s*([^】\]]+)\s*[】\]]/)
           
           if (transferMatch || transferAltMatch) {
             const m = transferMatch || transferAltMatch!
@@ -724,11 +728,11 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             }, msgDelay, { background: true })
           } else if (musicMatch || musicAltMatch) {
             const m = musicMatch || musicAltMatch!
-            const songTitle = (m[1] || '').trim()
-            // musicMatch[2] 是歌手，但我们使用曲库中的歌手信息
-            // 验证歌曲是否在曲库中
-            const songInPlaylist = musicPlaylist.find(s => 
-              s.title === songTitle || s.title.includes(songTitle) || songTitle.includes(s.title)
+            const raw = (m[1] || '').trim()
+            const parts = raw.split(/[:：]/).map(s => s.trim()).filter(Boolean)
+            const rawTitle = parts[0] || raw
+            const songInPlaylist = musicPlaylist.find(s =>
+              s.title === rawTitle || s.title.includes(rawTitle) || rawTitle.includes(s.title)
             )
             if (songInPlaylist) {
               safeTimeoutEx(() => {
@@ -747,7 +751,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               safeTimeoutEx(() => {
                 addMessage({
                   characterId: character.id,
-                  content: `想和你一起听《${songTitle}》~`,
+                  content: `想和你一起听《${rawTitle}》~`,
                   isUser: false,
                   type: 'text',
                 })
@@ -810,7 +814,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
     // 钱包扣款：我转账给对方
     if (walletBalance < amount) {
-      setModeDialog({
+      setInfoDialog({
         open: true,
         title: '余额不足',
         message: `钱包余额不足，无法转账 ¥${amount.toFixed(2)}。请先在“我-钱包”里获取初始资金或收款。`,
@@ -859,16 +863,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     setShowTransferModal(false)
     setShowPlusMenu(false)
     
-    // 自动模式下，让AI回复时一起处理转账（不秒收款）
-    if (isAutoMode) {
-      // 直接触发AI回复，转账会在generateAIReplies中处理
-      safeTimeout(() => {
-        generateAIReplies()
-      }, 600)
-    } else {
-      // 手动模式下增加待回复计数
-      setPendingCount(prev => prev + 1)
-    }
+    // 统一手动：增加待回复计数（点击箭头触发对方回复，转账会在生成流程中处理）
+    setPendingCount(prev => prev + 1)
   }
 
   // 处理收到的转账（用户收款或退还对方发来的转账）
@@ -913,7 +909,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
   // 发送音乐分享
   const handleShareMusic = (song: { title: string; artist: string; id?: string }) => {
-    const musicMsg = addMessage({
+    addMessage({
       characterId: character.id,
       content: `分享音乐: ${song.title}`,
       isUser: true,
@@ -926,38 +922,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     setShowPlusMenu(false)
     setActivePanel(null)
     
-    // 自动模式下，对方有概率接受或拒绝（70%接受，30%拒绝）
-    if (isAutoMode) {
-      const willAccept = Math.random() > 0.3
-      
-      // 延迟显示结果弹窗
-      safeTimeout(() => {
-        // 更新音乐消息状态
-        updateMessage(musicMsg.id, { musicStatus: willAccept ? 'accepted' : 'rejected' })
-        
-        setMusicInviteDialog({ open: true, song, accepted: willAccept })
-        
-        if (willAccept) {
-          // 接受邀请：开启一起听，真正播放音乐
-          startListenTogether(character.id, song.title, song.artist)
-          
-          // 找到对应的歌曲并播放
-          const fullSong = musicPlaylist.find(s => s.title === song.title && s.artist === song.artist)
-          if (fullSong) {
-            playSong(fullSong) // 真正播放音乐
-          }
-          
-          // 生成回复
-          generateHumanLikeReplies(`接受了你的邀请，和你一起听歌《${song.title}》，表达你的开心`)
-        } else {
-          // 拒绝邀请
-          generateHumanLikeReplies(`拒绝了你一起听歌《${song.title}》的邀请，委婉地解释原因`)
-        }
-      }, 1500)
-    } else {
-      // 手动模式下增加待回复计数
-      setPendingCount(prev => prev + 1)
-    }
+    // 统一手动：增加待回复计数（点击箭头触发对方回复/是否接受邀请）
+    setPendingCount(prev => prev + 1)
   }
   
   // 点击对方的音乐邀请 - 弹窗询问
@@ -1211,16 +1177,17 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     if (msg.type === 'music') {
       const musicStatus = msg.musicStatus || 'pending'
       const canAccept = !msg.isUser && musicStatus === 'pending' && !listenTogether
+      const cover =
+        musicPlaylist.find(s => s.title === msg.musicTitle && s.artist === msg.musicArtist)?.cover ||
+        '/icons/music-cover.png'
       
       return (
         <div 
           className={`flex items-center gap-3 min-w-[180px] p-3 rounded-xl bg-gradient-to-r from-pink-100 to-purple-100 ${canAccept ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
           onClick={() => canAccept && handleClickMusicInvite(msg)}
         >
-          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center flex-shrink-0">
-            <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-            </svg>
+          <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+            <img src={cover} alt="" className="w-full h-full object-cover" />
           </div>
           <div className="min-w-0">
             <div className="font-medium text-sm text-gray-800 truncate">{msg.musicTitle}</div>
@@ -1581,22 +1548,12 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             nearBottomRef.current = distanceToBottom < 140
           }}
         >
-          {/* 模式切换提示 */}
-          {modeTip && (
-            <div className="flex justify-center mb-3">
-              <div className="px-3 py-1.5 rounded-lg bg-white/90 shadow-sm text-xs text-gray-600 max-w-[90%] text-center">
-                {modeTip}
-              </div>
-            </div>
-          )}
-          
           {messages.length === 0 ? (
             <div className="text-center text-gray-400 text-sm mt-10">
               开始和{character.name}聊天吧~
             </div>
           ) : (
             messages.map((msg, index) => {
-              const showTime = index === 0 || msg.timestamp - messages[index - 1].timestamp > 300000
               
               // 系统消息特殊渲染
               if (msg.type === 'system') {
@@ -1621,14 +1578,6 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               
               return (
                 <div key={msg.id} className={`${isAfterSelected ? 'opacity-40' : ''}`}>
-                  {showTime && (
-                    <div className="flex justify-center mb-3">
-                      <div className="px-2 py-1 rounded bg-white/60 text-xs text-gray-400">
-                        {formatTime(msg.timestamp)}
-                      </div>
-                    </div>
-                  )}
-                  
                   <div className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
                     {/* 回溯模式下显示选择圆圈（只在用户消息左边显示） */}
                     {rewindMode && msg.isUser && (
@@ -1667,17 +1616,23 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                       )}
                     </div>
                     
-                    <div 
-                      className={`max-w-[70%] px-3.5 py-2.5 text-sm shadow-sm ${
-                        msg.type === 'transfer' || msg.type === 'music' 
-                          ? 'bg-transparent p-0 shadow-none' 
-                          : msg.isUser 
-                            ? 'text-gray-800 rounded-2xl rounded-tr-md' 
-                            : 'text-gray-800 rounded-2xl rounded-tl-md'
-                      }`}
-                      style={msg.type !== 'transfer' && msg.type !== 'music' ? getBubbleStyle(msg.isUser) : undefined}
-                    >
-                      {renderMessageContent(msg)}
+                    <div className="flex flex-col">
+                      <div 
+                        className={`max-w-[70%] px-3.5 py-2.5 text-sm shadow-sm ${
+                          msg.type === 'transfer' || msg.type === 'music' 
+                            ? 'bg-transparent p-0 shadow-none' 
+                            : msg.isUser 
+                              ? 'text-gray-800 rounded-2xl rounded-tr-md' 
+                              : 'text-gray-800 rounded-2xl rounded-tl-md'
+                        }`}
+                        style={msg.type !== 'transfer' && msg.type !== 'music' ? getBubbleStyle(msg.isUser) : undefined}
+                      >
+                        {renderMessageContent(msg)}
+                      </div>
+                      {/* 每条消息显示时间（小号字体），增强“时间感” */}
+                      <div className={`mt-1 text-[10px] text-gray-400 ${msg.isUser ? 'text-right' : 'text-left'}`}>
+                        {formatTime(msg.timestamp)}
+                      </div>
                     </div>
                     
                     {/* 拉黑后对方新发的消息，气泡右边显示小感叹号 */}
@@ -1760,20 +1715,18 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               className="flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/80 backdrop-blur outline-none text-gray-800 text-sm"
             />
             
-            {/* 手动模式：触发回复按钮（随时可按） */}
-            {!isAutoMode && (
-              <button
-                type="button"
-                onClick={triggerReply}
-                disabled={aiTyping}
-                className={`w-7 h-7 rounded-full flex items-center justify-center shadow-sm transition-all flex-shrink-0 bg-gradient-to-r from-pink-400 to-pink-500 ${aiTyping ? 'opacity-50' : 'active:scale-90'}`}
-                title="触发对方回复"
-              >
-                <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z" />
-                </svg>
-              </button>
-            )}
+            {/* 手动：触发回复按钮（随时可按，可连续点继续生成） */}
+            <button
+              type="button"
+              onClick={triggerReply}
+              disabled={aiTyping}
+              className={`w-7 h-7 rounded-full flex items-center justify-center shadow-sm transition-all flex-shrink-0 bg-gradient-to-r from-pink-400 to-pink-500 ${aiTyping ? 'opacity-50' : 'active:scale-90'}`}
+              title="触发对方回复"
+            >
+              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z" />
+              </svg>
+            </button>
             
             <button
               type="button"
@@ -1991,18 +1944,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             >
               聊天设置
             </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowMenu(false)
-                toggleReplyMode()
-              }}
-              className="w-full px-4 py-3 text-left text-sm text-gray-800 hover:bg-gray-50 flex items-center justify-between"
-            >
-              <span>{isAutoMode ? '自动回复' : '手动回复'}</span>
-              <span className="text-xs text-gray-400">点击切换</span>
-            </button>
+            {/* 已移除：自动/手动回复切换（统一手动回复） */}
             <button
               type="button"
               onClick={(e) => {
@@ -2051,15 +1993,16 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           navigate('/apps/wechat')
         }}
       />
-      
-      {/* 模式切换提示弹窗 */}
+
       <WeChatDialog
-        open={modeDialog.open}
-        title={modeDialog.title}
-        message={modeDialog.message}
+        open={infoDialog.open}
+        title={infoDialog.title}
+        message={infoDialog.message}
         confirmText="知道了"
-        onConfirm={() => setModeDialog({ ...modeDialog, open: false })}
+        onConfirm={() => setInfoDialog({ open: false, title: '', message: '' })}
       />
+      
+      {/* 已移除：模式切换提示弹窗（统一手动回复） */}
 
       {/* 转账悬浮窗 */}
       {showTransferModal && (

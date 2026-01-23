@@ -94,6 +94,8 @@ export default function StarGravityScreen({ onBack }: Props) {
   const [personalityTags, setPersonalityTags] = useState<string[]>([])
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false) // 生成确认弹窗
   const [showBlockDialog, setShowBlockDialog] = useState(false)
+  const [simpleDialog, setSimpleDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
+  const [showMemoryImportedTip, setShowMemoryImportedTip] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const [stars] = useState(() => generateStars(50))
   
@@ -162,7 +164,7 @@ export default function StarGravityScreen({ onBack }: Props) {
   const handleSendGift = (gift: typeof gifts[0]) => {
     if (!currentPerson) return
     if (walletBalance < gift.price) {
-      alert('余额不足')
+      setSimpleDialog({ open: true, title: '余额不足', message: '你的余额不够啦，去微信钱包看看？' })
       return
     }
     
@@ -198,7 +200,7 @@ export default function StarGravityScreen({ onBack }: Props) {
     const amount = parseFloat(transferAmount)
     if (isNaN(amount) || amount <= 0) return
     if (walletBalance < amount) {
-      alert('余额不足')
+      setSimpleDialog({ open: true, title: '余额不足', message: '你的余额不够啦，先去充值/赚点钱再来吧～' })
       return
     }
     
@@ -402,7 +404,7 @@ ${presetContent ? `【创作规则】\n${presetContent}\n` : ''}
       
       if (!personData) {
         setIsGenerating(false)
-        alert('生成失败，请重试')
+        setSimpleDialog({ open: true, title: '生成失败', message: '生成失败，请稍后重试。' })
         return
       }
 
@@ -625,7 +627,10 @@ ${presetContent ? `【创作规则】\n${presetContent}\n` : ''}
           <Star key={star.id} {...star} />
         ))}
         
-        <div className="flex items-center justify-between px-4 py-3 relative z-10">
+        <div
+          className="flex items-center justify-between px-4 pb-3 relative z-10"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+        >
           <button onClick={onBack} className="text-white/90 hover:text-white p-1">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -1033,7 +1038,8 @@ ${presetContent ? `【创作规则】\n${presetContent}\n` : ''}
             ? `${currentPerson.name}已添加到你的微信通讯录！\n记得去聊天设置里为TA设置你心里幻想的头像~`
             : `${currentPerson.name}觉得还不太熟悉，再聊聊吧\n(提升好感度可提高成功率)`
           }
-          confirmText="好的"
+          confirmText={addWechatResult === 'success' ? '去设置头像' : '知道了'}
+          cancelText={addWechatResult === 'success' ? '稍后设置' : undefined}
           onConfirm={() => {
             setShowAddWechatDialog(false)
             if (addWechatResult === 'success') {
@@ -1071,9 +1077,76 @@ ${history}`
                   })
                 }
               }
+
+              // 跳转到聊天设置，让用户设置头像；并在设置页提示“记忆已导入”
+              if (matchedCharacterId) {
+                navigate(`/apps/wechat/chat/${matchedCharacterId}/settings?postAdd=1`)
+              }
             }
           }}
-          onCancel={() => setShowAddWechatDialog(false)}
+          onCancel={() => {
+            setShowAddWechatDialog(false)
+            if (addWechatResult !== 'success') return
+            // 稍后设置头像：仍然提示“记忆已导入”，并提供跳转查看记忆
+            setShowMemoryImportedTip(true)
+            // 添加成功：星引力里消失，回到首页
+            if (currentPerson) removeStarGravityPerson(currentPerson.id)
+            setCurrentPerson(null)
+            setShowGiftMenu(false)
+            setCurrentView('home')
+
+            // 自动生成“星引力聊天记忆”写入微信聊天设置（与“去设置头像”一致）
+            if (matchedCharacterId) {
+              const history = currentPerson?.messages
+                .map(m => `${m.isUser ? '我' : currentPerson.name}：${m.content}`)
+                .join('\n')
+              if (history && history.trim()) {
+                const prompt = `你是“聊天记忆整理器”。请把以下对话总结成长期记忆要点：
+- 只输出要点（8~16条）
+- 每条以“- ”开头
+- 记录稳定事实/关系/偏好/禁忌/关键事件
+- 不要旁白和解释
+
+【星引力聊天记录】
+${history}`
+                callLLM(
+                  [{ role: 'user', content: prompt }],
+                  undefined,
+                  { maxTokens: 380, timeoutMs: 600000 }
+                ).then((summary) => {
+                  updateCharacter(matchedCharacterId, {
+                    memorySummary: summary.trim(),
+                    memorySummaryUpdatedAt: Date.now(),
+                  })
+                }).catch(() => {
+                  // ignore
+                })
+              }
+            }
+          }}
+        />
+
+        <WeChatDialog
+          open={showMemoryImportedTip}
+          title="已自动导入"
+          message={'人物设定与自动导入：星引力的对话要点已经导入到聊天设置里的「记忆功能」。'}
+          confirmText="去查看记忆"
+          cancelText="不看了"
+          onCancel={() => setShowMemoryImportedTip(false)}
+          onConfirm={() => {
+            setShowMemoryImportedTip(false)
+            if (matchedCharacterId) {
+              navigate(`/apps/wechat/chat/${matchedCharacterId}/settings?postAdd=1`)
+            }
+          }}
+        />
+
+        <WeChatDialog
+          open={simpleDialog.open}
+          title={simpleDialog.title}
+          message={simpleDialog.message}
+          confirmText="知道了"
+          onConfirm={() => setSimpleDialog({ open: false, title: '', message: '' })}
         />
 
         <WeChatDialog
