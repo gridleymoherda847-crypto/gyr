@@ -18,34 +18,28 @@
     </filter>
   </defs>
 
-  <!-- Ìo -->
   <rect width="512" height="512" rx="90" fill="url(#cardBg)"/>
   
-  <!-- 	 QKL -->
   <g filter="url(#shadow)">
-    <!-- æ¹„L -->
     <g transform="translate(100 130) rotate(-15)">
       <rect width="100" height="140" rx="10" fill="#fff" stroke="#ddd" stroke-width="2"/>
       <text x="15" y="35" font-family="Arial" font-size="28" font-weight="bold" fill="#e53935">A</text>
-      <text x="15" y="58" font-family="Arial" font-size="20" fill="#e53935">e</text>
+      <text x="15" y="58" font-family="Arial" font-size="20" fill="#e53935">&#9829;</text>
     </g>
     
-    <!-- -ô„L -->
     <g transform="translate(180 110)">
       <rect width="100" height="140" rx="10" fill="#fff" stroke="#ddd" stroke-width="2"/>
       <text x="15" y="35" font-family="Arial" font-size="28" font-weight="bold" fill="#000">K</text>
-      <text x="15" y="58" font-family="Arial" font-size="20" fill="#000">`</text>
+      <text x="15" y="58" font-family="Arial" font-size="20" fill="#000">&#9824;</text>
     </g>
     
-    <!-- ó¹„L -->
     <g transform="translate(260 130) rotate(15)">
       <rect width="100" height="140" rx="10" fill="#fff" stroke="#ddd" stroke-width="2"/>
       <text x="15" y="35" font-family="Arial" font-size="28" font-weight="bold" fill="#e53935">2</text>
-      <text x="15" y="58" font-family="Arial" font-size="20" fill="#e53935">f</text>
+      <text x="15" y="58" font-family="Arial" font-size="20" fill="#e53935">&#9830;</text>
     </g>
   </g>
   
-  <!-- ‹ 0;×	 -->
   <g transform="translate(206 290)">
     <path d="M50 60L10 30 25 60 50 20 75 60 90 30 50 60z" fill="#ffd700" stroke="#ff9800" stroke-width="3"/>
     <rect x="10" y="55" width="80" height="20" rx="3" fill="#ffd700" stroke="#ff9800" stroke-width="3"/>
@@ -54,6 +48,5 @@
     <circle cx="75" cy="35" r="6" fill="#ff5722"/>
   </g>
   
-  <!-- ‡W -->
-  <text x="256" y="420" text-anchor="middle" font-family="Arial" font-size="42" font-weight="bold" fill="#fff">—0;</text>
+  <text x="256" y="420" text-anchor="middle" font-family="Arial" font-size="42" font-weight="bold" fill="#fff">DDZ</text>
 </svg>
