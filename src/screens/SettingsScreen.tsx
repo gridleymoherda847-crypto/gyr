@@ -13,7 +13,7 @@ export default function SettingsScreen() {
 
   const handleShutdown = () => {
     setLocked(true)
-    navigate('/')
+    navigate('/', { replace: true })
   }
 
   const handleClearData = () => {
@@ -23,7 +23,7 @@ export default function SettingsScreen() {
   return (
     <PageContainer>
       <div className="flex h-full flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
-        <AppHeader title="设置" onBack={() => navigate('/')} />
+        <AppHeader title="设置" onBack={() => navigate('/', { replace: true })} />
         
         <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4">
           <SettingsGroup title="AI 模型">
@@ -35,6 +35,7 @@ export default function SettingsScreen() {
             <SettingsItem label="字体设置" value={currentFont.name} to="/apps/settings/font" />
             <SettingsItem label="字体颜色" value={fontColor.name} to="/apps/settings/color" />
             <SettingsItem label="表情包管理" to="/apps/settings/stickers" />
+            <SettingsItem label="位置与天气" to="/apps/settings/location" />
           </SettingsGroup>
 
           <SettingsGroup title="系统">

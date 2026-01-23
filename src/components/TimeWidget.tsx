@@ -1,15 +1,12 @@
 import { useOS } from '../context/OSContext'
 
 export default function TimeWidget() {
-  const { time, fontColor, currentFont } = useOS()
+  const { time, fontColor, currentFont, weather, refreshWeather } = useOS()
   
   const now = new Date()
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`
   const weekDay = weekDays[now.getDay()]
-  
-  // 模拟天气
-  const weather = { temp: '18°', icon: '☀️', desc: '晴' }
 
   return (
     <div className="w-full px-2">
@@ -48,9 +45,15 @@ export default function TimeWidget() {
             {dateStr} {weekDay}
           </span>
           <span className="text-white/30">|</span>
-          <span className="flex items-center gap-1 text-sm sm:text-base">
-            <span style={{ fontFamily: currentFont.fontFamily }}>{weather.temp} {weather.desc}</span>
-          </span>
+          <button 
+            onClick={() => refreshWeather()}
+            className="flex items-center gap-1 text-sm sm:text-base hover:opacity-80 active:scale-95 transition-all"
+            style={{ fontFamily: currentFont.fontFamily }}
+          >
+            <span>{weather.icon}</span>
+            <span>{weather.temp} {weather.desc}</span>
+            <span className="text-xs opacity-60">({weather.city})</span>
+          </button>
         </div>
       </div>
     </div>

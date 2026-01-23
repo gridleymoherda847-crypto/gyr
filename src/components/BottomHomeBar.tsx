@@ -11,7 +11,9 @@ export default function BottomHomeBar() {
     if (location.pathname === '/') {
       setLocked(true)
     } else {
-      navigate('/')
+      // 使用 replace 导航到主页，这样不会在历史记录中留下记录
+      // 用户在主页时无法通过返回键回到之前的页面
+      navigate('/', { replace: true })
     }
   }
 

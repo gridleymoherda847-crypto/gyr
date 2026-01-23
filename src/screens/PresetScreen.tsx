@@ -150,7 +150,7 @@ export default function PresetScreen() {
         <div className="flex items-center justify-between px-4 py-3">
           <button 
             type="button" 
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/', { replace: true })}
             className="flex items-center gap-0.5"
             style={{ color: fontColor.value }}
           >

@@ -868,6 +868,12 @@ export default function DoudizhuScreen() {
       {/* 游戏中 */}
       {isInGame && (
         <div className="flex-1 flex flex-col relative">
+          {/* 底牌 - 固定在顶部中间 */}
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5">
+            <span className="text-white/50 text-xs">底牌:</span>
+            {dizhuCards.map(card => renderSmallCard(card))}
+          </div>
+          
           {/* 顶部：两个AI头像和出牌区 */}
           <div className="flex justify-between items-start px-4 pt-2">
             {/* 左侧：电脑B头像 + 出牌 */}
@@ -889,11 +895,8 @@ export default function DoudizhuScreen() {
               )}
             </div>
             
-            {/* 中间：底牌 */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-white/50 text-xs">底牌:</span>
-              {dizhuCards.map(card => renderSmallCard(card))}
-            </div>
+            {/* 中间留空给底牌 */}
+            <div className="w-32" />
             
             {/* 右侧：电脑A出牌 + 头像 */}
             <div className="flex items-start gap-2">

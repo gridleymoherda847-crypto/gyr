@@ -47,7 +47,7 @@ export default function DiaryVaultScreen() {
   return (
     <PageContainer>
       <div className="flex h-full flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
-        <AppHeader title="收藏日记" onBack={() => navigate('/')} />
+        <AppHeader title="收藏日记" onBack={() => navigate('/', { replace: true })} />
 
         <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4">
           {list.length === 0 ? (

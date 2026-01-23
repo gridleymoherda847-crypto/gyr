@@ -30,7 +30,7 @@ export default function SmsScreen() {
   return (
     <PageContainer>
       <div className="flex h-full flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
-        <AppHeader title="短信" onBack={() => navigate('/')} />
+        <AppHeader title="短信" onBack={() => navigate('/', { replace: true })} />
         
         <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 space-y-3 sm:space-y-4">
           {/* 联系人列表 */}

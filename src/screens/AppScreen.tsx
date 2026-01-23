@@ -13,7 +13,7 @@ export default function AppScreen() {
   return (
     <PageContainer>
       <div className="flex h-full flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
-        <AppHeader title={app?.name ?? '应用'} onBack={() => navigate('/')} />
+        <AppHeader title={app?.name ?? '应用'} onBack={() => navigate('/', { replace: true })} />
 
         <div className="flex flex-1 flex-col items-center justify-center gap-3 sm:gap-4 text-center">
           {app?.icon && (

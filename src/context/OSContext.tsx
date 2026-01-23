@@ -17,6 +17,22 @@ export type ChatMessage = { id: string; senderId: string; senderName: string; te
 export type FontOption = { id: string; name: string; fontFamily: string; preview: string }
 export type ColorOption = { id: string; name: string; value: string }
 
+// 位置和天气相关类型
+export type LocationMode = 'auto' | 'manual'
+export type WeatherData = {
+  temp: string
+  desc: string
+  icon: string
+  city: string
+  updatedAt: number
+}
+export type LocationSettings = {
+  mode: LocationMode
+  manualCity: string
+  latitude?: number
+  longitude?: number
+}
+
 // 音乐相关类型
 export type Song = {
   id: string
@@ -57,6 +73,25 @@ const DEFAULT_COVER = '/icons/music-cover.png'
 const MUSIC_STORAGE_KEY = 'littlephone_music_playlist'
 const MUSIC_VERSION_KEY = 'littlephone_music_version'
 const CURRENT_MUSIC_VERSION = '5' // 更新这个数字会强制重置音乐列表
+
+// 位置和天气存储键
+const LOCATION_STORAGE_KEY = 'littlephone_location'
+const WEATHER_STORAGE_KEY = 'littlephone_weather'
+
+// 默认位置设置
+const defaultLocationSettings: LocationSettings = {
+  mode: 'manual',
+  manualCity: '北京'
+}
+
+// 默认天气
+const defaultWeather: WeatherData = {
+  temp: '18°',
+  desc: '晴',
+  icon: '☀️',
+  city: '北京',
+  updatedAt: 0
+}
 
 // 内置默认歌曲（打包时会包含）
 const DEFAULT_SONGS: Song[] = [
@@ -101,6 +136,11 @@ type OSContextValue = {
   llmConfig: LLMConfig; miCoinBalance: number; notifications: Notification[]
   characters: VirtualCharacter[]; chatLog: ChatMessage[]
   customAppIcons: Record<string, string>; decorImage: string
+  // 位置和天气
+  locationSettings: LocationSettings
+  weather: WeatherData
+  setLocationSettings: (settings: Partial<LocationSettings>) => void
+  refreshWeather: () => Promise<void>
   // 音乐相关
   musicPlaying: boolean
   currentSong: Song | null
@@ -241,6 +281,24 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [chatLog, setChatLog] = useState<ChatMessage[]>(seedChat)
   const [customAppIcons, setCustomAppIcons] = useState<Record<string, string>>({})
   const [decorImage, setDecorImage] = useState('')
+
+  // 位置和天气状态
+  const [locationSettings, setLocationSettingsState] = useState<LocationSettings>(() => {
+    try {
+      const saved = localStorage.getItem(LOCATION_STORAGE_KEY)
+      return saved ? JSON.parse(saved) : defaultLocationSettings
+    } catch {
+      return defaultLocationSettings
+    }
+  })
+  const [weather, setWeather] = useState<WeatherData>(() => {
+    try {
+      const saved = localStorage.getItem(WEATHER_STORAGE_KEY)
+      return saved ? JSON.parse(saved) : defaultWeather
+    } catch {
+      return defaultWeather
+    }
+  })
 
   // 音乐状态
   const [musicPlaying, setMusicPlaying] = useState(false)
@@ -409,6 +467,116 @@ export function OSProvider({ children }: PropsWithChildren) {
     setMusicFavorites(prev => prev.filter(id => id !== songId))
   }
 
+  // 位置设置
+  const setLocationSettings = (settings: Partial<LocationSettings>) => {
+    setLocationSettingsState(prev => {
+      const next = { ...prev, ...settings }
+      localStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  // 获取天气图标
+  const getWeatherIcon = (code: number): string => {
+    if (code === 0) return '☀️'
+    if (code <= 3) return '⛅'
+    if (code <= 49) return '🌫️'
+    if (code <= 59) return '🌧️'
+    if (code <= 69) return '🌨️'
+    if (code <= 79) return '❄️'
+    if (code <= 99) return '⛈️'
+    return '☀️'
+  }
+
+  // 获取天气描述
+  const getWeatherDesc = (code: number): string => {
+    if (code === 0) return '晴'
+    if (code <= 3) return '多云'
+    if (code <= 49) return '雾'
+    if (code <= 59) return '小雨'
+    if (code <= 69) return '雨夹雪'
+    if (code <= 79) return '雪'
+    if (code <= 99) return '雷雨'
+    return '晴'
+  }
+
+  // 刷新天气
+  const refreshWeather = async () => {
+    try {
+      let lat: number | undefined
+      let lon: number | undefined
+      let cityName = locationSettings.manualCity
+
+      if (locationSettings.mode === 'auto') {
+        // 自动定位
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 })
+        })
+        lat = position.coords.latitude
+        lon = position.coords.longitude
+        
+        // 反向地理编码获取城市名
+        try {
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=zh`)
+          const geoData = await geoRes.json()
+          cityName = geoData.address?.city || geoData.address?.town || geoData.address?.county || '未知'
+        } catch {
+          cityName = '当前位置'
+        }
+        
+        // 保存坐标
+        setLocationSettings({ latitude: lat, longitude: lon })
+      } else {
+        // 手动定位 - 根据城市名获取坐标
+        try {
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityName)}&format=json&limit=1&accept-language=zh`)
+          const geoData = await geoRes.json()
+          if (geoData.length > 0) {
+            lat = parseFloat(geoData[0].lat)
+            lon = parseFloat(geoData[0].lon)
+          }
+        } catch {
+          // 使用默认北京坐标
+          lat = 39.9
+          lon = 116.4
+        }
+      }
+
+      if (lat && lon) {
+        // 获取天气数据
+        const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
+        const weatherData = await weatherRes.json()
+        
+        if (weatherData.current_weather) {
+          const newWeather: WeatherData = {
+            temp: `${Math.round(weatherData.current_weather.temperature)}°`,
+            desc: getWeatherDesc(weatherData.current_weather.weathercode),
+            icon: getWeatherIcon(weatherData.current_weather.weathercode),
+            city: cityName,
+            updatedAt: Date.now()
+          }
+          setWeather(newWeather)
+          localStorage.setItem(WEATHER_STORAGE_KEY, JSON.stringify(newWeather))
+        }
+      }
+    } catch (error) {
+      console.error('获取天气失败:', error)
+    }
+  }
+
+  // 初始化时获取天气（如果超过30分钟未更新）
+  useEffect(() => {
+    const shouldRefresh = Date.now() - weather.updatedAt > 30 * 60 * 1000
+    if (shouldRefresh) {
+      refreshWeather()
+    }
+  }, [])
+
+  // 位置设置变化时刷新天气
+  useEffect(() => {
+    refreshWeather()
+  }, [locationSettings.mode, locationSettings.manualCity])
+
   // 获取可用模型列表
   const fetchAvailableModels = async (override?: { apiBaseUrl?: string; apiKey?: string }): Promise<string[]> => {
     const base = normalizeApiBaseUrl(override?.apiBaseUrl ?? llmConfig.apiBaseUrl)
@@ -503,6 +671,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   const value = useMemo<OSContextValue>(() => ({
     time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, miCoinBalance,
     notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
+    locationSettings, weather, setLocationSettings, refreshWeather,
     musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, audioRef,
     setLocked, setWallpaper, setLockWallpaper, setCurrentFont, setFontColor, setUserProfile, setLLMConfig,
     setMiCoinBalance, addMiCoins, addNotification, markNotificationRead, addChatMessage, updateIntimacy,
@@ -512,6 +681,7 @@ export function OSProvider({ children }: PropsWithChildren) {
     fetchAvailableModels, callLLM,
   }), [time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, miCoinBalance, 
       notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
+      locationSettings, weather,
       musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites])
 
   return <OSContext.Provider value={value}>{children}</OSContext.Provider>

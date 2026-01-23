@@ -70,7 +70,7 @@ export default function MusicScreen() {
   return (
     <PageContainer>
       <div className="flex h-full flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
-        <AppHeader title="音乐" onBack={() => navigate('/')} />
+        <AppHeader title="音乐" onBack={() => navigate('/', { replace: true })} />
         
         {/* 当前播放 */}
         {currentSong && (

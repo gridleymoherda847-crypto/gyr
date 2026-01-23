@@ -13,6 +13,7 @@ import WallpaperScreen from './screens/settings/WallpaperScreen'
 import FontScreen from './screens/settings/FontScreen'
 import ColorScreen from './screens/settings/ColorScreen'
 import StickerManagerScreen from './screens/settings/StickerManagerScreen'
+import LocationScreen from './screens/settings/LocationScreen'
 import DiaryVaultScreen from './screens/DiaryVaultScreen'
 import MibiScreen from './screens/MibiScreen'
 import SmsScreen from './screens/SmsScreen'
@@ -58,6 +59,7 @@ function InnerApp() {
             <Route path="/apps/settings/font" element={<FontScreen />} />
             <Route path="/apps/settings/color" element={<ColorScreen />} />
             <Route path="/apps/settings/stickers" element={<StickerManagerScreen />} />
+            <Route path="/apps/settings/location" element={<LocationScreen />} />
             <Route path="/apps/diary-vault" element={<DiaryVaultScreen />} />
             <Route path="/apps/mibi" element={<MibiScreen />} />
             <Route path="/apps/sms" element={<SmsScreen />} />

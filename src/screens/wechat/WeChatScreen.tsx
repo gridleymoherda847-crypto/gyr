@@ -34,13 +34,13 @@ export default function WeChatScreen() {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'chats':
-        return <ChatsTab onBack={() => navigate('/')} />
+        return <ChatsTab onBack={() => navigate('/', { replace: true })} />
       case 'contacts':
-        return <ContactsTab onBack={() => navigate('/')} />
+        return <ContactsTab onBack={() => navigate('/', { replace: true })} />
       case 'moments':
-        return <MomentsTab onBack={() => navigate('/')} />
+        return <MomentsTab onBack={() => navigate('/', { replace: true })} />
       case 'me':
-        return <MeTab onBack={() => navigate('/')} />
+        return <MeTab onBack={() => navigate('/', { replace: true })} />
     }
   }
 

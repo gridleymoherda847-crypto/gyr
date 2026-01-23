@@ -111,6 +111,15 @@ export default function ChatScreen() {
   const [showTimeoutDialog, setShowTimeoutDialog] = useState(false)
   const showTyping = aiTyping || !!character?.isTyping
   
+  // 组件挂载时：清除可能残留的输入状态
+  // 如果角色的 isTyping 是 true，但本地 aiTyping 是 false，说明是上次刷新/中断残留的
+  useEffect(() => {
+    if (character?.isTyping && !aiTyping) {
+      // 清除残留的输入状态
+      setCharacterTyping(character.id, false)
+    }
+  }, []) // 只在挂载时执行一次
+  
   // 5分钟超时检测
   useEffect(() => {
     if (!aiTyping || !typingStartTime) return
