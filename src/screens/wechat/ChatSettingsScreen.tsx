@@ -450,6 +450,14 @@ export default function ChatSettingsScreen() {
                   {character.relationship && ` · ${character.relationship}`}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => navigate(`/apps/settings/stickers?target=${encodeURIComponent(character.id)}`)}
+                className="px-3 py-1.5 rounded-full bg-white/70 border border-black/10 text-[11px] text-gray-700"
+                title="去设置App批量导入表情包"
+              >
+                表情包
+              </button>
               {/* 编辑按钮 */}
               <button
                 type="button"

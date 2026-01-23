@@ -12,6 +12,7 @@ import ApiConfigScreen from './screens/settings/ApiConfigScreen'
 import WallpaperScreen from './screens/settings/WallpaperScreen'
 import FontScreen from './screens/settings/FontScreen'
 import ColorScreen from './screens/settings/ColorScreen'
+import StickerManagerScreen from './screens/settings/StickerManagerScreen'
 import MibiScreen from './screens/MibiScreen'
 import SmsScreen from './screens/SmsScreen'
 import MusicScreen from './screens/MusicScreen'
@@ -54,6 +55,7 @@ function InnerApp() {
             <Route path="/apps/settings/wallpaper" element={<WallpaperScreen />} />
             <Route path="/apps/settings/font" element={<FontScreen />} />
             <Route path="/apps/settings/color" element={<ColorScreen />} />
+            <Route path="/apps/settings/stickers" element={<StickerManagerScreen />} />
             <Route path="/apps/mibi" element={<MibiScreen />} />
             <Route path="/apps/sms" element={<SmsScreen />} />
             <Route path="/apps/music" element={<MusicScreen />} />
