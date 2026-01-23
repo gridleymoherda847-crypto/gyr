@@ -287,9 +287,14 @@ export default function ChatScreen() {
         const nowTs = character.timeSyncEnabled !== false
           ? Date.now()
           : (character.manualTime ? new Date(character.manualTime).getTime() : Date.now())
-        const lastNonSystem = [...workingMessages].reverse().find(m => m.type !== 'system')
-        const lastUserMsg = [...workingMessages].reverse().find(m => m.type !== 'system' && m.isUser)
-        const gapMs = lastNonSystem ? Math.max(0, nowTs - lastNonSystem.timestamp) : 0
+        const nonSystem = workingMessages.filter(m => m.type !== 'system')
+        const lastMsg = nonSystem.length > 0 ? nonSystem[nonSystem.length - 1] : null
+        const prevMsg = nonSystem.length > 1 ? nonSystem[nonSystem.length - 2] : null
+        // 关键：如果用户隔了很久才回，lastMsg 是“用户新发的这条”，gap 应该看它和 prevMsg 的间隔
+        const gapMs = lastMsg
+          ? (lastMsg.isUser && prevMsg ? Math.max(0, lastMsg.timestamp - prevMsg.timestamp) : Math.max(0, nowTs - lastMsg.timestamp))
+          : 0
+        const lastUserMsg = [...nonSystem].reverse().find(m => m.isUser) || null
         const formatGap = (ms: number) => {
           const mins = Math.floor(ms / 60000)
           if (mins < 1) return '不到1分钟'
@@ -319,10 +324,12 @@ ${character.memorySummary ? character.memorySummary : '（暂无）'}
 【当前时间】
 ${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN') : (character.manualTime ? new Date(character.manualTime).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'))}
 
-【时间感（非常重要）】
-- 距离上一条消息过去了：${formatGap(gapMs)}
+【时间感（必须严格遵守，否则算失败）】
+- 这次消息与上一条消息间隔：${formatGap(gapMs)}
 - 用户上一条发言时间：${lastUserMsg ? new Date(lastUserMsg.timestamp).toLocaleString('zh-CN') : '（无）'}
-- 如果时间间隔较久（例如 >=2小时 / >=1天），先像真人一样自然寒暄，并顺口问一句“你刚刚在忙什么/怎么这么久没回/去哪了”等，不要生硬
+- 强规则：如果间隔 >= 2小时，第一条回复必须先提到“你很久没回/刚刚在忙吗”等
+- 强规则：如果间隔 >= 1天，第一条回复必须带一点点情绪（担心/委屈/吐槽/想你），并追问原因
+- 强规则：如果间隔 >= 2天，第一条回复必须明确说出“都两天了”或“好几天了”，并要求对方解释（语气可按人设）
 
 【回复要求】
 - 用自然、亲切的语气回复，像真人聊天
@@ -1616,9 +1623,9 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                       )}
                     </div>
                     
-                    <div className="flex flex-col">
+                    <div className={`flex flex-col max-w-[70%] ${msg.isUser ? 'items-end' : 'items-start'}`}>
                       <div 
-                        className={`max-w-[70%] px-3.5 py-2.5 text-sm shadow-sm ${
+                        className={`w-fit px-3.5 py-2.5 text-sm shadow-sm ${
                           msg.type === 'transfer' || msg.type === 'music' 
                             ? 'bg-transparent p-0 shadow-none' 
                             : msg.isUser 
@@ -1629,8 +1636,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                       >
                         {renderMessageContent(msg)}
                       </div>
-                      {/* 每条消息显示时间（小号字体），增强“时间感” */}
-                      <div className={`mt-1 text-[10px] text-gray-400 ${msg.isUser ? 'text-right' : 'text-left'}`}>
+                      {/* 每条消息显示时间（小号字体） */}
+                      <div className="mt-1 text-[10px] text-gray-400">
                         {formatTime(msg.timestamp)}
                       </div>
                     </div>

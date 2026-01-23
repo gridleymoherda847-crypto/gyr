@@ -43,11 +43,20 @@ export default function ChatSettingsScreen() {
 
   // 星引力：添加好友后提示“记忆已导入”
   const [postAddTipOpen, setPostAddTipOpen] = useState(false)
+  const [postAddArmed, setPostAddArmed] = useState(false)
   useEffect(() => {
     if (searchParams.get('postAdd') === '1') {
-      setPostAddTipOpen(true)
+      // 不要一进来就弹：等用户从相册设置完头像“回来”再提示
+      setPostAddArmed(true)
     }
   }, [searchParams])
+
+  // 记忆草稿：当真正打开“记忆功能”时，从最新 character 同步一次，避免首次为空
+  useEffect(() => {
+    if (!showMemorySettings) return
+    setMemoryRoundsDraft(character?.memoryRounds || 100)
+    setMemorySummaryDraft(character?.memorySummary || '')
+  }, [showMemorySettings, character?.memorySummaryUpdatedAt, character?.memoryRounds])
   
   // 编辑角色信息状态
   const [editName, setEditName] = useState(character?.name || '')
@@ -420,6 +429,11 @@ export default function ChatSettingsScreen() {
                   reader.onload = (event) => {
                     const base64 = event.target?.result as string
                     updateCharacter(character.id, { avatar: base64 })
+                    // 星引力：从相册返回后再弹“记忆已导入”提示
+                    if (postAddArmed) {
+                      window.setTimeout(() => setPostAddTipOpen(true), 200)
+                      setPostAddArmed(false)
+                    }
                   }
                   reader.readAsDataURL(file)
                   e.target.value = ''

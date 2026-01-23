@@ -1101,14 +1101,21 @@ ${history}`
                 .map(m => `${m.isUser ? '我' : currentPerson.name}：${m.content}`)
                 .join('\n')
               if (history && history.trim()) {
-                const prompt = `你是“聊天记忆整理器”。请把以下对话总结成长期记忆要点：
-- 只输出要点（8~16条）
+                const prompt = `你是“聊天记忆整理器”。请把以下对话总结成长期记忆要点（极简版）：
+- 只输出 6~12 条要点
 - 每条以“- ”开头
-- 记录稳定事实/关系/偏好/禁忌/关键事件
+- 每条尽量短（建议 8~18 个字），只留重点信息
+- 合并重复信息，删除琐碎对话
+- 只记录稳定事实/关系/偏好/禁忌/关键事件/未解决问题
 - 不要旁白和解释
 
 【星引力聊天记录】
 ${history}`
+                // 先写入占位，避免设置页首次看到“空白”
+                updateCharacter(matchedCharacterId, {
+                  memorySummary: '（记忆导入中…）',
+                  memorySummaryUpdatedAt: Date.now(),
+                })
                 callLLM(
                   [{ role: 'user', content: prompt }],
                   undefined,

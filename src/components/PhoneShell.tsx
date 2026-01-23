@@ -1,6 +1,5 @@
 import { type PropsWithChildren, useEffect, useRef } from 'react'
 import { useOS } from '../context/OSContext'
-import StatusBar from './StatusBar'
 import BottomHomeBar from './BottomHomeBar'
 
 export default function PhoneShell({ children }: PropsWithChildren) {
@@ -47,7 +46,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           <div className="relative z-10 h-full w-full">{children}</div>
         ) : (
           <div className="relative z-10 flex h-full flex-col">
-            <div className="pt-8 px-4"><StatusBar /></div>
+            {/* 已移除模拟状态栏：使用手机系统自带状态栏，提升代入感 */}
             <div className="flex-1 overflow-hidden">{children}</div>
             <BottomHomeBar />
           </div>
@@ -110,7 +109,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
               <div className="relative z-10 h-full w-full">{children}</div>
             ) : (
               <div className="relative z-10 flex h-full flex-col">
-                <div className="pt-7 px-5"><StatusBar /></div>
+                {/* 已移除模拟状态栏：使用手机系统自带状态栏，提升代入感 */}
                 <div className="flex-1 overflow-hidden">{children}</div>
                 <BottomHomeBar />
               </div>
