@@ -11,6 +11,11 @@ export default function CreateCharacterScreen() {
   const { addCharacter } = useWeChat()
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [tipOpen, setTipOpen] = useState(false)
+  const prevLangRef = useRef<'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'>('zh')
+  const [langDialog, setLangDialog] = useState<{ open: boolean; lang: 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de' }>({
+    open: false,
+    lang: 'zh',
+  })
 
   const [formData, setFormData] = useState({
     name: '',
@@ -20,6 +25,9 @@ export default function CreateCharacterScreen() {
     birthday: '',
     callMeName: '',
     relationship: '',
+    country: '',
+    language: 'zh' as 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de',
+    chatTranslationEnabled: false,
   })
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,6 +148,46 @@ export default function CreateCharacterScreen() {
               </div>
             </div>
 
+            <div className="flex items-center px-4 py-3 border-b border-gray-100">
+              <span className="text-[#000] w-20">语言</span>
+              <select
+                value={formData.language}
+                onChange={(e) => {
+                  const next = e.target.value as any
+                  const prev = prevLangRef.current
+                  // 选择非中文：弹提示并让用户选择是否开启“对话框翻译”
+                  if (next !== 'zh') {
+                    prevLangRef.current = prev
+                    setFormData(p => ({ ...p, language: next }))
+                    setLangDialog({ open: true, lang: next })
+                  } else {
+                    prevLangRef.current = 'zh'
+                    setFormData(p => ({ ...p, language: 'zh', chatTranslationEnabled: false }))
+                  }
+                }}
+                className="flex-1 text-right outline-none text-[#000] bg-transparent"
+              >
+                <option value="zh">中文</option>
+                <option value="en">英语</option>
+                <option value="ru">俄语</option>
+                <option value="fr">法语</option>
+                <option value="ja">日语</option>
+                <option value="ko">韩语</option>
+                <option value="de">德语</option>
+              </select>
+            </div>
+
+            <div className="flex items-center px-4 py-3 border-b border-gray-100">
+              <span className="text-[#000] w-20">国家/地区</span>
+              <input
+                type="text"
+                placeholder="例如：日本 / 中国 / 法国"
+                value={formData.country}
+                onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
+                className="flex-1 text-right outline-none text-[#000] bg-transparent"
+              />
+            </div>
+
             <div className="flex items-center px-4 py-3">
               <span className="text-[#000] w-20">生日</span>
               <input
@@ -190,7 +238,7 @@ export default function CreateCharacterScreen() {
           </div>
 
           <div className="p-4 text-center text-xs text-gray-400">
-            创建后可在聊天设置中修改
+            语言决定 TA 的聊天语言；若不是中文，聊天气泡会自动显示“翻译”中文。
           </div>
         </div>
       </div>
@@ -202,6 +250,64 @@ export default function CreateCharacterScreen() {
         confirmText="知道啦"
         onConfirm={() => setTipOpen(false)}
         onCancel={() => setTipOpen(false)}
+      />
+
+      <WeChatDialog
+        open={langDialog.open}
+        title="语言提示"
+        message={
+          '你选择了中文以外的语言：\n' +
+          '- 该角色的聊天/日记/朋友圈/情侣空间都会用此语言输出\n' +
+          '- 只有“聊天对话框”可内置翻译；其他界面请用浏览器翻译\n' +
+          '\n' +
+          '要不要开启“聊天对话框自动翻译”？（推荐）'
+        }
+        hideDefaultActions
+        footer={
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              className="w-full rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
+              style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
+              onClick={() => {
+                prevLangRef.current = langDialog.lang
+                setFormData(p => ({ ...p, language: langDialog.lang, chatTranslationEnabled: true }))
+                setLangDialog({ open: false, lang: 'zh' })
+              }}
+            >
+              需要（推荐）
+            </button>
+            <button
+              type="button"
+              className="w-full rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+              onClick={() => {
+                prevLangRef.current = langDialog.lang
+                setFormData(p => ({ ...p, language: langDialog.lang, chatTranslationEnabled: false }))
+                setLangDialog({ open: false, lang: 'zh' })
+              }}
+            >
+              不需要
+            </button>
+            <button
+              type="button"
+              className="w-full rounded-full border border-black/10 bg-white/40 px-4 py-2 text-[13px] font-medium text-[#666] active:scale-[0.98]"
+              onClick={() => {
+                // 取消：恢复为原语言
+                const prev = prevLangRef.current || 'zh'
+                setFormData(p => ({ ...p, language: prev, chatTranslationEnabled: false }))
+                setLangDialog({ open: false, lang: 'zh' })
+              }}
+            >
+              取消
+            </button>
+          </div>
+        }
+        onCancel={() => {
+          // 点遮罩也视作取消
+          const prev = prevLangRef.current || 'zh'
+          setFormData(p => ({ ...p, language: prev, chatTranslationEnabled: false }))
+          setLangDialog({ open: false, lang: 'zh' })
+        }}
       />
     </WeChatLayout>
   )

@@ -97,9 +97,14 @@ export default function MomentsTab({ onBack }: Props) {
         const otherComments = target.comments.filter(c => c.authorId !== friend.id)
         const willReplyComment = otherComments.length > 0 && Math.random() < 0.6
         const replyTo = willReplyComment ? otherComments[Math.floor(Math.random() * otherComments.length)] : null
+        const lang = (friend as any).language || 'zh'
+        const langName =
+          lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
         const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈“评论/回复”的方式发言。
 你是：${friend.name}
 你的人设：${friend.prompt || '（未设置）'}
+你的国家/地区：${(friend as any).country || '（未设置）'}
+你的主要语言：${langName}
 最近聊天片段（可用来贴合语境）：
 ${recentChat || '（暂无）'}
 
@@ -110,6 +115,7 @@ ${target.content || '（图片）'}
 ${replyTo ? `你要回复的评论：@${replyTo.authorName}：${replyTo.content}` : ''}
 
 请写1条朋友圈评论：
+- 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
 - 口语化、短（<=30字）
 - 不要动作描写/旁白
 - 只输出评论内容，不要加引号，不要换行`
@@ -130,13 +136,19 @@ ${replyTo ? `你要回复的评论：@${replyTo.authorName}：${replyTo.content}
         const baseTime = Math.min(lastMsgTime, now - 60 * 1000)
         const postTime = Math.min(baseTime + Math.random() * 30 * 60 * 1000, now - 60 * 1000)
         
+        const lang = (friend as any).language || 'zh'
+        const langName =
+          lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
         const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈“发布动态”的方式发言。
 你是：${friend.name}
 你的人设：${friend.prompt || '（未设置）'}
+你的国家/地区：${(friend as any).country || '（未设置）'}
+你的主要语言：${langName}
 最近聊天片段（可用来贴合语境）：
 ${recentChat || '（暂无）'}
 
 请写1条朋友圈动态：
+- 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
 - 口语化、自然（<=80字）
 - 不要动作描写/旁白
 - 只输出动态内容，不要加引号，不要换行`
@@ -233,13 +245,20 @@ ${newMomentContent || '（图片）'}
       const now = Date.now()
       // 回复时间应该是"刚刚"到几分钟前，因为是实时互动
       const replyTimestamp = now - Math.random() * (5 * 60 * 1000) // 0~5分钟前
+      const friend = characters.find(c => c.id === params.friendId)
+      const lang = (friend as any)?.language || 'zh'
+      const langName =
+        lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
       const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈“回复评论”的方式发言。
 你是：${params.friendName}
 你的人设：${params.friendPrompt || '（未设置）'}
+你的国家/地区：${(friend as any)?.country || '（未设置）'}
+你的主要语言：${langName}
 
 对方刚刚评论/回复了你：${params.userText}
 
 请写1条回复：
+- 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
 - 口语化、短（<=30字）
 - 不要动作描写/旁白
 - 只输出回复内容，不要加引号，不要换行`

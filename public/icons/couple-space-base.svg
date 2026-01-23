@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <pattern id="hearts" width="140" height="140" patternUnits="userSpaceOnUse">
+      <rect width="140" height="140" fill="#fff7fb"/>
+      <g transform="translate(70 70)">
+        <path d="M0 20c-10-10-18-18-18-28C-18-18-10-26 0-26c7 0 13 4 16 10 3-6 9-10 16-10 10 0 18 8 18 18 0 10-8 18-18 28l-16 16-16-16z" fill="#ffd1e3" opacity="0.55"/>
+      </g>
+      <g transform="translate(20 25) scale(0.7)">
+        <path d="M0 20c-10-10-18-18-18-28C-18-18-10-26 0-26c7 0 13 4 16 10 3-6 9-10 16-10 10 0 18 8 18 18 0 10-8 18-18 28l-16 16-16-16z" fill="#ffd1e3" opacity="0.28"/>
+      </g>
+      <g transform="translate(115 115) scale(0.55)">
+        <path d="M0 20c-10-10-18-18-18-28C-18-18-10-26 0-26c7 0 13 4 16 10 3-6 9-10 16-10 10 0 18 8 18 18 0 10-8 18-18 28l-16 16-16-16z" fill="#ffd1e3" opacity="0.22"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#hearts)"/>
+</svg>

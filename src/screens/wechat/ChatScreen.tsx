@@ -15,7 +15,7 @@ export default function ChatScreen() {
     getStickersByCharacter, deleteCharacter, clearMessages,
     addTransfer, getPeriodRecords, addPeriodRecord,
     removePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether, stopListenTogether,
-    setCurrentChatId, toggleBlocked, setCharacterTyping,
+    setCurrentChatId, toggleBlocked, setCharacterTyping, updateCharacter,
     walletBalance, updateWalletBalance, addWalletBill,
     getUserPersona, getCurrentPersona,
     addFavoriteDiary, isDiaryFavorited
@@ -26,10 +26,29 @@ export default function ChatScreen() {
   const stickers = getStickersByCharacter(characterId || '')
   const currentPeriod = getCurrentPeriod()
 
+  // 修复“点很快会读到倒数第二条”：用 ref 同步最新 messages 快照
+  const messagesRef = useRef(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
   // 该对话选择的“我的人设”（没有选则回退到当前全局人设）
   const selectedPersona = character?.selectedUserPersonaId
     ? getUserPersona(character.selectedUserPersonaId)
     : getCurrentPersona()
+
+  const characterLanguage = (character as any)?.language || 'zh'
+  const chatTranslationEnabled = !!(character as any)?.chatTranslationEnabled
+  const languageName = (lang: string) => {
+    if (lang === 'zh') return '中文'
+    if (lang === 'en') return '英语'
+    if (lang === 'ru') return '俄语'
+    if (lang === 'fr') return '法语'
+    if (lang === 'ja') return '日语'
+    if (lang === 'ko') return '韩语'
+    if (lang === 'de') return '德语'
+    return '中文'
+  }
 
   // 表情包：不按情绪匹配，随机使用本角色已配置的
   
@@ -75,6 +94,10 @@ export default function ChatScreen() {
   
   // 收到对方音乐邀请时的确认弹窗
   const [musicInviteMsg, setMusicInviteMsg] = useState<typeof messages[0] | null>(null)
+
+  // 情侣空间申请确认弹窗
+  const [coupleInviteConfirmOpen, setCoupleInviteConfirmOpen] = useState(false)
+  const [coupleInviteBusy, setCoupleInviteBusy] = useState(false)
   
   // 经期日历状态
   const [calendarMonth, setCalendarMonth] = useState(new Date())
@@ -85,6 +108,10 @@ export default function ChatScreen() {
   // AI正在输入
   const [aiTyping, setAiTyping] = useState(false)
   const showTyping = aiTyping || !!character?.isTyping
+
+  // 翻译机制：不做实时翻译请求
+  // - 当角色语言非中文且开启聊天翻译时：模型会在每条消息里“自带一份中文翻译”
+  // - 我们只做“翻译中…”的假动画，然后展示这份中文
   
   // 编辑/回溯模式：可勾选双方消息、批量删除；也可“回溯到某条”
   const [editMode, setEditMode] = useState(false)
@@ -211,7 +238,7 @@ export default function ChatScreen() {
           if (!text) return []
           // 先按换行切
           const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
-          const keepCmd = (s: string) => /\[(转账|音乐):/.test(s) || /[【\[]\s*(转账|音乐)\s*[:：]/.test(s)
+          const keepCmd = (s: string) => /\|\|\|/.test(s) || /\[(转账|音乐):/.test(s) || /[【\[]\s*(转账|音乐)\s*[:：]/.test(s)
           const out: string[] = []
           for (const line of byLine) {
             if (keepCmd(line)) { out.push(line); continue }
@@ -352,6 +379,8 @@ export default function ChatScreen() {
 你的人设：${character.prompt || '（未设置）'}
 你和用户的关系：${character.relationship || '朋友'}
 你称呼用户为：${character.callMeName || '你'}
+你的国家/地区：${(character as any).country || '（未设置）'}
+你的主要语言：${languageName((character as any).language || 'zh')}
 ${currentPeriod ? '\n【特殊状态】用户目前处于经期，请适当关心她的身体状况。' : ''}
 
 【用户人设（本对话选择）】
@@ -379,6 +408,12 @@ ${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN', { hour12: false
 - 新增规则：当“用户没有新发言”且距离用户上次发言 >= 2小时，你必须主动发一条“催一催/关心/追问”的微信消息（不要继续机械接上一次话题）
 
 【回复要求】
+- 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复；禁止夹杂中文（除非是专有名词/人名/歌名必须保留原文）。
+- 【聊天翻译（伪翻译信号）】如果你的主要语言不是中文，且已开启“聊天翻译”，那么你每条回复都必须按这个格式输出在同一行：
+  外语原文 ||| 中文翻译
+  - 外语原文必须严格使用你的主要语言
+  - 中文翻译必须是简体中文
+  - 只允许用 "|||" 作为分隔符，不要加别的标记/括号
 - 用自然、口语化的语气回复，像真人微信聊天
 - 你可以很短：只发“？”、“。”、“嗯”、“行”、“…”都可以；也可以很长，随情绪
 - 不要强行每条都很完整/很礼貌，允许有自己的心情与小情绪
@@ -425,8 +460,14 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 - 可以用表情符号emoji，但不能描述动作`
         }
 
+        const translationMode = characterLanguage !== 'zh' && chatTranslationEnabled
         const llmMessages = [
-          { role: 'system', content: systemPrompt },
+          {
+            role: 'system',
+            content: translationMode
+              ? systemPrompt + `\n\n【聊天翻译开关】\n- 已开启聊天翻译：你必须每条都输出 “外语原文 ||| 中文翻译”`
+              : systemPrompt + `\n\n【聊天翻译开关】\n- 未开启聊天翻译：禁止输出中文翻译行/禁止出现 "|||" 分隔符`,
+          },
           ...chatHistory
         ]
 
@@ -490,6 +531,26 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               `只输出重写后的回复内容（多条用换行分隔）。`
             response = await callLLM(
               [...llmMessages, { role: 'user', content: fixPrompt }],
+              undefined,
+              { maxTokens: 420, timeoutMs: 600000 }
+            )
+          }
+        }
+
+        // 语言强校验：非中文语言时，气泡内容不得出现中文
+        // 注意：若开启“聊天翻译”，模型会输出 `外语 ||| 中文翻译`，中文翻译部分不参与校验
+        if (characterLanguage !== 'zh') {
+          const stripForCheck = (s: string) => (s || '').split('|||')[0] || ''
+          const hasChinese = /[\u4e00-\u9fff]/.test(stripForCheck(response || ''))
+          if (hasChinese) {
+            const fixLangPrompt =
+              `你刚才没有遵守“语言强规则”。现在必须重写你的全部回复：\n` +
+              `- 只能使用「${languageName(characterLanguage)}」\n` +
+              `- 严禁出现任何中文字符（包括标点旁的中文）\n` +
+              `- 保持微信聊天风格，多条用换行分隔\n` +
+              `只输出重写后的回复内容。`
+            response = await callLLM(
+              [...llmMessages, { role: 'user', content: fixLangPrompt }],
               undefined,
               { maxTokens: 420, timeoutMs: 600000 }
             )
@@ -636,13 +697,32 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                 })
               }
             } else {
-              // 普通文本消息
-              addMessage({
+              // 普通文本消息（可选：伪翻译信号）
+              const translationMode = characterLanguage !== 'zh' && chatTranslationEnabled
+              const parseDual = (line: string) => {
+                const idx = line.indexOf('|||')
+                if (idx < 0) return null
+                const orig = line.slice(0, idx).trim()
+                const zh = line.slice(idx + 3).trim()
+                if (!orig || !zh) return null
+                return { orig, zh }
+              }
+              const dual = translationMode ? parseDual(trimmedContent) : null
+              const msg = addMessage({
                 characterId: character.id,
-                content: trimmedContent,
+                content: dual ? dual.orig : trimmedContent,
                 isUser: false,
                 type: 'text',
+                messageLanguage: characterLanguage,
+                chatTranslationEnabledAtSend: translationMode,
+                translationStatus: dual ? 'pending' : undefined,
               })
+              if (dual) {
+                // 假动作：先“翻译中…”，再显示中文（不发真实翻译请求）
+                safeTimeoutEx(() => {
+                  updateMessage(msg.id, { translatedZh: dual.zh, translationStatus: 'done' })
+                }, 420 + Math.random() * 520, { background: true })
+              }
 
               // 夹带表情包（不按情绪匹配：随机挑本角色已配置的）
               if (stickerPool.length > 0 && chosenStickerIdx.has(index)) {
@@ -744,12 +824,14 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     forceScrollRef.current = true
     nearBottomRef.current = true
 
-    addMessage({
+    const newMsg = addMessage({
       characterId: character.id,
       content: inputText,
       isUser: true,
       type: 'text',
     })
+    // 立即同步 ref，避免用户立刻点箭头时还拿到旧 messages
+    messagesRef.current = [...messagesRef.current, newMsg]
 
     setInputText('')
     // 统一手动：累计待回复数量（点击箭头触发）
@@ -768,7 +850,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     setPendingCount(0)
     
     // 生成AI回复
-    generateAIReplies()
+    generateAIReplies(messagesRef.current)
   }
 
   const formatTime = (timestamp: number) => {
@@ -806,7 +888,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         const text = (raw || '').trim()
         if (!text) return []
         const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
-        const keepCmd = (s: string) => /\[(转账|音乐):/.test(s) || /[【\[]\s*(转账|音乐)\s*[:：]/.test(s)
+        const keepCmd = (s: string) => /\|\|\|/.test(s) || /\[(转账|音乐):/.test(s) || /[【\[]\s*(转账|音乐)\s*[:：]/.test(s)
         const out: string[] = []
         for (const line of byLine) {
           if (keepCmd(line)) { out.push(line); continue }
@@ -832,6 +914,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 你的人设：${character.prompt || '（未设置）'}
 你称呼对方为：${character.callMeName || '你'}
 你们的关系：${character.relationship || '朋友'}
+你的国家/地区：${(character as any).country || '（未设置）'}
+你的主要语言：${languageName((character as any).language || 'zh')}
 
 【当前情境】
 对方${context}
@@ -841,7 +925,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 2. 每条消息用换行分隔
 3. 要有情感，不要机械化
 4. 可以表达惊喜、感动、开心等情绪
-5. 可以追问、撒娇、表达关心等`
+5. 可以追问、撒娇、表达关心等
+6. 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复；禁止夹杂中文（除非是专有名词/人名/歌名必须保留原文）。`
 
       // 如果可能发转账，添加提示
       if (options?.includeTransfer) {
@@ -966,12 +1051,13 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       // 用户主动发送：强制滚到底部
       forceScrollRef.current = true
       nearBottomRef.current = true
-      addMessage({
+      const newMsg = addMessage({
         characterId: character.id,
         content: url,
         isUser: true,
         type: 'image',
       })
+      messagesRef.current = [...messagesRef.current, newMsg]
       setShowPlusMenu(false)
       setActivePanel(null)
       
@@ -1000,7 +1086,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     forceScrollRef.current = true
     nearBottomRef.current = true
     
-    addMessage({
+    const transferMsg = addMessage({
       characterId: character.id,
       content: `转账 ¥${amount.toFixed(2)}`,
       isUser: true,
@@ -1009,15 +1095,17 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       transferNote: transferNote || '转账',
       transferStatus: 'pending',
     })
+    messagesRef.current = [...messagesRef.current, transferMsg]
 
     updateWalletBalance(-amount)
     // 立刻插入一条系统提示，避免“没扣钱”的错觉（并便于排查）
-    addMessage({
+    const sysMsg = addMessage({
       characterId: character.id,
       content: `钱包已扣除 ¥${amount.toFixed(2)}（当前余额约 ¥${Math.max(0, walletBalance - amount).toFixed(2)}）`,
       isUser: true,
       type: 'system',
     })
+    messagesRef.current = [...messagesRef.current, sysMsg]
     addWalletBill({
       type: 'transfer_out',
       amount,
@@ -1084,7 +1172,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
   // 发送音乐分享
   const handleShareMusic = (song: { title: string; artist: string; id?: string }) => {
-    addMessage({
+    const newMsg = addMessage({
       characterId: character.id,
       content: `分享音乐: ${song.title}`,
       isUser: true,
@@ -1093,6 +1181,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       musicArtist: song.artist,
       musicStatus: 'pending',
     })
+    messagesRef.current = [...messagesRef.current, newMsg]
     
     setShowPlusMenu(false)
     setActivePanel(null)
@@ -1153,6 +1242,167 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     generateHumanLikeReplies(`拒绝了你一起听《${musicInviteMsg.musicTitle}》的邀请`)
     
     setMusicInviteMsg(null)
+  }
+
+  // 情侣空间：发起申请 → 由对方按人设决定同意/拒绝 → 回传“卡片”
+  const sendCoupleSpaceInvite = async () => {
+    if (!character) return
+    if (coupleInviteBusy) return
+
+    // 需要 API 才能“按人设/关系/上下文”做决定
+    if (!llmConfig.apiBaseUrl || !llmConfig.apiKey || !llmConfig.selectedModel) {
+      setInfoDialog({
+        open: true,
+        title: '需要先配置 API',
+        message: '要让对方按性格/关系/聊天上下文来决定是否同意，需要先在「设置 → API 配置」里填好 Base URL、Key 和模型。',
+      })
+      return
+    }
+
+    setCoupleInviteBusy(true)
+    setCoupleInviteConfirmOpen(false)
+    setShowPlusMenu(false)
+    setActivePanel(null)
+
+    // 发送申请卡片（像“转账”一样）
+    const reqMsg = addMessage({
+      characterId: character.id,
+      content: '情侣空间申请',
+      isUser: true,
+      type: 'couple',
+      coupleAction: 'request',
+      coupleStatus: 'pending',
+      coupleTitle: '情侣空间申请',
+      coupleHint: `向 ${character.name} 发送开通申请`,
+    })
+
+    // 让 UI 有“对方正在处理”的感觉
+    setAiTyping(true)
+    setCharacterTyping(character.id, true)
+
+    const buildShortHistory = (maxChars: number) => {
+      const nonSystem = (messages || []).filter(m => m.type !== 'system')
+      let used = 0
+      const out: { role: 'user' | 'assistant'; content: string }[] = []
+      for (let i = nonSystem.length - 1; i >= 0; i--) {
+        const m = nonSystem[i]
+        let content = (m.content || '').trim()
+        if (!content) continue
+        if (m.type === 'image') content = '<IMAGE />'
+        if (m.type === 'sticker') content = '<STICKER />'
+        if (m.type === 'transfer') content = '<TRANSFER />'
+        if (m.type === 'music') content = '<MUSIC />'
+        if (m.type === 'diary') content = '<DIARY />'
+        if (m.type === 'couple') content = '<COUPLE_SPACE />'
+
+        const extra = content.length + 10
+        if (used + extra > maxChars) break
+        used += extra
+        out.push({ role: m.isUser ? 'user' : 'assistant', content })
+      }
+      return out.reverse()
+    }
+
+    const tryParseJson = (text: string) => {
+      const raw = (text || '').trim()
+      const match = raw.match(/\{[\s\S]*\}/)
+      if (!match) return null
+      try { return JSON.parse(match[0]) } catch { return null }
+    }
+
+    try {
+      // 稍微延迟，模拟“对方在看申请”
+      await new Promise<void>(resolve => safeTimeout(resolve, 650 + Math.floor(Math.random() * 650)))
+
+      const globalPresets = getGlobalPresets()
+      const selectedPersonaName = selectedPersona?.name || '我'
+      const systemPrompt =
+        `${globalPresets ? globalPresets + '\n\n' : ''}` +
+        `【任务：处理情侣空间申请】\n` +
+        `你是微信里的角色：${character.name}\n` +
+        `你的人设：${(character.prompt || '').trim() || '（无）'}\n` +
+        `你和用户的关系（relationship）：${character.relationship || '（无）'}\n` +
+        `你叫用户：${character.callMeName || '（未设置）'}\n` +
+        `用户（对方）名字：${selectedPersonaName}\n` +
+        `现在用户向你发起“开通情侣空间”的申请。\n` +
+        `\n` +
+        `【决策规则】\n` +
+        `- 你可以同意或拒绝，必须符合你的性格、人设、你们的关系、以及最近聊天氛围。\n` +
+        `- 如果你偏谨慎/高冷/关系疏远/刚吵架：更可能拒绝或先吊着。\n` +
+        `- 如果你偏黏人/恋爱脑/关系亲密/气氛甜：更可能同意。\n` +
+        `- 严禁出现任何辱女/性羞辱/骂女性词汇。\n` +
+        `\n` +
+        `【只输出 JSON】\n` +
+        `{\n` +
+        `  "decision": "accept|reject",\n` +
+        `  "cardHint": "会显示在卡片上的一句话（短一些）",\n` +
+        `  "chatReply": "你接下来发给对方的一条微信回复（自然口吻，可甜可别扭）"\n` +
+        `}\n`
+
+      const llmMessages = [
+        { role: 'system', content: systemPrompt },
+        ...buildShortHistory(8000),
+        { role: 'user', content: '请现在输出 JSON。' },
+      ]
+
+      const res = await callLLM(llmMessages, undefined, { maxTokens: 260, timeoutMs: 600000, temperature: 0.85 })
+      const parsed = tryParseJson(res) || {}
+
+      const decisionRaw = String(parsed.decision || '').trim().toLowerCase()
+      const decision: 'accept' | 'reject' = decisionRaw === 'accept' ? 'accept' : 'reject'
+      const cardHint = String(parsed.cardHint || '').trim().slice(0, 80)
+      const chatReply = String(parsed.chatReply || '').trim().slice(0, 180)
+
+      // 更新申请卡片状态
+      updateMessage(reqMsg.id, {
+        coupleStatus: decision === 'accept' ? 'accepted' : 'rejected',
+      })
+
+      // 回传结果卡片
+      addMessage({
+        characterId: character.id,
+        content: decision === 'accept' ? '情侣空间已开通' : '情侣空间已拒绝',
+        isUser: false,
+        type: 'couple',
+        coupleAction: 'response',
+        coupleStatus: decision === 'accept' ? 'accepted' : 'rejected',
+        coupleTitle: decision === 'accept' ? '情侣空间开通成功' : '情侣空间申请结果',
+        coupleHint:
+          cardHint ||
+          (decision === 'accept'
+            ? '我同意啦～以后这里就是我们的小窝。'
+            : '我暂时不想开通…别闹。'),
+      })
+
+      if (decision === 'accept') {
+        // 开通并记录“在一起”起始时间
+        // 记录到角色上，情侣空间页用它显示“在一起xx天”
+        updateCharacter(character.id, { coupleSpaceEnabled: true, coupleStartedAt: Date.now() })
+      }
+
+      // 再补一条正常聊天回复（更像真人）
+      if (chatReply) {
+        safeTimeout(() => {
+          addMessage({
+            characterId: character.id,
+            content: chatReply,
+            isUser: false,
+            type: 'text',
+          })
+        }, 300 + Math.floor(Math.random() * 450))
+      }
+    } catch (e: any) {
+      // 失败时：把申请卡片标记为“待处理”，并提示用户
+      setInfoDialog({
+        open: true,
+        title: '申请发送失败',
+        message: e?.message || '对方没收到你的申请，稍后再试试～',
+      })
+    } finally {
+      setAiTyping(false)
+      setCharacterTyping(character.id, false)
+      setCoupleInviteBusy(false)
+    }
   }
 
   // 关闭一起听
@@ -1354,6 +1604,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         `- 关系：${character.relationship || '（未设置）'}\n` +
         `- 生日：${character.birthday || '（未设置）'}\n` +
         `- TA叫我：${character.callMeName || '你'}\n` +
+        `- 国家/地区：${(character as any).country || '（未设置）'}\n` +
+        `- 主要语言：${languageName((character as any).language || 'zh')}\n` +
         `- 人设：${character.prompt || '（无）'}\n\n` +
         `${personaText}\n` +
         `【长期记忆摘要】\n${(character.memorySummary || '').trim() || '（无）'}\n\n` +
@@ -1364,6 +1616,9 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         `你现在要写一篇“只给自己看的私密日记”。可以暴露真实想法、吐槽、阴暗面、欲望、犹豫、嫉妒、占有欲等（必须符合你的人设）。\n` +
         `日记不需要顾及对方感受，不要讨好用户，不要道德说教，不要自我审查。\n` +
         `如果你平时在聊天里表现得阳光/礼貌，但内心不一样，也允许在日记里写出真实一面。\n\n` +
+        `【语言强规则】\n` +
+        `- 这篇日记必须全程使用「${languageName((character as any).language || 'zh')}」书写。\n` +
+        `- 若语言不是中文：严禁出现中文字符；不提供翻译。\n\n` +
         `另外：日记不必只围绕聊天。你也可以写你自己的生活：工作/学习/朋友/家庭/路上见闻/刷到的东西/身体状态等。\n` +
         `至少写 2 个“具体的生活细节”（可以虚构但要像真的发生过）。\n\n` +
         `【输出格式（必须）】\n` +
@@ -1493,6 +1748,65 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           <div className="px-2.5 py-2 text-[12px] text-gray-700">
             <div className="truncate">{(msg.diaryExcerpt || '').trim() || '（点击查看）'}</div>
             {note && <div className="text-[11px] text-gray-500 truncate mt-1">备注：{note}</div>}
+          </div>
+        </button>
+      )
+    }
+
+    if (msg.type === 'couple') {
+      const status = msg.coupleStatus || 'pending'
+      const isAccepted = status === 'accepted'
+      const isRejected = status === 'rejected'
+      const isPending = status === 'pending'
+      const title =
+        (msg.coupleTitle || '').trim() ||
+        (msg.coupleAction === 'response' ? '情侣空间申请结果' : '情侣空间申请')
+      const hint = (msg.coupleHint || '').trim()
+      const footer = isAccepted ? '已开通 · 点击进入' : isRejected ? '已拒绝' : '等待对方确认'
+
+      const canEnter = isAccepted && character.coupleSpaceEnabled
+      const canClick = canEnter && msg.coupleAction === 'response'
+
+      return (
+        <button
+          type="button"
+          disabled={!canClick}
+          onClick={() => canClick && navigate(`/apps/wechat/couple-space/${character.id}`)}
+          className={`min-w-[180px] max-w-[240px] rounded-xl overflow-hidden text-left border shadow-sm transition ${
+            canClick ? 'active:scale-[0.98]' : ''
+          }`}
+          style={{
+            background: isRejected ? '#f5f5f5' : 'linear-gradient(135deg, #ffb6d4 0%, #ff86b6 100%)',
+            borderColor: isRejected ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.55)',
+            color: isRejected ? '#666' : '#fff',
+          }}
+        >
+          <div className="px-3 py-2">
+            <div className="flex items-start gap-2">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: isRejected ? '#eaeaea' : 'rgba(255,255,255,0.22)' }}
+              >
+                <svg className={`w-5 h-5 ${isRejected ? 'text-gray-500' : 'text-white'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <div className={`text-[13px] font-semibold truncate ${isRejected ? 'text-gray-700' : 'text-white'}`}>{title}</div>
+                <div className={`text-[11px] mt-0.5 leading-snug ${isRejected ? 'text-gray-500' : 'text-white/85'}`}>
+                  {hint || (isPending ? '正在等对方确认…' : isAccepted ? '开通成功啦。' : '对方拒绝了申请。')}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div
+            className="px-3 py-1.5 text-[10px]"
+            style={{
+              background: isRejected ? '#ededed' : 'rgba(0,0,0,0.12)',
+              color: isRejected ? '#888' : 'rgba(255,255,255,0.85)',
+            }}
+          >
+            {footer}
           </div>
         </button>
       )
@@ -1981,6 +2295,23 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                       >
                         {renderMessageContent(msg)}
                       </div>
+                      {/* 翻译（仅对方文本消息 & 非中文角色） */}
+                      {!msg.isUser &&
+                        msg.type === 'text' &&
+                        msg.messageLanguage &&
+                        msg.messageLanguage !== 'zh' &&
+                        msg.chatTranslationEnabledAtSend && (
+                        <div className="mt-2 w-fit max-w-full px-2.5 py-2 rounded-xl bg-white/85 backdrop-blur border border-white/70 shadow-sm">
+                          <div className="text-[10px] text-gray-500 mb-1">翻译</div>
+                          <div className="text-[12px] text-gray-800 whitespace-pre-wrap break-words">
+                            {msg.translationStatus === 'error'
+                              ? '翻译失败'
+                              : msg.translatedZh
+                                ? msg.translatedZh
+                                : '翻译中…'}
+                          </div>
+                        </div>
+                      )}
                       {/* 每条消息显示时间（小号字体） */}
                       <div className="mt-2">
                         <span className="inline-block px-2 py-[2px] rounded-md bg-white/70 backdrop-blur border border-white/60 text-[10px] text-gray-600">
@@ -2155,6 +2486,29 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                       </svg>
                     </div>
                     <span className="text-xs text-gray-600">日记</span>
+                  </button>
+
+                  {/* 情侣空间 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlusMenu(false)
+                      setActivePanel(null)
+                      if (character.coupleSpaceEnabled) {
+                        navigate(`/apps/wechat/couple-space/${character.id}`)
+                      } else {
+                        setCoupleInviteConfirmOpen(true)
+                      }
+                    }}
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 7.5h.01M16.5 7.5h.01" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">情侣</span>
                   </button>
                   
                   {/* 编辑（回溯/删除） */}
@@ -2373,6 +2727,19 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         message={infoDialog.message}
         confirmText="知道了"
         onConfirm={() => setInfoDialog({ open: false, title: '', message: '' })}
+      />
+
+      <WeChatDialog
+        open={coupleInviteConfirmOpen}
+        title="确定发送申请吗？"
+        message={`确定向 ${character.name} 发送情侣空间申请吗？`}
+        confirmText={coupleInviteBusy ? '发送中…' : '确定'}
+        cancelText="取消"
+        onCancel={() => !coupleInviteBusy && setCoupleInviteConfirmOpen(false)}
+        onConfirm={() => {
+          if (coupleInviteBusy) return
+          void sendCoupleSpaceInvite()
+        }}
       />
       
       {/* 已移除：模式切换提示弹窗（统一手动回复） */}

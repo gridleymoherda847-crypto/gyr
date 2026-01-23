@@ -10,8 +10,8 @@ export type AppMeta = {
 export const GRID_APPS: AppMeta[] = [
   { id: 'wechat', name: '微信', route: '/apps/wechat', icon: '/icons/wechat.png', gradient: 'from-pink-100 to-pink-200' },
   { id: 'meituan', name: '美团', route: '/apps/meituan', icon: '/icons/meituan.png', gradient: 'from-pink-100 to-pink-200' },
-  // 收藏日记（替换淘宝；图标你之后发我我再塞到 /public/icons/diary.png）
-  { id: 'diaryVault', name: '日记', route: '/apps/diary-vault', icon: '/icons/diary.png', gradient: 'from-pink-100 to-pink-200' },
+  // 收藏日记（替换淘宝；默认图标在 /public/icons/diary.svg，可在设置里替换）
+  { id: 'diaryVault', name: '日记', route: '/apps/diary-vault', icon: '/icons/diary.svg', gradient: 'from-pink-100 to-pink-200' },
   { id: 'weibo', name: '微博', route: '/apps/weibo', icon: '/icons/weibo.png', gradient: 'from-pink-100 to-pink-200' },
   { id: 'music', name: '音乐', route: '/apps/music', icon: '/icons/music.png', gradient: 'from-pink-100 to-pink-200' },
 ]

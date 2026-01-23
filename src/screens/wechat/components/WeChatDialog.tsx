@@ -8,6 +8,8 @@ type Props = {
   confirmText?: string
   cancelText?: string
   danger?: boolean
+  hideDefaultActions?: boolean
+  footer?: ReactNode
   onConfirm?: () => void
   onCancel?: () => void
 }
@@ -21,6 +23,8 @@ export default function WeChatDialog({
   confirmText = '确定',
   cancelText,
   danger = false,
+  hideDefaultActions = false,
+  footer,
   onConfirm,
   onCancel,
 }: Props) {
@@ -41,29 +45,33 @@ export default function WeChatDialog({
           {children && <div className="mt-3 text-left">{children}</div>}
         </div>
 
-        <div className="mt-4 flex gap-2">
-          {cancelText && (
+        {hideDefaultActions ? (
+          footer ? <div className="mt-4">{footer}</div> : null
+        ) : (
+          <div className="mt-4 flex gap-2">
+            {cancelText && (
+              <button
+                type="button"
+                onClick={() => onCancel?.()}
+                className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+              >
+                {cancelText}
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => onCancel?.()}
-              className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+              onClick={() => onConfirm?.()}
+              className="flex-1 rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
+              style={{
+                background: danger
+                  ? 'linear-gradient(135deg, #fb7185 0%, #ef4444 100%)'
+                  : 'linear-gradient(135deg, #34d399 0%, #07C160 100%)',
+              }}
             >
-              {cancelText}
+              {confirmText}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => onConfirm?.()}
-            className="flex-1 rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
-            style={{
-              background: danger
-                ? 'linear-gradient(135deg, #fb7185 0%, #ef4444 100%)'
-                : 'linear-gradient(135deg, #34d399 0%, #07C160 100%)',
-            }}
-          >
-            {confirmText}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )

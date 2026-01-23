@@ -73,6 +73,14 @@ export default function ChatSettingsScreen() {
   const [editBirthday, setEditBirthday] = useState(character?.birthday || '')
   const [editCallMeName, setEditCallMeName] = useState(character?.callMeName || '')
   const [editRelationship, setEditRelationship] = useState(character?.relationship || '')
+  const [editCountry, setEditCountry] = useState(character?.country || '')
+  const [editLanguage, setEditLanguage] = useState<'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'>((character as any)?.language || 'zh')
+  const [editChatTranslationEnabled, setEditChatTranslationEnabled] = useState<boolean>(!!(character as any)?.chatTranslationEnabled)
+  const prevEditLangRef = useRef<'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'>(((character as any)?.language || 'zh') as any)
+  const [langDialog, setLangDialog] = useState<{ open: boolean; lang: 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de' }>({
+    open: false,
+    lang: 'zh',
+  })
 
   // 记忆功能状态（草稿）
   const [memoryRoundsDraft, setMemoryRoundsDraft] = useState<number>(character?.memoryRounds || 100)
@@ -361,11 +369,6 @@ export default function ChatSettingsScreen() {
     return lines.reverse().join('\n').slice(-20000)
   }
 
-  const formatBirthday = (date: string) => {
-    if (!date) return '未设置'
-    return new Date(date).toLocaleDateString('zh-CN')
-  }
-
   const selectedPersona = character.selectedUserPersonaId 
     ? getUserPersona(character.selectedUserPersonaId) 
     : null
@@ -424,14 +427,14 @@ export default function ChatSettingsScreen() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {/* 人物信息卡片 */}
+          {/* 人物信息卡片（重排：头像更换 + 人设入口，避免拥挤） */}
           <div className="bg-transparent mt-2 mx-3 rounded-xl p-4">
             <div className="flex items-center gap-4">
               <button
                 type="button"
                 className="relative w-14 h-14 rounded-xl overflow-hidden bg-gray-200"
                 onClick={() => avatarInputRef.current?.click()}
-                title="更换头像"
+                title="点击更换头像"
               >
                 {character.avatar ? (
                   <img src={character.avatar} alt="" className="w-full h-full object-cover" />
@@ -442,8 +445,8 @@ export default function ChatSettingsScreen() {
                 )}
                 <div className="absolute inset-0 bg-black/10 opacity-0 hover:opacity-100 transition-opacity" />
               </button>
-              <div className="flex flex-col items-start">
-                <div className="text-[11px] text-gray-500">点头像可更换</div>
+              <div className="flex flex-col items-start min-w-0">
+                <div className="text-[11px] text-gray-500">点击更换头像</div>
                 <div className="text-[11px] text-gray-400 mt-0.5">（从相册选择）</div>
               </div>
               <input
@@ -476,55 +479,40 @@ export default function ChatSettingsScreen() {
                   {character.relationship && ` · ${character.relationship}`}
                 </div>
               </div>
-              {/* 编辑按钮 */}
-              <button
-                type="button"
-                onClick={() => {
-                  setEditName(character.name)
-                  setEditGender(character.gender)
-                  setEditPrompt(character.prompt)
-                  setEditBirthday(character.birthday)
-                  setEditCallMeName(character.callMeName)
-                  setEditRelationship(character.relationship)
-                  setShowEditCharacter(true)
-                }}
-                className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200"
-              >
-                <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+            </div>
+            
+            {/* 角色人设入口（避免在此处展示长文本） */}
+            <button
+              type="button"
+              onClick={() => {
+                setEditName(character.name)
+                setEditGender(character.gender)
+                setEditPrompt(character.prompt)
+                setEditBirthday(character.birthday)
+                setEditCallMeName(character.callMeName)
+                setEditRelationship(character.relationship)
+                setEditCountry((character as any).country || '')
+                setEditLanguage(((character as any).language as any) || 'zh')
+                setEditChatTranslationEnabled(!!(character as any).chatTranslationEnabled)
+                setShowEditCharacter(true)
+              }}
+              className="mt-3 w-full flex items-center justify-between px-3 py-3 rounded-xl bg-white/70 border border-black/10 active:scale-[0.99]"
+            >
+              <div className="text-[#000] font-medium">角色人设</div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-gray-500">点击查看/编辑</span>
+                <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>
-              </button>
-            </div>
-            
-            <div className="mt-3 space-y-1.5 text-sm">
-              {character.birthday && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">生日</span>
-                  <span className="text-[#000]">{formatBirthday(character.birthday)}</span>
-                </div>
-              )}
-              {character.callMeName && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">TA叫我</span>
-                  <span className="text-[#000]">{character.callMeName}</span>
-                </div>
-              )}
-            </div>
-            
-            {character.prompt && (
-              <div className="mt-3">
-                <span className="text-gray-500 text-sm">角色人设</span>
-                <div className="mt-1 p-2 bg-gray-50 rounded text-[#000] text-xs leading-relaxed">
-                  {character.prompt}
-                </div>
               </div>
-            )}
+            </button>
           </div>
 
-          {/* 我的人设选择 */}
-          <div className="bg-transparent mt-2">
-            <div 
-              className="flex items-center justify-between px-4 py-4 cursor-pointer active:bg-gray-50"
+          {/* 我的人设选择（与“角色人设”入口统一视觉格式） */}
+          <div className="bg-transparent mt-2 mx-3 rounded-xl p-4">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-3 py-3 rounded-xl bg-white/70 border border-black/10 active:scale-[0.99]"
               onClick={() => {
                 if (userPersonas.length === 0) {
                   setDialog({
@@ -538,45 +526,23 @@ export default function ChatSettingsScreen() {
                 }
               }}
             >
-              <span className="text-[#000]">我的人设</span>
+              <div className="text-[#000] font-medium">我的人设</div>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400">
+                <span className="text-[11px] text-gray-500">
                   {selectedPersona ? selectedPersona.name : `未选择（默认：${defaultPersona?.name || '无'}）`}
                 </span>
                 <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>
               </div>
+            </button>
+            <div className="px-1 pt-2 text-[11px] text-gray-400">
+              未选择时，将自动使用微信「我」里当前使用的人设。
             </div>
-          </div>
-          <div className="px-4 pb-2 text-[11px] text-gray-400">
-            未选择时，将自动使用微信「我」里当前使用的人设。
           </div>
 
           {/* 功能列表 */}
           <div className="bg-transparent mt-2">
-            {/* 情侣空间 */}
-            <div 
-              className={`flex items-center justify-between px-4 py-4 border-b border-gray-100 ${
-                character.coupleSpaceEnabled ? 'cursor-pointer active:bg-gray-50' : 'opacity-50'
-              }`}
-              onClick={() => {
-                if (character.coupleSpaceEnabled) {
-                  navigate(`/apps/wechat/couple-space/${character.id}`)
-                }
-              }}
-            >
-              <span className="text-[#000]">情侣空间</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">
-                  {character.coupleSpaceEnabled ? '已开启' : '未开启'}
-                </span>
-                <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-            </div>
-
             {/* 聊天背景 */}
             <div 
               className="flex items-center justify-between px-4 py-4 border-b border-gray-100 cursor-pointer active:bg-gray-50"
@@ -1148,6 +1114,66 @@ export default function ChatSettingsScreen() {
         }}
       />
 
+      <WeChatDialog
+        open={langDialog.open}
+        title="语言提示"
+        message={
+          '你选择了中文以外的语言：\n' +
+          '- 该角色的聊天/日记/朋友圈/情侣空间都会用此语言输出\n' +
+          '- 只有“聊天对话框”可内置翻译；其他界面请用浏览器翻译\n' +
+          '\n' +
+          '要不要开启“聊天对话框自动翻译”？（推荐）'
+        }
+        hideDefaultActions
+        footer={
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              className="w-full rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
+              style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
+              onClick={() => {
+                prevEditLangRef.current = langDialog.lang
+                setEditLanguage(langDialog.lang)
+                setEditChatTranslationEnabled(true)
+                setLangDialog({ open: false, lang: 'zh' })
+              }}
+            >
+              需要（推荐）
+            </button>
+            <button
+              type="button"
+              className="w-full rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+              onClick={() => {
+                prevEditLangRef.current = langDialog.lang
+                setEditLanguage(langDialog.lang)
+                setEditChatTranslationEnabled(false)
+                setLangDialog({ open: false, lang: 'zh' })
+              }}
+            >
+              不需要
+            </button>
+            <button
+              type="button"
+              className="w-full rounded-full border border-black/10 bg-white/40 px-4 py-2 text-[13px] font-medium text-[#666] active:scale-[0.98]"
+              onClick={() => {
+                const prev = prevEditLangRef.current || 'zh'
+                setEditLanguage(prev)
+                setEditChatTranslationEnabled(prev === 'zh' ? false : editChatTranslationEnabled)
+                setLangDialog({ open: false, lang: 'zh' })
+              }}
+            >
+              取消
+            </button>
+          </div>
+        }
+        onCancel={() => {
+          const prev = prevEditLangRef.current || 'zh'
+          setEditLanguage(prev)
+          setEditChatTranslationEnabled(prev === 'zh' ? false : editChatTranslationEnabled)
+          setLangDialog({ open: false, lang: 'zh' })
+        }}
+      />
+
       {/* 记忆功能设置弹窗 */}
       {showMemorySettings && (
         <div className="absolute inset-0 z-50 flex flex-col bg-white">
@@ -1698,6 +1724,9 @@ ${history}`
                   birthday: editBirthday,
                   callMeName: editCallMeName,
                   relationship: editRelationship,
+                  country: editCountry,
+                  language: editLanguage,
+                  chatTranslationEnabled: editLanguage === 'zh' ? false : editChatTranslationEnabled,
                 })
                 setShowEditCharacter(false)
               }}
@@ -1790,6 +1819,65 @@ ${history}`
                 value={editRelationship}
                 onChange={(e) => setEditRelationship(e.target.value)}
                 placeholder="例如：男朋友、闺蜜、老公"
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 outline-none"
+              />
+            </div>
+
+            {/* 语言/国家 */}
+            <div>
+              <label className="text-sm text-gray-600 block mb-1">语言</label>
+              <select
+                value={editLanguage}
+                onChange={(e) => {
+                  const next = e.target.value as any
+                  const prev = editLanguage
+                  if (next !== 'zh') {
+                    prevEditLangRef.current = prev
+                    setEditLanguage(next)
+                    setLangDialog({ open: true, lang: next })
+                  } else {
+                    prevEditLangRef.current = 'zh'
+                    setEditLanguage('zh')
+                    setEditChatTranslationEnabled(false)
+                  }
+                }}
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 outline-none"
+              >
+                <option value="zh">中文</option>
+                <option value="en">英语</option>
+                <option value="ru">俄语</option>
+                <option value="fr">法语</option>
+                <option value="ja">日语</option>
+                <option value="ko">韩语</option>
+                <option value="de">德语</option>
+              </select>
+              <div className="mt-1 text-[11px] text-gray-400">
+                语言会影响聊天/日记/朋友圈/情侣空间。翻译仅聊天可选，其他界面请用浏览器翻译。
+              </div>
+            </div>
+
+            {editLanguage !== 'zh' && (
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-100">
+                <div className="flex flex-col">
+                  <div className="text-sm text-gray-700">聊天翻译</div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">仅聊天气泡下方显示中文翻译</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditChatTranslationEnabled(v => !v)}
+                  className={`w-12 h-7 rounded-full transition-colors ${editChatTranslationEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
+                >
+                  <div className={`w-6 h-6 bg-white rounded-full shadow mt-0.5 transition-transform ${editChatTranslationEnabled ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            )}
+            <div>
+              <label className="text-sm text-gray-600 block mb-1">国家/地区</label>
+              <input
+                type="text"
+                value={editCountry}
+                onChange={(e) => setEditCountry(e.target.value)}
+                placeholder="例如：日本 / 中国 / 法国"
                 className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 outline-none"
               />
             </div>

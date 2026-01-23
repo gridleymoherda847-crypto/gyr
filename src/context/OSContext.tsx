@@ -158,6 +158,8 @@ const defaultLLMConfig: LLMConfig = { apiBaseUrl: '', apiKey: '', selectedModel:
 const STORAGE_KEYS = {
   llmConfig: 'os_llm_config',
   miCoinBalance: 'os_micoin_balance',
+  currentFontId: 'os_current_font_id',
+  fontColorId: 'os_font_color_id',
 } as const
 
 function loadFromStorage<T>(key: string, defaultValue: T): T {
@@ -221,8 +223,16 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [wallpaper, setWallpaper] = useState(DEFAULT_WALLPAPER)
   const [lockWallpaper, setLockWallpaper] = useState(DEFAULT_WALLPAPER)
   const [wallpaperError, setWallpaperError] = useState(false)
-  const [currentFont, setCurrentFont] = useState<FontOption>(FONT_OPTIONS[0])
-  const [fontColor, setFontColor] = useState<ColorOption>(COLOR_OPTIONS[3])
+  const [currentFont, setCurrentFontState] = useState<FontOption>(() => {
+    // 默认字体：优雅衬线（但如果用户保存过选择，则完全尊重用户保存）
+    const defaultId = FONT_OPTIONS.find(f => f.id === 'elegant')?.id || FONT_OPTIONS[0].id
+    const savedId = loadFromStorage<string>(STORAGE_KEYS.currentFontId, defaultId)
+    return FONT_OPTIONS.find(f => f.id === savedId) || (FONT_OPTIONS.find(f => f.id === defaultId) || FONT_OPTIONS[0])
+  })
+  const [fontColor, setFontColorState] = useState<ColorOption>(() => {
+    const savedId = loadFromStorage<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id)
+    return COLOR_OPTIONS.find(c => c.id === savedId) || COLOR_OPTIONS[3]
+  })
   const [userProfile, setUserProfileState] = useState<UserProfile>(defaultUserProfile)
   const [llmConfig, setLLMConfigState] = useState<LLMConfig>(() => loadFromStorage(STORAGE_KEYS.llmConfig, defaultLLMConfig))
   const [miCoinBalance, setMiCoinBalance] = useState(() => loadFromStorage(STORAGE_KEYS.miCoinBalance, 100))
@@ -248,6 +258,11 @@ export function OSProvider({ children }: PropsWithChildren) {
   // 持久化：LLM配置与米币
   useEffect(() => { saveToStorage(STORAGE_KEYS.llmConfig, llmConfig) }, [llmConfig])
   useEffect(() => { saveToStorage(STORAGE_KEYS.miCoinBalance, miCoinBalance) }, [miCoinBalance])
+  useEffect(() => { saveToStorage(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id])
+  useEffect(() => { saveToStorage(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id])
+
+  const setCurrentFont = (font: FontOption) => setCurrentFontState(font)
+  const setFontColor = (color: ColorOption) => setFontColorState(color)
   
   // 持久化：音乐列表
   useEffect(() => {
@@ -416,13 +431,7 @@ export function OSProvider({ children }: PropsWithChildren) {
       
       if (data.data && Array.isArray(data.data)) {
         const modelIds = data.data.map((m: any) => m.id).filter(Boolean)
-        // 更新可用模型列表（同时把本次调用传入的 base/key 落盘，避免“第一次必失败”的旧 state 闭包问题）
-        setLLMConfigState(prev => ({
-          ...prev,
-          apiBaseUrl: override?.apiBaseUrl ?? prev.apiBaseUrl,
-          apiKey: override?.apiKey ?? prev.apiKey,
-          availableModels: modelIds,
-        }))
+        // 安全：这里绝不改用户已保存的 Base/Key/Model（避免“自动换成更贵模型”等风险）
         return modelIds
       } else {
         throw new Error('返回数据格式错误')

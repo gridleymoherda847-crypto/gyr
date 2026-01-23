@@ -22,7 +22,7 @@ export default function ApiConfigScreen() {
     try {
       const modelList = await fetchAvailableModels({ apiBaseUrl: baseUrl, apiKey })
       setModels(modelList)
-      if (modelList.length > 0 && !selectedModel) setSelectedModel(modelList[0])
+      // 安全：绝不自动替用户选模型（避免误切到更贵的模型）
     } catch {
       setError('获取模型失败（请检查网络或服务状态），已加载默认列表')
       setModels(['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'claude-3-opus', 'claude-3-sonnet'])

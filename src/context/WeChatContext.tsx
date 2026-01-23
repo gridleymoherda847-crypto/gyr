@@ -31,6 +31,8 @@ export type BubbleStyle = {
 }
 
 // 角色信息
+export type CharacterLanguage = 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'
+
 export type WeChatCharacter = {
   id: string
   name: string
@@ -40,7 +42,11 @@ export type WeChatCharacter = {
   birthday: string
   callMeName: string
   relationship: string
+  country: string // 国家/地区（用于人设补充）
+  language: CharacterLanguage // 角色主要聊天语言（用于强制输出语言 + 翻译）
+  chatTranslationEnabled: boolean // 仅聊天对话框：是否自动翻译为中文（非中文语言时可用）
   coupleSpaceEnabled: boolean
+  coupleStartedAt: number | null // 情侣空间开通/在一起开始时间（用于“在一起xx天”）
   chatBackground: string
   createdAt: number
   isSpecialCare: boolean // 特别关心
@@ -74,7 +80,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'system'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'couple' | 'system'
   // 转账相关
   transferAmount?: number
   transferNote?: string
@@ -92,6 +98,18 @@ export type WeChatMessage = {
   diaryExcerpt?: string
   diaryContent?: string
   diaryNote?: string
+
+  // 情侣空间申请/结果卡片（“像转账一样”的小窗口）
+  coupleAction?: 'request' | 'response'
+  coupleStatus?: 'pending' | 'accepted' | 'rejected'
+  coupleTitle?: string
+  coupleHint?: string
+
+  // 自动翻译（用于“微信翻译”样式展示）
+  translatedZh?: string
+  translationStatus?: 'pending' | 'done' | 'error'
+  messageLanguage?: CharacterLanguage
+  chatTranslationEnabledAtSend?: boolean
 }
 
 // 转账记录
@@ -243,6 +261,10 @@ type AddCharacterInput = Omit<
   | 'manualTime'
   | 'isTyping'
   | 'typingUpdatedAt'
+  | 'coupleStartedAt'
+  | 'country'
+  | 'language'
+  | 'chatTranslationEnabled'
 > & Partial<Pick<
   WeChatCharacter,
   | 'unreadCount'
@@ -254,6 +276,9 @@ type AddCharacterInput = Omit<
   | 'manualTime'
   | 'isTyping'
   | 'typingUpdatedAt'
+  | 'country'
+  | 'language'
+  | 'chatTranslationEnabled'
 >>
 
 type WeChatContextValue = {
@@ -472,6 +497,16 @@ export function WeChatProvider({ children }: PropsWithChildren) {
 
     setCharacters(prev => prev.map(c => ({
       ...c,
+      country: typeof (c as any).country === 'string' ? (c as any).country : '',
+      language: (() => {
+        const v = (c as any).language
+        return v === 'zh' || v === 'en' || v === 'ru' || v === 'fr' || v === 'ja' || v === 'ko' || v === 'de'
+          ? v
+          : 'zh'
+      })(),
+      chatTranslationEnabled: typeof (c as any).chatTranslationEnabled === 'boolean'
+        ? (c as any).chatTranslationEnabled
+        : (((c as any).language && (c as any).language !== 'zh') ? true : false),
       offlineMode: c.offlineMode ?? false,
       bubbleSyncEnabled: typeof (c as any).bubbleSyncEnabled === 'boolean' ? (c as any).bubbleSyncEnabled : false,
       memoryRounds: typeof (c as any).memoryRounds === 'number' ? (c as any).memoryRounds : 100,
@@ -481,6 +516,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       manualTime: typeof (c as any).manualTime === 'string' ? (c as any).manualTime : '',
       isTyping: typeof (c as any).isTyping === 'boolean' ? (c as any).isTyping : false,
       typingUpdatedAt: typeof (c as any).typingUpdatedAt === 'number' ? (c as any).typingUpdatedAt : null,
+      coupleStartedAt: typeof (c as any).coupleStartedAt === 'number'
+        ? (c as any).coupleStartedAt
+        : (c.coupleSpaceEnabled ? (typeof c.createdAt === 'number' ? c.createdAt : Date.now()) : null),
       userBubbleStyle: (() => {
         const s = (c as any).userBubbleStyle
         if (!s) return s
@@ -590,6 +628,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       isPinned: false,
       isHiddenFromChat: false,
       selectedUserPersonaId: null,
+      country: character.country ?? '',
+      language: character.language ?? 'zh',
+      chatTranslationEnabled: character.chatTranslationEnabled ?? ((character.language ?? 'zh') !== 'zh'),
       unreadCount: character.unreadCount ?? 0,
       autoReplyMode: false, // 默认手动回复（由用户点击触发）
       isBlocked: false, // 默认未拉黑
@@ -603,6 +644,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       manualTime: character.manualTime ?? '',
       isTyping: character.isTyping ?? false,
       typingUpdatedAt: character.typingUpdatedAt ?? null,
+      coupleStartedAt: character.coupleSpaceEnabled ? Date.now() : null,
     }
     setCharacters(prev => [...prev, newCharacter])
     return newCharacter
@@ -1043,6 +1085,8 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       birthday: person.birthday || '',
       callMeName: '你',
       relationship: '星引力好友',
+      country: '',
+      language: 'zh',
       coupleSpaceEnabled: false,
       chatBackground: '',
       unreadCount: 0,
