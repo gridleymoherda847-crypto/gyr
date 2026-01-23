@@ -492,7 +492,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         // 表情包策略（活人感必须项）：
         // - 不再做“关键词替换文本”
         // - 只要角色配置了表情包，就尽量在一组回复里夹带 1~N 条表情包消息
-        const stickerPool = stickers.filter(s => s.characterId === character.id || s.characterId === 'all')
+        // 只使用“本角色已配置”的表情包（公共库不自动使用，必须在消息设置里手动添加给该角色）
+        const stickerPool = stickers.filter(s => s.characterId === character.id)
         const stickerCandidates: number[] = []
         const pickRandomSticker = () => stickerPool[Math.floor(Math.random() * stickerPool.length)]
         

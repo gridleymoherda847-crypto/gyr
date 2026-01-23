@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
@@ -30,10 +30,10 @@ export default function ChatSettingsScreen() {
   const [showStickerManager, setShowStickerManager] = useState(false)
   const [showPersonaSelector, setShowPersonaSelector] = useState(false)
   const [showAddToOthers, setShowAddToOthers] = useState<string | null>(null)
-  const [newStickerKeyword, setNewStickerKeyword] = useState('')
   const [newStickerImage, setNewStickerImage] = useState('')
   const [newStickerCategory, setNewStickerCategory] = useState('')
   const [addToAll, setAddToAll] = useState(false)
+  const [stickerGroupsExpanded, setStickerGroupsExpanded] = useState<Record<string, boolean>>({})
   const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [showBubbleSettings, setShowBubbleSettings] = useState(false)
@@ -48,6 +48,13 @@ export default function ChatSettingsScreen() {
     if (searchParams.get('postAdd') === '1') {
       // 不要一进来就弹：等用户从相册设置完头像“回来”再提示
       setPostAddArmed(true)
+    }
+  }, [searchParams])
+
+  // 从设置App导入后：可直接跳到这里并自动打开“表情包管理”
+  useEffect(() => {
+    if (searchParams.get('panel') === 'stickers') {
+      setShowStickerManager(true)
     }
   }, [searchParams])
 
@@ -278,32 +285,33 @@ export default function ChatSettingsScreen() {
   }
 
   const handleAddSticker = () => {
-    if (!newStickerKeyword.trim() || !newStickerImage) {
+    if (!newStickerImage) {
       setDialog({
         open: true,
         title: '还差一点点',
-        message: '请输入关键词并选择一张表情图片～',
+        message: '请选择一张表情图片～',
         confirmText: '知道啦',
       })
       return
     }
 
+    // 关键词不再用于触发逻辑，这里仅作内部标识（导出包/排序等）
+    const internalName = `sticker_${Date.now()}`
     if (addToAll) {
       addStickerToAll({ 
         imageUrl: newStickerImage, 
-        keyword: newStickerKeyword.trim(),
+        keyword: internalName,
         category: newStickerCategory || undefined
       })
     } else {
       addSticker({
         characterId: character.id,
-        keyword: newStickerKeyword.trim(),
+        keyword: internalName,
         imageUrl: newStickerImage,
         category: newStickerCategory || undefined
       })
     }
 
-    setNewStickerKeyword('')
     setNewStickerImage('')
     setNewStickerCategory('')
     setAddToAll(false)
@@ -370,6 +378,17 @@ export default function ChatSettingsScreen() {
     ? getUserPersona(character.selectedUserPersonaId) 
     : null
   const defaultPersona = getCurrentPersona()
+
+  const stickersGrouped = useMemo(() => {
+    const map: Record<string, typeof stickers> = {}
+    for (const s of stickers) {
+      const cat = (s.category || '').trim() || '未分类'
+      if (!map[cat]) map[cat] = []
+      map[cat].push(s)
+    }
+    const keys = Object.keys(map).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    return { keys, map }
+  }, [stickers])
 
   const handleBack = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation()
@@ -450,14 +469,6 @@ export default function ChatSettingsScreen() {
                   {character.relationship && ` · ${character.relationship}`}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => navigate(`/apps/settings/stickers?target=${encodeURIComponent(character.id)}`)}
-                className="px-3 py-1.5 rounded-full bg-white/70 border border-black/10 text-[11px] text-gray-700"
-                title="去设置App批量导入表情包"
-              >
-                表情包
-              </button>
               {/* 编辑按钮 */}
               <button
                 type="button"
@@ -829,14 +840,6 @@ export default function ChatSettingsScreen() {
                   />
                   
                   <div className="flex-1">
-                    <input
-                      type="text"
-                      placeholder="触发关键词"
-                      value={newStickerKeyword}
-                      onChange={(e) => setNewStickerKeyword(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 outline-none text-[#000] text-sm mb-2"
-                    />
-                    
                     {/* 情绪分类选择 */}
                     <select
                       value={newStickerCategory}
@@ -860,7 +863,7 @@ export default function ChatSettingsScreen() {
                           background: addToAll ? 'rgba(7,193,96,0.08)' : 'white',
                         }}
                       >
-                        {addToAll ? '所有角色 ✓' : '所有角色'}
+                        {addToAll ? '公共库 ✓' : '公共库'}
                       </button>
                       <button
                         type="button"
@@ -883,36 +886,77 @@ export default function ChatSettingsScreen() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {stickers.map(sticker => (
-                    <div key={sticker.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                      <img src={sticker.imageUrl} alt="" className="w-10 h-10 object-contain rounded" />
-                      <div className="flex-1">
-                        <div className="text-sm text-[#000]">关键词：{sticker.keyword}</div>
-                        <div className="text-xs text-gray-400 flex items-center gap-2">
-                          <span>{sticker.characterId === 'all' ? '所有角色' : '仅此角色'}</span>
-                          {sticker.category && (
-                            <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded-full text-[10px]">
-                              {sticker.category}
-                            </span>
-                          )}
-                        </div>
+                  {stickersGrouped.keys.map((cat) => {
+                    const list = stickersGrouped.map[cat] || []
+                    const open = !!stickerGroupsExpanded[cat]
+                    return (
+                      <div key={cat} className="bg-gray-50 rounded-xl overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setStickerGroupsExpanded(prev => ({ ...prev, [cat]: !prev[cat] }))}
+                          className="w-full px-4 py-3 flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-medium text-[#000] truncate">{cat}</span>
+                            <span className="text-[11px] text-gray-400">{list.length} 个</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-gray-400">{open ? '收起' : '展开'}</span>
+                            <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                            </svg>
+                          </div>
+                        </button>
+                        {open && (
+                          <div className="px-4 pb-3 space-y-2">
+                            {list.map(sticker => (
+                              <div key={sticker.id} className="flex items-center gap-3 p-3 bg-white rounded-xl">
+                                <img src={sticker.imageUrl} alt="" className="w-10 h-10 object-contain rounded" />
+                                <div className="flex-1">
+                                  <div className="text-xs text-gray-400 flex items-center gap-2">
+                                    <span>{sticker.characterId === 'all' ? '公共库' : '仅此角色'}</span>
+                                  </div>
+                                </div>
+
+                                {sticker.characterId === 'all' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      addStickerToCharacter(sticker.id, character.id)
+                                      setDialog({
+                                        open: true,
+                                        title: '已添加到本角色',
+                                        message: '现在这个角色就会按情绪夹带这张表情包了。',
+                                        confirmText: '好',
+                                      })
+                                    }}
+                                    className="text-[#07C160] text-xs"
+                                  >
+                                    添加到本角色
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddToOthers(sticker.id)}
+                                  className="text-[#07C160] text-xs"
+                                >
+                                  添加到其他
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeSticker(sticker.id)}
+                                  className="text-red-500 text-xs"
+                                >
+                                  删除
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddToOthers(sticker.id)}
-                        className="text-[#07C160] text-xs"
-                      >
-                        添加到其他
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeSticker(sticker.id)}
-                        className="text-red-500 text-xs"
-                      >
-                        删除
-                      </button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>

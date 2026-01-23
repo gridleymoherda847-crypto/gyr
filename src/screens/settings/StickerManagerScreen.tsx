@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import PageContainer from '../../components/PageContainer'
 import AppHeader from '../../components/AppHeader'
 import { useWeChat } from '../../context/WeChatContext'
+import WeChatDialog from '../wechat/components/WeChatDialog'
 
 type StickerPackV1 = {
   schemaVersion: 1
@@ -47,6 +48,8 @@ export default function StickerManagerScreen() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [importingCategory, setImportingCategory] = useState<string | null>(null)
   const [importPackText, setImportPackText] = useState('')
+  const [postImportGuideOpen, setPostImportGuideOpen] = useState(false)
+  const [postImportGuideCategory, setPostImportGuideCategory] = useState<string>('')
 
   const imgInputRef = useRef<HTMLInputElement>(null)
   const packInputRef = useRef<HTMLInputElement>(null)
@@ -72,7 +75,7 @@ export default function StickerManagerScreen() {
   }, [stickers])
 
   const targetLabel = useMemo(() => {
-    if (targetCharacterId === 'all') return '所有角色'
+    if (targetCharacterId === 'all') return '公共库'
     const c = characters.find(x => x.id === targetCharacterId)
     return c ? `角色：${c.name}` : '指定角色'
   }, [characters, targetCharacterId])
@@ -151,6 +154,8 @@ export default function StickerManagerScreen() {
 
     setToast(`已导入：${catName}（${items.length}张）`)
     window.setTimeout(() => setToast(null), 2200)
+    setPostImportGuideCategory(catName)
+    setPostImportGuideOpen(true)
   }
 
   const handleBatchImportImages = async (categoryName: string, files: FileList | null) => {
@@ -176,6 +181,8 @@ export default function StickerManagerScreen() {
       }
       setToast(`已导入 ${list.length} 张到「${cat}」`)
       window.setTimeout(() => setToast(null), 2000)
+      setPostImportGuideCategory(cat)
+      setPostImportGuideOpen(true)
     } catch (e: any) {
       setToast(e?.message || '导入失败')
       window.setTimeout(() => setToast(null), 2200)
@@ -418,6 +425,27 @@ export default function StickerManagerScreen() {
             </div>
           </div>
         )}
+
+        <WeChatDialog
+          open={postImportGuideOpen}
+          title="已成功导入表情包"
+          message={
+            targetCharacterId === 'all'
+              ? `已导入到「公共库 / ${postImportGuideCategory || '分类'}」。\n想让某个角色使用：去该角色「消息设置」→「表情包管理」里点“添加到本角色”。`
+              : `已导入到「${targetLabel} / ${postImportGuideCategory || '分类'}」。\n想继续调整：去该角色「消息设置」→「表情包管理」。`
+          }
+          confirmText="去设置"
+          cancelText="稍后自己去设置"
+          onCancel={() => setPostImportGuideOpen(false)}
+          onConfirm={() => {
+            setPostImportGuideOpen(false)
+            if (targetCharacterId !== 'all') {
+              navigate(`/apps/wechat/chat/${encodeURIComponent(targetCharacterId)}/settings?panel=stickers`)
+              return
+            }
+            navigate('/apps/wechat')
+          }}
+        />
       </div>
     </PageContainer>
   )
