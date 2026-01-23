@@ -14,6 +14,7 @@ export const GRID_APPS: AppMeta[] = [
   { id: 'diaryVault', name: '日记', route: '/apps/diary-vault', icon: '/icons/diary.svg', gradient: 'from-pink-100 to-pink-200' },
   { id: 'weibo', name: '微博', route: '/apps/weibo', icon: '/icons/weibo.png', gradient: 'from-pink-100 to-pink-200' },
   { id: 'music', name: '音乐', route: '/apps/music', icon: '/icons/music.png', gradient: 'from-pink-100 to-pink-200' },
+  { id: 'doudizhu', name: '斗地主', route: '/apps/doudizhu', icon: '/icons/doudizhu.svg', gradient: 'from-green-100 to-emerald-200' },
 ]
 
 // Dock 栏应用

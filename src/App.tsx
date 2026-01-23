@@ -18,6 +18,7 @@ import MibiScreen from './screens/MibiScreen'
 import SmsScreen from './screens/SmsScreen'
 import MusicScreen from './screens/MusicScreen'
 import PresetScreen from './screens/PresetScreen'
+import DoudizhuScreen from './screens/DoudizhuScreen'
 // WeChat
 import WeChatScreen from './screens/wechat/WeChatScreen'
 import CreateCharacterScreen from './screens/wechat/CreateCharacterScreen'
@@ -62,6 +63,7 @@ function InnerApp() {
             <Route path="/apps/sms" element={<SmsScreen />} />
             <Route path="/apps/music" element={<MusicScreen />} />
             <Route path="/apps/preset" element={<PresetScreen />} />
+            <Route path="/apps/doudizhu" element={<DoudizhuScreen />} />
             {/* WeChat Routes */}
             <Route path="/apps/wechat" element={<WeChatScreen />} />
             <Route path="/apps/wechat/create-character" element={<CreateCharacterScreen />} />
