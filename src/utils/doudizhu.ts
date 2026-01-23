@@ -48,10 +48,10 @@ export const SUIT_SYMBOLS: Record<Suit, string> = {
 
 // 花色颜色
 export const SUIT_COLORS: Record<Suit, string> = {
-  spade: '#000',
-  heart: '#e53935',
-  club: '#000',
-  diamond: '#e53935',
+  spade: '#1a1a2e',
+  heart: '#dc2626',
+  club: '#1a1a2e',
+  diamond: '#dc2626',
   joker: '#9c27b0'
 }
 
@@ -330,8 +330,48 @@ export function findValidPlays(hand: Card[], lastPlay: PlayResult | null): Card[
       if (count >= 3) {
         const cards = hand.filter(c => c.rank === rank).slice(0, 3)
         validPlays.push(cards)
+        // 三带一
+        const single = hand.find(c => c.rank !== rank)
+        if (single) {
+          validPlays.push([...cards, single])
+        }
+        // 三带对
+        for (const [pairRank, pairCount] of counts) {
+          if (pairCount >= 2 && pairRank !== rank) {
+            validPlays.push([...cards, ...hand.filter(c => c.rank === pairRank).slice(0, 2)])
+            break
+          }
+        }
       }
     })
+    
+    // 顺子
+    for (let start = 3; start <= 10; start++) {
+      for (let len = 5; len <= 12 && start + len - 1 <= 14; len++) {
+        const straightCards: Card[] = []
+        let valid = true
+        for (let r = start; r < start + len; r++) {
+          const card = hand.find(c => c.rank === r)
+          if (card) straightCards.push(card)
+          else { valid = false; break }
+        }
+        if (valid) validPlays.push(straightCards)
+      }
+    }
+    
+    // 连对
+    for (let start = 3; start <= 12; start++) {
+      for (let len = 3; len <= 10 && start + len - 1 <= 14; len++) {
+        const pairCards: Card[] = []
+        let valid = true
+        for (let r = start; r < start + len; r++) {
+          const count = counts.get(r) || 0
+          if (count >= 2) pairCards.push(...hand.filter(c => c.rank === r).slice(0, 2))
+          else { valid = false; break }
+        }
+        if (valid) validPlays.push(pairCards)
+      }
+    }
     
     // 炸弹
     counts.forEach((count, rank) => {
@@ -480,12 +520,48 @@ export function findValidPlays(hand: Card[], lastPlay: PlayResult | null): Card[
   return validPlays
 }
 
-// AI决策：选择要出的牌
+// 评估手牌强度
+function evaluateHandStrength(hand: Card[]): number {
+  let score = 0
+  const counts = countRanks(hand)
+  
+  // 大小王
+  if (counts.get(17)) score += 15
+  if (counts.get(16)) score += 12
+  
+  // 炸弹
+  counts.forEach((count, rank) => {
+    if (count === 4) score += 20 + rank
+  })
+  
+  // 2
+  score += (counts.get(15) || 0) * 6
+  
+  // A
+  score += (counts.get(14) || 0) * 4
+  
+  // K
+  score += (counts.get(13) || 0) * 3
+  
+  // 三张
+  counts.forEach((count, rank) => {
+    if (count === 3) score += 5 + rank * 0.5
+  })
+  
+  // 对子
+  counts.forEach((count, rank) => {
+    if (count === 2 && rank >= 10) score += 2
+  })
+  
+  return score
+}
+
+// 智能AI决策
 export function aiDecide(
   hand: Card[], 
   lastPlay: PlayResult | null, 
-  _isLandlord: boolean,
-  difficulty: 'easy' | 'normal' | 'hard' = 'normal'
+  isLandlord: boolean,
+  _difficulty: 'easy' | 'normal' | 'hard' = 'normal'
 ): Card[] | null {
   const validPlays = findValidPlays(hand, lastPlay)
   
@@ -493,42 +569,123 @@ export function aiDecide(
     return null // 不出
   }
   
-  // 按牌型评估排序
+  const handStrength = evaluateHandStrength(hand)
+  const counts = countRanks(hand)
+  
+  // 评估每种出牌的策略分数
   const scored = validPlays.map(cards => {
     const result = analyzeHand(cards)
     let score = 0
     
-    // 基础分：优先出小牌
-    score = 20 - result.mainRank
+    // 基础策略：优先出小牌
+    score = 100 - result.mainRank * 3
     
-    // 炸弹/火箭要谨慎出
-    if (result.type === 'bomb') score -= 50
-    if (result.type === 'rocket') score -= 100
+    // 如果能一次出完，最高优先级
+    if (cards.length === hand.length) {
+      return { cards, score: 10000 }
+    }
     
-    // 手牌少时更激进
-    if (hand.length <= 5) score += 10
+    // 剩余手牌少时更激进
+    if (hand.length <= 5) {
+      score += 50
+      // 手牌少时优先出大牌压制
+      if (result.mainRank >= 14) score += 30
+    }
     
-    // 如果这把能出完，加分
-    if (cards.length === hand.length) score += 200
+    // 炸弹策略
+    if (result.type === 'bomb' || result.type === 'rocket') {
+      // 手牌多时保留炸弹
+      if (hand.length > 8) {
+        score -= 80
+      } else if (hand.length <= 4) {
+        // 手牌少时可以炸
+        score += 50
+      }
+      // 如果对手只剩几张牌，要炸
+      if (lastPlay && hand.length <= 6) {
+        score += 40
+      }
+    }
+    
+    // 地主策略：更激进
+    if (isLandlord) {
+      // 地主优先出三带
+      if (result.type === 'triple_one' || result.type === 'triple_two') {
+        score += 20
+      }
+      // 地主手牌强时可以压制
+      if (handStrength > 40 && result.mainRank >= 12) {
+        score += 15
+      }
+    } else {
+      // 农民策略：配合队友
+      // 如果队友出的牌，不要压
+      // 优先出单张和对子清牌
+      if (result.type === 'single' || result.type === 'pair') {
+        score += 10
+      }
+    }
+    
+    // 顺子和连对优先出（清牌快）
+    if (result.type === 'straight' || result.type === 'pair_straight') {
+      score += 25
+    }
+    
+    // 飞机优先出
+    if (result.type === 'plane' || result.type === 'plane_single' || result.type === 'plane_pair') {
+      score += 30
+    }
+    
+    // 保护大牌：如果有2和王，不要轻易出
+    if (result.mainRank === 15 && hand.length > 6) {
+      score -= 20
+    }
+    if (result.mainRank >= 16 && hand.length > 4) {
+      score -= 30
+    }
+    
+    // 拆牌惩罚：不要拆炸弹
+    const cardRanks = cards.map(c => c.rank)
+    for (const rank of cardRanks) {
+      if ((counts.get(rank) || 0) === 4 && cards.filter(c => c.rank === rank).length < 4) {
+        score -= 50
+      }
+    }
+    
+    // 三张不要轻易拆
+    for (const rank of cardRanks) {
+      if ((counts.get(rank) || 0) === 3 && cards.filter(c => c.rank === rank).length < 3) {
+        if (result.type === 'single' || result.type === 'pair') {
+          score -= 15
+        }
+      }
+    }
     
     return { cards, score }
   })
   
   scored.sort((a, b) => b.score - a.score)
   
-  // 根据难度决定是否不出
+  // 是否选择不出
   if (lastPlay) {
-    const passChance = difficulty === 'easy' ? 0.3 : difficulty === 'normal' ? 0.15 : 0.05
-    if (Math.random() < passChance && scored[0].score < 0) {
-      return null
+    const bestScore = scored[0].score
+    // 如果最好的选择分数很低，考虑不出
+    if (bestScore < 20 && hand.length > 6) {
+      // 30%概率不出
+      if (Math.random() < 0.3) {
+        return null
+      }
+    }
+    // 如果要出炸弹但手牌还很多，更可能不出
+    const bestResult = analyzeHand(scored[0].cards)
+    if ((bestResult.type === 'bomb' || bestResult.type === 'rocket') && hand.length > 10) {
+      if (Math.random() < 0.6) {
+        return null
+      }
     }
   }
   
-  // 简单难度随机选
-  if (difficulty === 'easy') {
-    return scored[Math.floor(Math.random() * Math.min(3, scored.length))].cards
-  }
-  
+  // 返回最优选择
   return scored[0].cards
 }
 
