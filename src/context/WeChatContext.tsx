@@ -710,6 +710,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         characterId: targetCharacterId,
         imageUrl: sticker.imageUrl,
         keyword: sticker.keyword,
+        category: sticker.category,
       })
     }
   }

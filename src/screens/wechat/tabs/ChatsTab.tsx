@@ -51,6 +51,16 @@ export default function ChatsTab({ onBack }: Props) {
     return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
   }
 
+  const formatPreview = (msg: any) => {
+    if (!msg) return '暂无消息'
+    if (msg.type === 'system') return '系统'
+    if (msg.type === 'sticker') return '表情包'
+    if (msg.type === 'image') return '图片'
+    if (msg.type === 'transfer') return '转账'
+    if (msg.type === 'music') return '音乐'
+    return msg.content || '暂无消息'
+  }
+
   const handleSwipe = (id: string) => {
     setSwipedId(swipedId === id ? null : id)
   }
@@ -272,7 +282,7 @@ export default function ChatsTab({ onBack }: Props) {
                       )}
                     </div>
                     <div className="text-sm text-gray-500 truncate mt-0.5">
-                      {character.isTyping ? '对方正在输入中...' : (lastMsg?.content || '暂无消息')}
+                      {character.isTyping ? '对方正在输入中...' : formatPreview(lastMsg)}
                     </div>
                   </div>
                 </div>
