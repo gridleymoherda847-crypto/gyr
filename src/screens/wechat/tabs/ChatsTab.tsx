@@ -60,6 +60,7 @@ export default function ChatsTab({ onBack }: Props) {
     if (msg.type === 'music') return '音乐'
     if (msg.type === 'diary') return '日记'
     if (msg.type === 'couple') return '情侣空间'
+    if (msg.type === 'doudizhu_share') return '🃏 斗地主战绩'
     return msg.content || '暂无消息'
   }
 

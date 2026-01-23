@@ -561,7 +561,7 @@ export function aiDecide(
   hand: Card[], 
   lastPlay: PlayResult | null, 
   isLandlord: boolean,
-  _difficulty: 'easy' | 'normal' | 'hard' = 'normal',
+  difficulty: 'easy' | 'normal' | 'hard' = 'normal',
   context?: {
     lastPlayPlayer?: number  // 上家是谁出的牌 (0=玩家, 1=电脑A, 2=电脑B)
     currentPlayer?: number   // 当前是谁 (1=电脑A, 2=电脑B)
@@ -576,6 +576,22 @@ export function aiDecide(
     return null // 不出
   }
   
+  // 简单难度：随机出牌，有50%概率出最小的牌
+  if (difficulty === 'easy') {
+    if (Math.random() < 0.5) {
+      // 出最小的牌
+      const sorted = [...validPlays].sort((a, b) => {
+        const aRank = analyzeHand(a).mainRank
+        const bRank = analyzeHand(b).mainRank
+        return aRank - bRank
+      })
+      return sorted[0]
+    } else {
+      // 随机出
+      return validPlays[Math.floor(Math.random() * validPlays.length)]
+    }
+  }
+  
   const handStrength = evaluateHandStrength(hand)
   const counts = countRanks(hand)
   
@@ -586,6 +602,9 @@ export function aiDecide(
   
   // 判断地主是否快赢了（牌少）
   const landlordDanger = context && context.landlordPlayer === 0 && (context.playerHandCount || 20) <= 3
+  
+  // 困难模式加成
+  const hardBonus = difficulty === 'hard' ? 1.2 : 1
   
   // 评估每种出牌的策略分数
   const scored = validPlays.map(cards => {
@@ -602,9 +621,9 @@ export function aiDecide(
     
     // 剩余手牌少时更激进
     if (hand.length <= 5) {
-      score += 50
+      score += 50 * hardBonus
       // 手牌少时优先出大牌压制
-      if (result.mainRank >= 14) score += 30
+      if (result.mainRank >= 14) score += 30 * hardBonus
     }
     
     // 炸弹策略

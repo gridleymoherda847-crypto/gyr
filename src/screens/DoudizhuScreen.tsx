@@ -25,6 +25,13 @@ interface DoudizhuStats {
   losses: number
 }
 
+// 简单的游戏过程记录
+interface GameRound {
+  player: Player
+  cardCount: number
+  isPass: boolean
+}
+
 interface GameResult {
   playerCoins: [number, number, number]
   bombCount: number
@@ -33,6 +40,9 @@ interface GameResult {
   bidScore: number
   isWin: boolean
   landlordPlayer: Player
+  totalRounds: number
+  gameHistory: GameRound[] // 简单记录每轮出牌数
+  difficulty: 'easy' | 'normal' | 'hard'
 }
 
 const loadStats = (): DoudizhuStats => {
@@ -154,11 +164,9 @@ function PlayerAvatar({
 // 分享战绩弹窗组件
 function ShareDialog({ 
   gameResult, 
-  stats,
   onClose 
 }: { 
   gameResult: GameResult
-  stats: DoudizhuStats
   onClose: () => void 
 }) {
   const navigate = useNavigate()
@@ -169,27 +177,39 @@ function ShareDialog({
   const roleText = gameResult.landlordPlayer === 0 ? '地主' : '农民'
   const resultText = gameResult.isWin ? '胜利' : '失败'
   const coinChange = gameResult.playerCoins[0]
+  const difficultyText = gameResult.difficulty === 'easy' ? '简单' : gameResult.difficulty === 'normal' ? '普通' : '困难'
+  
+  // 生成简单的游戏过程摘要
+  const generateSummary = () => {
+    const history = gameResult.gameHistory || []
+    const myPlays = history.filter(h => h.player === 0 && !h.isPass).length
+    const myPasses = history.filter(h => h.player === 0 && h.isPass).length
+    const totalRounds = Math.ceil(history.length / 3)
+    return { myPlays, myPasses, totalRounds }
+  }
+  
+  const summary = generateSummary()
   
   const handleShare = () => {
     if (!selectedCharacter) return
     
-    // 生成战报消息
-    const battleReport = `🃏 斗地主战报\n` +
-      `━━━━━━━━━━\n` +
-      `身份：${roleText}\n` +
-      `结果：${resultText} ${gameResult.isWin ? '🎉' : '😢'}\n` +
-      `底分：${gameResult.baseScore}\n` +
-      `倍数：${gameResult.multiplier}倍${gameResult.bombCount > 0 ? ` (💣×${gameResult.bombCount})` : ''}\n` +
-      `金币：${coinChange > 0 ? '+' : ''}${coinChange}\n` +
-      `━━━━━━━━━━\n` +
-      `当前金币：💰${stats.coins}`
-    
-    // 发送消息到选中的角色
+    // 发送卡片式消息
     addMessage({
       characterId: selectedCharacter,
-      content: battleReport,
+      content: JSON.stringify({
+        type: 'doudizhu_result',
+        isWin: gameResult.isWin,
+        role: roleText,
+        baseScore: gameResult.baseScore,
+        multiplier: gameResult.multiplier,
+        bombCount: gameResult.bombCount,
+        coinChange,
+        difficulty: difficultyText,
+        totalRounds: summary.totalRounds,
+        myPlays: summary.myPlays
+      }),
       isUser: true,
-      type: 'text'
+      type: 'doudizhu_share'
     })
     
     setShared(true)
@@ -211,19 +231,45 @@ function ShareDialog({
           </div>
         ) : (
           <>
-            {/* 战报预览 */}
-            <div className="bg-gray-100 rounded-xl p-3 mb-3 text-xs">
-              <div className="font-bold text-center mb-1">🃏 斗地主战报</div>
-              <div className="text-gray-600 space-y-0.5">
-                <div>身份：{roleText} | 结果：{resultText} {gameResult.isWin ? '🎉' : '😢'}</div>
-                <div>底分：{gameResult.baseScore} | 倍数：{gameResult.multiplier}倍</div>
-                <div>金币变化：<span className={coinChange > 0 ? 'text-green-600' : 'text-red-600'}>{coinChange > 0 ? '+' : ''}{coinChange}</span></div>
+            {/* 战报卡片预览 */}
+            <div className="bg-gradient-to-br from-purple-600 to-pink-500 rounded-xl p-3 mb-3 text-white shadow-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs opacity-80">🃏 斗地主战报</span>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{difficultyText}</span>
               </div>
+              <div className="text-center py-2">
+                <div className="text-3xl mb-1">{gameResult.isWin ? '🎉' : '😢'}</div>
+                <div className="text-xl font-bold">{resultText}</div>
+                <div className="text-sm opacity-80">{roleText}</div>
+              </div>
+              <div className="grid grid-cols-3 gap-1 text-center text-xs mt-2 bg-black/20 rounded-lg p-2">
+                <div>
+                  <div className="opacity-70">底分</div>
+                  <div className="font-bold">{gameResult.baseScore}</div>
+                </div>
+                <div>
+                  <div className="opacity-70">倍数</div>
+                  <div className="font-bold">{gameResult.multiplier}x</div>
+                </div>
+                <div>
+                  <div className="opacity-70">回合</div>
+                  <div className="font-bold">{summary.totalRounds}</div>
+                </div>
+              </div>
+              <div className="flex justify-between items-center mt-2 pt-2 border-t border-white/20 text-sm">
+                <span>金币变化</span>
+                <span className={`font-bold ${coinChange > 0 ? 'text-yellow-300' : 'text-red-300'}`}>
+                  {coinChange > 0 ? '+' : ''}{coinChange}
+                </span>
+              </div>
+              {gameResult.bombCount > 0 && (
+                <div className="text-center text-xs mt-1 opacity-80">💣 炸弹 ×{gameResult.bombCount}</div>
+              )}
             </div>
             
             {/* 选择好友 */}
             <p className="text-sm text-gray-600 mb-2">选择要分享的好友：</p>
-            <div className="flex-1 overflow-y-auto space-y-1 mb-3 max-h-32">
+            <div className="flex-1 overflow-y-auto space-y-1 mb-3 max-h-28">
               {characters.filter(c => !c.isHiddenFromChat).map(char => (
                 <button
                   key={char.id}
@@ -234,11 +280,11 @@ function ShareDialog({
                       : 'bg-gray-50 hover:bg-gray-100'
                   }`}
                 >
-                  <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
                     {char.avatar ? (
                       <img src={char.avatar} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                      <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
                         {char.name.slice(0, 1)}
                       </div>
                     )}
@@ -307,6 +353,8 @@ export default function DoudizhuScreen() {
   const [aiCoins, setAiCoins] = useState<[number, number]>([0, 0])
   const [gameResult, setGameResult] = useState<GameResult | null>(null)
   const [showShareDialog, setShowShareDialog] = useState(false)
+  const [, setGameHistory] = useState<GameRound[]>([])
+  const [gameDifficulty, setGameDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal')
   
   const stateRef = useRef({
     phase: 'idle' as GamePhase,
@@ -322,11 +370,12 @@ export default function DoudizhuScreen() {
     dizhuCards: [] as Card[],
     aiThinking: false,
     bombCount: 0,
-    baseScore: 100
+    baseScore: 100,
+    difficulty: 'normal' as 'easy' | 'normal' | 'hard'
   })
   
   useEffect(() => {
-    stateRef.current = { phase, hands, currentBidder, currentPlayer, bidScore, bidRound, lastPlay, lastPlayPlayer, passCount, landlord, dizhuCards, aiThinking, bombCount, baseScore }
+    stateRef.current = { phase, hands, currentBidder, currentPlayer, bidScore, bidRound, lastPlay, lastPlayPlayer, passCount, landlord, dizhuCards, aiThinking, bombCount, baseScore, difficulty: gameDifficulty }
   }, [phase, hands, currentBidder, currentPlayer, bidScore, bidRound, lastPlay, lastPlayPlayer, passCount, landlord, dizhuCards, aiThinking, bombCount, baseScore])
   
   const handleRecharge = () => {
@@ -366,6 +415,10 @@ export default function DoudizhuScreen() {
         2000 + Math.floor(Math.random() * 8000),
         2000 + Math.floor(Math.random() * 8000)
       ])
+      // 随机难度：困难60%，普通30%，简单10%
+      const rand = Math.random()
+      const diff: 'easy' | 'normal' | 'hard' = rand < 0.1 ? 'easy' : rand < 0.4 ? 'normal' : 'hard'
+      setGameDifficulty(diff)
       setTimeout(() => setPhase('selectBase'), 300)
     }
   }, [phase, matchProgress])
@@ -374,6 +427,7 @@ export default function DoudizhuScreen() {
     if (stats.coins < 1000) { setShowRecharge(true); return }
     playSound('start')
     setMatchProgress(0)
+    setGameHistory([]) // 清空游戏记录
     setPhase('matching')
   }
   
@@ -396,6 +450,7 @@ export default function DoudizhuScreen() {
     setAiThinking(false)
     setBombCount(0)
     setGameResult(null)
+    setGameHistory([]) // 清空游戏记录
     setPhase('bidding')
   }
   
@@ -548,17 +603,22 @@ export default function DoudizhuScreen() {
     }
     
     const isWin = (winnerSide === 'landlord' && landlordIdx === 0) || (winnerSide === 'farmer' && landlordIdx !== 0)
-    return { playerCoins, bombCount: finalBombCount, multiplier, baseScore: s.baseScore, bidScore: s.bidScore || 1, isWin, landlordPlayer: landlordIdx as Player }
+    return { playerCoins, bombCount: finalBombCount, multiplier, baseScore: s.baseScore, bidScore: s.bidScore || 1, isWin, landlordPlayer: landlordIdx as Player, totalRounds: 0, gameHistory: [], difficulty: s.difficulty }
   }
   
   const doPlayCards = useCallback((player: Player, cards: Card[]) => {
     if (cards.length > 0) playSound('card')
     
-    // 更新出牌记录 - 先清除自己上一轮的牌，再设置新牌
+    // 记录游戏过程（简单记录）
+    setGameHistory(prev => [...prev, { player, cardCount: cards.length, isPass: cards.length === 0 }])
+    
+    // 更新出牌记录
     setPlayedCards(prev => {
       const newMap = new Map(prev)
-      // 清除自己上一轮的牌
-      newMap.delete(player)
+      // 如果轮到玩家(0)出牌，先清除玩家自己上一轮的牌
+      if (player === 0) {
+        newMap.delete(0)
+      }
       // 设置新出的牌
       if (cards.length > 0) {
         newMap.set(player, cards)
@@ -599,10 +659,15 @@ export default function DoudizhuScreen() {
                       (player === 0 && stateRef.current.landlord !== 0)
         playSound(isWin ? 'win' : 'lose')
         
-        const result = calculateResult(winnerSide, newBombCount)
-        setGameResult(result)
+        const calcResult = calculateResult(winnerSide, newBombCount)
+        // 添加游戏历史到结果
+        setGameHistory(prev => {
+          const finalResult = { ...calcResult, totalRounds: prev.length, gameHistory: prev }
+          setGameResult(finalResult)
+          return prev
+        })
         
-        const myChange = result.playerCoins[0]
+        const myChange = calcResult.playerCoins[0]
         setStats(prev => {
           const newStats = {
             coins: Math.max(0, prev.coins + myChange),
@@ -614,8 +679,8 @@ export default function DoudizhuScreen() {
         })
         
         setAiCoins(prev => [
-          Math.max(0, prev[0] + result.playerCoins[1]),
-          Math.max(0, prev[1] + result.playerCoins[2])
+          Math.max(0, prev[0] + calcResult.playerCoins[1]),
+          Math.max(0, prev[1] + calcResult.playerCoins[2])
         ])
         
         setPhase('ended')
@@ -659,14 +724,28 @@ export default function DoudizhuScreen() {
   }
   
   const handleHint = () => {
+    // 使用AI逻辑来找到最佳出牌提示
     const needToBeat = lastPlayPlayer !== null && lastPlayPlayer !== 0
-    for (let i = hands[0].length - 1; i >= 0; i--) {
-      const card = hands[0][i]
-      const result = analyzeHand([card])
-      if (needToBeat ? canBeat(result, lastPlay) : result.type !== 'invalid') {
-        setSelectedCards(new Set([card.id]))
-        return
-      }
+    const context = {
+      lastPlayPlayer: lastPlayPlayer ?? undefined,
+      currentPlayer: 0,
+      landlordPlayer: landlord ?? 0,
+      playerHandCount: hands[0].length,
+      teammateHandCount: hands[1].length
+    }
+    const hintCards = aiDecide(
+      hands[0], 
+      needToBeat ? lastPlay : null, 
+      landlord === 0, 
+      'normal',
+      context
+    )
+    if (hintCards && hintCards.length > 0) {
+      setSelectedCards(new Set(hintCards.map(c => c.id)))
+    } else {
+      // 如果AI建议不出，提示用户
+      setMessage('建议不出')
+      setTimeout(() => setMessage(''), 1000)
     }
   }
   
@@ -693,11 +772,12 @@ export default function DoudizhuScreen() {
           playerHandCount: stateRef.current.hands[0].length,
           teammateHandCount: player === 1 ? stateRef.current.hands[2].length : stateRef.current.hands[1].length
         }
+        // 使用随机匹配的难度
         const cards = aiDecide(
           stateRef.current.hands[player], 
           needToBeat ? stateRef.current.lastPlay : null, 
           player === stateRef.current.landlord, 
-          'normal',
+          stateRef.current.difficulty,
           context
         )
         setMessage('')
@@ -1171,7 +1251,6 @@ export default function DoudizhuScreen() {
       {showShareDialog && gameResult && (
         <ShareDialog 
           gameResult={gameResult} 
-          stats={stats}
           onClose={() => setShowShareDialog(false)} 
         />
       )}

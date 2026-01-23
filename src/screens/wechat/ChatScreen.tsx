@@ -1958,6 +1958,43 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       )
     }
     
+    // 斗地主战绩分享卡片
+    if (msg.type === 'doudizhu_share') {
+      try {
+        const data = JSON.parse(msg.content)
+        const isWin = data.isWin
+        const coinChange = data.coinChange || 0
+        return (
+          <div className="min-w-[160px] max-w-[200px] rounded-xl overflow-hidden shadow-lg">
+            <div 
+              className="p-3 text-white"
+              style={{ background: isWin ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'linear-gradient(135deg, #4a5568 0%, #2d3748 100%)' }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] opacity-80">🃏 斗地主</span>
+                <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded">{data.difficulty}</span>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl mb-0.5">{isWin ? '🎉' : '😢'}</div>
+                <div className="font-bold">{isWin ? '胜利' : '失败'}</div>
+                <div className="text-[11px] opacity-80">{data.role}</div>
+              </div>
+              <div className="flex justify-between text-[10px] mt-2 pt-2 border-t border-white/20">
+                <span>{data.multiplier}x倍数</span>
+                <span>{data.totalRounds}回合</span>
+              </div>
+            </div>
+            <div className={`px-3 py-1.5 text-[11px] font-medium ${coinChange > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-600'}`}>
+              金币 {coinChange > 0 ? '+' : ''}{coinChange}
+              {data.bombCount > 0 && <span className="ml-1">💣×{data.bombCount}</span>}
+            </div>
+          </div>
+        )
+      } catch {
+        return <span>{msg.content}</span>
+      }
+    }
+    
     return <span>{msg.content}</span>
   }
 
