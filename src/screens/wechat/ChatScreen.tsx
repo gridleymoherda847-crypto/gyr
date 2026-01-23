@@ -67,6 +67,7 @@ export default function ChatScreen() {
 
   // 日记（偷看）状态
   const [diaryOpen, setDiaryOpen] = useState(false)
+  const [diaryConfirmOpen, setDiaryConfirmOpen] = useState(false)
   const [diaryLoading, setDiaryLoading] = useState(false)
   const [diaryProgress, setDiaryProgress] = useState(0)
   const [diaryStage, setDiaryStage] = useState('')
@@ -1298,22 +1299,40 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     const now = Date.now()
     setDiaryAt(now)
 
-    const stages = [
-      { p: 12, t: '破限App注入中…' },
-      { p: 28, t: '读取角色人设中…' },
-      { p: 46, t: '翻看你们的聊天记录…' },
-      { p: 62, t: '正在窃取对方的日记信息…' },
-      { p: 78, t: '哎呀差点被发现了，继续窃取中…' },
-      { p: 92, t: '写作中…' },
+    // 进度条：故意“慢一点”，并且最多卡在 92%，等待模型真实返回后再 100%
+    // 这样能和模型速度更匹配，不会出现“条满了还在等”的出戏感
+    const stageByProgress = (p: number) => {
+      if (p < 18) return '破限App注入中…'
+      if (p < 35) return '读取角色人设中…'
+      if (p < 52) return '翻看你们的聊天记录…'
+      if (p < 70) return '正在窃取对方的日记信息…'
+      if (p < 85) return '哎呀差点被发现了，继续窃取中…'
+      return '写作中…'
+    }
+    const playful = [
+      '嘘…别出声，翻页声有点大…',
+      '咳…我只是路过（继续窃取中）',
+      '差点被锁屏抓到…继续！',
+      '这段有点劲爆，先缓存一下…',
     ]
-    let stageIdx = 0
-    setDiaryStage(stages[0].t)
+    let playfulIdx = 0
+    setDiaryStage('破限App注入中…')
     const timer = window.setInterval(() => {
-      stageIdx = Math.min(stages.length - 1, stageIdx + 1)
-      setDiaryStage(stages[stageIdx].t)
-      setDiaryProgress(prev => Math.max(prev, stages[stageIdx].p))
-      if (stageIdx >= stages.length - 1) window.clearInterval(timer)
-    }, 520)
+      setDiaryProgress(prev => {
+        const cap = 92
+        if (prev >= cap) return prev
+        const step = 2 + Math.floor(Math.random() * 5) // 2~6
+        const next = Math.min(cap, prev + step)
+        // 偶尔插一句俏皮话
+        if (Math.random() < 0.18) {
+          setDiaryStage(playful[playfulIdx % playful.length])
+          playfulIdx += 1
+        } else {
+          setDiaryStage(stageByProgress(next))
+        }
+        return next
+      })
+    }, 950)
 
     try {
       const globalPresets = getGlobalPresets()
@@ -2084,7 +2103,15 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                   </button>
 
                   {/* 日记（偷看） */}
-                  <button type="button" onClick={startDiaryPeek} className="flex flex-col items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlusMenu(false)
+                      setActivePanel(null)
+                      setDiaryConfirmOpen(true)
+                    }}
+                    className="flex flex-col items-center gap-1"
+                  >
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h10.5A1.5 1.5 0 0118 6v14.25a.75.75 0 01-1.2.6l-2.1-1.575a1.5 1.5 0 00-1.8 0l-2.1 1.575a1.5 1.5 0 01-1.8 0l-2.1-1.575a.75.75 0 00-1.2.6V6A1.5 1.5 0 016 4.5z" />
@@ -2314,21 +2341,26 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       
       {/* 已移除：模式切换提示弹窗（统一手动回复） */}
 
+      <WeChatDialog
+        open={diaryConfirmOpen}
+        title="确定偷看对方的日记吗？"
+        message="这可是很私密的东西哦…喜欢的话记得及时收藏。"
+        confirmText="悄咪咪的看"
+        cancelText="算了不看了"
+        onCancel={() => setDiaryConfirmOpen(false)}
+        onConfirm={() => {
+          setDiaryConfirmOpen(false)
+          startDiaryPeek()
+        }}
+      />
+
       {/* 日记本（偷看） */}
       {diaryOpen && (
         <div className="absolute inset-0 z-50 flex flex-col bg-[#F7F4EE]">
           <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 bg-white/70 backdrop-blur">
             <button type="button" onClick={() => setDiaryOpen(false)} className="text-gray-700 text-sm">返回</button>
-            <div className="text-sm font-semibold text-[#111]">偷看日记</div>
+            <div className="text-[16px] font-bold text-[#111]">偷看日记</div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={diaryLoading}
-                onClick={startDiaryPeek}
-                className="px-3 py-1.5 rounded-full bg-white/70 border border-black/10 text-[12px] text-gray-700 disabled:opacity-50"
-              >
-                再偷看一篇
-              </button>
               <button
                 type="button"
                 disabled={diaryLoading || !diaryContent.trim()}
@@ -2356,22 +2388,33 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             </div>
           </div>
 
-          <div className="px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-[12px] text-gray-600 truncate">目标：{character.name}</div>
-              <div className="text-[12px] text-gray-500">{diaryLoading ? diaryStage : ' '}</div>
+          {diaryLoading ? (
+            <div className="px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[12px] text-gray-600 truncate">目标：{character.name}</div>
+                <div className="text-[12px] text-gray-500">{diaryStage}</div>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-black/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, diaryProgress))}%`,
+                    background: 'linear-gradient(90deg, #34d399 0%, #07C160 100%)',
+                    transition: 'width 420ms ease',
+                  }}
+                />
+              </div>
             </div>
-            <div className="mt-2 h-2 rounded-full bg-black/10 overflow-hidden">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width: `${Math.min(100, Math.max(0, diaryProgress))}%`,
-                  background: 'linear-gradient(90deg, #34d399 0%, #07C160 100%)',
-                  transition: 'width 220ms ease',
-                }}
-              />
+          ) : (
+            <div className="px-4 pt-4 pb-2">
+              <div className="text-center text-[16px] font-semibold text-[#111]">
+                偷看成功。
+              </div>
+              <div className="mt-1 text-center text-[12px] text-gray-600">
+                这篇日记只有一次偷看机会，遇到喜欢的要及时收藏哦。
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex-1 overflow-y-auto p-4">
             <div className="rounded-[22px] bg-white/75 border border-black/10 shadow-sm overflow-hidden">
@@ -2380,13 +2423,13 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                 <div className="text-[11px] text-gray-500 mt-0.5">（每次打开都会生成新的）</div>
               </div>
               <div
-                className="px-4 py-4 text-[13px] leading-relaxed text-[#111] whitespace-pre-wrap min-h-[320px]"
+                className="px-4 py-4 text-[13px] leading-[26px] text-[#111] whitespace-pre-wrap min-h-[320px]"
                 style={{
-                  backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.04) 1px, transparent 1px)',
-                  backgroundSize: '100% 26px',
+                  backgroundImage:
+                    'repeating-linear-gradient(to bottom, transparent 0px, transparent 25px, rgba(0,0,0,0.05) 25px, rgba(0,0,0,0.05) 26px)',
                 }}
               >
-                {diaryLoading && !diaryContent ? '…' : (diaryContent || '点击“再偷看一篇”开始生成')}
+                {diaryLoading && !diaryContent ? '…' : (diaryContent || '（空）')}
               </div>
             </div>
           </div>
