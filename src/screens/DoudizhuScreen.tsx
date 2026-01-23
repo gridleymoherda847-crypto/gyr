@@ -868,36 +868,54 @@ export default function DoudizhuScreen() {
       {/* 游戏中 */}
       {isInGame && (
         <div className="flex-1 flex flex-col relative">
-          {/* 顶部：两个AI头像 */}
-          <div className="flex justify-between px-6 pt-2">
-            <PlayerAvatar 
-              avatarUrl="" 
-              isActive={phase === 'bidding' ? currentBidder === 2 : currentPlayer === 2} 
-              isLandlord={landlord === 2} 
-              isComputer={true} 
-              cardCount={hands[2].length} 
-              coins={aiCoins[1]}
-              name="电脑B"
-            />
+          {/* 顶部：两个AI头像和出牌区 */}
+          <div className="flex justify-between items-start px-4 pt-2">
+            {/* 左侧：电脑B头像 + 出牌 */}
+            <div className="flex items-start gap-2">
+              <PlayerAvatar 
+                avatarUrl="" 
+                isActive={phase === 'bidding' ? currentBidder === 2 : currentPlayer === 2} 
+                isLandlord={landlord === 2} 
+                isComputer={true} 
+                cardCount={hands[2].length} 
+                coins={aiCoins[1]}
+                name="电脑B"
+              />
+              {/* 电脑B出的牌 - 在头像右侧 */}
+              {phase === 'playing' && playedCards.has(2) && (
+                <div className="mt-2">
+                  {renderPlayedCards(playedCards.get(2) || [])}
+                </div>
+              )}
+            </div>
             
-            {/* 底牌 */}
+            {/* 中间：底牌 */}
             <div className="flex items-center gap-1.5">
               <span className="text-white/50 text-xs">底牌:</span>
               {dizhuCards.map(card => renderSmallCard(card))}
             </div>
             
-            <PlayerAvatar 
-              avatarUrl="" 
-              isActive={phase === 'bidding' ? currentBidder === 1 : currentPlayer === 1} 
-              isLandlord={landlord === 1} 
-              isComputer={true} 
-              cardCount={hands[1].length} 
-              coins={aiCoins[0]}
-              name="电脑A"
-            />
+            {/* 右侧：电脑A出牌 + 头像 */}
+            <div className="flex items-start gap-2">
+              {/* 电脑A出的牌 - 在头像左侧 */}
+              {phase === 'playing' && playedCards.has(1) && (
+                <div className="mt-2">
+                  {renderPlayedCards(playedCards.get(1) || [])}
+                </div>
+              )}
+              <PlayerAvatar 
+                avatarUrl="" 
+                isActive={phase === 'bidding' ? currentBidder === 1 : currentPlayer === 1} 
+                isLandlord={landlord === 1} 
+                isComputer={true} 
+                cardCount={hands[1].length} 
+                coins={aiCoins[0]}
+                name="电脑A"
+              />
+            </div>
           </div>
           
-          {/* 中间区域 - 出牌区 */}
+          {/* 中间区域 - 叫地主按钮 / 我出的牌 */}
           <div className="flex-1 flex flex-col items-center justify-center">
             {phase === 'bidding' && (
               <>
@@ -913,27 +931,10 @@ export default function DoudizhuScreen() {
             )}
             
             {phase === 'playing' && (
-              <div className="flex flex-col items-center gap-4">
-                {/* AI出的牌 - 放中间 */}
-                <div className="flex gap-16 mb-2">
-                  {playedCards.has(2) && (
-                    <div className="flex flex-col items-center gap-1">
-                      <span className="text-white/50 text-xs">电脑B</span>
-                      {renderPlayedCards(playedCards.get(2) || [])}
-                    </div>
-                  )}
-                  {playedCards.has(1) && (
-                    <div className="flex flex-col items-center gap-1">
-                      <span className="text-white/50 text-xs">电脑A</span>
-                      {renderPlayedCards(playedCards.get(1) || [])}
-                    </div>
-                  )}
-                </div>
-                
-                {/* 我出的牌 */}
+              <div className="flex flex-col items-center">
+                {/* 我出的牌 - 在中间 */}
                 {playedCards.has(0) && (
                   <div className="flex flex-col items-center gap-1">
-                    <span className="text-white/50 text-xs">我</span>
                     {renderPlayedCards(playedCards.get(0) || [])}
                   </div>
                 )}
