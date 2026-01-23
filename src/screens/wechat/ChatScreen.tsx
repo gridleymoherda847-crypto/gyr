@@ -295,14 +295,18 @@ export default function ChatScreen() {
           ? (lastMsg.isUser && prevMsg ? Math.max(0, lastMsg.timestamp - prevMsg.timestamp) : Math.max(0, nowTs - lastMsg.timestamp))
           : 0
         const lastUserMsg = [...nonSystem].reverse().find(m => m.isUser) || null
-        const formatGap = (ms: number) => {
-          const mins = Math.floor(ms / 60000)
-          if (mins < 1) return '不到1分钟'
-          if (mins < 60) return `${mins}分钟`
-          const hours = Math.floor(mins / 60)
-          if (hours < 24) return `${hours}小时`
-          const days = Math.floor(hours / 24)
-          return `${days}天`
+        const formatGapPrecise = (ms: number) => {
+          const totalSec = Math.max(0, Math.floor(ms / 1000))
+          const days = Math.floor(totalSec / 86400)
+          const hours = Math.floor((totalSec % 86400) / 3600)
+          const mins = Math.floor((totalSec % 3600) / 60)
+          const secs = totalSec % 60
+          const parts: string[] = []
+          if (days > 0) parts.push(`${days}天`)
+          if (hours > 0 || days > 0) parts.push(`${hours}小时`)
+          if (mins > 0 || hours > 0 || days > 0) parts.push(`${mins}分`)
+          parts.push(`${secs}秒`)
+          return parts.join('')
         }
 
         // 构建系统提示（严格顺序：预设 → 角色设定 → 我的人设 → 长期记忆摘要 → 时间感 → 输出）
@@ -321,12 +325,14 @@ ${currentPeriod ? '\n【特殊状态】用户目前处于经期，请适当关�
 【长期记忆摘要（每次回复必读，用户可手动编辑）】
 ${character.memorySummary ? character.memorySummary : '（暂无）'}
 
-【当前时间】
-${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN') : (character.manualTime ? new Date(character.manualTime).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'))}
+【当前时间（精确到秒）】
+${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN', { hour12: false }) : (character.manualTime ? new Date(character.manualTime).toLocaleString('zh-CN', { hour12: false }) : new Date().toLocaleString('zh-CN', { hour12: false }))}
 
 【时间感（必须严格遵守，否则算失败）】
-- 这次消息与上一条消息间隔：${formatGap(gapMs)}
-- 用户上一条发言时间：${lastUserMsg ? new Date(lastUserMsg.timestamp).toLocaleString('zh-CN') : '（无）'}
+- 上一条消息时间：${prevMsg ? new Date(prevMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
+- 这条消息时间：${lastMsg ? new Date(lastMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
+- 精确间隔（天/时/分/秒）：${formatGapPrecise(gapMs)}
+- 用户上一条发言时间：${lastUserMsg ? new Date(lastUserMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 强规则：如果间隔 >= 2小时，第一条回复必须先提到“你很久没回/刚刚在忙吗”等
 - 强规则：如果间隔 >= 1天，第一条回复必须带一点点情绪（担心/委屈/吐槽/想你），并追问原因
 - 强规则：如果间隔 >= 2天，第一条回复必须明确说出“都两天了”或“好几天了”，并要求对方解释（语气可按人设）
@@ -611,8 +617,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       d.getFullYear() === now.getFullYear() &&
       d.getMonth() === now.getMonth() &&
       d.getDate() === now.getDate()
-    const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
-    return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`
+    const hms = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    return sameDay ? hms : `${d.getMonth() + 1}/${d.getDate()} ${hms}`
   }
 
   // 生成多条真人式回复（用于+号功能，遵守自动/手动模式）
@@ -1637,8 +1643,10 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                         {renderMessageContent(msg)}
                       </div>
                       {/* 每条消息显示时间（小号字体） */}
-                      <div className="mt-1 text-[10px] text-gray-400">
-                        {formatTime(msg.timestamp)}
+                      <div className="mt-2">
+                        <span className="inline-block px-2 py-[2px] rounded-md bg-white/70 backdrop-blur border border-white/60 text-[10px] text-gray-600">
+                          {formatTime(msg.timestamp)}
+                        </span>
                       </div>
                     </div>
                     

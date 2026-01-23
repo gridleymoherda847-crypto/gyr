@@ -35,12 +35,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           backgroundColor: '#fef7f0',
         }}
       >
-        {/* 移动端灵动岛（适配刘海屏） */}
-        <div className="absolute top-1 left-1/2 -translate-x-1/2 z-50">
-          <div className="w-[90px] h-[25px] bg-black rounded-[14px] flex items-center justify-center">
-            <div className="w-2 h-2 rounded-full bg-[#1a1a2e] ring-1 ring-gray-700" />
-          </div>
-        </div>
+        {/* 已移除“摄像头/灵动岛”模拟层：使用真机系统状态栏 */}
 
         {isLocked ? (
           <div className="relative z-10 h-full w-full">{children}</div>
@@ -98,12 +93,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
               backgroundColor: '#fef7f0',
             }}
           >
-            {/* 桌面端灵动岛 */}
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
-              <div className="w-[120px] h-[34px] bg-black rounded-[18px] flex items-center justify-center">
-                <div className="w-3 h-3 rounded-full bg-[#1a1a2e] ring-1 ring-gray-700" />
-              </div>
-            </div>
+            {/* 已移除“摄像头/灵动岛”模拟层 */}
 
             {isLocked ? (
               <div className="relative z-10 h-full w-full">{children}</div>

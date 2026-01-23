@@ -628,16 +628,21 @@ ${presetContent ? `【创作规则】\n${presetContent}\n` : ''}
         ))}
         
         <div
-          className="flex items-center justify-between px-4 pb-3 relative z-10"
-          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+          className="flex items-center justify-between px-4 py-3 relative z-10"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}
         >
-          <button onClick={onBack} className="text-white/90 hover:text-white p-1">
+          <button
+            type="button"
+            onClick={onBack}
+            className="w-9 h-9 -ml-1 flex items-center justify-center rounded-full bg-white/10 text-white/90 hover:text-white active:scale-95 transition-transform"
+            aria-label="返回"
+          >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <span className="text-white font-bold text-lg tracking-wider">星引力</span>
-          <div className="w-6" />
+          <div className="w-9" />
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">

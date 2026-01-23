@@ -416,6 +416,10 @@ export default function ChatSettingsScreen() {
                 )}
                 <div className="absolute inset-0 bg-black/10 opacity-0 hover:opacity-100 transition-opacity" />
               </button>
+              <div className="flex flex-col items-start">
+                <div className="text-[11px] text-gray-500">点头像可更换</div>
+                <div className="text-[11px] text-gray-400 mt-0.5">（从相册选择）</div>
+              </div>
               <input
                 ref={avatarInputRef}
                 type="file"
