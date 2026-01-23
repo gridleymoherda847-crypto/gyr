@@ -28,11 +28,11 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose') => {
     gain.connect(ctx.destination)
     
     if (type === 'start') {
-      osc.frequency.value = 523 // C5
+      osc.frequency.value = 523
       gain.gain.value = 0.3
       osc.start()
-      osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1) // E5
-      osc.frequency.setValueAtTime(784, ctx.currentTime + 0.2) // G5
+      osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1)
+      osc.frequency.setValueAtTime(784, ctx.currentTime + 0.2)
       osc.stop(ctx.currentTime + 0.3)
     } else if (type === 'card') {
       osc.type = 'square'
@@ -67,29 +67,24 @@ function PlayerAvatar({
   isActive, 
   isLandlord,
   isComputer,
-  cardCount,
-  size = 'normal'
+  cardCount
 }: { 
   avatarUrl?: string
   isActive: boolean
   isLandlord: boolean
   isComputer: boolean
   cardCount: number
-  size?: 'normal' | 'large'
 }) {
-  const sizeClass = size === 'large' ? 'w-14 h-14' : 'w-12 h-12'
-  const textSize = size === 'large' ? 'text-base' : 'text-sm'
-  
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex flex-col items-center gap-0.5">
       <div 
-        className={`relative ${sizeClass} rounded-full flex items-center justify-center shadow-lg overflow-hidden`}
+        className="relative w-12 h-12 rounded-full flex items-center justify-center shadow-lg overflow-hidden"
         style={{
           background: isComputer 
             ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
             : 'linear-gradient(135deg, #4ade80 0%, #22c55e 100%)',
           boxShadow: isActive 
-            ? '0 0 0 4px #facc15, 0 0 25px rgba(250, 204, 21, 0.7)' 
+            ? '0 0 0 3px #facc15, 0 0 20px rgba(250, 204, 21, 0.7)' 
             : '0 2px 8px rgba(0,0,0,0.3)',
           animation: isActive ? 'glow 1s ease-in-out infinite alternate' : 'none'
         }}
@@ -97,7 +92,7 @@ function PlayerAvatar({
         {avatarUrl ? (
           <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
         ) : (
-          <span className={`text-white ${textSize}`}>{isComputer ? '🤖' : '😊'}</span>
+          <span className="text-white text-lg">{isComputer ? '🤖' : '😊'}</span>
         )}
         {isLandlord && (
           <div className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-yellow-400 rounded-full flex items-center justify-center shadow text-[10px]">
@@ -105,8 +100,8 @@ function PlayerAvatar({
           </div>
         )}
       </div>
-      <div className="text-white text-xs font-medium">{isComputer ? '电脑' : '我'}</div>
-      <div className="bg-black/50 rounded px-2 py-0.5 text-xs text-yellow-300 font-bold">{cardCount}张</div>
+      <div className="text-white text-[10px] font-medium">{isComputer ? '电脑' : '我'}</div>
+      <div className="bg-black/50 rounded px-1.5 py-0.5 text-[10px] text-yellow-300 font-bold">{cardCount}张</div>
     </div>
   )
 }
@@ -115,7 +110,6 @@ export default function DoudizhuScreen() {
   const navigate = useNavigate()
   const { userPersonas } = useWeChat()
   
-  // 获取默认人设头像
   const defaultPersona = userPersonas[0]
   const myAvatarUrl = defaultPersona?.avatar || ''
   
@@ -153,7 +147,6 @@ export default function DoudizhuScreen() {
     stateRef.current = { phase, hands, currentBidder, currentPlayer, bidScore, lastPlay, lastPlayPlayer, passCount, landlord, dizhuCards, aiThinking }
   }, [phase, hands, currentBidder, currentPlayer, bidScore, lastPlay, lastPlayPlayer, passCount, landlord, dizhuCards, aiThinking])
   
-  // 开始游戏
   const startGame = () => {
     playSound('start')
     const { hands: newHands, dizhu } = dealCards()
@@ -174,7 +167,6 @@ export default function DoudizhuScreen() {
     setPhase('bidding')
   }
   
-  // AI叫地主
   useEffect(() => {
     if (phase !== 'bidding') return
     
@@ -185,7 +177,6 @@ export default function DoudizhuScreen() {
       setAiThinking(true)
       setMessage(`${PLAYER_NAMES[s.currentBidder]} 思考中...`)
       
-      // 2-4秒思考时间
       const thinkTime = 2000 + Math.random() * 2000
       
       setTimeout(() => {
@@ -363,7 +354,6 @@ export default function DoudizhuScreen() {
     }
   }
   
-  // AI出牌
   useEffect(() => {
     if (phase !== 'playing') return
     
@@ -374,7 +364,6 @@ export default function DoudizhuScreen() {
       setAiThinking(true)
       setMessage(`${PLAYER_NAMES[s.currentPlayer]} 思考中...`)
       
-      // 2-5秒思考时间
       const thinkTime = 2000 + Math.random() * 3000
       
       setTimeout(() => {
@@ -391,48 +380,98 @@ export default function DoudizhuScreen() {
     return () => clearInterval(interval)
   }, [phase, doPlayCards])
   
-  // 渲染牌 - 放大版
-  const renderCard = (card: Card, isSelected: boolean, onClick?: () => void, size: 'large' | 'normal' | 'small' = 'normal') => {
+  // 渲染单张牌 - 扇形重叠用
+  const renderFanCard = (card: Card, index: number, _total: number, isSelected: boolean, onClick?: () => void) => {
     const isJoker = card.suit === 'joker'
     const color = SUIT_COLORS[card.suit]
     
-    const sizeClass = size === 'large' ? 'w-14 h-20' : size === 'normal' ? 'w-12 h-16' : 'w-10 h-14'
-    const fontSize = size === 'large' ? 'text-lg' : size === 'normal' ? 'text-base' : 'text-sm'
-    const suitSize = size === 'large' ? 'text-sm' : size === 'normal' ? 'text-xs' : 'text-[10px]'
+    // 计算重叠偏移 - 每张牌只露出20px
+    const offset = index * 22
     
     return (
       <div
         key={card.id}
         onClick={onClick}
-        className={`${sizeClass} bg-white rounded-lg shadow-lg border-2 border-gray-200 flex flex-col items-center justify-center flex-shrink-0
-          ${onClick ? 'cursor-pointer active:scale-95' : ''} ${isSelected ? '-translate-y-4 ring-3 ring-yellow-400 shadow-xl' : ''} transition-all`}
-        style={{ color }}
+        className={`absolute w-14 h-20 bg-white rounded-lg shadow-lg border-2 border-gray-200 flex flex-col items-center justify-center
+          ${onClick ? 'cursor-pointer active:scale-95' : ''} transition-all duration-150`}
+        style={{ 
+          color,
+          left: `${offset}px`,
+          transform: isSelected ? 'translateY(-16px)' : 'translateY(0)',
+          zIndex: index
+        }}
       >
         {isJoker ? (
-          <span className={`${size === 'large' ? 'text-sm' : 'text-xs'} font-bold text-center`}>
+          <span className="text-xs font-bold text-center leading-tight">
             {card.rank === 16 ? '小王' : '大王'}
           </span>
         ) : (
           <>
-            <span className={`${fontSize} font-bold leading-none`}>{card.display}</span>
-            <span className={`${suitSize} leading-none mt-0.5`}>{SUIT_SYMBOLS[card.suit]}</span>
+            <span className="text-lg font-bold leading-none">{card.display}</span>
+            <span className="text-sm leading-none">{SUIT_SYMBOLS[card.suit]}</span>
           </>
         )}
       </div>
     )
   }
   
-  // 渲染出的牌 - 放大版
+  // 渲染出的牌
   const renderPlayedCards = (player: Player) => {
     const cards = roundPlays.get(player)
     if (cards === undefined) return null
     if (cards.length === 0) return <div className="text-yellow-300 text-sm bg-black/50 px-3 py-1.5 rounded-lg">不出</div>
+    
+    const totalWidth = (cards.length - 1) * 22 + 56
     return (
-      <div className="flex -space-x-5">
-        {cards.map(card => renderCard(card, false, undefined, 'normal'))}
+      <div className="relative" style={{ width: `${totalWidth}px`, height: '80px' }}>
+        {cards.map((card, i) => {
+          const isJoker = card.suit === 'joker'
+          const color = SUIT_COLORS[card.suit]
+          return (
+            <div
+              key={card.id}
+              className="absolute w-14 h-20 bg-white rounded-lg shadow-lg border-2 border-gray-200 flex flex-col items-center justify-center"
+              style={{ color, left: `${i * 22}px`, zIndex: i }}
+            >
+              {isJoker ? (
+                <span className="text-xs font-bold text-center">{card.rank === 16 ? '小王' : '大王'}</span>
+              ) : (
+                <>
+                  <span className="text-lg font-bold leading-none">{card.display}</span>
+                  <span className="text-sm leading-none">{SUIT_SYMBOLS[card.suit]}</span>
+                </>
+              )}
+            </div>
+          )
+        })}
       </div>
     )
   }
+  
+  // 渲染底牌小牌
+  const renderSmallCard = (card: Card) => {
+    const isJoker = card.suit === 'joker'
+    const color = SUIT_COLORS[card.suit]
+    return (
+      <div
+        key={card.id}
+        className="w-8 h-11 bg-white rounded shadow border border-gray-300 flex flex-col items-center justify-center"
+        style={{ color }}
+      >
+        {isJoker ? (
+          <span className="text-[8px] font-bold">{card.rank === 16 ? '小' : '大'}</span>
+        ) : (
+          <>
+            <span className="text-xs font-bold leading-none">{card.display}</span>
+            <span className="text-[8px] leading-none">{SUIT_SYMBOLS[card.suit]}</span>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // 计算手牌容器宽度
+  const handWidth = hands[0].length > 0 ? (hands[0].length - 1) * 22 + 56 : 0
 
   return (
     <div 
@@ -450,36 +489,36 @@ export default function DoudizhuScreen() {
       }}
     >
       {/* 顶部 */}
-      <div className="flex items-center justify-between px-4 py-2 bg-black/40 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-1.5 bg-black/40 flex-shrink-0">
         <button onClick={() => navigate(-1)} className="text-white/80 p-1">
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h1 className="text-white font-bold text-base">🃏 欢乐斗地主</h1>
+        <h1 className="text-white font-bold text-sm">🃏 欢乐斗地主</h1>
         {phase === 'playing' && (
           <div className="flex gap-1 items-center">
-            <span className="text-white/60 text-xs mr-1">底牌:</span>
-            {dizhuCards.map(card => renderCard(card, false, undefined, 'small'))}
+            <span className="text-white/60 text-[10px] mr-0.5">底牌:</span>
+            {dizhuCards.map(card => renderSmallCard(card))}
           </div>
         )}
-        {phase !== 'playing' && <div className="w-24" />}
+        {phase !== 'playing' && <div className="w-20" />}
       </div>
       
       {/* 消息 */}
       {message && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-black/85 text-white px-6 py-3 rounded-2xl text-base font-medium shadow-2xl">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-black/85 text-white px-5 py-2.5 rounded-xl text-sm font-medium shadow-2xl">
           {message}
         </div>
       )}
       
       {/* 开始界面 */}
       {phase === 'idle' && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-5">
-          <div className="text-6xl">🃏</div>
-          <h2 className="text-white text-2xl font-bold">欢乐斗地主</h2>
-          <p className="text-white/60 text-sm">单机模式 · 不消耗API</p>
-          <button onClick={startGame} className="px-8 py-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-bold rounded-full text-lg shadow-xl active:scale-95 transition-transform">
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <div className="text-5xl">🃏</div>
+          <h2 className="text-white text-xl font-bold">欢乐斗地主</h2>
+          <p className="text-white/60 text-xs">单机模式 · 不消耗API</p>
+          <button onClick={startGame} className="px-6 py-2.5 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-bold rounded-full text-base shadow-xl active:scale-95 transition-transform">
             开始游戏
           </button>
         </div>
@@ -487,114 +526,99 @@ export default function DoudizhuScreen() {
       
       {/* 叫地主 */}
       {phase === 'bidding' && (
-        <div className="flex-1 flex">
-          {/* 左侧 - 我的头像 */}
-          <div className="w-24 flex flex-col justify-end pb-4 pl-2">
+        <div className="flex-1 flex flex-col">
+          {/* 上方电脑头像 - 居中 */}
+          <div className="flex justify-center gap-16 py-2">
+            <PlayerAvatar avatarUrl="" isActive={currentBidder === 2} isLandlord={landlord === 2} isComputer={true} cardCount={hands[2].length} />
+            <PlayerAvatar avatarUrl="" isActive={currentBidder === 1} isLandlord={landlord === 1} isComputer={true} cardCount={hands[1].length} />
+          </div>
+          
+          {/* 中间：底牌和叫分按钮 */}
+          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+            <div className="text-white/70 text-xs">底牌</div>
+            <div className="flex gap-1.5">
+              {dizhuCards.map(card => <div key={card.id} className="w-9 h-12 bg-gradient-to-br from-pink-300 to-pink-400 rounded border-2 border-pink-200 shadow-lg" />)}
+            </div>
+            
+            {currentBidder === 0 && !aiThinking && (
+              <div className="flex gap-2 mt-2">
+                <button onClick={() => handleBid(0)} className="px-4 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium active:scale-95">不叫</button>
+                {bidScore < 1 && <button onClick={() => handleBid(1)} className="px-4 py-1.5 bg-blue-500 text-white rounded-lg text-xs font-medium active:scale-95">1分</button>}
+                {bidScore < 2 && <button onClick={() => handleBid(2)} className="px-4 py-1.5 bg-purple-500 text-white rounded-lg text-xs font-medium active:scale-95">2分</button>}
+                {bidScore < 3 && <button onClick={() => handleBid(3)} className="px-4 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-medium active:scale-95">3分</button>}
+              </div>
+            )}
+          </div>
+          
+          {/* 下方：我的头像和手牌 */}
+          <div className="flex items-end justify-center gap-3 pb-2 px-4">
             <PlayerAvatar 
               avatarUrl={myAvatarUrl}
               isActive={currentBidder === 0} 
               isLandlord={landlord === 0} 
               isComputer={false} 
               cardCount={hands[0].length}
-              size="large"
             />
-          </div>
-          
-          {/* 中间区域 */}
-          <div className="flex-1 flex flex-col">
-            {/* 上方电脑头像 */}
-            <div className="flex justify-around py-3">
-              <PlayerAvatar avatarUrl="" isActive={currentBidder === 2} isLandlord={landlord === 2} isComputer={true} cardCount={hands[2].length} size="large" />
-              <PlayerAvatar avatarUrl="" isActive={currentBidder === 1} isLandlord={landlord === 1} isComputer={true} cardCount={hands[1].length} size="large" />
-            </div>
-            
-            {/* 底牌和叫分按钮 */}
-            <div className="flex-1 flex flex-col items-center justify-center gap-4">
-              <div className="text-white/70 text-sm">底牌</div>
-              <div className="flex gap-2">
-                {dizhuCards.map(card => <div key={card.id} className="w-10 h-14 bg-gradient-to-br from-pink-300 to-pink-400 rounded-lg border-2 border-pink-200 shadow-lg" />)}
-              </div>
-              
-              {currentBidder === 0 && !aiThinking && (
-                <div className="flex gap-3 mt-3">
-                  <button onClick={() => handleBid(0)} className="px-5 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium active:scale-95">不叫</button>
-                  {bidScore < 1 && <button onClick={() => handleBid(1)} className="px-5 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium active:scale-95">1分</button>}
-                  {bidScore < 2 && <button onClick={() => handleBid(2)} className="px-5 py-2 bg-purple-500 text-white rounded-lg text-sm font-medium active:scale-95">2分</button>}
-                  {bidScore < 3 && <button onClick={() => handleBid(3)} className="px-5 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium active:scale-95">3分</button>}
-                </div>
-              )}
-            </div>
-            
-            {/* 我的手牌 */}
-            <div className="pb-3 px-2">
-              <div className="flex gap-1 overflow-x-auto hide-scrollbar justify-center">
-                {hands[0].map(card => renderCard(card, selectedCards.has(card.id), () => toggleCard(card.id), 'normal'))}
-              </div>
+            <div className="relative" style={{ width: `${handWidth}px`, height: '80px' }}>
+              {hands[0].map((card, i) => renderFanCard(card, i, hands[0].length, selectedCards.has(card.id), () => toggleCard(card.id)))}
             </div>
           </div>
-          
-          <div className="w-24" />
         </div>
       )}
       
       {/* 游戏中 */}
       {phase === 'playing' && (
         <div className="flex-1 flex flex-col">
-          {/* 上方：电脑头像和出牌 */}
-          <div className="flex justify-around items-start py-2 px-8">
-            <div className="flex flex-col items-center gap-2">
-              <PlayerAvatar avatarUrl="" isActive={currentPlayer === 2} isLandlord={landlord === 2} isComputer={true} cardCount={hands[2].length} size="large" />
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <PlayerAvatar avatarUrl="" isActive={currentPlayer === 1} isLandlord={landlord === 1} isComputer={true} cardCount={hands[1].length} size="large" />
-            </div>
+          {/* 上方：电脑头像 */}
+          <div className="flex justify-center gap-16 py-1.5">
+            <PlayerAvatar avatarUrl="" isActive={currentPlayer === 2} isLandlord={landlord === 2} isComputer={true} cardCount={hands[2].length} />
+            <PlayerAvatar avatarUrl="" isActive={currentPlayer === 1} isLandlord={landlord === 1} isComputer={true} cardCount={hands[1].length} />
           </div>
           
-          {/* 中间：所有人出的牌集中显示 */}
-          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+          {/* 中间：所有人出的牌 */}
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 min-h-0">
             {/* 电脑出的牌 */}
-            <div className="flex gap-12">
-              <div className="min-w-[120px] flex justify-center">
+            <div className="flex gap-8 justify-center">
+              <div className="min-w-[100px] flex justify-center">
                 {renderPlayedCards(2)}
               </div>
-              <div className="min-w-[120px] flex justify-center">
+              <div className="min-w-[100px] flex justify-center">
                 {renderPlayedCards(1)}
               </div>
             </div>
             
             {/* 我出的牌 */}
-            <div className="min-h-[70px] flex items-center justify-center">
+            <div className="min-h-[80px] flex items-center justify-center">
               {renderPlayedCards(0)}
             </div>
           </div>
           
           {/* 下方：操作按钮 + 手牌 + 头像 */}
-          <div className="pb-2 px-2">
-            {/* 操作按钮在手牌上方 */}
+          <div className="flex flex-col items-center pb-1.5 px-4">
+            {/* 操作按钮 */}
             {currentPlayer === 0 && !aiThinking && (
-              <div className="flex justify-center gap-3 mb-2">
-                <button onClick={handleHint} className="px-5 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium active:scale-95">提示</button>
-                <button onClick={handlePass} disabled={lastPlayPlayer === 0 || lastPlayPlayer === null} className="px-5 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium active:scale-95 disabled:opacity-40">不出</button>
-                <button onClick={handlePlay} className="px-6 py-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-lg text-sm font-bold active:scale-95">出牌</button>
+              <div className="flex justify-center gap-2 mb-1.5">
+                <button onClick={handleHint} className="px-4 py-1.5 bg-blue-500 text-white rounded-lg text-xs font-medium active:scale-95">提示</button>
+                <button onClick={handlePass} disabled={lastPlayPlayer === 0 || lastPlayPlayer === null} className="px-4 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium active:scale-95 disabled:opacity-40">不出</button>
+                <button onClick={handlePlay} className="px-5 py-1.5 bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-lg text-xs font-bold active:scale-95">出牌</button>
               </div>
             )}
             
             {currentPlayer !== 0 && (
-              <div className="text-center text-white/70 text-sm mb-2">等待对方出牌...</div>
+              <div className="text-center text-white/70 text-xs mb-1.5">等待对方出牌...</div>
             )}
             
             {/* 手牌和头像 */}
-            <div className="flex items-end gap-3">
+            <div className="flex items-end justify-center gap-3">
               <PlayerAvatar 
                 avatarUrl={myAvatarUrl}
                 isActive={currentPlayer === 0} 
                 isLandlord={landlord === 0} 
                 isComputer={false} 
                 cardCount={hands[0].length}
-                size="large"
               />
-              <div className="flex-1 flex gap-1 overflow-x-auto hide-scrollbar pb-1 justify-center">
-                {hands[0].map(card => renderCard(card, selectedCards.has(card.id), () => toggleCard(card.id), 'normal'))}
+              <div className="relative" style={{ width: `${handWidth}px`, height: '80px' }}>
+                {hands[0].map((card, i) => renderFanCard(card, i, hands[0].length, selectedCards.has(card.id), () => toggleCard(card.id)))}
               </div>
             </div>
           </div>
@@ -603,20 +627,20 @@ export default function DoudizhuScreen() {
       
       {/* 结束 */}
       {phase === 'ended' && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-5">
-          <div className="text-6xl">{winner === 'landlord' ? (landlord === 0 ? '🎉' : '😢') : (landlord === 0 ? '😢' : '🎉')}</div>
-          <h2 className="text-white text-2xl font-bold">
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <div className="text-5xl">{winner === 'landlord' ? (landlord === 0 ? '🎉' : '😢') : (landlord === 0 ? '😢' : '🎉')}</div>
+          <h2 className="text-white text-xl font-bold">
             {winner === 'landlord' ? (landlord === 0 ? '恭喜你赢了！' : '地主获胜') : (landlord === 0 ? '农民获胜' : '恭喜你赢了！')}
           </h2>
-          <button onClick={startGame} className="px-8 py-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-bold rounded-full text-lg shadow-xl active:scale-95 transition-transform">再来一局</button>
-          <button onClick={() => navigate(-1)} className="text-white/70 underline">返回</button>
+          <button onClick={startGame} className="px-6 py-2.5 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-bold rounded-full text-base shadow-xl active:scale-95 transition-transform">再来一局</button>
+          <button onClick={() => navigate(-1)} className="text-white/70 underline text-sm">返回</button>
         </div>
       )}
       
       <style>{`
         @keyframes glow {
-          from { box-shadow: 0 0 0 4px #facc15, 0 0 20px rgba(250, 204, 21, 0.5); }
-          to { box-shadow: 0 0 0 6px #facc15, 0 0 35px rgba(250, 204, 21, 0.8); }
+          from { box-shadow: 0 0 0 3px #facc15, 0 0 15px rgba(250, 204, 21, 0.5); }
+          to { box-shadow: 0 0 0 5px #facc15, 0 0 30px rgba(250, 204, 21, 0.8); }
         }
       `}</style>
     </div>
