@@ -14,8 +14,8 @@ export default function AppIcon({ appId, label, icon, gradient, size = 'normal' 
   const iconSrc = customAppIcons[appId] || icon
   
   const sizeClasses = size === 'dock' 
-    ? 'w-12 h-12 sm:w-14 sm:h-14 rounded-[14px] sm:rounded-[16px]' 
-    : 'w-14 h-14 sm:w-16 sm:h-16 rounded-[16px] sm:rounded-[18px]'
+    ? 'w-14 h-14 sm:w-16 sm:h-16 rounded-[15px] sm:rounded-[17px]' 
+    : 'w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-[17px] sm:rounded-[19px]'
 
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-1.5 press-effect">
@@ -32,7 +32,7 @@ export default function AppIcon({ appId, label, icon, gradient, size = 'normal' 
       </div>
       
       <span 
-        className="text-[11px] sm:text-[13px] font-medium text-center max-w-[70px] truncate px-2 py-0.5 rounded-full backdrop-blur-sm"
+        className="text-[12px] sm:text-[14px] font-medium text-center max-w-[80px] truncate px-2 py-0.5 rounded-full backdrop-blur-sm"
         style={{ 
           color: fontColor.value,
           backgroundColor: 'rgba(255,255,255,0.15)',

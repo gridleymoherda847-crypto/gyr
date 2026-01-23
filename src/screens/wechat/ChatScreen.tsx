@@ -107,7 +107,23 @@ export default function ChatScreen() {
   
   // AI正在输入
   const [aiTyping, setAiTyping] = useState(false)
+  const [typingStartTime, setTypingStartTime] = useState<number | null>(null)
+  const [showTimeoutDialog, setShowTimeoutDialog] = useState(false)
   const showTyping = aiTyping || !!character?.isTyping
+  
+  // 5分钟超时检测
+  useEffect(() => {
+    if (!aiTyping || !typingStartTime) return
+    const timeout = setTimeout(() => {
+      if (aiTyping && typingStartTime && Date.now() - typingStartTime >= 5 * 60 * 1000) {
+        setShowTimeoutDialog(true)
+        setAiTyping(false)
+        setCharacterTyping(character?.id || '', false)
+        setTypingStartTime(null)
+      }
+    }, 5 * 60 * 1000)
+    return () => clearTimeout(timeout)
+  }, [aiTyping, typingStartTime, character?.id, setCharacterTyping])
 
   // 翻译机制：不做实时翻译请求
   // - 当角色语言非中文且开启聊天翻译时：模型会在每条消息里“自带一份中文翻译”
@@ -213,7 +229,14 @@ export default function ChatScreen() {
   const isAutoMode = false
 
   const safeSetTyping = (value: boolean) => {
-    if (aliveRef.current) setAiTyping(value)
+    if (aliveRef.current) {
+      setAiTyping(value)
+      if (value) {
+        setTypingStartTime(Date.now())
+      } else {
+        setTypingStartTime(null)
+      }
+    }
   }
 
   const safeSetPending = (value: number) => {
@@ -419,6 +442,18 @@ ${character.memorySummary ? character.memorySummary : '（暂无）'}
 【当前时间（精确到秒）】
 ${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN', { hour12: false }) : (character.manualTime ? new Date(character.manualTime).toLocaleString('zh-CN', { hour12: false }) : new Date().toLocaleString('zh-CN', { hour12: false }))}
 
+【季节与天气感知】
+${(() => {
+  const month = new Date().getMonth() + 1
+  const season = month >= 3 && month <= 5 ? '春天' : month >= 6 && month <= 8 ? '夏天' : month >= 9 && month <= 11 ? '秋天' : '冬天'
+  const seasonDesc = month >= 3 && month <= 5 ? '春暖花开，万物复苏' : month >= 6 && month <= 8 ? '炎炎夏日，注意防暑' : month >= 9 && month <= 11 ? '秋高气爽，落叶纷飞' : '寒冬腊月，注意保暖'
+  const weatherHint = month === 12 || month === 1 || month === 2 ? '天冷了要多穿衣服、喝热水' : month >= 6 && month <= 8 ? '天热了要注意防晒、多喝水' : '换季了要注意身体'
+  return `- 当前季节：${season}（${seasonDesc}）
+- 季节关怀：${weatherHint}
+- 你可以在聊天中自然提到天气/季节相关的话题，比如"今天好冷啊"、"最近天气不错"等
+- 在日记里也可以写关于天气、季节、时节的感受`
+})()}
+
 【最近消息时间线（必须参考，尤其是转账/已领取的时间，不能搞反）】
 ${recentTimeline || '（无）'}
 
@@ -446,7 +481,7 @@ ${recentTimeline || '（无）'}
 - 用自然、口语化的语气回复，像真人微信聊天
 - 你可以很短：只发“？”、“。”、“嗯”、“行”、“…”都可以；也可以很长，随情绪
 - 不要强行每条都很完整/很礼貌，允许有自己的心情与小情绪
-- 根据对话情绪和内容，回复 1-15 条消息，每条消息用换行分隔（数量可少可多，随心情）
+- 根据对话情绪和内容，回复消息（${(character as any).language !== 'zh' ? '非中文语言时建议 1-5 条，避免太多' : '1-15 条都可以'}），每条消息用换行分隔（数量可少可多，随心情）
 - 如果想给对方转账，单独一行写：[转账:金额:备注]
 ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音乐:歌名:歌手]，可选歌曲：${availableSongs}` : ''}`
 
@@ -2308,19 +2343,19 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                       </button>
                     )}
                     
-                    <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
+                    <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
                       {msg.isUser ? (
                         selectedPersona?.avatar ? (
                           <img src={selectedPersona.avatar} alt="" className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
+                          <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-[15px] font-medium">
                             {(selectedPersona?.name || '我')[0]}
                           </div>
                         )
                       ) : character.avatar ? (
                         <img src={character.avatar} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-sm font-medium">
+                        <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-[15px] font-medium">
                           {character.name[0]}
                         </div>
                       )}
@@ -2328,7 +2363,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     
                     <div className={`flex flex-col max-w-[70%] ${msg.isUser ? 'items-end' : 'items-start'}`}>
                       <div 
-                        className={`w-fit px-3.5 py-2.5 text-sm shadow-sm ${
+                        className={`w-fit px-3.5 py-2.5 text-[15px] shadow-sm ${
                           msg.type === 'transfer' || msg.type === 'music' 
                             ? 'bg-transparent p-0 shadow-none' 
                             : msg.isUser 
@@ -2381,11 +2416,11 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           {/* AI正在输入提示 */}
           {showTyping && (
             <div className="flex gap-2 mb-3">
-              <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
+              <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
                 {character.avatar ? (
                   <img src={character.avatar} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-sm font-medium">
+                  <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-[15px] font-medium">
                     {character.name[0]}
                   </div>
                 )}
@@ -3152,6 +3187,16 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         danger
         onCancel={() => setShowClearConfirm(false)}
         onConfirm={handleClearAll}
+      />
+
+      {/* API超时弹窗 */}
+      <WeChatDialog
+        open={showTimeoutDialog}
+        title="连接超时"
+        message="已等待超过5分钟，请检查API配置或网络连接，然后重试。"
+        confirmText="知道了"
+        onConfirm={() => setShowTimeoutDialog(false)}
+        onCancel={() => setShowTimeoutDialog(false)}
       />
     </WeChatLayout>
   )

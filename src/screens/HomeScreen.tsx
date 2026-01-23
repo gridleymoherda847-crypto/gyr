@@ -6,9 +6,9 @@ import { GRID_APPS, DOCK_APPS } from '../data/apps'
 
 export default function HomeScreen() {
   return (
-    <div className="relative flex h-full flex-col px-3 sm:px-4 pt-2 pb-1 animate-fade-in">
-      {/* 顶部时间组件 */}
-      <div className="mb-4 sm:mb-5">
+    <div className="relative flex h-full flex-col px-3 sm:px-4 pt-6 pb-1 animate-fade-in">
+      {/* 顶部时间组件 - 往下移 */}
+      <div className="mb-5 sm:mb-6">
         <TimeWidget />
       </div>
 
