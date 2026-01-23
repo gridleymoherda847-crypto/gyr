@@ -98,6 +98,7 @@ const loadMusicPlaylist = (): Song[] => {
 type OSContextValue = {
   time: string; isLocked: boolean; wallpaper: string; lockWallpaper: string
   currentFont: FontOption; fontColor: ColorOption; userProfile: UserProfile
+  fontScale: number
   llmConfig: LLMConfig; miCoinBalance: number; notifications: Notification[]
   characters: VirtualCharacter[]; chatLog: ChatMessage[]
   customAppIcons: Record<string, string>; decorImage: string
@@ -113,6 +114,7 @@ type OSContextValue = {
   setLockWallpaper: (wallpaper: string) => void
   setCurrentFont: (font: FontOption) => void
   setFontColor: (color: ColorOption) => void
+  setFontScale: (scale: number) => void
   setUserProfile: (profile: Partial<UserProfile>) => void
   setLLMConfig: (config: Partial<LLMConfig>) => void
   setMiCoinBalance: (balance: number) => void
@@ -158,6 +160,7 @@ const defaultLLMConfig: LLMConfig = { apiBaseUrl: '', apiKey: '', selectedModel:
 const STORAGE_KEYS = {
   llmConfig: 'os_llm_config',
   miCoinBalance: 'os_micoin_balance',
+  fontScale: 'os_font_scale',
 } as const
 
 function loadFromStorage<T>(key: string, defaultValue: T): T {
@@ -223,6 +226,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [wallpaperError, setWallpaperError] = useState(false)
   const [currentFont, setCurrentFont] = useState<FontOption>(FONT_OPTIONS[0])
   const [fontColor, setFontColor] = useState<ColorOption>(COLOR_OPTIONS[3])
+  const [fontScale, setFontScaleState] = useState<number>(() => loadFromStorage(STORAGE_KEYS.fontScale, 1))
   const [userProfile, setUserProfileState] = useState<UserProfile>(defaultUserProfile)
   const [llmConfig, setLLMConfigState] = useState<LLMConfig>(() => loadFromStorage(STORAGE_KEYS.llmConfig, defaultLLMConfig))
   const [miCoinBalance, setMiCoinBalance] = useState(() => loadFromStorage(STORAGE_KEYS.miCoinBalance, 100))
@@ -248,6 +252,12 @@ export function OSProvider({ children }: PropsWithChildren) {
   // 持久化：LLM配置与米币
   useEffect(() => { saveToStorage(STORAGE_KEYS.llmConfig, llmConfig) }, [llmConfig])
   useEffect(() => { saveToStorage(STORAGE_KEYS.miCoinBalance, miCoinBalance) }, [miCoinBalance])
+  useEffect(() => { saveToStorage(STORAGE_KEYS.fontScale, fontScale) }, [fontScale])
+
+  const setFontScale = (scale: number) => {
+    const v = Math.max(0.85, Math.min(1.25, Number(scale) || 1))
+    setFontScaleState(v)
+  }
   
   // 持久化：音乐列表
   useEffect(() => {
@@ -492,16 +502,16 @@ export function OSProvider({ children }: PropsWithChildren) {
   }
 
   const value = useMemo<OSContextValue>(() => ({
-    time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, miCoinBalance,
+    time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, fontScale, llmConfig, miCoinBalance,
     notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
     musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, audioRef,
-    setLocked, setWallpaper, setLockWallpaper, setCurrentFont, setFontColor, setUserProfile, setLLMConfig,
+    setLocked, setWallpaper, setLockWallpaper, setCurrentFont, setFontColor, setFontScale, setUserProfile, setLLMConfig,
     setMiCoinBalance, addMiCoins, addNotification, markNotificationRead, addChatMessage, updateIntimacy,
     setCustomAppIcon, setDecorImage, setWallpaperError,
     playSong, pauseMusic, resumeMusic, toggleMusic, nextSong, prevSong, seekMusic, toggleFavorite, isFavorite, addSong, removeSong,
     setMusicPlaying, setCurrentSong,
     fetchAvailableModels, callLLM,
-  }), [time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, miCoinBalance, 
+  }), [time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, fontScale, llmConfig, miCoinBalance, 
       notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
       musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites])
 

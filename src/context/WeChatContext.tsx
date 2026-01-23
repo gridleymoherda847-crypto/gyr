@@ -74,7 +74,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'system'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'system'
   // 转账相关
   transferAmount?: number
   transferNote?: string
@@ -84,6 +84,14 @@ export type WeChatMessage = {
   musicTitle?: string
   musicArtist?: string
   musicStatus?: 'pending' | 'accepted' | 'rejected' | 'closed' // 音乐邀请状态
+  // 日记分享相关（以“文件卡片”形式显示，但内部可携带全文供AI理解）
+  diaryAuthorId?: string
+  diaryAuthorName?: string
+  diaryAt?: number
+  diaryTitle?: string
+  diaryExcerpt?: string
+  diaryContent?: string
+  diaryNote?: string
 }
 
 // 转账记录
@@ -178,6 +186,7 @@ export type FavoriteDiary = {
   diaryAt: number // 日记“写下”的时间
   title: string // 展示标题（例如：YYYY-MM-DD 的日记）
   content: string // 日记全文
+  note?: string // 收藏备注（可选）
 }
 
 // 朋友圈动态

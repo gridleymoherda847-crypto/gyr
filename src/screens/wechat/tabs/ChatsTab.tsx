@@ -58,6 +58,7 @@ export default function ChatsTab({ onBack }: Props) {
     if (msg.type === 'image') return '图片'
     if (msg.type === 'transfer') return '转账'
     if (msg.type === 'music') return '音乐'
+    if (msg.type === 'diary') return '日记'
     return msg.content || '暂无消息'
   }
 

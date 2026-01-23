@@ -27,8 +27,15 @@ export default function DiaryVaultScreen() {
     addMessage({
       characterId: targetCharacterId,
       isUser: true,
-      type: 'text',
-      content: `【日记分享】${d.characterName} · ${formatTs(d.diaryAt)}\n\n${d.content}`,
+      type: 'diary',
+      content: '日记',
+      diaryAuthorId: d.characterId,
+      diaryAuthorName: d.characterName,
+      diaryAt: d.diaryAt,
+      diaryTitle: d.title,
+      diaryExcerpt: (d.content || '').replace(/\s+/g, ' ').slice(0, 60),
+      diaryContent: d.content,
+      diaryNote: d.note,
     })
     setToast('已分享')
     window.setTimeout(() => setToast(null), 1600)
@@ -57,6 +64,7 @@ export default function DiaryVaultScreen() {
                     <div className="min-w-0">
                       <div className="text-[14px] font-semibold text-[#111] truncate">{d.characterName}</div>
                       <div className="text-[11px] text-gray-500 mt-0.5 truncate">{d.title}</div>
+                    {!!d.note && <div className="text-[11px] text-gray-400 mt-0.5 truncate">备注：{d.note}</div>}
                     </div>
                     <div className="text-[11px] text-gray-400 flex-shrink-0">{formatTs(d.diaryAt || d.createdAt)}</div>
                   </div>
@@ -103,6 +111,7 @@ export default function DiaryVaultScreen() {
                 <div className="px-4 py-3 border-b border-black/5">
                   <div className="text-[13px] font-semibold text-[#111]">{selected.title}</div>
                   <div className="text-[11px] text-gray-500 mt-0.5">{formatTs(selected.diaryAt)}</div>
+                {!!selected.note && <div className="text-[11px] text-gray-500 mt-1">备注：{selected.note}</div>}
                 </div>
                 <div
                   className="px-4 py-4 text-[13px] leading-relaxed text-[#111] whitespace-pre-wrap"

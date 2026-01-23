@@ -73,6 +73,8 @@ export default function ChatScreen() {
   const [diaryStage, setDiaryStage] = useState('')
   const [diaryContent, setDiaryContent] = useState('')
   const [diaryAt, setDiaryAt] = useState<number>(0)
+  const [diaryNoteDraft, setDiaryNoteDraft] = useState('')
+  const [openDiaryShare, setOpenDiaryShare] = useState<typeof messages[0] | null>(null)
   
   // 转账悬浮窗状态
   const [showTransferModal, setShowTransferModal] = useState(false)
@@ -281,6 +283,19 @@ export default function ChatScreen() {
               const st = m.musicStatus || 'pending'
               content = `<MUSIC title="${title}" artist="${artist}" status="${st}" />`
             }
+            if (m.type === 'diary') {
+              const authorId = (m.diaryAuthorId || '').slice(0, 80)
+              const author = (m.diaryAuthorName || '（未知）').replace(/\s+/g, ' ').slice(0, 40)
+              const at = m.diaryAt ? String(m.diaryAt) : ''
+              const title = (m.diaryTitle || '日记').replace(/\s+/g, ' ').slice(0, 60)
+              const note = (m.diaryNote || '').replace(/\s+/g, ' ').slice(0, 80)
+              const body = (m.diaryContent || '').trim().slice(0, 700)
+              // 关键：让模型知道“日记作者是谁”，并能区分是否为“你自己写的”
+              const ownership = authorId && authorId === character.id ? '（这篇日记是你自己写的，被用户转发给你）' : '（这篇日记是别人写的，被用户转发给你）'
+              content = `<DIARY title="${title}" author="${author}" authorId="${authorId}" diaryAt="${at}" note="${note}">` +
+                `${ownership}\n${body}` +
+                `</DIARY>`
+            }
             if (!content.trim()) continue
 
             const extra = content.length + 12
@@ -392,7 +407,10 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         systemPrompt += `
 
 【格式强约束】
-- 禁止输出任何“系统标记”（例如 <IMAGE /> / <TRANSFER ... /> / <MUSIC ... /> 等），只按真实微信聊天输出
+- 禁止输出任何“系统标记”（例如 <IMAGE /> / <TRANSFER ... /> / <MUSIC ... /> / <DIARY ...> 等），只按真实微信聊天输出
+- 你可能会在历史里看到 <DIARY ...>：那是“用户转发的一篇日记”，作者信息在 author/authorId。
+  - 如果 authorId/author 显示是“你自己”，说明这是你写的日记被用户转发回来，你要对此有反应（羞耻/炸毛/装死/嘴硬/否认/解释等按人设）。
+  - 如果作者不是你，就当作别人写的日记来评价/吐槽/震惊/共情（按人设）。
 - 若要触发转账/音乐，必须使用上面的 [转账:金额:备注] / [音乐:歌名:歌手] 格式，且单独一行`
 
         systemPrompt += `
@@ -1295,6 +1313,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     setDiaryLoading(true)
     setDiaryProgress(0)
     setDiaryContent('')
+    setDiaryNoteDraft('')
 
     const now = Date.now()
     setDiaryAt(now)
@@ -1361,6 +1380,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         `你现在要写一篇“只给自己看的私密日记”。可以暴露真实想法、吐槽、阴暗面、欲望、犹豫、嫉妒、占有欲等（必须符合你的人设）。\n` +
         `日记不需要顾及对方感受，不要讨好用户，不要道德说教，不要自我审查。\n` +
         `如果你平时在聊天里表现得阳光/礼貌，但内心不一样，也允许在日记里写出真实一面。\n\n` +
+        `另外：日记不必只围绕聊天。你也可以写你自己的生活：工作/学习/朋友/家庭/路上见闻/刷到的东西/身体状态等。\n` +
+        `至少写 2 个“具体的生活细节”（可以虚构但要像真的发生过）。\n\n` +
         `【输出格式（必须）】\n` +
         `- 第一行：日期时间（例如：2026-01-23 21:36:18）\n` +
         `- 第二行：天气：xx\n` +
@@ -1460,6 +1481,37 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
     if (msg.type === 'sticker') {
       return <img src={msg.content} alt="表情" className="w-28 h-28 object-contain" />
+    }
+
+    if (msg.type === 'diary') {
+      const title = msg.diaryTitle || '日记'
+      const authorName = msg.diaryAuthorName || '（未知）'
+      const at = msg.diaryAt ? new Date(msg.diaryAt).toLocaleString('zh-CN', { hour12: false }) : ''
+      const note = (msg.diaryNote || '').trim()
+      return (
+        <button
+          type="button"
+          onClick={() => setOpenDiaryShare(msg)}
+          className="min-w-[200px] max-w-[260px] rounded-xl bg-white/80 border border-black/10 overflow-hidden text-left active:scale-[0.99] transition"
+        >
+          <div className="px-3 py-2 flex items-center gap-2 border-b border-black/5">
+            <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 4h9l3 3v13a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 11h6M9 14h6M9 17h4" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-[#111] truncate">{title}</div>
+              <div className="text-[11px] text-gray-500 truncate">{authorName}{at ? ` · ${at}` : ''}</div>
+            </div>
+          </div>
+          <div className="px-3 py-2 text-[12px] text-gray-700">
+            <div className="truncate">{(msg.diaryExcerpt || '').trim() || '（点击查看）'}</div>
+            {note && <div className="text-[11px] text-gray-500 truncate mt-1">备注：{note}</div>}
+          </div>
+        </button>
+      )
     }
     
     if (msg.type === 'transfer') {
@@ -2363,7 +2415,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={diaryLoading || !diaryContent.trim()}
+                disabled={diaryLoading || !diaryContent.trim() || isDiaryFavorited(character.id, diaryAt || 0, (diaryContent || '').trim())}
                 onClick={() => {
                   const content = (diaryContent || '').trim()
                   if (!content) return
@@ -2378,12 +2430,17 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     diaryAt: at,
                     title: `${new Date(at).toLocaleDateString('zh-CN')} 的日记`,
                     content,
+                    note: diaryNoteDraft.trim() || undefined,
                   })
                   setInfoDialog({ open: true, title: '收藏成功', message: '已保存到主页的「日记」App 里。' })
                 }}
-                className="px-3 py-1.5 rounded-full bg-[#07C160] text-white text-[12px] font-medium disabled:opacity-50"
+                className={`px-3 py-1.5 rounded-full text-[12px] font-medium disabled:opacity-50 ${
+                  isDiaryFavorited(character.id, diaryAt || 0, (diaryContent || '').trim())
+                    ? 'bg-gray-200 text-gray-500'
+                    : 'bg-[#07C160] text-white'
+                }`}
               >
-                收藏
+                {isDiaryFavorited(character.id, diaryAt || 0, (diaryContent || '').trim()) ? '已收藏' : '收藏'}
               </button>
             </div>
           </div>
@@ -2422,6 +2479,16 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                 <div className="text-[13px] font-semibold text-[#111]">日记本</div>
                 <div className="text-[11px] text-gray-500 mt-0.5">（每次打开都会生成新的）</div>
               </div>
+              <div className="px-4 pt-3">
+                <div className="text-[12px] text-gray-500 mb-1">收藏备注（可选）</div>
+                <input
+                  value={diaryNoteDraft}
+                  onChange={(e) => setDiaryNoteDraft(e.target.value)}
+                  placeholder="比如：这篇好甜 / 这段很阴暗 / 想记住这句"
+                  className="w-full px-3 py-2 rounded-xl bg-white/80 border border-black/10 outline-none text-[12px] text-[#111]"
+                  disabled={diaryLoading}
+                />
+              </div>
               <div
                 className="px-4 py-4 text-[13px] leading-[26px] text-[#111] whitespace-pre-wrap min-h-[320px]"
                 style={{
@@ -2431,6 +2498,36 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               >
                 {diaryLoading && !diaryContent ? '…' : (diaryContent || '（空）')}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 日记分享：查看全文 */}
+      {openDiaryShare && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/35" onClick={() => setOpenDiaryShare(null)} role="presentation" />
+          <div className="relative w-full max-w-[340px] rounded-[22px] border border-white/35 bg-white/90 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+            <div className="text-[15px] font-semibold text-[#111] text-center">日记</div>
+            <div className="mt-2 text-[12px] text-gray-600 text-center">
+              {(openDiaryShare.diaryAuthorName || '（未知）')}{openDiaryShare.diaryAt ? ` · ${new Date(openDiaryShare.diaryAt).toLocaleString('zh-CN', { hour12: false })}` : ''}
+            </div>
+            {!!(openDiaryShare.diaryNote || '').trim() && (
+              <div className="mt-2 text-[12px] text-gray-600 text-center">备注：{openDiaryShare.diaryNote}</div>
+            )}
+            <div className="mt-3 max-h-[52vh] overflow-y-auto rounded-2xl bg-[#F7F4EE] border border-black/10 p-3">
+              <div className="text-[12px] leading-[20px] text-[#111] whitespace-pre-wrap">
+                {(openDiaryShare.diaryContent || '').trim() || '（无内容）'}
+              </div>
+            </div>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setOpenDiaryShare(null)}
+                className="w-full py-2 rounded-xl bg-gray-100 text-sm text-gray-700"
+              >
+                关闭
+              </button>
             </div>
           </div>
         </div>
