@@ -319,7 +319,26 @@ export default function ChatScreen() {
           return parts.join('')
         }
 
-        // 构建系统提示（严格顺序：预设 → 角色设定 → 我的人设 → 长期记忆摘要 → 时间感 → 输出）
+        // 说话“活人感”风格（即使人设很简陋也要像真人）
+        const styleSeed = `${character.id}|${character.name}|${character.gender}`
+        const hash = (s: string) => {
+          let h = 0
+          for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+          return h >>> 0
+        }
+        const pick = <T,>(arr: T[]) => arr[hash(styleSeed) % arr.length]
+        const pick2 = <T,>(arr: T[]) => {
+          const h = hash(styleSeed + '::2')
+          return [arr[h % arr.length], arr[(h >>> 7) % arr.length]]
+        }
+        const catchPhrases = pick2(['真服了', '离谱', '我靠', '我真的', '笑死', '烦死', '行吧', '算了', '啧', '唉', '懂了', '好家伙'])
+        const emojiHabit = pick(['🙂', '🙃', '😅', '😑', '😤', '🥲', '😌', '🤔', ''])
+        const mildSwears = pick2(['靠', '卧槽', '我靠', '妈的', '真他妈', '烦死了', '离谱死了'])
+        const noMisogynyBan =
+          '严禁出现任何辱女/性羞辱/骂女性的词汇（包括但不限于：婊、婊子、贱人、母狗、骚、破鞋、鸡、绿茶婊、女拳等）。' +
+          '允许表达不爽/脏话，但不能指向女性或用性羞辱。'
+
+        // 构建系统提示（严格顺序：预设 → 角色设定 → 我的人设 → 长期记忆摘要 → 时间感 → 输出 → 说话风格）
         let systemPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}【角色信息】
 你的名字：${character.name}
 你的性别：${character.gender === 'male' ? '男性' : character.gender === 'female' ? '女性' : '其他'}
@@ -353,8 +372,10 @@ ${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN', { hour12: false
 - 新增规则：当“用户没有新发言”且距离用户上次发言 >= 2小时，你必须主动发一条“催一催/关心/追问”的微信消息（不要继续机械接上一次话题）
 
 【回复要求】
-- 用自然、亲切的语气回复，像真人聊天
-- 根据对话情绪和内容，回复1-15条消息，每条消息用换行分隔
+- 用自然、口语化的语气回复，像真人微信聊天
+- 你可以很短：只发“？”、“。”、“嗯”、“行”、“…”都可以；也可以很长，随情绪
+- 不要强行每条都很完整/很礼貌，允许有自己的心情与小情绪
+- 根据对话情绪和内容，回复 1-15 条消息，每条消息用换行分隔（数量可少可多，随心情）
 - 如果想给对方转账，单独一行写：[转账:金额:备注]
 ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音乐:歌名:歌手]，可选歌曲：${availableSongs}` : ''}`
 
@@ -363,6 +384,15 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 【格式强约束】
 - 禁止输出任何“系统标记”（例如 <IMAGE /> / <TRANSFER ... /> / <MUSIC ... /> 等），只按真实微信聊天输出
 - 若要触发转账/音乐，必须使用上面的 [转账:金额:备注] / [音乐:歌名:歌手] 格式，且单独一行`
+
+        systemPrompt += `
+
+【说话风格（活人感）】
+- 你可以有口头禅，但不要每句都用：${catchPhrases.filter(Boolean).join(' / ')}
+- 你可以偶尔说点脏话/吐槽（别太频繁）：${mildSwears.filter(Boolean).join(' / ')}
+- 你可以偶尔用表情符号：${emojiHabit || '（随意）'}
+- 允许：只发一个问号/省略号/句号来表达情绪（结合上下文）
+- ${noMisogynyBan}`
 
         // 线下模式关闭时，禁止动作描述
         if (!character.offlineMode) {
