@@ -6,6 +6,7 @@ import AppHeader from '../components/AppHeader'
 import PageContainer from '../components/PageContainer'
 import { SettingsGroup, SettingsItem } from '../components/SettingsGroup'
 import { exportCurrentBackupJsonText, importLegacyBackupJsonText } from '../storage/legacyBackupImport'
+import { kvClear } from '../storage/kv'
 
 export default function SettingsScreen() {
   const navigate = useNavigate()
@@ -92,12 +93,16 @@ export default function SettingsScreen() {
     reader.onload = async (e) => {
       try {
         const content = String(e.target?.result ?? '')
+        // 导入严格要求：只写入硬盘，不触碰 Context；完成后强制刷新页面重新初始化
+        ;(window as any).__LP_IMPORTING__ = true
         const res = await importLegacyBackupJsonText(content)
         setImportSummary({ written: res.written, skipped: res.skipped.length })
         setShowImportSuccess(true)
+        setTimeout(() => window.location.reload(), 400)
       } catch (err: any) {
         console.error('导入失败:', err)
         setImportError(String(err?.message || '导入失败：请确认备份文件正确，并重试'))
+        ;(window as any).__LP_IMPORTING__ = false
       } finally {
         setImporting(false)
       }
@@ -220,8 +225,9 @@ export default function SettingsScreen() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    localStorage.clear()
+                  onClick={async () => {
+                    try { localStorage.clear() } catch {}
+                    try { await kvClear() } catch {}
                     setShowClearConfirm(false)
                     setShowClearedTip(true)
                   }}
