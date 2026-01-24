@@ -8,6 +8,7 @@ import {
   useRef,
   type PropsWithChildren,
 } from 'react'
+import { kvGetJSON, kvSetJSON, kvGet, kvSet } from '../storage/kv'
 
 // ==================== 类型定义 ====================
 
@@ -263,6 +264,7 @@ type AddCharacterInput = Omit<
 >>
 
 type WeChatContextValue = {
+  isHydrated: boolean
   // 数据
   characters: WeChatCharacter[]
   messages: WeChatMessage[]
@@ -392,61 +394,45 @@ const defaultUserSettings: WeChatUserSettings = {
   momentsBackground: '',
 }
 
-// 从 localStorage 读取数据
-function loadFromStorage<T>(key: string, defaultValue: T): T {
-  try {
-    const data = localStorage.getItem(key)
-    return data ? JSON.parse(data) : defaultValue
-  } catch {
-    return defaultValue
-  }
-}
-
-// 保存到 localStorage
-function saveToStorage<T>(key: string, data: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(data))
-  } catch (e) {
-    console.error('Failed to save to localStorage:', e)
-  }
-}
+// 兼容迁移：直接读取 localStorage 原始字符串（仅迁移时使用）
 
 export function WeChatProvider({ children }: PropsWithChildren) {
+  const [isHydrated, setIsHydrated] = useState(false)
   const [characters, setCharacters] = useState<WeChatCharacter[]>(() => 
-    loadFromStorage(STORAGE_KEYS.characters, [])
+    []
   )
   const [messages, setMessages] = useState<WeChatMessage[]>(() => 
-    loadFromStorage(STORAGE_KEYS.messages, [])
+    []
   )
   const [stickers, setStickers] = useState<StickerConfig[]>(() => 
-    loadFromStorage(STORAGE_KEYS.stickers, [])
+    []
   )
   const [favoriteDiaries, setFavoriteDiaries] = useState<FavoriteDiary[]>(() =>
-    loadFromStorage(STORAGE_KEYS.favoriteDiaries, [])
+    []
   )
   const [stickerCategories, setStickerCategories] = useState<StickerCategory[]>(() => 
-    loadFromStorage(STORAGE_KEYS.stickerCategories, [])
+    []
   )
   const [moments, setMoments] = useState<MomentPost[]>(() => 
-    loadFromStorage(STORAGE_KEYS.moments, [])
+    []
   )
   const [userSettings, setUserSettings] = useState<WeChatUserSettings>(() => 
-    loadFromStorage(STORAGE_KEYS.userSettings, defaultUserSettings)
+    defaultUserSettings
   )
   const [userPersonas, setUserPersonas] = useState<UserPersona[]>(() => 
-    loadFromStorage(STORAGE_KEYS.userPersonas, [])
+    []
   )
   const [transfers, setTransfers] = useState<TransferRecord[]>(() => 
-    loadFromStorage(STORAGE_KEYS.transfers, [])
+    []
   )
   const [anniversaries, setAnniversaries] = useState<Anniversary[]>(() => 
-    loadFromStorage(STORAGE_KEYS.anniversaries, [])
+    []
   )
   const [periods, setPeriods] = useState<PeriodRecord[]>(() => 
-    loadFromStorage(STORAGE_KEYS.periods, [])
+    []
   )
   const [listenTogether, setListenTogether] = useState<ListenTogetherState>(() => 
-    loadFromStorage(STORAGE_KEYS.listenTogether, null)
+    null
   )
   const [currentChatId, setCurrentChatIdState] = useState<string | null>(null)
   const currentChatIdRef = useRef<string | null>(null)
@@ -516,32 +502,87 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   }, [])
   
   // 钱包状态
-  const [walletBalance, setWalletBalance] = useState<number>(() => 
-    loadFromStorage(STORAGE_KEYS.walletBalance, 0)
-  )
-  const [walletInitialized, setWalletInitialized] = useState<boolean>(() => 
-    loadFromStorage(STORAGE_KEYS.walletInitialized, false)
-  )
-  const [walletBills, setWalletBills] = useState<WalletBill[]>(() => 
-    loadFromStorage(STORAGE_KEYS.walletBills, [])
-  )
-  
-  // 自动保存
-  useEffect(() => { saveToStorage(STORAGE_KEYS.characters, characters) }, [characters])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.messages, messages) }, [messages])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.stickers, stickers) }, [stickers])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.favoriteDiaries, favoriteDiaries) }, [favoriteDiaries])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.stickerCategories, stickerCategories) }, [stickerCategories])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.moments, moments) }, [moments])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.userSettings, userSettings) }, [userSettings])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.userPersonas, userPersonas) }, [userPersonas])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.transfers, transfers) }, [transfers])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.anniversaries, anniversaries) }, [anniversaries])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.periods, periods) }, [periods])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.listenTogether, listenTogether) }, [listenTogether])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.walletBalance, walletBalance) }, [walletBalance])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.walletInitialized, walletInitialized) }, [walletInitialized])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.walletBills, walletBills) }, [walletBills])
+  const [walletBalance, setWalletBalance] = useState<number>(() => 0)
+  const [walletInitialized, setWalletInitialized] = useState<boolean>(() => false)
+  const [walletBills, setWalletBills] = useState<WalletBill[]>(() => [])
+
+  // 异步 Hydration：从 IndexedDB 加载；首次会从 localStorage 迁移（避免丢数据）
+  useEffect(() => {
+    let cancelled = false
+    const hydrate = async () => {
+      // 若 KV 中无数据但 localStorage 有旧数据：迁移一次
+      const existing = await kvGet(STORAGE_KEYS.characters)
+      if (!existing) {
+        // 迁移 WeChat 相关 key（只复制我们自己维护的 keys）
+        const toMove = Object.values(STORAGE_KEYS)
+        for (const k of toMove) {
+          try {
+            const raw = localStorage.getItem(k)
+            if (raw != null) {
+              await kvSet(k, raw)
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      const nextCharacters = await kvGetJSON<WeChatCharacter[]>(STORAGE_KEYS.characters, [])
+      const nextMessages = await kvGetJSON<WeChatMessage[]>(STORAGE_KEYS.messages, [])
+      const nextStickers = await kvGetJSON<StickerConfig[]>(STORAGE_KEYS.stickers, [])
+      const nextFavoriteDiaries = await kvGetJSON<FavoriteDiary[]>(STORAGE_KEYS.favoriteDiaries, [])
+      const nextStickerCategories = await kvGetJSON<StickerCategory[]>(STORAGE_KEYS.stickerCategories, [])
+      const nextMoments = await kvGetJSON<MomentPost[]>(STORAGE_KEYS.moments, [])
+      const nextUserSettings = await kvGetJSON<WeChatUserSettings>(STORAGE_KEYS.userSettings, defaultUserSettings)
+      const nextUserPersonas = await kvGetJSON<UserPersona[]>(STORAGE_KEYS.userPersonas, [])
+      const nextTransfers = await kvGetJSON<TransferRecord[]>(STORAGE_KEYS.transfers, [])
+      const nextAnniversaries = await kvGetJSON<Anniversary[]>(STORAGE_KEYS.anniversaries, [])
+      const nextPeriods = await kvGetJSON<PeriodRecord[]>(STORAGE_KEYS.periods, [])
+      const nextListenTogether = await kvGetJSON<ListenTogetherState>(STORAGE_KEYS.listenTogether, null)
+      const nextWalletBalance = await kvGetJSON<number>(STORAGE_KEYS.walletBalance, 0)
+      const nextWalletInitialized = await kvGetJSON<boolean>(STORAGE_KEYS.walletInitialized, false)
+      const nextWalletBills = await kvGetJSON<WalletBill[]>(STORAGE_KEYS.walletBills, [])
+
+      if (cancelled) return
+      setCharacters(nextCharacters)
+      setMessages(nextMessages)
+      setStickers(nextStickers)
+      setFavoriteDiaries(nextFavoriteDiaries)
+      setStickerCategories(nextStickerCategories)
+      setMoments(nextMoments)
+      setUserSettings(nextUserSettings)
+      setUserPersonas(nextUserPersonas)
+      setTransfers(nextTransfers)
+      setAnniversaries(nextAnniversaries)
+      setPeriods(nextPeriods)
+      setListenTogether(nextListenTogether)
+      setWalletBalance(nextWalletBalance)
+      setWalletInitialized(nextWalletInitialized)
+      setWalletBills(nextWalletBills)
+      setIsHydrated(true)
+    }
+    void hydrate()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // 异步保存（IndexedDB）
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.characters, characters) }, [characters])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.messages, messages) }, [messages])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.stickers, stickers) }, [stickers])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.favoriteDiaries, favoriteDiaries) }, [favoriteDiaries])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.stickerCategories, stickerCategories) }, [stickerCategories])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.moments, moments) }, [moments])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.userSettings, userSettings) }, [userSettings])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.userPersonas, userPersonas) }, [userPersonas])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.transfers, transfers) }, [transfers])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.anniversaries, anniversaries) }, [anniversaries])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.periods, periods) }, [periods])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.listenTogether, listenTogether) }, [listenTogether])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.walletBalance, walletBalance) }, [walletBalance])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.walletInitialized, walletInitialized) }, [walletInitialized])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.walletBills, walletBills) }, [walletBills])
 
   // 预计算：按角色分组的消息（避免在列表/聊天界面反复 filter+sort 导致手机端卡顿）
   const messagesByCharacter = useMemo(() => {
@@ -1010,6 +1051,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   // ==================== Context Value ====================
 
   const value = useMemo<WeChatContextValue>(() => ({
+    isHydrated,
     characters, messages, stickers, favoriteDiaries, moments, userSettings, userPersonas,
     transfers, anniversaries, periods, listenTogether,
     addCharacter, updateCharacter, deleteCharacter, getCharacter,
@@ -1030,7 +1072,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     // 钱包
     walletBalance, walletInitialized, walletBills,
     initializeWallet, addWalletBill, updateWalletBalance,
-  }), [characters, messages, stickers, favoriteDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage])
+  }), [isHydrated, characters, messages, stickers, favoriteDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage])
 
   return <WeChatContext.Provider value={value}>{children}</WeChatContext.Provider>
 }

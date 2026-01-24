@@ -7,6 +7,7 @@ import {
   useRef,
   type PropsWithChildren,
 } from 'react'
+import { kvGet, kvGetJSON, kvSet, kvSetJSON } from '../storage/kv'
 
 export type UserProfile = { avatar: string; nickname: string; persona: string }
 export type LLMConfig = { apiBaseUrl: string; apiKey: string; selectedModel: string; availableModels: string[] }
@@ -137,32 +138,10 @@ const DEFAULT_SONGS: Song[] = [
   }
 ]
 
-// 从localStorage读取歌曲列表
-const loadMusicPlaylist = (): Song[] => {
-  try {
-    const savedVersion = localStorage.getItem(MUSIC_VERSION_KEY)
-    
-    // 版本不匹配，强制重置为默认歌曲
-    if (savedVersion !== CURRENT_MUSIC_VERSION) {
-      localStorage.setItem(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
-      localStorage.setItem(MUSIC_STORAGE_KEY, JSON.stringify(DEFAULT_SONGS))
-      return [...DEFAULT_SONGS]
-    }
-    
-    // 版本匹配，读取用户保存的列表
-    const saved = localStorage.getItem(MUSIC_STORAGE_KEY)
-    if (saved) {
-      return JSON.parse(saved)
-    }
-    
-    return [...DEFAULT_SONGS]
-  } catch (e) {
-    console.error('Failed to load music playlist:', e)
-  }
-  return [...DEFAULT_SONGS]
-}
+// 旧：同步从 localStorage 读取歌曲列表（已废弃，改为 IndexedDB 异步 hydration）
 
 type OSContextValue = {
+  isHydrated: boolean
   time: string; isLocked: boolean; wallpaper: string; lockWallpaper: string
   currentFont: FontOption; fontColor: ColorOption; userProfile: UserProfile
   llmConfig: LLMConfig; miCoinBalance: number; notifications: Notification[]
@@ -234,23 +213,6 @@ const STORAGE_KEYS = {
   fontColorId: 'os_font_color_id',
 } as const
 
-function loadFromStorage<T>(key: string, defaultValue: T): T {
-  try {
-    const data = localStorage.getItem(key)
-    return data ? JSON.parse(data) : defaultValue
-  } catch {
-    return defaultValue
-  }
-}
-
-function saveToStorage<T>(key: string, data: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(data))
-  } catch {
-    // ignore
-  }
-}
-
 function normalizeApiBaseUrl(input: string): string {
   const trimmed = (input || '').trim().replace(/\/+$/, '')
   if (!trimmed) return ''
@@ -269,27 +231,15 @@ const seedChat: ChatMessage[] = [
 const LOCK_STORAGE_KEY = 'littlephone_is_locked'
 
 export function OSProvider({ children }: PropsWithChildren) {
+  const [isHydrated, setIsHydrated] = useState(false)
   const [time, setTime] = useState(formatTime)
   // 从localStorage读取锁屏状态，默认为true
-  const [isLocked, setLockedState] = useState(() => {
-    try {
-      const saved = localStorage.getItem(LOCK_STORAGE_KEY)
-      // 如果没有保存过，默认锁屏
-      if (saved === null) return true
-      return JSON.parse(saved)
-    } catch {
-      return true
-    }
-  })
+  const [isLocked, setLockedState] = useState(true)
   
-  // 包装setLocked以同时保存到localStorage
+  // 包装setLocked以同时保存到 IndexedDB（kv）
   const setLocked = (locked: boolean) => {
     setLockedState(locked)
-    try {
-      localStorage.setItem(LOCK_STORAGE_KEY, JSON.stringify(locked))
-    } catch {
-      // ignore
-    }
+    void kvSetJSON(LOCK_STORAGE_KEY, locked)
   }
   
   const [wallpaper, setWallpaper] = useState(DEFAULT_WALLPAPER)
@@ -298,16 +248,14 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [currentFont, setCurrentFontState] = useState<FontOption>(() => {
     // 默认字体：优雅衬线（但如果用户保存过选择，则完全尊重用户保存）
     const defaultId = FONT_OPTIONS.find(f => f.id === 'elegant')?.id || FONT_OPTIONS[0].id
-    const savedId = loadFromStorage<string>(STORAGE_KEYS.currentFontId, defaultId)
-    return FONT_OPTIONS.find(f => f.id === savedId) || (FONT_OPTIONS.find(f => f.id === defaultId) || FONT_OPTIONS[0])
+    return FONT_OPTIONS.find(f => f.id === defaultId) || FONT_OPTIONS[0]
   })
   const [fontColor, setFontColorState] = useState<ColorOption>(() => {
-    const savedId = loadFromStorage<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id)
-    return COLOR_OPTIONS.find(c => c.id === savedId) || COLOR_OPTIONS[3]
+    return COLOR_OPTIONS[3]
   })
   const [userProfile, setUserProfileState] = useState<UserProfile>(defaultUserProfile)
-  const [llmConfig, setLLMConfigState] = useState<LLMConfig>(() => loadFromStorage(STORAGE_KEYS.llmConfig, defaultLLMConfig))
-  const [miCoinBalance, setMiCoinBalance] = useState(() => loadFromStorage(STORAGE_KEYS.miCoinBalance, 100))
+  const [llmConfig, setLLMConfigState] = useState<LLMConfig>(defaultLLMConfig)
+  const [miCoinBalance, setMiCoinBalance] = useState(() => 100)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [characters, setCharacters] = useState<VirtualCharacter[]>(seedCharacters)
   const [chatLog, setChatLog] = useState<ChatMessage[]>(seedChat)
@@ -315,28 +263,14 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [decorImage, setDecorImage] = useState('')
 
   // 位置和天气状态
-  const [locationSettings, setLocationSettingsState] = useState<LocationSettings>(() => {
-    try {
-      const saved = localStorage.getItem(LOCATION_STORAGE_KEY)
-      return saved ? JSON.parse(saved) : defaultLocationSettings
-    } catch {
-      return defaultLocationSettings
-    }
-  })
-  const [weather, setWeather] = useState<WeatherData>(() => {
-    try {
-      const saved = localStorage.getItem(WEATHER_STORAGE_KEY)
-      return saved ? JSON.parse(saved) : defaultWeather
-    } catch {
-      return defaultWeather
-    }
-  })
+  const [locationSettings, setLocationSettingsState] = useState<LocationSettings>(defaultLocationSettings)
+  const [weather, setWeather] = useState<WeatherData>(defaultWeather)
 
   // 音乐状态
   const [musicPlaying, setMusicPlaying] = useState(false)
   const [currentSong, setCurrentSong] = useState<Song | null>(null)
   const [musicProgress, setMusicProgress] = useState(0)
-  const [musicPlaylist, setMusicPlaylist] = useState<Song[]>(loadMusicPlaylist)
+  const [musicPlaylist, setMusicPlaylist] = useState<Song[]>(() => [...DEFAULT_SONGS])
   const [musicFavorites, setMusicFavorites] = useState<string[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -345,18 +279,82 @@ export function OSProvider({ children }: PropsWithChildren) {
     return () => clearInterval(tick)
   }, [])
 
-  // 持久化：LLM配置与米币
-  useEffect(() => { saveToStorage(STORAGE_KEYS.llmConfig, llmConfig) }, [llmConfig])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.miCoinBalance, miCoinBalance) }, [miCoinBalance])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id])
+  // 异步 Hydration：从 IndexedDB 加载；首次会从 localStorage 迁移（避免丢数据）
+  useEffect(() => {
+    let cancelled = false
+    const hydrate = async () => {
+      // 迁移一次（如果 kv 没有这些 key）
+      const has = await kvGet(STORAGE_KEYS.llmConfig)
+      if (!has) {
+        const keysToMove: string[] = [
+          STORAGE_KEYS.llmConfig,
+          STORAGE_KEYS.miCoinBalance,
+          STORAGE_KEYS.currentFontId,
+          STORAGE_KEYS.fontColorId,
+          LOCK_STORAGE_KEY,
+          MUSIC_STORAGE_KEY,
+          MUSIC_VERSION_KEY,
+          LOCATION_STORAGE_KEY,
+          WEATHER_STORAGE_KEY,
+        ]
+        for (const k of keysToMove) {
+          try {
+            const raw = localStorage.getItem(k)
+            if (raw != null) await kvSet(k, raw)
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      const nextLocked = await kvGetJSON<boolean>(LOCK_STORAGE_KEY, true)
+      const nextLLM = await kvGetJSON<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig)
+      const nextMi = await kvGetJSON<number>(STORAGE_KEYS.miCoinBalance, 100)
+      const nextFontId = await kvGetJSON<string>(STORAGE_KEYS.currentFontId, (FONT_OPTIONS.find(f => f.id === 'elegant')?.id || FONT_OPTIONS[0].id))
+      const nextColorId = await kvGetJSON<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id)
+      const nextLocation = await kvGetJSON<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings)
+      const nextWeather = await kvGetJSON<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather)
+
+      // 音乐：版本控制
+      const savedVersion = await kvGetJSON<string>(MUSIC_VERSION_KEY, '')
+      let nextPlaylist = [...DEFAULT_SONGS]
+      if (savedVersion !== CURRENT_MUSIC_VERSION) {
+        await kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
+        await kvSetJSON(MUSIC_STORAGE_KEY, DEFAULT_SONGS)
+        nextPlaylist = [...DEFAULT_SONGS]
+      } else {
+        nextPlaylist = await kvGetJSON<Song[]>(MUSIC_STORAGE_KEY, [...DEFAULT_SONGS])
+      }
+
+      if (cancelled) return
+      setLockedState(nextLocked)
+      setLLMConfigState(nextLLM)
+      setMiCoinBalance(nextMi)
+      setCurrentFontState(FONT_OPTIONS.find(f => f.id === nextFontId) || currentFont)
+      setFontColorState(COLOR_OPTIONS.find(c => c.id === nextColorId) || fontColor)
+      setLocationSettingsState(nextLocation)
+      setWeather(nextWeather)
+      setMusicPlaylist(nextPlaylist)
+      setIsHydrated(true)
+    }
+    void hydrate()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 异步持久化（IndexedDB）
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.llmConfig, llmConfig) }, [llmConfig])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.miCoinBalance, miCoinBalance) }, [miCoinBalance])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id])
+  useEffect(() => { void kvSetJSON(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id])
 
   const setCurrentFont = (font: FontOption) => setCurrentFontState(font)
   const setFontColor = (color: ColorOption) => setFontColorState(color)
   
-  // 持久化：音乐列表
+  // 持久化：音乐列表（IndexedDB）
   useEffect(() => {
-    localStorage.setItem(MUSIC_STORAGE_KEY, JSON.stringify(musicPlaylist))
+    void kvSetJSON(MUSIC_STORAGE_KEY, musicPlaylist)
+    void kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
   }, [musicPlaylist])
 
   // 检查壁纸图片是否存在
@@ -537,7 +535,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   const setLocationSettings = (settings: Partial<LocationSettings>) => {
     setLocationSettingsState(prev => {
       const next = { ...prev, ...settings }
-      localStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(next))
+      void kvSetJSON(LOCATION_STORAGE_KEY, next)
       return next
     })
   }
@@ -622,7 +620,7 @@ export function OSProvider({ children }: PropsWithChildren) {
             updatedAt: Date.now()
           }
           setWeather(newWeather)
-          localStorage.setItem(WEATHER_STORAGE_KEY, JSON.stringify(newWeather))
+          void kvSetJSON(WEATHER_STORAGE_KEY, newWeather)
         }
       }
     } catch (error) {
@@ -735,6 +733,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   }
 
   const value = useMemo<OSContextValue>(() => ({
+    isHydrated,
     time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, miCoinBalance,
     notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
     locationSettings, weather, setLocationSettings, refreshWeather,
@@ -748,7 +747,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   }), [time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, miCoinBalance, 
       notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
       locationSettings, weather,
-      musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites])
+      musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, isHydrated])
 
   return <OSContext.Provider value={value}>{children}</OSContext.Provider>
 }

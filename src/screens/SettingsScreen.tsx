@@ -5,6 +5,7 @@ import { useWeChat } from '../context/WeChatContext'
 import AppHeader from '../components/AppHeader'
 import PageContainer from '../components/PageContainer'
 import { SettingsGroup, SettingsItem } from '../components/SettingsGroup'
+import { kvClear, kvGet, kvKeys, kvSet } from '../storage/kv'
 
 export default function SettingsScreen() {
   const navigate = useNavigate()
@@ -64,33 +65,46 @@ export default function SettingsScreen() {
   // 导出所有数据
   const handleExportData = () => {
     try {
-      const allData: Record<string, string> = {}
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (key) {
-          allData[key] = localStorage.getItem(key) || ''
+      const doExport = async () => {
+        const allData: Record<string, string> = {}
+
+        // IndexedDB(kv) 数据
+        const keys = await kvKeys()
+        for (const key of keys) {
+          const v = await kvGet(key)
+          if (typeof v === 'string') allData[key] = v
         }
+
+        // 仍保留 localStorage（少量 UI 状态等）
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (!key) continue
+          if (allData[key] == null) {
+            allData[key] = localStorage.getItem(key) || ''
+          }
+        }
+      
+        const exportData = {
+          version: '2.0.0',
+          exportTime: new Date().toISOString(),
+          data: allData
+        }
+        
+        const fileName = exportFileName.trim() || `LittlePhone_backup_${new Date().toISOString().slice(0, 10)}`
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${fileName}.json`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        
+        setShowExportNameDialog(false)
+        setShowExportSuccess(true)
       }
-      
-      const exportData = {
-        version: '1.0.0',
-        exportTime: new Date().toISOString(),
-        data: allData
-      }
-      
-      const fileName = exportFileName.trim() || `LittlePhone_backup_${new Date().toISOString().slice(0, 10)}`
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${fileName}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-      
-      setShowExportNameDialog(false)
-      setShowExportSuccess(true)
+      void doExport()
     } catch (error) {
       console.error('导出失败:', error)
     }
@@ -100,7 +114,7 @@ export default function SettingsScreen() {
   const handleImportData = (file: File) => {
     const reader = new FileReader()
     reader.onload = (e) => {
-      try {
+      const doImport = async () => {
         const content = e.target?.result as string
         const importData = JSON.parse(content)
         
@@ -109,21 +123,24 @@ export default function SettingsScreen() {
           return
         }
         
-        // 清空现有数据
-        localStorage.clear()
+        // 清空现有数据（localStorage + IndexedDB）
+        try { localStorage.clear() } catch {}
+        await kvClear()
         
-        // 导入新数据
+        // 导入新数据（同时写入 localStorage + IndexedDB）
         for (const [key, value] of Object.entries(importData.data)) {
           if (typeof value === 'string') {
-            localStorage.setItem(key, value)
+            try { localStorage.setItem(key, value) } catch {}
+            await kvSet(key, value)
           }
         }
         
         setShowImportSuccess(true)
-      } catch (error) {
+      }
+      doImport().catch((error) => {
         console.error('导入失败:', error)
         setImportError('文件解析失败，请确保是有效的备份文件')
-      }
+      })
     }
     reader.readAsText(file)
   }

@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { OSProvider, useOS } from './context/OSContext'
-import { WeChatProvider } from './context/WeChatContext'
+import { WeChatProvider, useWeChat } from './context/WeChatContext'
 import PhoneShell from './components/PhoneShell'
 import ErrorBoundary from './components/ErrorBoundary'
 import LockScreen from './components/LockScreen'
@@ -73,12 +73,16 @@ export default function App() {
 }
 
 function InnerApp() {
-  const { isLocked } = useOS()
+  const { isLocked, isHydrated: osHydrated } = useOS()
+  const { isHydrated: wechatHydrated } = useWeChat()
+  const hydrated = osHydrated && wechatHydrated
 
   return (
     <ErrorBoundary>
       <PhoneShell>
-        {isLocked ? (
+        {!hydrated ? (
+          <PhoneSkeleton />
+        ) : isLocked ? (
           <LockScreen />
         ) : (
           <Suspense fallback={<PhoneSkeleton />}>
