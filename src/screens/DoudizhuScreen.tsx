@@ -116,30 +116,6 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose' | 'coin') => {
   } catch {}
 }
 
-// 全局背景音乐实例（避免重复创建）
-let globalBgm: HTMLAudioElement | null = null
-const playBgm = () => {
-  if (!globalBgm) {
-    globalBgm = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
-    globalBgm.loop = true
-    globalBgm.volume = 0.4
-  }
-  globalBgm.play().catch(() => {
-    // 如果自动播放被阻止，等用户点击时再播放
-    const handleClick = () => {
-      globalBgm?.play()
-      document.removeEventListener('click', handleClick)
-    }
-    document.addEventListener('click', handleClick)
-  })
-}
-const stopBgm = () => {
-  if (globalBgm) {
-    globalBgm.pause()
-    globalBgm.currentTime = 0
-  }
-}
-
 // 头像组件
 function PlayerAvatar({ 
   avatarUrl,
@@ -387,6 +363,9 @@ export default function DoudizhuScreen() {
   const [rechargeAmount, setRechargeAmount] = useState(10)
   const [showRechargeSuccess, setShowRechargeSuccess] = useState(false)
   
+  // 背景音乐
+  const bgmRef = useRef<HTMLAudioElement | null>(null)
+  
   // 游戏模式选择
   const [showModeSelect, setShowModeSelect] = useState(false)
   const [gameMode, setGameMode] = useState<GameMode>('solo')
@@ -437,8 +416,19 @@ export default function DoudizhuScreen() {
   
   // 背景音乐控制：打开斗地主App就开始播放，退出时停止
   useEffect(() => {
-    playBgm()
-    return () => stopBgm()
+    // 组件挂载时立即播放
+    bgmRef.current = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
+    bgmRef.current.loop = true
+    bgmRef.current.volume = 0.3
+    bgmRef.current.play().catch(() => {})
+    
+    // 组件卸载时停止
+    return () => {
+      if (bgmRef.current) {
+        bgmRef.current.pause()
+        bgmRef.current = null
+      }
+    }
   }, [])
   
   
@@ -786,15 +776,14 @@ export default function DoudizhuScreen() {
     setGameHistory(prev => [...prev, { player, cardCount: cards.length, isPass: cards.length === 0, isBomb: isBombPlay }])
     
     // 更新出牌记录
-    // 规则：轮到玩家(0)出牌时，清除玩家自己上一轮的牌，但保留对手的牌（这样玩家能看到对手出了什么）
-    // 对手出牌时，正常累加显示
+    // 规则：每个人出牌时，只清除自己上一轮的牌，保留其他人的牌
+    // 例如：我出3 -> A出4 -> B出5 -> 轮到我时，我的3消失，但A的4和B的5还在
+    // 然后我出6 -> 轮到A时，A的4消失，但我的6和B的5还在
     setPlayedCards(prev => {
       const newMap = new Map(prev)
-      // 如果是玩家出牌，先清除玩家自己上一轮的牌
-      if (player === 0) {
-        newMap.delete(0)
-      }
-      // 设置当前出牌者的牌（空数组表示"不出"）
+      // 清除当前出牌者上一轮的牌
+      newMap.delete(player)
+      // 设置当前出牌者的新牌（空数组表示"不出"）
       newMap.set(player, cards)
       return newMap
     })
