@@ -160,25 +160,6 @@ export type WalletBill = {
   timestamp: number
 }
 
-// 星引力-随机角色
-export type StarGravityPerson = {
-  id: string
-  name: string
-  age: number
-  birthday: string // YYYY-MM-DD
-  gender: 'male' | 'female'
-  avatar: string
-  intro: string // 个人简介
-  job?: string
-  location?: string
-  personality: string // 性格描述（用于AI对话）
-  hiddenFields: string[] // 隐藏的字段
-  favorability: number // 好感度 0-100
-  messages: { content: string; isUser: boolean; timestamp: number }[] // 聊天记录
-  matched: boolean // 是否已互加微信
-  createdAt: number
-}
-
 // 表情包配置
 export type StickerConfig = {
   id: string
@@ -379,17 +360,6 @@ type WeChatContextValue = {
   addWalletBill: (bill: Omit<WalletBill, 'id' | 'timestamp'>) => void
   updateWalletBalance: (amount: number) => void // 正数增加，负数减少
   
-  // 星引力操作
-  starGravityPersons: StarGravityPerson[]
-  starGravityShakeCount: number // 今日摇一摇次数
-  starGravityLastShakeDate: string // 上次摇的日期
-  addStarGravityPerson: (person: Omit<StarGravityPerson, 'id' | 'createdAt' | 'favorability' | 'messages' | 'matched'>) => StarGravityPerson
-  updateStarGravityPerson: (id: string, updates: Partial<StarGravityPerson>) => void
-  addStarGravityMessage: (personId: string, message: { content: string; isUser: boolean }) => void
-  removeStarGravityPerson: (personId: string) => void
-  matchWithPerson: (personId: string) => WeChatCharacter | null // 互加微信
-  incrementShakeCount: () => boolean // 返回是否还能摇（未超过10次）
-  resetShakeCountIfNewDay: () => void
 }
 
 const WeChatContext = createContext<WeChatContextValue | undefined>(undefined)
@@ -411,9 +381,6 @@ const STORAGE_KEYS = {
   walletBalance: 'wechat_wallet_balance',
   walletInitialized: 'wechat_wallet_initialized',
   walletBills: 'wechat_wallet_bills',
-  starGravityPersons: 'wechat_star_gravity_persons',
-  starGravityShakeCount: 'wechat_star_gravity_shake_count',
-  starGravityLastShakeDate: 'wechat_star_gravity_last_shake_date',
   bubbleOpacityMode: 'wechat_bubble_opacity_mode', // 一次性迁移：旧存档 bgOpacity/borderOpacity 为“不透明度”
 }
 
@@ -558,23 +525,6 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     loadFromStorage(STORAGE_KEYS.walletBills, [])
   )
   
-  // 星引力状态
-  const [starGravityPersons, setStarGravityPersons] = useState<StarGravityPerson[]>(() => 
-    loadFromStorage(STORAGE_KEYS.starGravityPersons, [])
-  )
-  const [starGravityShakeCount, setStarGravityShakeCount] = useState<number>(() => 
-    loadFromStorage(STORAGE_KEYS.starGravityShakeCount, 0)
-  )
-  const [starGravityLastShakeDate, setStarGravityLastShakeDate] = useState<string>(() => 
-    loadFromStorage(STORAGE_KEYS.starGravityLastShakeDate, '')
-  )
-
-  // 兼容旧存档：星引力人物补齐生日字段
-  useEffect(() => {
-    setStarGravityPersons(prev => prev.map(p => ({ ...p, birthday: p.birthday || '' })))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // 自动保存
   useEffect(() => { saveToStorage(STORAGE_KEYS.characters, characters) }, [characters])
   useEffect(() => { saveToStorage(STORAGE_KEYS.messages, messages) }, [messages])
@@ -591,9 +541,6 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   useEffect(() => { saveToStorage(STORAGE_KEYS.walletBalance, walletBalance) }, [walletBalance])
   useEffect(() => { saveToStorage(STORAGE_KEYS.walletInitialized, walletInitialized) }, [walletInitialized])
   useEffect(() => { saveToStorage(STORAGE_KEYS.walletBills, walletBills) }, [walletBills])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.starGravityPersons, starGravityPersons) }, [starGravityPersons])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.starGravityShakeCount, starGravityShakeCount) }, [starGravityShakeCount])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.starGravityLastShakeDate, starGravityLastShakeDate) }, [starGravityLastShakeDate])
 
   // 预计算：按角色分组的消息（避免在列表/聊天界面反复 filter+sort 导致手机端卡顿）
   const messagesByCharacter = useMemo(() => {
@@ -1036,89 +983,6 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     setWalletBalance(prev => Math.max(0, prev + amount))
   }
 
-  // ==================== 星引力操作 ====================
-  
-  const addStarGravityPerson = (person: Omit<StarGravityPerson, 'id' | 'createdAt' | 'favorability' | 'messages' | 'matched'>): StarGravityPerson => {
-    const newPerson: StarGravityPerson = {
-      ...person,
-      id: `sg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      createdAt: Date.now(),
-      favorability: 0,
-      messages: [],
-      matched: false
-    }
-    setStarGravityPersons(prev => [...prev, newPerson])
-    return newPerson
-  }
-  
-  const updateStarGravityPerson = (id: string, updates: Partial<StarGravityPerson>) => {
-    setStarGravityPersons(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p))
-  }
-  
-  const removeStarGravityPerson = (personId: string) => {
-    setStarGravityPersons(prev => prev.filter(p => p.id !== personId))
-  }
-  
-  const addStarGravityMessage = (personId: string, message: { content: string; isUser: boolean }) => {
-    setStarGravityPersons(prev => prev.map(p => {
-      if (p.id === personId) {
-        return {
-          ...p,
-          messages: [...p.messages, { ...message, timestamp: Date.now() }]
-        }
-      }
-      return p
-    }))
-  }
-  
-  const matchWithPerson = (personId: string): WeChatCharacter | null => {
-    const person = starGravityPersons.find(p => p.id === personId)
-    if (!person) return null
-    
-    // 标记为已匹配
-    updateStarGravityPerson(personId, { matched: true })
-    
-    // 添加到微信联系人
-    const wc = addCharacter({
-      name: person.name,
-      avatar: '', // 让用户自己设置“幻想中的样子”
-      gender: person.gender,
-      prompt: person.personality,
-      birthday: person.birthday || '',
-      callMeName: '你',
-      relationship: '星引力好友',
-      country: '',
-      language: 'zh',
-      coupleSpaceEnabled: false,
-      chatBackground: '',
-      unreadCount: 0,
-      // 新增字段（由 addCharacter 默认也会补，但这里显式给）
-      memoryRounds: 100,
-      memorySummary: '',
-      memorySummaryUpdatedAt: null,
-      timeSyncEnabled: true,
-      manualTime: '',
-      isTyping: false,
-      typingUpdatedAt: null,
-    })
-    return wc
-  }
-  
-  const incrementShakeCount = (): boolean => {
-    resetShakeCountIfNewDay()
-    if (starGravityShakeCount >= 10) return false
-    setStarGravityShakeCount(prev => prev + 1)
-    return true
-  }
-  
-  const resetShakeCountIfNewDay = () => {
-    const today = new Date().toISOString().split('T')[0]
-    if (starGravityLastShakeDate !== today) {
-      setStarGravityShakeCount(0)
-      setStarGravityLastShakeDate(today)
-    }
-  }
-
   // ==================== Context Value ====================
 
   const value = useMemo<WeChatContextValue>(() => ({
@@ -1141,11 +1005,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     // 钱包
     walletBalance, walletInitialized, walletBills,
     initializeWallet, addWalletBill, updateWalletBalance,
-    // 星引力
-    starGravityPersons, starGravityShakeCount, starGravityLastShakeDate,
-    addStarGravityPerson, updateStarGravityPerson, addStarGravityMessage, removeStarGravityPerson,
-    matchWithPerson, incrementShakeCount, resetShakeCountIfNewDay,
-  }), [characters, messages, stickers, favoriteDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, starGravityPersons, starGravityShakeCount, starGravityLastShakeDate])
+  }), [characters, messages, stickers, favoriteDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills])
 
   return <WeChatContext.Provider value={value}>{children}</WeChatContext.Provider>
 }

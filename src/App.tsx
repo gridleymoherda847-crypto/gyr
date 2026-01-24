@@ -35,7 +35,6 @@ const ChatScreen = lazy(() => import('./screens/wechat/ChatScreen'))
 const ChatSettingsScreen = lazy(() => import('./screens/wechat/ChatSettingsScreen'))
 const CoupleSpaceScreen = lazy(() => import('./screens/wechat/CoupleSpaceScreen'))
 const WalletScreen = lazy(() => import('./screens/wechat/WalletScreen'))
-const StarGravityScreen = lazy(() => import('./screens/wechat/StarGravityScreen'))
 
 function PhoneSkeleton() {
   return (
@@ -106,7 +105,6 @@ function InnerApp() {
               <Route path="/apps/wechat/chat/:characterId/settings" element={<ChatSettingsScreen />} />
               <Route path="/apps/wechat/couple-space/:characterId" element={<CoupleSpaceScreen />} />
               <Route path="/apps/wechat/wallet" element={<WeChatWalletRoute />} />
-              <Route path="/apps/wechat/star-gravity" element={<WeChatStarGravityRoute />} />
               <Route path="/apps/:appId" element={<AppScreen />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
@@ -120,9 +118,4 @@ function InnerApp() {
 function WeChatWalletRoute() {
   const navigate = useNavigate()
   return <WalletScreen onBack={() => navigate(-1)} />
-}
-
-function WeChatStarGravityRoute() {
-  const navigate = useNavigate()
-  return <StarGravityScreen onBack={() => navigate(-1)} />
 }

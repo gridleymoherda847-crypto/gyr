@@ -43,7 +43,7 @@ export default function ChatSettingsScreen() {
   const [showMemorySettings, setShowMemorySettings] = useState(false)
   const [showTimeSyncSettings, setShowTimeSyncSettings] = useState(false)
 
-  // 星引力：添加好友后提示“记忆已导入”
+  // 添加好友后提示“记忆已导入”
   const [postAddTipOpen, setPostAddTipOpen] = useState(false)
   const [postAddArmed, setPostAddArmed] = useState(false)
   useEffect(() => {
@@ -492,7 +492,7 @@ export default function ChatSettingsScreen() {
                   reader.onload = (event) => {
                     const base64 = event.target?.result as string
                     updateCharacter(character.id, { avatar: base64 })
-                    // 星引力：从相册返回后再弹“记忆已导入”提示
+                    // 从相册返回后再弹“记忆已导入”提示
                     if (postAddArmed) {
                       window.setTimeout(() => setPostAddTipOpen(true), 200)
                       setPostAddArmed(false)
@@ -1130,11 +1130,11 @@ export default function ChatSettingsScreen() {
         }}
       />
 
-      {/* 星引力：添加好友后的提示（记忆已导入） */}
+      {/* 添加好友后的提示（记忆已导入） */}
       <WeChatDialog
         open={postAddTipOpen}
         title="已自动导入"
-        message={'人物设定与自动导入：星引力的对话要点已经导入到聊天设置里的「记忆功能」。'}
+        message={'人物设定与自动导入：对话要点已经导入到聊天设置里的「记忆功能」。'}
         confirmText="去查看记忆"
         cancelText="不看了"
         onCancel={() => setPostAddTipOpen(false)}
