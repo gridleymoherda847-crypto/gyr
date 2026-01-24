@@ -414,9 +414,9 @@ export default function DoudizhuScreen() {
   const [, setBombRecords] = useState<BombRecord[]>([])
   const [gameDifficulty, setGameDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal')
   
-  // 背景音乐控制：选底分时开始播放，游戏结束或退出时停止
+  // 背景音乐控制：点击开始游戏（matching）时开始播放，游戏结束或退出时停止
   useEffect(() => {
-    const shouldPlay = phase === 'selectBase' || phase === 'bidding' || phase === 'playing'
+    const shouldPlay = phase === 'matching' || phase === 'selectBase' || phase === 'bidding' || phase === 'playing'
     
     if (shouldPlay) {
       if (!bgmRef.current) {
