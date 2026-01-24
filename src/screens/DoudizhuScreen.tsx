@@ -414,27 +414,15 @@ export default function DoudizhuScreen() {
   const [, setBombRecords] = useState<BombRecord[]>([])
   const [gameDifficulty, setGameDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal')
   
-  // 背景音乐控制：点击开始游戏（matching）时开始播放，游戏结束或退出时停止
+  // 背景音乐控制：打开斗地主App就开始播放，退出时停止
   useEffect(() => {
-    const shouldPlay = phase === 'matching' || phase === 'selectBase' || phase === 'bidding' || phase === 'playing'
+    // 组件挂载时立即播放
+    bgmRef.current = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
+    bgmRef.current.loop = true
+    bgmRef.current.volume = 0.3
+    bgmRef.current.play().catch(() => {})
     
-    if (shouldPlay) {
-      if (!bgmRef.current) {
-        bgmRef.current = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
-        bgmRef.current.loop = true
-        bgmRef.current.volume = 0.3
-      }
-      bgmRef.current.play().catch(() => {})
-    } else {
-      if (bgmRef.current) {
-        bgmRef.current.pause()
-        bgmRef.current.currentTime = 0
-      }
-    }
-  }, [phase])
-  
-  // 组件卸载时停止音乐
-  useEffect(() => {
+    // 组件卸载时停止
     return () => {
       if (bgmRef.current) {
         bgmRef.current.pause()
@@ -442,6 +430,7 @@ export default function DoudizhuScreen() {
       }
     }
   }, [])
+  
   
   // 动态玩家名称（联机模式显示好友名字）
   const PLAYER_NAMES = [
