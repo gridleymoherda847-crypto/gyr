@@ -115,31 +115,60 @@ export default function SettingsScreen() {
     const reader = new FileReader()
     reader.onload = (e) => {
       const doImport = async () => {
-        const content = e.target?.result as string
-        const importData = JSON.parse(content)
-        
-        if (!importData.data || typeof importData.data !== 'object') {
+        // 先校验文件内容，确认没问题再清空（避免“导入失败=数据全没了”）
+        const content = String(e.target?.result ?? '')
+        if (!content.trim()) {
+          setImportError('文件为空或读取失败')
+          return
+        }
+
+        let importData: any
+        try {
+          importData = JSON.parse(content)
+        } catch {
+          setImportError('文件解析失败，请确保是有效的备份文件')
+          return
+        }
+
+        if (!importData?.data || typeof importData.data !== 'object') {
           setImportError('文件格式不正确')
           return
         }
-        
+
+        const entries = Object.entries(importData.data).filter(([, v]) => typeof v === 'string') as [string, string][]
+        if (entries.length === 0) {
+          setImportError('备份文件里没有可导入的数据')
+          return
+        }
+
         // 清空现有数据（localStorage + IndexedDB）
         try { localStorage.clear() } catch {}
         await kvClear()
-        
-        // 导入新数据（同时写入 localStorage + IndexedDB）
-        for (const [key, value] of Object.entries(importData.data)) {
-          if (typeof value === 'string') {
+
+        // 分批写入 IndexedDB（更快，也避免单条 await 太慢导致“像没反应”）
+        const CHUNK = 30
+        for (let i = 0; i < entries.length; i += CHUNK) {
+          const chunk = entries.slice(i, i + CHUNK)
+          await Promise.all(chunk.map(async ([key, value]) => {
+            // localStorage: 仍保留少量 UI 状态兼容；失败也不阻断
             try { localStorage.setItem(key, value) } catch {}
+            // IndexedDB(kv): 关键存储
             await kvSet(key, value)
-          }
+          }))
         }
-        
+
         setShowImportSuccess(true)
       }
-      doImport().catch((error) => {
+
+      doImport().catch((error: any) => {
         console.error('导入失败:', error)
-        setImportError('文件解析失败，请确保是有效的备份文件')
+        const name = String(error?.name || '')
+        const msg = String(error?.message || '')
+        if (name.includes('Quota') || msg.toLowerCase().includes('quota')) {
+          setImportError('导入失败：存储空间不足（请清理浏览器存储或换个浏览器）')
+        } else {
+          setImportError('导入失败：请确认备份文件正确，并重试')
+        }
       })
     }
     reader.readAsText(file)

@@ -38,23 +38,19 @@ const WalletScreen = lazy(() => import('./screens/wechat/WalletScreen'))
 
 function PhoneSkeleton() {
   return (
-    <div className="h-full w-full flex items-center justify-center">
-      <div className="w-full max-w-[360px] px-6">
-        <div className="rounded-3xl bg-white/90 border border-black/10 shadow-sm p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gray-200 animate-pulse" />
-            <div className="flex-1">
-              <div className="h-3 w-28 bg-gray-200 rounded-full animate-pulse" />
-              <div className="mt-2 h-2 w-40 bg-gray-100 rounded-full animate-pulse" />
-            </div>
-          </div>
-          <div className="mt-5 space-y-3">
-            <div className="h-3 w-full bg-gray-100 rounded-full animate-pulse" />
-            <div className="h-3 w-5/6 bg-gray-100 rounded-full animate-pulse" />
-            <div className="h-3 w-2/3 bg-gray-100 rounded-full animate-pulse" />
-          </div>
-          <div className="mt-6 text-center text-xs text-gray-500">正在加载…</div>
-        </div>
+    <div className="h-full w-full flex items-center justify-center bg-gradient-to-b from-pink-50 via-white to-pink-100">
+      <div
+        className="text-[54px] font-extrabold tracking-wide select-none"
+        style={{
+          fontFamily: '"Baloo 2", "ZCOOL KuaiLe", "Noto Sans SC", system-ui, -apple-system, Segoe UI, sans-serif',
+          background: 'linear-gradient(135deg, #fb7185 0%, #ec4899 55%, #f472b6 100%)',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          color: 'transparent',
+          textShadow: '0 10px 30px rgba(236,72,153,0.18)',
+        }}
+      >
+        Mina
       </div>
     </div>
   )
