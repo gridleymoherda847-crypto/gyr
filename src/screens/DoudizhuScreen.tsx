@@ -1448,9 +1448,9 @@ export default function DoudizhuScreen() {
           </div>
           
           {/* 顶部：两个对手头像和出牌区 */}
-          <div className="flex justify-between items-start px-6 pt-2">
+          <div className="flex justify-between items-start px-10 pt-2">
             {/* 左侧：玩家B头像 + 出牌 */}
-            <div className="flex items-start gap-2 ml-2">
+            <div className="flex items-start gap-2 ml-4">
               <PlayerAvatar 
                 avatarUrl={PLAYER_AVATARS[2]} 
                 isActive={phase === 'bidding' ? currentBidder === 2 : currentPlayer === 2} 
@@ -1469,10 +1469,10 @@ export default function DoudizhuScreen() {
             </div>
             
             {/* 中间留空给底牌 */}
-            <div className="w-24" />
+            <div className="w-16" />
             
             {/* 右侧：玩家A出牌 + 头像 */}
-            <div className="flex items-start gap-2 mr-2">
+            <div className="flex items-start gap-2 mr-4">
               {/* 玩家A出的牌 - 在头像左侧 */}
               {phase === 'playing' && playedCards.has(1) && (
                 <div className="mt-2">
@@ -1532,8 +1532,8 @@ export default function DoudizhuScreen() {
             )}
             
             {/* 手牌和头像 */}
-            <div className="h-[100px] flex items-center px-3">
-              <div className="mr-3">
+            <div className="h-[100px] flex items-center px-10">
+              <div className="mr-3 ml-4">
                 <PlayerAvatar 
                   avatarUrl={myAvatarUrl} 
                   isActive={phase === 'bidding' ? currentBidder === 0 : currentPlayer === 0} 
@@ -1543,7 +1543,7 @@ export default function DoudizhuScreen() {
                   name="我"
                 />
               </div>
-              <div className="flex-1 flex justify-center overflow-visible">
+              <div className="flex-1 flex justify-center overflow-visible mr-4">
                 <div className="relative" style={{ width: `${handWidth}px`, height: '72px' }}>
                   {hands[0].map((card, i) => renderFanCard(card, i, selectedCards.has(card.id), () => toggleCard(card.id)))}
                 </div>
