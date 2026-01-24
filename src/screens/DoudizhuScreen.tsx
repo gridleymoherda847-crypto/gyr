@@ -619,10 +619,8 @@ export default function DoudizhuScreen() {
       if (player === 0) {
         newMap.delete(0)
       }
-      // 设置新出的牌
-      if (cards.length > 0) {
-        newMap.set(player, cards)
-      }
+      // 设置新出的牌（空数组表示"不出"）
+      newMap.set(player, cards)
       return newMap
     })
     
