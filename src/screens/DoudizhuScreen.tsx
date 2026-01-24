@@ -77,7 +77,7 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose' | 'coin') => {
     
     if (type === 'start') {
       osc.frequency.value = 523
-      gain.gain.value = 0.3
+      gain.gain.value = 0.15 // 降低音量，不干扰背景音乐
       osc.start()
       osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1)
       osc.frequency.setValueAtTime(784, ctx.currentTime + 0.2)
@@ -85,12 +85,12 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose' | 'coin') => {
     } else if (type === 'card') {
       osc.type = 'square'
       osc.frequency.value = 800
-      gain.gain.value = 0.15
+      gain.gain.value = 0.1 // 降低音量
       osc.start()
       osc.stop(ctx.currentTime + 0.05)
     } else if (type === 'win') {
       osc.frequency.value = 523
-      gain.gain.value = 0.3
+      gain.gain.value = 0.15 // 降低音量
       osc.start()
       setTimeout(() => { osc.frequency.value = 659 }, 100)
       setTimeout(() => { osc.frequency.value = 784 }, 200)
@@ -98,7 +98,7 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose' | 'coin') => {
       osc.stop(ctx.currentTime + 0.5)
     } else if (type === 'lose') {
       osc.frequency.value = 400
-      gain.gain.value = 0.2
+      gain.gain.value = 0.1 // 降低音量
       osc.start()
       setTimeout(() => { osc.frequency.value = 300 }, 150)
       setTimeout(() => { osc.frequency.value = 200 }, 300)
@@ -107,7 +107,7 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose' | 'coin') => {
       // 充值成功音效 - 金币叮当声
       osc.type = 'sine'
       osc.frequency.value = 880
-      gain.gain.value = 0.25
+      gain.gain.value = 0.12 // 降低音量
       osc.start()
       osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1)
       osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.2)
