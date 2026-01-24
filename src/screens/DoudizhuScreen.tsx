@@ -417,32 +417,60 @@ export default function DoudizhuScreen() {
   // 背景音乐控制：打开斗地主App就开始播放，退出时停止
   useEffect(() => {
     // 创建音频
-    const audio = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
+    const audio = new Audio()
     audio.loop = true
     audio.volume = 0.3
+    audio.preload = 'auto'
+    
+    // 设置音频源 - 夸克等浏览器可能对ogg支持不好，但我们只有ogg文件
+    audio.src = '/music/文武贝 - QQ斗地主背景音乐_H.ogg'
     bgmRef.current = audio
     
-    // 尝试立即播放
+    let hasPlayed = false
+    
+    // 尝试播放
     const tryPlay = () => {
-      audio.play().catch(() => {})
+      if (hasPlayed && !audio.paused) return
+      
+      // 先load确保资源加载
+      audio.load()
+      
+      const playPromise = audio.play()
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            hasPlayed = true
+          })
+          .catch((err) => {
+            console.log('BGM autoplay blocked:', err.name)
+            // 某些浏览器需要用户交互后才能播放
+          })
+      }
     }
     
-    tryPlay()
+    // 延迟一点尝试播放，给浏览器一些准备时间
+    const initTimer = setTimeout(tryPlay, 100)
     
     // 如果自动播放失败，监听用户交互后播放
     const handleInteraction = () => {
-      if (audio.paused) {
+      if (audio.paused && bgmRef.current) {
         tryPlay()
       }
     }
     
+    // 监听多种交互事件
     document.addEventListener('click', handleInteraction)
     document.addEventListener('touchstart', handleInteraction)
+    document.addEventListener('touchend', handleInteraction)
+    document.addEventListener('pointerdown', handleInteraction)
     
     // 组件卸载时停止
     return () => {
+      clearTimeout(initTimer)
       document.removeEventListener('click', handleInteraction)
       document.removeEventListener('touchstart', handleInteraction)
+      document.removeEventListener('touchend', handleInteraction)
+      document.removeEventListener('pointerdown', handleInteraction)
       audio.pause()
       audio.src = ''
       bgmRef.current = null
