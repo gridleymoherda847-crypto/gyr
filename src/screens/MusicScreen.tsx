@@ -1,18 +1,18 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS, type Song } from '../context/OSContext'
-import AppHeader from '../components/AppHeader'
 import PageContainer from '../components/PageContainer'
 
 export default function MusicScreen() {
   const navigate = useNavigate()
   const { 
-    fontColor, musicPlaying, currentSong, musicProgress, musicPlaylist, 
+    musicPlaying, currentSong, musicProgress, musicPlaylist, 
     playSong, toggleMusic, nextSong, prevSong, seekMusic, toggleFavorite, isFavorite,
     addSong, removeSong
   } = useOS()
-  const [activeTab, setActiveTab] = useState<'all' | 'favorites'>('all')
+  const [activeTab, setActiveTab] = useState<'recommend' | 'playlist' | 'favorites'>('recommend')
   const [searchQuery, setSearchQuery] = useState('')
+  const [showPlayer, setShowPlayer] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 搜索过滤
@@ -69,191 +69,49 @@ export default function MusicScreen() {
 
   return (
     <PageContainer>
-      <div className="flex h-full flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
-        <AppHeader title="音乐" onBack={() => navigate('/', { replace: true })} />
-        
-        {/* 当前播放 */}
-        {currentSong && (
-          <div 
-            className="mt-4 rounded-3xl p-4 mb-4"
-            style={{ 
-              background: 'linear-gradient(135deg, rgba(255,182,193,0.4) 0%, rgba(186,154,220,0.4) 100%)',
-              border: '1px solid rgba(255,255,255,0.3)'
-            }}
+      <div className="flex h-full flex-col bg-gradient-to-b from-[#1a1a2e] via-[#16213e] to-[#0f0f23] animate-fade-in">
+        {/* 顶部导航栏 - QQ音乐风格 */}
+        <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+          <button 
+            type="button" 
+            onClick={() => navigate('/', { replace: true })}
+            className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"
           >
-            <div className="flex items-center gap-4">
-              {/* 旋转唱片 */}
-              <div 
-                className="relative w-20 h-20 rounded-full overflow-hidden shadow-lg flex-shrink-0"
-                style={{
-                  animation: musicPlaying ? 'spin 4s linear infinite' : 'none',
-                }}
-              >
-                <img src={currentSong.cover} alt={currentSong.title} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-6 h-6 rounded-full bg-white/80" />
-                </div>
-              </div>
-              
-              {/* 歌曲信息 */}
-              <div className="flex-1 min-w-0">
-                <div 
-                  className="text-lg font-bold truncate"
-                  style={{ color: fontColor.value }}
-                >
-                  {currentSong.title}
-                </div>
-                <div 
-                  className="text-sm truncate mt-0.5"
-                  style={{ color: fontColor.value, opacity: 0.7 }}
-                >
-                  {currentSong.artist}
-                </div>
-                
-                {/* 进度条 */}
-                <div className="mt-3">
-                  <div 
-                    className="h-1.5 rounded-full overflow-hidden cursor-pointer"
-                    style={{ background: 'rgba(255,255,255,0.3)' }}
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      const percent = ((e.clientX - rect.left) / rect.width) * 100
-                      seekMusic(percent)
-                    }}
-                  >
-                    <div 
-                      className="h-full rounded-full transition-all duration-150"
-                      style={{ 
-                        width: `${musicProgress}%`,
-                        background: 'linear-gradient(90deg, #f9a8d4, #c4b5fd)',
-                      }}
-                    />
-                  </div>
-                  <div className="flex justify-between mt-1 text-[10px]" style={{ color: fontColor.value, opacity: 0.6 }}>
-                    <span>{formatTime(currentTime)}</span>
-                    <span>{formatTime(currentSong.duration)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* 控制按钮 */}
-            <div className="flex items-center justify-center gap-6 mt-4">
-              <button 
-                type="button"
-                onClick={prevSong}
-                className="w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-90"
-                style={{ background: 'rgba(255,255,255,0.25)' }}
-              >
-                <svg className="w-5 h-5" fill={fontColor.value} viewBox="0 0 24 24">
-                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
-                </svg>
-              </button>
-              
-              <button 
-                type="button"
-                onClick={toggleMusic}
-                className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90"
-                style={{ background: 'linear-gradient(135deg, #f9a8d4, #c4b5fd)' }}
-              >
-                {musicPlaying ? (
-                  <svg className="w-7 h-7" fill="white" viewBox="0 0 24 24">
-                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-                  </svg>
-                ) : (
-                  <svg className="w-7 h-7 ml-1" fill="white" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z"/>
-                  </svg>
-                )}
-              </button>
-              
-              <button 
-                type="button"
-                onClick={nextSong}
-                className="w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-90"
-                style={{ background: 'rgba(255,255,255,0.25)' }}
-              >
-                <svg className="w-5 h-5" fill={fontColor.value} viewBox="0 0 24 24">
-                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 搜索框 */}
-        <div className="relative mb-3">
-          <input
-            type="text"
-            placeholder="搜索歌曲或歌手..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2.5 pl-10 rounded-2xl text-sm outline-none transition-all"
-            style={{
-              background: 'rgba(255,255,255,0.2)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: fontColor.value,
-            }}
-          />
-          <svg 
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" 
-            fill="none" 
-            stroke={fontColor.value}
-            strokeWidth={2}
-            viewBox="0 0 24 24"
-            style={{ opacity: 0.5 }}
-          >
-            <circle cx="11" cy="11" r="8"/>
-            <path d="m21 21-4.35-4.35"/>
-          </svg>
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center"
-              style={{ background: 'rgba(255,255,255,0.3)' }}
-            >
-              <span style={{ color: fontColor.value, fontSize: '12px' }}>✕</span>
-            </button>
-          )}
-        </div>
-
-        {/* Tab 切换 + 导入按钮 */}
-        <div className="flex items-center gap-2 mb-3">
-          <button
-            type="button"
-            onClick={() => setActiveTab('all')}
-            className="px-4 py-1.5 rounded-full text-sm font-medium transition-all"
-            style={{
-              background: activeTab === 'all' ? 'linear-gradient(135deg, #f9a8d4, #c4b5fd)' : 'rgba(255,255,255,0.2)',
-              color: activeTab === 'all' ? 'white' : fontColor.value,
-            }}
-          >
-            全部 ✨
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('favorites')}
-            className="px-4 py-1.5 rounded-full text-sm font-medium transition-all"
-            style={{
-              background: activeTab === 'favorites' ? 'linear-gradient(135deg, #f9a8d4, #c4b5fd)' : 'rgba(255,255,255,0.2)',
-              color: activeTab === 'favorites' ? 'white' : fontColor.value,
-            }}
-          >
-            收藏 💖
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
           </button>
           
-          {/* 导入按钮 */}
+          <div className="flex-1 mx-3">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="搜索歌曲、歌手"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-4 py-2 pl-9 rounded-full text-sm bg-white/10 text-white placeholder-white/50 outline-none"
+              />
+              <svg 
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" 
+                fill="none" 
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+              </svg>
+            </div>
+          </div>
+          
           <button
             type="button"
             onClick={handleImportMusic}
-            className="ml-auto px-3 py-1.5 rounded-full text-sm font-medium transition-all active:scale-95"
-            style={{
-              background: 'rgba(255,255,255,0.2)',
-              color: fontColor.value,
-            }}
+            className="w-8 h-8 rounded-full bg-[#31c27c] flex items-center justify-center"
           >
-            + 导入
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
           </button>
           <input
             ref={fileInputRef}
@@ -265,34 +123,300 @@ export default function MusicScreen() {
           />
         </div>
 
-        {/* 歌曲列表 */}
-        <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 space-y-2">
-          {displayedSongs.length === 0 ? (
-            <div 
-              className="text-center py-10 text-sm"
-              style={{ color: fontColor.value, opacity: 0.5 }}
-            >
-              {searchQuery 
-                ? '没有找到匹配的歌曲~' 
-                : activeTab === 'favorites' 
-                  ? '还没有收藏的歌曲哦~' 
-                  : '暂无歌曲，点击"导入"添加音乐吧~'}
-            </div>
-          ) : (
-            displayedSongs.map((song) => (
-              <SongItem 
-                key={song.id} 
-                song={song} 
-                isPlaying={currentSong?.id === song.id && musicPlaying}
-                isCurrent={currentSong?.id === song.id}
-                onPlay={() => playSong(song)}
-                onToggleFavorite={() => toggleFavorite(song.id)}
-                onDelete={() => removeSong(song.id)}
-                isFavorite={isFavorite(song.id)}
-              />
-            ))
-          )}
+        {/* Tab 切换 - QQ音乐风格 */}
+        <div className="px-4 flex items-center gap-6 border-b border-white/10 pb-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('recommend')}
+            className={`text-sm font-medium pb-2 border-b-2 transition-all ${
+              activeTab === 'recommend' 
+                ? 'text-[#31c27c] border-[#31c27c]' 
+                : 'text-white/60 border-transparent'
+            }`}
+          >
+            推荐
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('playlist')}
+            className={`text-sm font-medium pb-2 border-b-2 transition-all ${
+              activeTab === 'playlist' 
+                ? 'text-[#31c27c] border-[#31c27c]' 
+                : 'text-white/60 border-transparent'
+            }`}
+          >
+            歌单
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('favorites')}
+            className={`text-sm font-medium pb-2 border-b-2 transition-all ${
+              activeTab === 'favorites' 
+                ? 'text-[#31c27c] border-[#31c27c]' 
+                : 'text-white/60 border-transparent'
+            }`}
+          >
+            我喜欢
+          </button>
         </div>
+
+        {/* 主内容区 */}
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          {activeTab === 'recommend' && (
+            <>
+              {/* 推荐歌单卡片 */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-white font-medium">每日推荐</span>
+                  <span className="text-white/50 text-xs">更多 &gt;</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {musicPlaylist.slice(0, 3).map((song, idx) => (
+                    <div 
+                      key={song.id}
+                      onClick={() => playSong(song)}
+                      className="cursor-pointer"
+                    >
+                      <div className="aspect-square rounded-lg overflow-hidden mb-1 relative">
+                        <img src={song.cover} alt="" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                        <div className="absolute bottom-1 right-1 text-white text-[10px] bg-black/40 px-1 rounded">
+                          {idx === 0 ? '🔥热门' : idx === 1 ? '💖精选' : '✨新歌'}
+                        </div>
+                      </div>
+                      <p className="text-white text-xs truncate">{song.title}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* 歌曲列表 */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-white font-medium">
+                {activeTab === 'favorites' ? '我喜欢的音乐' : '全部歌曲'}
+              </span>
+              <span className="text-white/50 text-xs">{displayedSongs.length}首</span>
+            </div>
+            
+            {displayedSongs.length === 0 ? (
+              <div className="text-center py-10 text-white/40 text-sm">
+                {searchQuery 
+                  ? '没有找到匹配的歌曲~' 
+                  : activeTab === 'favorites' 
+                    ? '还没有喜欢的歌曲' 
+                    : '点击右上角 + 导入音乐'}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {displayedSongs.map((song, index) => (
+                  <SongItem 
+                    key={song.id} 
+                    song={song}
+                    index={index + 1}
+                    isPlaying={currentSong?.id === song.id && musicPlaying}
+                    isCurrent={currentSong?.id === song.id}
+                    onPlay={() => playSong(song)}
+                    onToggleFavorite={() => toggleFavorite(song.id)}
+                    onDelete={() => removeSong(song.id)}
+                    isFavorite={isFavorite(song.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 底部迷你播放器 - QQ音乐风格 */}
+        {currentSong && (
+          <div 
+            className="mx-3 mb-2 rounded-2xl overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, #2d2d44 0%, #1a1a2e 100%)' }}
+          >
+            <div className="flex items-center p-2 gap-3">
+              {/* 旋转唱片封面 */}
+              <div 
+                className="relative w-12 h-12 rounded-full overflow-hidden flex-shrink-0 cursor-pointer"
+                onClick={() => setShowPlayer(true)}
+                style={{ animation: musicPlaying ? 'spin 8s linear infinite' : 'none' }}
+              >
+                <img src={currentSong.cover} alt="" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-3 h-3 rounded-full bg-[#1a1a2e]" />
+                </div>
+              </div>
+              
+              {/* 歌曲信息 */}
+              <div className="flex-1 min-w-0" onClick={() => setShowPlayer(true)}>
+                <div className="text-white text-sm font-medium truncate">{currentSong.title}</div>
+                <div className="text-white/50 text-xs truncate">{currentSong.artist}</div>
+              </div>
+              
+              {/* 控制按钮 */}
+              <div className="flex items-center gap-2">
+                <button 
+                  type="button"
+                  onClick={toggleMusic}
+                  className="w-10 h-10 rounded-full bg-[#31c27c] flex items-center justify-center"
+                >
+                  {musicPlaying ? (
+                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                  )}
+                </button>
+                <button 
+                  type="button"
+                  onClick={nextSong}
+                  className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"
+                >
+                  <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            
+            {/* 进度条 */}
+            <div 
+              className="h-0.5 bg-white/10 cursor-pointer"
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const percent = ((e.clientX - rect.left) / rect.width) * 100
+                seekMusic(percent)
+              }}
+            >
+              <div 
+                className="h-full bg-[#31c27c] transition-all"
+                style={{ width: `${musicProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 全屏播放器 */}
+        {showPlayer && currentSong && (
+          <div className="absolute inset-0 z-50 bg-gradient-to-b from-[#1a1a2e] via-[#16213e] to-[#0f0f23] flex flex-col">
+            {/* 顶部 */}
+            <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+              <button 
+                type="button"
+                onClick={() => setShowPlayer(false)}
+                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"
+              >
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <div className="text-center">
+                <div className="text-white font-medium text-sm">{currentSong.title}</div>
+                <div className="text-white/50 text-xs">{currentSong.artist}</div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => toggleFavorite(currentSong.id)}
+                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"
+              >
+                <span className="text-lg">{isFavorite(currentSong.id) ? '💖' : '🤍'}</span>
+              </button>
+            </div>
+
+            {/* 唱片 */}
+            <div className="flex-1 flex items-center justify-center px-8">
+              <div className="relative">
+                {/* 唱片底座 */}
+                <div className="absolute -inset-4 rounded-full bg-gradient-to-br from-white/5 to-transparent" />
+                
+                {/* 旋转唱片 */}
+                <div 
+                  className="w-56 h-56 rounded-full overflow-hidden shadow-2xl relative"
+                  style={{ 
+                    animation: musicPlaying ? 'spin 20s linear infinite' : 'none',
+                    boxShadow: '0 0 60px rgba(49, 194, 124, 0.3)'
+                  }}
+                >
+                  <img src={currentSong.cover} alt="" className="w-full h-full object-cover" />
+                  {/* 唱片中心孔 */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-16 h-16 rounded-full bg-[#1a1a2e] border-4 border-white/20" />
+                  </div>
+                  {/* 唱片纹路 */}
+                  <div className="absolute inset-8 rounded-full border border-white/10" />
+                  <div className="absolute inset-12 rounded-full border border-white/5" />
+                </div>
+              </div>
+            </div>
+
+            {/* 进度条 */}
+            <div className="px-8 mb-4">
+              <div 
+                className="h-1 rounded-full bg-white/20 cursor-pointer"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const percent = ((e.clientX - rect.left) / rect.width) * 100
+                  seekMusic(percent)
+                }}
+              >
+                <div 
+                  className="h-full rounded-full bg-[#31c27c] relative transition-all"
+                  style={{ width: `${musicProgress}%` }}
+                >
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow" />
+                </div>
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-white/50">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(currentSong.duration)}</span>
+              </div>
+            </div>
+
+            {/* 控制按钮 */}
+            <div className="px-8 pb-8 flex items-center justify-center gap-8">
+              <button 
+                type="button"
+                onClick={prevSong}
+                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center transition-transform active:scale-90"
+              >
+                <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+                </svg>
+              </button>
+              
+              <button 
+                type="button"
+                onClick={toggleMusic}
+                className="w-16 h-16 rounded-full bg-[#31c27c] flex items-center justify-center shadow-lg transition-transform active:scale-90"
+                style={{ boxShadow: '0 0 30px rgba(49, 194, 124, 0.5)' }}
+              >
+                {musicPlaying ? (
+                  <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                  </svg>
+                ) : (
+                  <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                )}
+              </button>
+              
+              <button 
+                type="button"
+                onClick={nextSong}
+                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center transition-transform active:scale-90"
+              >
+                <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       
       <style>{`
@@ -307,6 +431,7 @@ export default function MusicScreen() {
 
 function SongItem({ 
   song, 
+  index,
   isPlaying, 
   isCurrent,
   onPlay, 
@@ -315,6 +440,7 @@ function SongItem({
   isFavorite 
 }: { 
   song: Song
+  index: number
   isPlaying: boolean
   isCurrent: boolean
   onPlay: () => void
@@ -322,73 +448,60 @@ function SongItem({
   onDelete: () => void
   isFavorite: boolean
 }) {
-  const { fontColor } = useOS()
-  
   return (
     <div 
-      className="flex items-center gap-3 p-3 rounded-2xl transition-all"
-      style={{ 
-        background: isCurrent ? 'rgba(249,168,212,0.2)' : 'rgba(255,255,255,0.15)',
-        border: isCurrent ? '1px solid rgba(249,168,212,0.4)' : '1px solid transparent',
-      }}
+      className={`flex items-center gap-3 p-2 rounded-xl transition-all ${
+        isCurrent ? 'bg-[#31c27c]/20' : 'hover:bg-white/5'
+      }`}
     >
+      {/* 序号/播放动画 */}
+      <div className="w-6 text-center flex-shrink-0">
+        {isPlaying ? (
+          <div className="flex justify-center gap-0.5">
+            <span className="w-0.5 h-3 bg-[#31c27c] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-0.5 h-3 bg-[#31c27c] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-0.5 h-3 bg-[#31c27c] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        ) : (
+          <span className={`text-xs ${isCurrent ? 'text-[#31c27c]' : 'text-white/40'}`}>{index}</span>
+        )}
+      </div>
+      
       {/* 封面 */}
       <div 
-        className="relative w-12 h-12 rounded-xl overflow-hidden shadow flex-shrink-0 cursor-pointer"
+        className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer"
         onClick={onPlay}
       >
-        <img src={song.cover} alt={song.title} className="w-full h-full object-cover" />
-        {isPlaying && (
-          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-            <div className="flex gap-0.5">
-              <span className="w-1 h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1 h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1 h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-          </div>
-        )}
+        <img src={song.cover} alt="" className="w-full h-full object-cover" />
       </div>
       
       {/* 信息 */}
       <div className="flex-1 min-w-0 cursor-pointer" onClick={onPlay}>
-        <div 
-          className="font-medium truncate text-sm"
-          style={{ color: fontColor.value }}
-        >
+        <div className={`text-sm truncate ${isCurrent ? 'text-[#31c27c]' : 'text-white'}`}>
           {song.title}
         </div>
-        <div 
-          className="text-xs truncate mt-0.5"
-          style={{ color: fontColor.value, opacity: 0.6 }}
-        >
-          {song.artist}
-        </div>
+        <div className="text-xs text-white/40 truncate">{song.artist}</div>
       </div>
       
-      {/* 收藏按钮 */}
-      <button 
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          onToggleFavorite()
-        }}
-        className="w-8 h-8 flex items-center justify-center transition-transform active:scale-90"
-      >
-        <span className="text-xl">{isFavorite ? '💖' : '🤍'}</span>
-      </button>
-      
-      {/* 删除按钮 */}
-      <button 
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          onDelete()
-        }}
-        className="w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90"
-        style={{ background: 'rgba(255,100,100,0.2)' }}
-      >
-        <span className="text-sm">🗑️</span>
-      </button>
+      {/* 操作按钮 */}
+      <div className="flex items-center gap-1">
+        <button 
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+          className="w-7 h-7 flex items-center justify-center"
+        >
+          <span className="text-sm">{isFavorite ? '💖' : '🤍'}</span>
+        </button>
+        <button 
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-red-400"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
     </div>
   )
 }

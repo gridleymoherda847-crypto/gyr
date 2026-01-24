@@ -30,11 +30,19 @@ interface GameRound {
   player: Player
   cardCount: number
   isPass: boolean
+  isBomb?: boolean // 是否是炸弹
+}
+
+// 炸弹记录：谁丢的炸弹
+interface BombRecord {
+  player: Player
+  playerName: string
 }
 
 interface GameResult {
   playerCoins: [number, number, number]
   bombCount: number
+  bombRecords: BombRecord[] // 记录每个炸弹是谁丢的
   multiplier: number
   baseScore: number
   bidScore: number
@@ -43,6 +51,7 @@ interface GameResult {
   totalRounds: number
   gameHistory: GameRound[] // 简单记录每轮出牌数
   difficulty: 'easy' | 'normal' | 'hard'
+  opponents: [string, string] // 对手名称：人机A, 人机B
 }
 
 const loadStats = (): DoudizhuStats => {
@@ -190,10 +199,25 @@ function ShareDialog({
   
   const summary = generateSummary()
   
+  // 生成炸弹描述
+  const getBombDescription = () => {
+    const bombs = gameResult.bombRecords || []
+    if (bombs.length === 0) return null
+    const myBombs = bombs.filter(b => b.player === 0).length
+    const aiBombs = bombs.filter(b => b.player !== 0)
+    const descriptions: string[] = []
+    if (myBombs > 0) descriptions.push(`我丢了${myBombs}个炸弹`)
+    if (aiBombs.length > 0) {
+      const aiDesc = aiBombs.map(b => b.playerName).join('、')
+      descriptions.push(`${aiDesc}丢了${aiBombs.length}个炸弹`)
+    }
+    return descriptions.join('，')
+  }
+  
   const handleShare = () => {
     if (!selectedCharacter) return
     
-    // 发送卡片式消息
+    // 发送卡片式消息 - 包含更详细的信息
     addMessage({
       characterId: selectedCharacter,
       content: JSON.stringify({
@@ -203,10 +227,12 @@ function ShareDialog({
         baseScore: gameResult.baseScore,
         multiplier: gameResult.multiplier,
         bombCount: gameResult.bombCount,
+        bombDescription: getBombDescription(), // 炸弹是谁丢的
         coinChange,
         difficulty: difficultyText,
         totalRounds: summary.totalRounds,
-        myPlays: summary.myPlays
+        myPlays: summary.myPlays,
+        opponents: gameResult.opponents || ['人机A', '人机B'] // 对手身份
       }),
       isUser: true,
       type: 'doudizhu_share'
@@ -346,6 +372,7 @@ export default function DoudizhuScreen() {
   const [gameResult, setGameResult] = useState<GameResult | null>(null)
   const [showShareDialog, setShowShareDialog] = useState(false)
   const [, setGameHistory] = useState<GameRound[]>([])
+  const [, setBombRecords] = useState<BombRecord[]>([])
   const [gameDifficulty, setGameDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal')
   
   const stateRef = useRef({
@@ -420,6 +447,7 @@ export default function DoudizhuScreen() {
     playSound('start')
     setMatchProgress(0)
     setGameHistory([]) // 清空游戏记录
+    setBombRecords([]) // 清空炸弹记录
     setPhase('matching')
   }
   
@@ -443,6 +471,7 @@ export default function DoudizhuScreen() {
     setBombCount(0)
     setGameResult(null)
     setGameHistory([]) // 清空游戏记录
+    setBombRecords([]) // 清空炸弹记录
     setPhase('bidding')
   }
   
@@ -595,14 +624,33 @@ export default function DoudizhuScreen() {
     }
     
     const isWin = (winnerSide === 'landlord' && landlordIdx === 0) || (winnerSide === 'farmer' && landlordIdx !== 0)
-    return { playerCoins, bombCount: finalBombCount, multiplier, baseScore: s.baseScore, bidScore: s.bidScore || 1, isWin, landlordPlayer: landlordIdx as Player, totalRounds: 0, gameHistory: [], difficulty: s.difficulty }
+    return { 
+      playerCoins, 
+      bombCount: finalBombCount, 
+      bombRecords: [], // 会在doPlayCards中更新
+      multiplier, 
+      baseScore: s.baseScore, 
+      bidScore: s.bidScore || 1, 
+      isWin, 
+      landlordPlayer: landlordIdx as Player, 
+      totalRounds: 0, 
+      gameHistory: [], 
+      difficulty: s.difficulty,
+      opponents: ['人机A', '人机B'] as [string, string]
+    }
   }
   
   const doPlayCards = useCallback((player: Player, cards: Card[]) => {
     if (cards.length > 0) playSound('card')
     
+    let isBombPlay = false
+    if (cards.length > 0) {
+      const result = analyzeHand(cards)
+      isBombPlay = result.type === 'bomb' || result.type === 'rocket'
+    }
+    
     // 记录游戏过程（简单记录）
-    setGameHistory(prev => [...prev, { player, cardCount: cards.length, isPass: cards.length === 0 }])
+    setGameHistory(prev => [...prev, { player, cardCount: cards.length, isPass: cards.length === 0, isBomb: isBombPlay }])
     
     // 更新出牌记录
     setPlayedCards(prev => {
@@ -632,6 +680,8 @@ export default function DoudizhuScreen() {
       if (result.type === 'bomb' || result.type === 'rocket') {
         newBombCount++
         setBombCount(newBombCount)
+        // 记录是谁丢的炸弹
+        setBombRecords(prev => [...prev, { player, playerName: PLAYER_NAMES[player] }])
       }
       setLastPlay(result)
       setLastPlayPlayer(player)
@@ -650,10 +700,13 @@ export default function DoudizhuScreen() {
         playSound(isWin ? 'win' : 'lose')
         
         const calcResult = calculateResult(winnerSide, newBombCount)
-        // 添加游戏历史到结果
+        // 添加游戏历史和炸弹记录到结果
         setGameHistory(prev => {
-          const finalResult = { ...calcResult, totalRounds: prev.length, gameHistory: prev }
-          setGameResult(finalResult)
+          setBombRecords(currentBombs => {
+            const finalResult = { ...calcResult, totalRounds: prev.length, gameHistory: prev, bombRecords: currentBombs }
+            setGameResult(finalResult)
+            return currentBombs
+          })
           return prev
         })
         

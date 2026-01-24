@@ -94,6 +94,9 @@ export default function ChatScreen() {
   
   // 收到对方音乐邀请时的确认弹窗
   const [musicInviteMsg, setMusicInviteMsg] = useState<typeof messages[0] | null>(null)
+  
+  // 一起听歌展开面板
+  const [showListenPanel, setShowListenPanel] = useState(false)
 
   // 情侣空间申请确认弹窗
   const [coupleInviteConfirmOpen, setCoupleInviteConfirmOpen] = useState(false)
@@ -1979,29 +1982,65 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         const data = JSON.parse(msg.content)
         const isWin = data.isWin
         const coinChange = data.coinChange || 0
+        const opponents = data.opponents || ['人机A', '人机B']
+        
+        // 胜利：喜庆红金色；失败：灰暗色
+        const winGradient = 'linear-gradient(135deg, #ff6b6b 0%, #feca57 50%, #ff9ff3 100%)'
+        const loseGradient = 'linear-gradient(135deg, #636e72 0%, #2d3436 100%)'
+        
         return (
-          <div className="min-w-[160px] max-w-[200px] rounded-xl overflow-hidden shadow-lg">
+          <div className="min-w-[170px] max-w-[210px] rounded-xl overflow-hidden shadow-lg">
             <div 
-              className="p-3 text-white"
-              style={{ background: isWin ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'linear-gradient(135deg, #4a5568 0%, #2d3748 100%)' }}
+              className="p-3 text-white relative"
+              style={{ background: isWin ? winGradient : loseGradient }}
             >
+              {/* 胜利时添加喜庆装饰 */}
+              {isWin && (
+                <>
+                  <div className="absolute top-1 left-2 text-lg animate-bounce">🎊</div>
+                  <div className="absolute top-1 right-2 text-lg animate-bounce" style={{ animationDelay: '0.2s' }}>🎊</div>
+                </>
+              )}
+              
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] opacity-80">🃏 斗地主</span>
-                <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded">{data.difficulty}</span>
+                <span className="text-[10px] opacity-90">🃏 斗地主战报</span>
+                <span className="text-[10px] bg-white/25 px-1.5 py-0.5 rounded-full font-medium">{data.difficulty}</span>
               </div>
-              <div className="text-center">
-                <div className="text-2xl mb-0.5">{isWin ? '🎉' : '😢'}</div>
-                <div className="font-bold">{isWin ? '胜利' : '失败'}</div>
-                <div className="text-[11px] opacity-80">{data.role}</div>
+              
+              <div className="text-center py-1">
+                <div className="text-3xl mb-1">{isWin ? '🏆' : '😢'}</div>
+                <div className="text-lg font-bold" style={{ textShadow: isWin ? '0 0 10px rgba(255,215,0,0.5)' : 'none' }}>
+                  {isWin ? '大获全胜！' : '惜败'}
+                </div>
+                <div className="text-[11px] opacity-90 mt-0.5">身份：{data.role}</div>
               </div>
-              <div className="flex justify-between text-[10px] mt-2 pt-2 border-t border-white/20">
-                <span>{data.multiplier}x倍数</span>
-                <span>{data.totalRounds}回合</span>
+              
+              {/* 对手信息 */}
+              <div className="text-[9px] text-center opacity-80 mt-1">
+                对战：{opponents[0]} & {opponents[1]}
+              </div>
+              
+              <div className="grid grid-cols-3 gap-1 text-center text-[10px] mt-2 bg-black/20 rounded-lg p-1.5">
+                <div><div className="opacity-70">底分</div><div className="font-bold">{data.baseScore}</div></div>
+                <div><div className="opacity-70">倍数</div><div className="font-bold">{data.multiplier}x</div></div>
+                <div><div className="opacity-70">回合</div><div className="font-bold">{data.totalRounds}</div></div>
               </div>
             </div>
-            <div className={`px-3 py-1.5 text-[11px] font-medium ${coinChange > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-600'}`}>
-              金币 {coinChange > 0 ? '+' : ''}{coinChange}
-              {data.bombCount > 0 && <span className="ml-1">💣×{data.bombCount}</span>}
+            
+            {/* 金币变化 */}
+            <div className={`px-3 py-2 text-[12px] font-bold ${isWin ? 'bg-gradient-to-r from-yellow-100 to-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+              <div className="flex items-center justify-between">
+                <span>金币</span>
+                <span className={isWin ? 'text-amber-600' : 'text-red-500'}>
+                  {coinChange > 0 ? '+' : ''}{coinChange} 💰
+                </span>
+              </div>
+              {/* 炸弹详情 */}
+              {data.bombCount > 0 && (
+                <div className="text-[10px] mt-1 opacity-80 font-normal">
+                  💣 {data.bombDescription || `共${data.bombCount}个炸弹`}
+                </div>
+              )}
             </div>
           </div>
         )
@@ -2241,22 +2280,144 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         
         {/* 一起听浮窗 */}
         {isListeningWithThisCharacter && (
-          <div className="mx-3 mt-1 px-3 py-2 rounded-full bg-gradient-to-r from-pink-500/80 to-purple-500/80 backdrop-blur flex items-center gap-2">
-            <svg className="w-4 h-4 text-white animate-pulse" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-            </svg>
+          <div 
+            className="mx-3 mt-1 px-3 py-2 rounded-full bg-gradient-to-r from-pink-500/80 to-purple-500/80 backdrop-blur flex items-center gap-2 cursor-pointer active:opacity-80"
+            onClick={() => setShowListenPanel(true)}
+          >
+            <div 
+              className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0"
+              style={{ animation: 'spin 4s linear infinite' }}
+            >
+              <div className="w-full h-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center">
+                <div className="w-2 h-2 rounded-full bg-white/80" />
+              </div>
+            </div>
             <span className="flex-1 text-white text-xs truncate">
-              {character.name}正在和你一起听《{listenTogether.songTitle}》
+              🎵 和{character.name}一起听《{listenTogether.songTitle}》
             </span>
             <button 
               type="button"
-              onClick={handleStopListening}
+              onClick={(e) => { e.stopPropagation(); handleStopListening() }}
               className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center"
             >
               <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
+          </div>
+        )}
+        
+        {/* 一起听歌展开面板 */}
+        {showListenPanel && isListeningWithThisCharacter && (
+          <div className="absolute inset-0 z-50 bg-gradient-to-b from-[#1a1a2e] via-[#16213e] to-[#0f0f23] flex flex-col">
+            {/* 顶部关闭按钮 */}
+            <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+              <button 
+                type="button"
+                onClick={() => setShowListenPanel(false)}
+                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"
+              >
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <div className="text-white font-medium text-sm">一起听</div>
+              <div className="w-8" />
+            </div>
+            
+            {/* 双方头像 */}
+            <div className="flex items-center justify-center gap-8 mt-8 mb-6">
+              {/* 我的头像 */}
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-pink-400 shadow-lg">
+                  {selectedPersona?.avatar ? (
+                    <img src={selectedPersona.avatar} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-pink-400 to-purple-400 flex items-center justify-center text-white text-xl">
+                      我
+                    </div>
+                  )}
+                </div>
+                <span className="text-white/80 text-xs">{selectedPersona?.name || '我'}</span>
+              </div>
+              
+              {/* 连接动画 */}
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full bg-pink-400 animate-pulse" />
+                <div className="w-8 h-0.5 bg-gradient-to-r from-pink-400 to-purple-400" />
+                <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" style={{ animationDelay: '0.5s' }} />
+              </div>
+              
+              {/* 对方头像 */}
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-purple-400 shadow-lg">
+                  {character.avatar ? (
+                    <img src={character.avatar} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-xl">
+                      {character.name.slice(0, 1)}
+                    </div>
+                  )}
+                </div>
+                <span className="text-white/80 text-xs">{character.name}</span>
+              </div>
+            </div>
+            
+            {/* 旋转唱片 */}
+            <div className="flex-1 flex items-center justify-center">
+              <div className="relative">
+                {/* 唱片光晕 */}
+                <div 
+                  className="absolute -inset-8 rounded-full opacity-30"
+                  style={{ 
+                    background: 'radial-gradient(circle, rgba(236,72,153,0.4) 0%, transparent 70%)',
+                    animation: 'pulse 2s ease-in-out infinite'
+                  }}
+                />
+                
+                {/* 旋转唱片 */}
+                <div 
+                  className="w-48 h-48 rounded-full overflow-hidden shadow-2xl relative"
+                  style={{ 
+                    animation: 'spin 8s linear infinite',
+                    boxShadow: '0 0 60px rgba(236, 72, 153, 0.4)'
+                  }}
+                >
+                  {/* 唱片背景 */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-pink-500 via-purple-500 to-pink-600" />
+                  
+                  {/* 唱片纹路 */}
+                  <div className="absolute inset-4 rounded-full border border-white/20" />
+                  <div className="absolute inset-8 rounded-full border border-white/15" />
+                  <div className="absolute inset-12 rounded-full border border-white/10" />
+                  <div className="absolute inset-16 rounded-full border border-white/10" />
+                  
+                  {/* 唱片中心 */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-14 h-14 rounded-full bg-[#1a1a2e] border-4 border-white/30 flex items-center justify-center">
+                      <span className="text-2xl">🎵</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* 歌曲信息 */}
+            <div className="text-center px-8 mb-4">
+              <div className="text-white font-bold text-lg mb-1">{listenTogether.songTitle}</div>
+              <div className="text-white/50 text-sm">正在一起聆听...</div>
+            </div>
+            
+            {/* 底部按钮 */}
+            <div className="px-8 pb-8 flex justify-center">
+              <button
+                type="button"
+                onClick={() => { handleStopListening(); setShowListenPanel(false) }}
+                className="px-8 py-3 rounded-full bg-white/10 text-white text-sm font-medium active:scale-95 transition-transform"
+              >
+                结束一起听
+              </button>
+            </div>
           </div>
         )}
         
