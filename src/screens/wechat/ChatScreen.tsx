@@ -127,17 +127,18 @@ export default function ChatScreen() {
     }
   }, [character?.id, character?.isTyping, (character as any)?.typingUpdatedAt, aiTyping, setCharacterTyping])
   
-  // 5分钟超时检测
+  // 超时检测：改为2分钟，更快响应卡住的情况
   useEffect(() => {
     if (!aiTyping || !typingStartTime) return
+    const TIMEOUT_MS = 2 * 60 * 1000 // 2分钟超时
     const timeout = setTimeout(() => {
-      if (aiTyping && typingStartTime && Date.now() - typingStartTime >= 5 * 60 * 1000) {
+      if (aiTyping && typingStartTime && Date.now() - typingStartTime >= TIMEOUT_MS) {
         setShowTimeoutDialog(true)
         setAiTyping(false)
         setCharacterTyping(character?.id || '', false)
         setTypingStartTime(null)
       }
-    }, 5 * 60 * 1000)
+    }, TIMEOUT_MS)
     return () => clearTimeout(timeout)
   }, [aiTyping, typingStartTime, character?.id, setCharacterTyping])
 
@@ -648,8 +649,18 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           m.isUser && m.type === 'transfer' && m.transferStatus === 'pending'
         )
         
+        // 检查是否有待处理的用户音乐邀请
+        const pendingUserMusicInvites = workingMessages.filter(m => 
+          m.isUser && m.type === 'music' && m.musicStatus === 'pending'
+        )
+        
         // 随机决定在哪条回复后处理转账（如果有的话）
         const transferProcessIndex = pendingUserTransfers.length > 0 
+          ? Math.floor(Math.random() * Math.max(1, replies.length)) 
+          : -1
+        
+        // 随机决定在哪条回复后处理音乐邀请
+        const musicProcessIndex = pendingUserMusicInvites.length > 0 
           ? Math.floor(Math.random() * Math.max(1, replies.length)) 
           : -1
         
@@ -869,6 +880,66 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     amount,
                     description: `${character.name} 退还了你的转账 ¥${amount.toFixed(2)}`,
                     relatedCharacterId: character.id,
+                  })
+                }
+              }, totalDelay, { background: true })
+              
+              totalDelay += 350
+            }
+          }
+          
+          // 在指定位置处理用户的待处理音乐邀请
+          if (index === musicProcessIndex && pendingUserMusicInvites.length > 0) {
+            totalDelay += 400 + Math.random() * 500
+            
+            for (const musicInvite of pendingUserMusicInvites) {
+              // 根据角色性格决定是否接受（80%概率接受）
+              const willAccept = Math.random() > 0.2
+              const songTitle = musicInvite.musicTitle || '歌曲'
+              const songArtist = musicInvite.musicArtist || ''
+              
+              safeTimeoutEx(() => {
+                // 更新原音乐邀请状态
+                updateMessage(musicInvite.id, { musicStatus: willAccept ? 'accepted' : 'rejected' })
+                
+                if (willAccept) {
+                  // 接受邀请 - 开启一起听
+                  startListenTogether(character.id, songTitle, songArtist)
+                  
+                  // 找到对应的歌曲并播放
+                  const fullSong = musicPlaylist.find(s => s.title === songTitle && s.artist === songArtist)
+                  if (fullSong) {
+                    playSong(fullSong)
+                  }
+                  
+                  // 添加系统消息
+                  addMessage({
+                    characterId: character.id,
+                    content: `${character.name}接受了你的邀请，开始一起听《${songTitle}》`,
+                    isUser: false,
+                    type: 'system',
+                  })
+                  
+                  // 显示接受弹窗
+                  setMusicInviteDialog({
+                    open: true,
+                    song: { title: songTitle, artist: songArtist },
+                    accepted: true,
+                  })
+                } else {
+                  // 拒绝邀请
+                  addMessage({
+                    characterId: character.id,
+                    content: `${character.name}拒绝了你一起听《${songTitle}》的邀请`,
+                    isUser: false,
+                    type: 'system',
+                  })
+                  
+                  // 显示拒绝弹窗
+                  setMusicInviteDialog({
+                    open: true,
+                    song: { title: songTitle, artist: songArtist },
+                    accepted: false,
                   })
                 }
               }, totalDelay, { background: true })

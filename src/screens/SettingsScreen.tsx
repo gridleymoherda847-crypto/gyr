@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS } from '../context/OSContext'
+import { useWeChat } from '../context/WeChatContext'
 import AppHeader from '../components/AppHeader'
 import PageContainer from '../components/PageContainer'
 import { SettingsGroup, SettingsItem } from '../components/SettingsGroup'
@@ -8,8 +9,10 @@ import { SettingsGroup, SettingsItem } from '../components/SettingsGroup'
 export default function SettingsScreen() {
   const navigate = useNavigate()
   const { llmConfig, currentFont, fontColor, setLocked } = useOS()
+  const { characters, setCharacterTyping } = useWeChat()
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [showClearedTip, setShowClearedTip] = useState(false)
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false)
 
   const handleShutdown = () => {
     setLocked(true)
@@ -41,7 +44,7 @@ export default function SettingsScreen() {
           <SettingsGroup title="系统">
             <SettingsItem
               label="重启小手机"
-              onClick={() => window.location.reload()}
+              onClick={() => setShowRestartConfirm(true)}
               showArrow={false}
             />
             <SettingsItem
@@ -105,7 +108,7 @@ export default function SettingsScreen() {
               onClick={() => setShowClearedTip(false)}
               role="presentation"
             />
-            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
               <div className="text-center">
                 <div className="text-[15px] font-semibold text-[#111]">已清空完成</div>
                 <div className="mt-2 text-[13px] text-[#333]">
@@ -127,6 +130,51 @@ export default function SettingsScreen() {
                   style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
                 >
                   立即重启
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 重启确认弹窗 */}
+        {showRestartConfirm && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
+            <div
+              className="absolute inset-0 bg-black/35"
+              onClick={() => setShowRestartConfirm(false)}
+              role="presentation"
+            />
+            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
+              <div className="text-center">
+                <div className="text-[15px] font-semibold text-[#111]">重启小手机？</div>
+                <div className="mt-2 text-[13px] text-[#333]">
+                  将停止所有正在进行的操作（包括消息生成、一起听歌等），并刷新页面。
+                </div>
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRestartConfirm(false)}
+                  className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // 清除所有角色的"正在输入"状态
+                    characters.forEach(c => {
+                      if (c.isTyping) {
+                        setCharacterTyping(c.id, false)
+                      }
+                    })
+                    // 刷新页面
+                    window.location.reload()
+                  }}
+                  className="flex-1 rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
+                >
+                  重启
                 </button>
               </div>
             </div>
