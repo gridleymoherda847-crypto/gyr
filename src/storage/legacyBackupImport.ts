@@ -1,4 +1,4 @@
-import { kvSet } from './kv'
+import { kvGet, kvKeys, kvSet } from './kv'
 
 export type LegacyImportResult = {
   written: number
@@ -85,6 +85,64 @@ function normalizeValueToString(value: any): string | null {
   }
 }
 
+function parseMaybeJsonDeep(v: any): any {
+  // 支持：原生对象/数组；或字符串包 JSON（甚至双层）
+  if (v == null) return v
+  let cur: any = v
+  for (let i = 0; i < 2; i++) {
+    if (typeof cur !== 'string') break
+    const s = cur.trim()
+    if (!s) break
+    const looksJson =
+      (s.startsWith('{') && s.endsWith('}')) ||
+      (s.startsWith('[') && s.endsWith(']')) ||
+      (s.startsWith('"') && s.endsWith('"')) ||
+      (/^-?\d+(\.\d+)?$/.test(s)) ||
+      (s === 'true' || s === 'false' || s === 'null')
+    if (!looksJson) break
+    try {
+      cur = JSON.parse(s)
+    } catch {
+      break
+    }
+  }
+  return cur
+}
+
+function normalizeWeChatCharacters(raw: any): string | null {
+  const v = parseMaybeJsonDeep(raw)
+  if (!Array.isArray(v)) return normalizeValueToString(raw)
+  const now = Date.now()
+  const out = v.map((c: any, idx: number) => {
+    const id = typeof c?.id === 'string' && c.id ? c.id : `char_${now}_${idx}_${Math.random().toString(36).slice(2)}`
+    const createdAt = typeof c?.createdAt === 'number' ? c.createdAt : now
+    return { ...c, id, createdAt }
+  })
+  return JSON.stringify(out)
+}
+
+function normalizeWeChatMessages(raw: any): string | null {
+  const v = parseMaybeJsonDeep(raw)
+  if (!Array.isArray(v)) return normalizeValueToString(raw)
+  let lastTs = Date.now()
+  const out = v.map((m: any, idx: number) => {
+    const id = typeof m?.id === 'string' && m.id ? m.id : `msg_${Date.now()}_${idx}_${Math.random().toString(36).slice(2)}`
+    let timestamp = typeof m?.timestamp === 'number' ? m.timestamp : undefined
+    if (timestamp == null) {
+      timestamp = lastTs + 1
+    }
+    lastTs = timestamp
+    return { ...m, id, timestamp }
+  })
+  return JSON.stringify(out)
+}
+
+function normalizeByKey(key: string, raw: any): string | null {
+  if (key === 'wechat_characters') return normalizeWeChatCharacters(raw)
+  if (key === 'wechat_messages') return normalizeWeChatMessages(raw)
+  return normalizeValueToString(raw)
+}
+
 function extractDataMap(parsed: LegacyBackupFile): Record<string, any> {
   if (parsed && typeof parsed === 'object' && 'data' in parsed) {
     const data = (parsed as any).data
@@ -124,7 +182,7 @@ export async function importLegacyBackupJsonText(text: string): Promise<LegacyIm
         skipped.push(key)
         continue
       }
-      const value = normalizeValueToString(raw)
+      const value = normalizeByKey(key, raw)
       if (value == null) {
         skipped.push(key)
         continue
@@ -140,5 +198,26 @@ export async function importLegacyBackupJsonText(text: string): Promise<LegacyIm
 
   ;(window as any).__LP_IMPORTING__ = false
   return { written, skipped }
+}
+
+export async function exportCurrentBackupJsonText(): Promise<string> {
+  const data: Record<string, any> = {}
+  const keys = await kvKeys()
+  for (const k of keys) {
+    if (!shouldImportKey(k)) continue
+    const v = await kvGet(k)
+    if (v == null) continue
+    // 保持“旧格式”：value 全部是 string（多数是 JSON 字符串），便于跨版本兼容
+    data[k] = v
+  }
+  return JSON.stringify(
+    {
+      version: '3.0.0',
+      exportTime: new Date().toISOString(),
+      data,
+    },
+    null,
+    2
+  )
 }
 

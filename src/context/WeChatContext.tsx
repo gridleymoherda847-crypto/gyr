@@ -568,22 +568,24 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   }, [])
 
   // 异步保存（IndexedDB）
+  // 关键：必须等 hydration 完成后再开始自动保存，否则会把“初始空数组/默认值”写回 KV 覆盖导入数据
   const isImporting = () => !!(window as any).__LP_IMPORTING__
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.characters, characters) }, [characters])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.messages, messages) }, [messages])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.stickers, stickers) }, [stickers])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.favoriteDiaries, favoriteDiaries) }, [favoriteDiaries])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.stickerCategories, stickerCategories) }, [stickerCategories])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.moments, moments) }, [moments])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.userSettings, userSettings) }, [userSettings])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.userPersonas, userPersonas) }, [userPersonas])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.transfers, transfers) }, [transfers])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.anniversaries, anniversaries) }, [anniversaries])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.periods, periods) }, [periods])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.listenTogether, listenTogether) }, [listenTogether])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.walletBalance, walletBalance) }, [walletBalance])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.walletInitialized, walletInitialized) }, [walletInitialized])
-  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.walletBills, walletBills) }, [walletBills])
+  const canPersist = () => isHydrated && !isImporting()
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.characters, characters) }, [characters, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.messages, messages) }, [messages, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.stickers, stickers) }, [stickers, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.favoriteDiaries, favoriteDiaries) }, [favoriteDiaries, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.stickerCategories, stickerCategories) }, [stickerCategories, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.moments, moments) }, [moments, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.userSettings, userSettings) }, [userSettings, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.userPersonas, userPersonas) }, [userPersonas, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.transfers, transfers) }, [transfers, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.anniversaries, anniversaries) }, [anniversaries, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.periods, periods) }, [periods, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.listenTogether, listenTogether) }, [listenTogether, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.walletBalance, walletBalance) }, [walletBalance, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.walletInitialized, walletInitialized) }, [walletInitialized, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.walletBills, walletBills) }, [walletBills, isHydrated])
 
   // 预计算：按角色分组的消息（避免在列表/聊天界面反复 filter+sort 导致手机端卡顿）
   const messagesByCharacter = useMemo(() => {
