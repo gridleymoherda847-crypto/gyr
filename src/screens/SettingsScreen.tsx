@@ -19,6 +19,8 @@ export default function SettingsScreen() {
   const [importError, setImportError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showExportNameDialog, setShowExportNameDialog] = useState(false)
+  const [exportFileName, setExportFileName] = useState('')
 
   // 监听全屏状态变化
   useEffect(() => {
@@ -53,6 +55,12 @@ export default function SettingsScreen() {
     setShowClearConfirm(true)
   }
 
+  // 打开导出命名弹窗
+  const openExportDialog = () => {
+    setExportFileName(`LittlePhone_backup_${new Date().toISOString().slice(0, 10)}`)
+    setShowExportNameDialog(true)
+  }
+
   // 导出所有数据
   const handleExportData = () => {
     try {
@@ -70,16 +78,18 @@ export default function SettingsScreen() {
         data: allData
       }
       
+      const fileName = exportFileName.trim() || `LittlePhone_backup_${new Date().toISOString().slice(0, 10)}`
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `LittlePhone_backup_${new Date().toISOString().slice(0, 10)}.json`
+      a.download = `${fileName}.json`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
       
+      setShowExportNameDialog(false)
       setShowExportSuccess(true)
     } catch (error) {
       console.error('导出失败:', error)
@@ -166,7 +176,7 @@ export default function SettingsScreen() {
           <SettingsGroup title="数据管理">
             <SettingsItem
               label="导出数据"
-              onClick={handleExportData}
+              onClick={openExportDialog}
               showArrow={false}
             />
             <SettingsItem
@@ -203,6 +213,54 @@ export default function SettingsScreen() {
             <SettingsItem label="LittlePhone" value="v1.0.0" showArrow={false} />
           </SettingsGroup>
         </div>
+
+        {/* 导出文件命名弹窗 */}
+        {showExportNameDialog && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
+            <div
+              className="absolute inset-0 bg-black/35"
+              onClick={() => setShowExportNameDialog(false)}
+              role="presentation"
+            />
+            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+              <div className="text-center">
+                <div className="text-[15px] font-semibold text-[#111]">导出数据</div>
+                <div className="mt-2 text-[13px] text-[#666]">
+                  请输入备份文件名称
+                </div>
+              </div>
+              <div className="mt-3">
+                <input
+                  type="text"
+                  value={exportFileName}
+                  onChange={(e) => setExportFileName(e.target.value)}
+                  placeholder="请输入文件名"
+                  className="w-full rounded-lg border border-black/10 bg-white/60 px-3 py-2 text-[14px] text-[#333] outline-none focus:border-pink-400"
+                />
+                <div className="mt-1 text-[11px] text-[#999]">
+                  文件将保存为: {exportFileName.trim() || 'LittlePhone_backup'}.json
+                </div>
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExportNameDialog(false)}
+                  className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportData}
+                  className="flex-1 rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)' }}
+                >
+                  导出
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 清空数据确认弹窗 */}
         {showClearConfirm && (
