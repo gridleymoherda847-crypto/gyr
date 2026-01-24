@@ -614,6 +614,29 @@ export function aiDecide(
     // 基础策略：优先出小牌
     score = 100 - result.mainRank * 3
     
+    // 【核心策略】优先出组合牌，不要一直出单张！
+    // 出牌张数越多越好（清牌快）
+    score += cards.length * 8
+    
+    // 组合牌类型加分
+    if (result.type === 'straight') score += 35
+    if (result.type === 'pair_straight') score += 40
+    if (result.type === 'plane' || result.type === 'plane_single' || result.type === 'plane_pair') score += 50
+    if (result.type === 'triple_one' || result.type === 'triple_two') score += 25
+    if (result.type === 'triple') score += 20
+    if (result.type === 'pair') score += 10
+    
+    // 单张惩罚：除非是小单张或者手牌很少
+    if (result.type === 'single') {
+      if (hand.length > 5) {
+        score -= 20 // 手牌多时惩罚出单张
+      }
+      // 大单张更要惩罚
+      if (result.mainRank >= 12) {
+        score -= 15
+      }
+    }
+    
     // 如果能一次出完，最高优先级
     if (cards.length === hand.length) {
       return { cards, score: 10000 }
@@ -663,26 +686,59 @@ export function aiDecide(
         score += 15
       }
     } else {
-      // 农民策略：配合队友
+      // 农民策略：配合队友，但也要聪明出牌
       
       // 如果上家是队友出的牌，不要压（让队友走牌）
       if (isTeammatePlay) {
         score -= 50 // 大幅降低压队友牌的意愿
       }
       
-      // 农民优先出单张和对子（给队友接牌机会）
-      if (result.type === 'single' || result.type === 'pair') {
+      // 【重要】农民要优先出组合牌清牌，不要一直出单张！
+      // 顺子、连对、飞机优先级最高
+      if (result.type === 'straight') {
+        score += 45 // 顺子大幅加分
+      }
+      if (result.type === 'pair_straight') {
+        score += 40 // 连对大幅加分
+      }
+      if (result.type === 'plane' || result.type === 'plane_single' || result.type === 'plane_pair') {
+        score += 50 // 飞机最高优先级
+      }
+      
+      // 三带一/三带二也比单张好
+      if (result.type === 'triple_one' || result.type === 'triple_two') {
+        score += 30
+      }
+      if (result.type === 'triple') {
+        score += 25
+      }
+      
+      // 对子比单张好
+      if (result.type === 'pair') {
         score += 15
       }
       
-      // 农民也要出顺子连对清牌
-      if (result.type === 'straight' || result.type === 'pair_straight') {
-        score += 20
+      // 单张：只有在没有更好选择时才出，而且要出小单张
+      if (result.type === 'single') {
+        // 单张基础分较低
+        score -= 10
+        // 如果是小单张（3-7），稍微加点分
+        if (result.mainRank <= 7) {
+          score += 5
+        }
+        // 如果手牌里有顺子/连对/飞机的可能，惩罚出单张
+        if (hand.length >= 5) {
+          score -= 15 // 手牌多时不要急着出单张
+        }
       }
       
       // 地主快赢了，农民要拼命压
       if (landlordDanger) {
-        score += result.mainRank * 2 // 出大牌压制
+        score += result.mainRank * 3 // 出大牌压制
+        // 危急时刻，任何能出的牌都要出
+        if (result.type !== 'single') {
+          score += 20
+        }
       }
     }
     

@@ -8,13 +8,13 @@ import { getGlobalPresets } from '../PresetScreen'
 
 export default function ChatScreen() {
   const navigate = useNavigate()
-  const { fontColor, musicPlaylist, llmConfig, callLLM, pauseMusic, playSong } = useOS()
+  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
     getCharacter, getMessagesByCharacter, addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter,
     getStickersByCharacter, deleteCharacter, clearMessages,
     addTransfer, getPeriodRecords, addPeriodRecord,
-    removePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether, stopListenTogether,
+    removePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether,
     setCurrentChatId, toggleBlocked, setCharacterTyping, updateCharacter,
     walletBalance, updateWalletBalance, addWalletBill,
     getUserPersona, getCurrentPersona,
@@ -94,9 +94,6 @@ export default function ChatScreen() {
   
   // 收到对方音乐邀请时的确认弹窗
   const [musicInviteMsg, setMusicInviteMsg] = useState<typeof messages[0] | null>(null)
-  
-  // 一起听歌展开面板
-  const [showListenPanel, setShowListenPanel] = useState(false)
 
   // 情侣空间申请确认弹窗
   const [coupleInviteConfirmOpen, setCoupleInviteConfirmOpen] = useState(false)
@@ -483,7 +480,10 @@ ${recentTimeline || '（无）'}
   - 不要总是问"你去哪了"，要像真人一样自然
 
 【回复要求】
-- 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复；禁止夹杂中文（除非是专有名词/人名/歌名必须保留原文）。
+- 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复。
+  - 如果你的语言是"中文"，就只能用中文回复，绝对禁止夹杂任何外语（日语/英语/韩语/俄语等）！
+  - 如果你的语言不是中文，才禁止夹杂中文（除非是专有名词/人名/歌名必须保留原文）。
+  - 你的国家/地区设置不影响你的语言！即使你是日本人/美国人，只要语言设置是"中文"，你就必须用中文回复！
 - 【聊天翻译（伪翻译信号）】如果你的主要语言不是中文，且已开启“聊天翻译”，那么你每条回复都必须按这个格式输出在同一行：
   外语原文 ||| 中文翻译
   - 外语原文必须严格使用你的主要语言
@@ -1504,23 +1504,6 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     }
   }
 
-  // 关闭一起听
-  const handleStopListening = () => {
-    const songTitle = listenTogether?.songTitle || '歌'
-    stopListenTogether()
-    // 真正停止音乐播放
-    pauseMusic()
-    // 添加系统消息到消息列表
-    addMessage({
-      characterId: character.id,
-      content: '你关闭了一起听',
-      isUser: true,
-      type: 'system',
-    })
-    // 用AI生成真人式回复（遵守自动/手动模式）
-    generateHumanLikeReplies(`关闭了和你一起听《${songTitle}》的功能`)
-  }
-
   // 编辑模式：批量删除
   const handleDeleteSelected = () => {
     const ids = Array.from(selectedMsgIds)
@@ -2052,8 +2035,6 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     return <span>{msg.content}</span>
   }
 
-  const isListeningWithThisCharacter = listenTogether?.characterId === character.id
-
   // 渲染日历
   const renderCalendar = () => {
     const year = calendarMonth.getFullYear()
@@ -2278,148 +2259,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           </>
         )}
         
-        {/* 一起听浮窗 */}
-        {isListeningWithThisCharacter && (
-          <div 
-            className="mx-3 mt-1 px-3 py-2 rounded-full bg-gradient-to-r from-pink-500/80 to-purple-500/80 backdrop-blur flex items-center gap-2 cursor-pointer active:opacity-80"
-            onClick={() => setShowListenPanel(true)}
-          >
-            <div 
-              className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0"
-              style={{ animation: 'spin 4s linear infinite' }}
-            >
-              <div className="w-full h-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center">
-                <div className="w-2 h-2 rounded-full bg-white/80" />
-              </div>
-            </div>
-            <span className="flex-1 text-white text-xs truncate">
-              🎵 和{character.name}一起听《{listenTogether.songTitle}》
-            </span>
-            <button 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); handleStopListening() }}
-              className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center"
-            >
-              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        )}
-        
-        {/* 一起听歌展开面板 */}
-        {showListenPanel && isListeningWithThisCharacter && (
-          <div className="absolute inset-0 z-50 bg-gradient-to-b from-[#1a1a2e] via-[#16213e] to-[#0f0f23] flex flex-col">
-            {/* 顶部关闭按钮 */}
-            <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-              <button 
-                type="button"
-                onClick={() => setShowListenPanel(false)}
-                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"
-              >
-                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              <div className="text-white font-medium text-sm">一起听</div>
-              <div className="w-8" />
-            </div>
-            
-            {/* 双方头像 */}
-            <div className="flex items-center justify-center gap-8 mt-8 mb-6">
-              {/* 我的头像 */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-pink-400 shadow-lg">
-                  {selectedPersona?.avatar ? (
-                    <img src={selectedPersona.avatar} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-pink-400 to-purple-400 flex items-center justify-center text-white text-xl">
-                      我
-                    </div>
-                  )}
-                </div>
-                <span className="text-white/80 text-xs">{selectedPersona?.name || '我'}</span>
-              </div>
-              
-              {/* 连接动画 */}
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-pink-400 animate-pulse" />
-                <div className="w-8 h-0.5 bg-gradient-to-r from-pink-400 to-purple-400" />
-                <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" style={{ animationDelay: '0.5s' }} />
-              </div>
-              
-              {/* 对方头像 */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-purple-400 shadow-lg">
-                  {character.avatar ? (
-                    <img src={character.avatar} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-xl">
-                      {character.name.slice(0, 1)}
-                    </div>
-                  )}
-                </div>
-                <span className="text-white/80 text-xs">{character.name}</span>
-              </div>
-            </div>
-            
-            {/* 旋转唱片 */}
-            <div className="flex-1 flex items-center justify-center">
-              <div className="relative">
-                {/* 唱片光晕 */}
-                <div 
-                  className="absolute -inset-8 rounded-full opacity-30"
-                  style={{ 
-                    background: 'radial-gradient(circle, rgba(236,72,153,0.4) 0%, transparent 70%)',
-                    animation: 'pulse 2s ease-in-out infinite'
-                  }}
-                />
-                
-                {/* 旋转唱片 */}
-                <div 
-                  className="w-48 h-48 rounded-full overflow-hidden shadow-2xl relative"
-                  style={{ 
-                    animation: 'spin 8s linear infinite',
-                    boxShadow: '0 0 60px rgba(236, 72, 153, 0.4)'
-                  }}
-                >
-                  {/* 唱片背景 */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-pink-500 via-purple-500 to-pink-600" />
-                  
-                  {/* 唱片纹路 */}
-                  <div className="absolute inset-4 rounded-full border border-white/20" />
-                  <div className="absolute inset-8 rounded-full border border-white/15" />
-                  <div className="absolute inset-12 rounded-full border border-white/10" />
-                  <div className="absolute inset-16 rounded-full border border-white/10" />
-                  
-                  {/* 唱片中心 */}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-14 h-14 rounded-full bg-[#1a1a2e] border-4 border-white/30 flex items-center justify-center">
-                      <span className="text-2xl">🎵</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* 歌曲信息 */}
-            <div className="text-center px-8 mb-4">
-              <div className="text-white font-bold text-lg mb-1">{listenTogether.songTitle}</div>
-              <div className="text-white/50 text-sm">正在一起聆听...</div>
-            </div>
-            
-            {/* 底部按钮 */}
-            <div className="px-8 pb-8 flex justify-center">
-              <button
-                type="button"
-                onClick={() => { handleStopListening(); setShowListenPanel(false) }}
-                className="px-8 py-3 rounded-full bg-white/10 text-white text-sm font-medium active:scale-95 transition-transform"
-              >
-                结束一起听
-              </button>
-            </div>
-          </div>
-        )}
+        {/* 一起听歌浮窗已移至 WeChatLayout 全局显示 */}
         
         {/* 头部 - 参考 ChatsTab 的结构 */}
         <div className="flex items-center justify-between px-3 py-2.5 bg-transparent mt-1">
