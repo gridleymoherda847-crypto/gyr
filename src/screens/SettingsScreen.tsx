@@ -5,7 +5,7 @@ import { useWeChat } from '../context/WeChatContext'
 import AppHeader from '../components/AppHeader'
 import PageContainer from '../components/PageContainer'
 import { SettingsGroup, SettingsItem } from '../components/SettingsGroup'
-import { kvClear, kvGet, kvKeys, kvSet } from '../storage/kv'
+import { kvGet, kvKeys, kvSet } from '../storage/kv'
 
 export default function SettingsScreen() {
   const navigate = useNavigate()
@@ -136,15 +136,19 @@ export default function SettingsScreen() {
           return
         }
 
-        const entries = Object.entries(importData.data).filter(([, v]) => typeof v === 'string') as [string, string][]
+        // 兼容旧备份：value 可能是 string / object / array / number / boolean
+        // 我们统一落成“字符串”，存入 IndexedDB(kv) 与 localStorage
+        const entries = Object.entries(importData.data)
+          .filter(([, v]) => v !== undefined && v !== null)
+          .map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)] as [string, string])
+
         if (entries.length === 0) {
           setImportError('备份文件里没有可导入的数据')
           return
         }
 
-        // 清空现有数据（localStorage + IndexedDB）
-        try { localStorage.clear() } catch {}
-        await kvClear()
+        // ⚠️安全策略：不再先清空（避免导入失败把现有数据也清掉）
+        // 只覆盖导入文件内包含的 key；未包含的 key 会保留。
 
         // 分批写入 IndexedDB（更快，也避免单条 await 太慢导致“像没反应”）
         const CHUNK = 30
