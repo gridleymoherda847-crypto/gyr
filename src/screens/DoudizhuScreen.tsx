@@ -221,9 +221,11 @@ function ShareDialog({
   
   return (
     <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl p-4 w-72 max-h-[80%] flex flex-col shadow-2xl">
-        <h3 className="text-center font-bold text-lg mb-3">📤 分享战绩</h3>
-        
+      <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl w-[88vw] max-w-[320px] max-h-[72vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="px-3 pt-3 pb-2">
+          <h3 className="text-center font-bold text-base">📤 分享战绩</h3>
+        </div>
+
         {shared ? (
           <div className="flex-1 flex flex-col items-center justify-center py-8">
             <div className="text-4xl mb-2">✅</div>
@@ -231,8 +233,9 @@ function ShareDialog({
           </div>
         ) : (
           <>
-            {/* 战报卡片预览 */}
-            <div className="bg-gradient-to-br from-purple-600 to-pink-500 rounded-xl p-3 mb-3 text-white shadow-lg">
+            <div className="px-3 flex-1 min-h-0 overflow-y-auto pb-2">
+              {/* 战报卡片预览 */}
+              <div className="bg-gradient-to-br from-purple-600 to-pink-500 rounded-xl p-3 mb-3 text-white shadow-lg">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs opacity-80">🃏 斗地主战报</span>
                 <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{difficultyText}</span>
@@ -269,7 +272,7 @@ function ShareDialog({
             
             {/* 选择好友 */}
             <p className="text-sm text-gray-600 mb-2">选择要分享的好友：</p>
-            <div className="flex-1 overflow-y-auto space-y-1 mb-3 max-h-28">
+            <div className="space-y-1">
               {characters.filter(c => !c.isHiddenFromChat).map(char => (
                 <button
                   key={char.id}
@@ -297,8 +300,11 @@ function ShareDialog({
                 <p className="text-center text-gray-400 text-sm py-4">暂无好友</p>
               )}
             </div>
-            
-            <div className="flex gap-2">
+            </div>
+
+            {/* 底部按钮：固定在弹窗底部，避免被遮住 */}
+            <div className="px-3 pb-3 pt-2 border-t border-black/10 bg-white/70 backdrop-blur">
+              <div className="flex gap-2">
               <button 
                 onClick={onClose} 
                 className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-xl text-sm font-medium"
@@ -312,6 +318,7 @@ function ShareDialog({
               >
                 发送
               </button>
+            </div>
             </div>
           </>
         )}

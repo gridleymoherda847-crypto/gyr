@@ -1,12 +1,15 @@
 import { type PropsWithChildren, useEffect, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useOS } from '../context/OSContext'
 import BottomHomeBar from './BottomHomeBar'
 
 export default function PhoneShell({ children }: PropsWithChildren) {
   const { wallpaper, currentFont, fontColor, isLocked, lockWallpaper, notifications, markNotificationRead } = useOS()
+  const location = useLocation()
   
   const currentWallpaper = isLocked ? lockWallpaper : wallpaper
   const timerRef = useRef<Record<string, number>>({})
+  const isFullScreenApp = !isLocked && (location.pathname === '/apps/doudizhu')
 
   useEffect(() => {
     const unread = notifications.filter(n => !n.read)
@@ -45,7 +48,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           <div className="relative z-10 flex h-full flex-col">
             {/* 已移除模拟状态栏：使用手机系统自带状态栏，提升代入感 */}
             <div className="flex-1 overflow-hidden">{children}</div>
-            <BottomHomeBar />
+            {!isFullScreenApp && <BottomHomeBar />}
           </div>
         )}
 
@@ -105,7 +108,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
               <div className="relative z-10 flex h-full flex-col">
                 {/* 已移除模拟状态栏：使用手机系统自带状态栏，提升代入感 */}
                 <div className="flex-1 overflow-hidden">{children}</div>
-                <BottomHomeBar />
+                {!isFullScreenApp && <BottomHomeBar />}
               </div>
             )}
 
