@@ -716,17 +716,17 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         }
 
         replies.forEach((content, index) => {
-          // 第一条消息快速发送（300-500ms），后面的消息根据字数有1-5秒的间隔
+          // 第一条消息立即发送（50-100ms），后面的消息根据字数有0.5-3秒的间隔
           let charDelay: number
           if (index === 0) {
-            // 第一条消息：快速发送
-            charDelay = 300 + Math.random() * 200
+            // 第一条消息：几乎立即发送
+            charDelay = 50 + Math.random() * 50
           } else {
-            // 后续消息：根据字数计算延迟（1-5秒）
-            const baseDelay = 1000 // 最少1秒
-            const charFactor = Math.min(content.length * 50, 3000) // 字数越多延迟越长，最多加3秒
-            const randomFactor = Math.random() * 1000 // 随机0-1秒
-            charDelay = Math.min(5000, baseDelay + charFactor + randomFactor)
+            // 后续消息：根据字数计算延迟（0.5-3秒）
+            const baseDelay = 500 // 最少0.5秒
+            const charFactor = Math.min(content.length * 30, 2000) // 字数越多延迟越长，最多加2秒
+            const randomFactor = Math.random() * 500 // 随机0-0.5秒
+            charDelay = Math.min(3000, baseDelay + charFactor + randomFactor)
           }
           totalDelay += charDelay
           

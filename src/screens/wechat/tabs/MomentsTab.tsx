@@ -85,18 +85,18 @@ export default function MomentsTab({ onBack }: Props) {
       }
 
       if (willComment) {
-        // 过滤掉自己发的朋友圈，好友只能评论别人的帖子
-        const postsToComment = anyPosts.filter(p => p.authorId !== friend.id)
+        // AI角色只能评论用户发的朋友圈，不能互相评论其他AI的帖子
+        const postsToComment = anyPosts.filter(p => p.authorId === 'user')
         if (postsToComment.length === 0) {
-          // 没有可评论的帖子，改为发动态
+          // 没有用户发的帖子可评论，改为发动态
           setRefreshing(false)
           return
         }
         const target = postsToComment[Math.floor(Math.random() * postsToComment.length)]
-        // 有概率回复某条评论（楼中楼），但不回复自己的评论
-        const otherComments = target.comments.filter(c => c.authorId !== friend.id)
-        const willReplyComment = otherComments.length > 0 && Math.random() < 0.6
-        const replyTo = willReplyComment ? otherComments[Math.floor(Math.random() * otherComments.length)] : null
+        // 有概率回复用户的评论（楼中楼），只回复用户的评论
+        const userComments = target.comments.filter(c => c.authorId === 'user')
+        const willReplyComment = userComments.length > 0 && Math.random() < 0.6
+        const replyTo = willReplyComment ? userComments[Math.floor(Math.random() * userComments.length)] : null
         const lang = (friend as any).language || 'zh'
         const langName =
           lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
@@ -238,8 +238,8 @@ ${newMomentContent || '（图片）'}
 
   const maybeAutoReplyToUserComment = async (params: { momentId: string; friendId: string; friendName: string; friendPrompt: string; userText: string; replyToCommentId: string; replyToAuthorName: string }) => {
     if (!hasApiConfig) return
-    // 70% 概率回一句（提高回复率）
-    if (Math.random() > 0.7) return
+    // 90% 概率回一句（大幅提高回复率，让用户评论后几乎一定会得到回复）
+    if (Math.random() > 0.9) return
     const globalPresets = getGlobalPresets()
     try {
       const now = Date.now()

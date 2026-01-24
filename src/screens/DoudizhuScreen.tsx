@@ -221,104 +221,89 @@ function ShareDialog({
   
   return (
     <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl w-[84vw] max-w-[300px] max-h-[60vh] flex flex-col shadow-2xl overflow-hidden">
-        <div className="px-3 pt-3 pb-2">
-          <h3 className="text-center font-bold text-base">📤 分享战绩</h3>
+      <div className="bg-gradient-to-br from-white to-gray-100 rounded-xl w-[72vw] max-w-[240px] max-h-[50vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="px-2 pt-2 pb-1">
+          <h3 className="text-center font-bold text-sm">📤 分享战绩</h3>
         </div>
 
         {shared ? (
-          <div className="flex-1 flex flex-col items-center justify-center py-8">
-            <div className="text-4xl mb-2">✅</div>
-            <p className="text-green-600 font-medium">分享成功！</p>
+          <div className="flex-1 flex flex-col items-center justify-center py-4">
+            <div className="text-2xl mb-1">✅</div>
+            <p className="text-green-600 font-medium text-xs">分享成功！</p>
           </div>
         ) : (
           <>
-            <div className="px-3 flex-1 min-h-0 overflow-y-auto pb-2">
-              {/* 战报卡片预览 */}
-              <div className="bg-gradient-to-br from-purple-600 to-pink-500 rounded-xl p-2.5 mb-2.5 text-white shadow-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] opacity-80">🃏 斗地主战报</span>
-                <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full">{difficultyText}</span>
-              </div>
-              <div className="text-center py-1.5">
-                <div className="text-2xl mb-0.5">{gameResult.isWin ? '🎉' : '😢'}</div>
-                <div className="text-lg font-bold">{resultText}</div>
-                <div className="text-[12px] opacity-80">{roleText}</div>
-              </div>
-              <div className="grid grid-cols-3 gap-1 text-center text-[11px] mt-2 bg-black/20 rounded-lg p-2">
-                <div>
-                  <div className="opacity-70">底分</div>
-                  <div className="font-bold">{gameResult.baseScore}</div>
+            <div className="px-2 flex-1 min-h-0 overflow-y-auto pb-1">
+              {/* 战报卡片预览 - 更紧凑 */}
+              <div className="bg-gradient-to-br from-purple-600 to-pink-500 rounded-lg p-1.5 mb-1.5 text-white shadow">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] opacity-80">🃏 斗地主</span>
+                  <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded-full">{difficultyText}</span>
                 </div>
-                <div>
-                  <div className="opacity-70">倍数</div>
-                  <div className="font-bold">{gameResult.multiplier}x</div>
+                <div className="text-center py-0.5">
+                  <div className="text-lg">{gameResult.isWin ? '🎉' : '😢'}</div>
+                  <div className="text-sm font-bold">{resultText}</div>
+                  <div className="text-[10px] opacity-80">{roleText}</div>
                 </div>
-                <div>
-                  <div className="opacity-70">回合</div>
-                  <div className="font-bold">{summary.totalRounds}</div>
+                <div className="grid grid-cols-3 gap-0.5 text-center text-[9px] mt-1 bg-black/20 rounded p-1">
+                  <div><div className="opacity-70">底分</div><div className="font-bold">{gameResult.baseScore}</div></div>
+                  <div><div className="opacity-70">倍数</div><div className="font-bold">{gameResult.multiplier}x</div></div>
+                  <div><div className="opacity-70">回合</div><div className="font-bold">{summary.totalRounds}</div></div>
+                </div>
+                <div className="flex justify-between items-center mt-1 pt-1 border-t border-white/20 text-[10px]">
+                  <span>金币</span>
+                  <span className={`font-bold ${coinChange > 0 ? 'text-yellow-300' : 'text-red-300'}`}>
+                    {coinChange > 0 ? '+' : ''}{coinChange}
+                  </span>
                 </div>
               </div>
-              <div className="flex justify-between items-center mt-2 pt-2 border-t border-white/20 text-[12px]">
-                <span>金币变化</span>
-                <span className={`font-bold ${coinChange > 0 ? 'text-yellow-300' : 'text-red-300'}`}>
-                  {coinChange > 0 ? '+' : ''}{coinChange}
-                </span>
-              </div>
-              {gameResult.bombCount > 0 && (
-                <div className="text-center text-[11px] mt-1 opacity-80">💣 炸弹 ×{gameResult.bombCount}</div>
-              )}
-            </div>
             
-            {/* 选择好友 */}
-            <p className="text-[12px] text-gray-600 mb-2">选择要分享的好友：</p>
-            <div className="space-y-1">
-              {characters.filter(c => !c.isHiddenFromChat).map(char => (
-                <button
-                  key={char.id}
-                  onClick={() => setSelectedCharacter(char.id)}
-                  className={`w-full flex items-center gap-2 p-2 rounded-lg transition-all ${
-                    selectedCharacter === char.id 
-                      ? 'bg-green-100 border-2 border-green-500' 
-                      : 'bg-gray-50 hover:bg-gray-100'
-                  }`}
-                >
-                  <div className="w-7 h-7 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
-                    {char.avatar ? (
-                      <img src={char.avatar} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
-                        {char.name.slice(0, 1)}
-                      </div>
-                    )}
-                  </div>
-                  <span className="text-sm font-medium truncate">{char.name}</span>
-                  {selectedCharacter === char.id && <span className="ml-auto text-green-500">✓</span>}
-                </button>
-              ))}
-              {characters.filter(c => !c.isHiddenFromChat).length === 0 && (
-                <p className="text-center text-gray-400 text-sm py-4">暂无好友</p>
-              )}
-            </div>
+              {/* 选择好友 - 更紧凑 */}
+              <p className="text-[10px] text-gray-600 mb-1">选择好友：</p>
+              <div className="space-y-0.5 max-h-[80px] overflow-y-auto">
+                {characters.filter(c => !c.isHiddenFromChat).map(char => (
+                  <button
+                    key={char.id}
+                    onClick={() => setSelectedCharacter(char.id)}
+                    className={`w-full flex items-center gap-1.5 p-1.5 rounded-lg transition-all ${
+                      selectedCharacter === char.id 
+                        ? 'bg-green-100 border border-green-500' 
+                        : 'bg-gray-50'
+                    }`}
+                  >
+                    <div className="w-5 h-5 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
+                      {char.avatar ? (
+                        <img src={char.avatar} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400 text-[8px]">
+                          {char.name.slice(0, 1)}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs truncate">{char.name}</span>
+                    {selectedCharacter === char.id && <span className="ml-auto text-green-500 text-xs">✓</span>}
+                  </button>
+                ))}
+                {characters.filter(c => !c.isHiddenFromChat).length === 0 && (
+                  <p className="text-center text-gray-400 text-[10px] py-2">暂无好友</p>
+                )}
+              </div>
             </div>
 
-            {/* 底部按钮：固定在弹窗底部，避免被遮住 */}
-            <div className="px-3 pb-3 pt-2 border-t border-black/10 bg-white/70 backdrop-blur">
-              <div className="flex gap-2">
-              <button 
-                onClick={onClose} 
-                className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-xl text-sm font-medium"
-              >
-                取消
-              </button>
-              <button 
-                onClick={handleShare}
-                disabled={!selectedCharacter}
-                className="flex-1 py-2 bg-green-500 text-white rounded-xl text-sm font-bold disabled:opacity-50"
-              >
-                发送
-              </button>
-            </div>
+            {/* 底部按钮 - 更紧凑 */}
+            <div className="px-2 pb-2 pt-1 border-t border-black/10 bg-white/70">
+              <div className="flex gap-1.5">
+                <button onClick={onClose} className="flex-1 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-xs">
+                  取消
+                </button>
+                <button 
+                  onClick={handleShare}
+                  disabled={!selectedCharacter}
+                  className="flex-1 py-1.5 bg-green-500 text-white rounded-lg text-xs font-bold disabled:opacity-50"
+                >
+                  发送
+                </button>
+              </div>
             </div>
           </>
         )}
@@ -422,9 +407,9 @@ export default function DoudizhuScreen() {
         2000 + Math.floor(Math.random() * 8000),
         2000 + Math.floor(Math.random() * 8000)
       ])
-      // 随机难度：困难60%，普通30%，简单10%
+      // 随机难度：困难80%，普通20%，不再有简单模式
       const rand = Math.random()
-      const diff: 'easy' | 'normal' | 'hard' = rand < 0.1 ? 'easy' : rand < 0.4 ? 'normal' : 'hard'
+      const diff: 'easy' | 'normal' | 'hard' = rand < 0.2 ? 'normal' : 'hard'
       setGameDifficulty(diff)
       setTimeout(() => setPhase('selectBase'), 300)
     }
