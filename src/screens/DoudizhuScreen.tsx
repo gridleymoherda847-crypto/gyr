@@ -77,7 +77,7 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose' | 'coin') => {
     
     if (type === 'start') {
       osc.frequency.value = 523
-      gain.gain.value = 0.15 // 降低音量，不干扰背景音乐
+      gain.gain.value = 0.3
       osc.start()
       osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1)
       osc.frequency.setValueAtTime(784, ctx.currentTime + 0.2)
@@ -85,12 +85,12 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose' | 'coin') => {
     } else if (type === 'card') {
       osc.type = 'square'
       osc.frequency.value = 800
-      gain.gain.value = 0.1 // 降低音量
+      gain.gain.value = 0.15
       osc.start()
       osc.stop(ctx.currentTime + 0.05)
     } else if (type === 'win') {
       osc.frequency.value = 523
-      gain.gain.value = 0.15 // 降低音量
+      gain.gain.value = 0.3
       osc.start()
       setTimeout(() => { osc.frequency.value = 659 }, 100)
       setTimeout(() => { osc.frequency.value = 784 }, 200)
@@ -98,7 +98,7 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose' | 'coin') => {
       osc.stop(ctx.currentTime + 0.5)
     } else if (type === 'lose') {
       osc.frequency.value = 400
-      gain.gain.value = 0.1 // 降低音量
+      gain.gain.value = 0.2
       osc.start()
       setTimeout(() => { osc.frequency.value = 300 }, 150)
       setTimeout(() => { osc.frequency.value = 200 }, 300)
@@ -107,13 +107,37 @@ const playSound = (type: 'start' | 'card' | 'win' | 'lose' | 'coin') => {
       // 充值成功音效 - 金币叮当声
       osc.type = 'sine'
       osc.frequency.value = 880
-      gain.gain.value = 0.12 // 降低音量
+      gain.gain.value = 0.25
       osc.start()
       osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1)
       osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.2)
       osc.stop(ctx.currentTime + 0.35)
     }
   } catch {}
+}
+
+// 全局背景音乐实例（避免重复创建）
+let globalBgm: HTMLAudioElement | null = null
+const playBgm = () => {
+  if (!globalBgm) {
+    globalBgm = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
+    globalBgm.loop = true
+    globalBgm.volume = 0.4
+  }
+  globalBgm.play().catch(() => {
+    // 如果自动播放被阻止，等用户点击时再播放
+    const handleClick = () => {
+      globalBgm?.play()
+      document.removeEventListener('click', handleClick)
+    }
+    document.addEventListener('click', handleClick)
+  })
+}
+const stopBgm = () => {
+  if (globalBgm) {
+    globalBgm.pause()
+    globalBgm.currentTime = 0
+  }
 }
 
 // 头像组件
@@ -363,9 +387,6 @@ export default function DoudizhuScreen() {
   const [rechargeAmount, setRechargeAmount] = useState(10)
   const [showRechargeSuccess, setShowRechargeSuccess] = useState(false)
   
-  // 背景音乐
-  const bgmRef = useRef<HTMLAudioElement | null>(null)
-  
   // 游戏模式选择
   const [showModeSelect, setShowModeSelect] = useState(false)
   const [gameMode, setGameMode] = useState<GameMode>('solo')
@@ -416,19 +437,8 @@ export default function DoudizhuScreen() {
   
   // 背景音乐控制：打开斗地主App就开始播放，退出时停止
   useEffect(() => {
-    // 组件挂载时立即播放
-    bgmRef.current = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
-    bgmRef.current.loop = true
-    bgmRef.current.volume = 0.3
-    bgmRef.current.play().catch(() => {})
-    
-    // 组件卸载时停止
-    return () => {
-      if (bgmRef.current) {
-        bgmRef.current.pause()
-        bgmRef.current = null
-      }
-    }
+    playBgm()
+    return () => stopBgm()
   }, [])
   
   
