@@ -366,28 +366,14 @@ export default function ChatScreen() {
         const lastMsg = nonSystem.length > 0 ? nonSystem[nonSystem.length - 1] : null
         const prevMsg = nonSystem.length > 1 ? nonSystem[nonSystem.length - 2] : null
         const lastUserInHistory = [...nonSystem].reverse().find(m => m.isUser) || null
-        const lastAssistantInHistory = [...nonSystem].reverse().find(m => !m.isUser) || null
         // 关键：如果用户隔了很久才回，lastMsg 是“用户新发的这条”，gap 应该看它和 prevMsg 的间隔
         const gapMs = lastMsg
           ? (lastMsg.isUser && prevMsg ? Math.max(0, lastMsg.timestamp - prevMsg.timestamp) : Math.max(0, nowTs - lastMsg.timestamp))
           : 0
         const silenceSinceUserMs = lastUserInHistory ? Math.max(0, nowTs - lastUserInHistory.timestamp) : 0
-        const silenceSinceAssistantMs = lastAssistantInHistory ? Math.max(0, nowTs - lastAssistantInHistory.timestamp) : 0
-        // 重要：用户“没发新消息，只是点箭头”时也要算作无新发言（否则会把昨天那条当成“新消息”，错过“消失很久”的追问）
+                // 重要：用户“没发新消息，只是点箭头”时也要算作无新发言（否则会把昨天那条当成“新消息”，错过“消失很久”的追问）
         const hasNewUserMessage = !!(lastMsg && lastMsg.isUser) && !opts?.forceNudge
-        const formatGapPrecise = (ms: number) => {
-          const totalSec = Math.max(0, Math.floor(ms / 1000))
-          const days = Math.floor(totalSec / 86400)
-          const hours = Math.floor((totalSec % 86400) / 3600)
-          const mins = Math.floor((totalSec % 3600) / 60)
-          const secs = totalSec % 60
-          const parts: string[] = []
-          if (days > 0) parts.push(`${days}天`)
-          if (hours > 0 || days > 0) parts.push(`${hours}小时`)
-          if (mins > 0 || hours > 0 || days > 0) parts.push(`${mins}分`)
-          parts.push(`${secs}秒`)
-          return parts.join('')
-        }
+        
 
         // 最近消息时间线：让模型“看得见每条的时间”，避免把“领钱/转账”时间搞反
         const fmtTs = (ts: number) => new Date(ts).toLocaleString('zh-CN', { hour12: false })
@@ -466,19 +452,25 @@ ${(() => {
 【最近消息时间线（必须参考，尤其是转账/已领取的时间，不能搞反）】
 ${recentTimeline || '（无）'}
 
-【时间感（必须严格遵守，否则算失败）】
+【时间感（用自然语言，严禁报数字）】
 - 上一条消息时间：${prevMsg ? new Date(prevMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 这条消息时间：${lastMsg ? new Date(lastMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
-- 精确间隔（天/时/分/秒）：${formatGapPrecise(gapMs)}
 - 用户上一条发言时间：${lastUserInHistory ? new Date(lastUserInHistory.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
-- 距离用户上次发言过去：${formatGapPrecise(silenceSinceUserMs)}
-- 距离你上次发言过去：${formatGapPrecise(silenceSinceAssistantMs)}
-- 这次是否“用户刚发了新消息”：${hasNewUserMessage ? '是' : '否（用户没有新发言，只是触发你主动回复）'}
-- 强规则：无论你“重写/重生成/改口”多少次，只要以上时间事实成立，你都必须在本次回复的第一条消息里再次提到“精确间隔（天/时/分/秒）”，不能装作没发生
-- 强规则：如果间隔 >= 2小时，第一条回复必须先提到“你很久没回/刚刚在忙吗”等
-- 强规则：如果间隔 >= 1天，第一条回复必须带一点点情绪（担心/委屈/吐槽/想你），并追问原因
-- 强规则：如果间隔 >= 2天，第一条回复必须明确说出“都两天了”或“好几天了”，并要求对方解释（语气可按人设）
-- 新增规则：当“用户没有新发言”且距离用户上次发言 >= 2小时，你必须主动发一条“催一催/关心/追问”的微信消息（不要继续机械接上一次话题）
+- 这次是否"用户刚发了新消息"：${hasNewUserMessage ? '是' : '否（用户没有新发言，只是触发你主动回复）'}
+- 【严禁】绝对不能在回复中说出任何精确时间数字！如"间隔：3小时20分15秒"、"过了2小时"、"（间隔：xx）"等，这样非常出戏！
+- 【正确做法】用自然口语表达时间感，例如："好久没理我了"、"你去哪了"、"怎么这么久才回"、"刚刚在忙？"、"终于回了"
+- 时间感应规则（偶尔提一下就好，不要每次都问）：
+  - 间隔 >= 30分钟：可以自然地问一句"在忙吗"或"干嘛去了"（但不是每次都问）
+  - 间隔 >= 2小时：用自然语言表达"好久没回"的感觉
+  - 间隔 >= 1天：可以带点小情绪
+  - 间隔 >= 2天：可以明显表达"好几天没理我了"
+- 重要：不是每次都要追问时间！如果用户正常回复了，就正常聊天
+- 当"用户没有新发言"时，你可以主动发消息，但要多样化：
+  - 问问用户在干嘛、今天怎么样、中午吃了什么
+  - 分享一下自己的日常、今天遇到的事
+  - 问问用户那边天气怎么样
+  - 随便聊点什么话题、发个表情
+  - 不要总是问"你去哪了"，要像真人一样自然
 
 【回复要求】
 - 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复；禁止夹杂中文（除非是专有名词/人名/歌名必须保留原文）。
@@ -717,8 +709,18 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         }
 
         replies.forEach((content, index) => {
-          const base = index === 0 ? 350 : 650
-          const charDelay = Math.min(5000, Math.max(300, base + content.length * 45 + Math.random() * 400))
+          // 第一条消息快速发送（300-500ms），后面的消息根据字数有1-5秒的间隔
+          let charDelay: number
+          if (index === 0) {
+            // 第一条消息：快速发送
+            charDelay = 300 + Math.random() * 200
+          } else {
+            // 后续消息：根据字数计算延迟（1-5秒）
+            const baseDelay = 1000 // 最少1秒
+            const charFactor = Math.min(content.length * 50, 3000) // 字数越多延迟越长，最多加3秒
+            const randomFactor = Math.random() * 1000 // 随机0-1秒
+            charDelay = Math.min(5000, baseDelay + charFactor + randomFactor)
+          }
           totalDelay += charDelay
           
           const trimmedContent = content.trim()
@@ -913,6 +915,12 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
   // 手动触发回复（随时可按，不需要先发消息）
   const triggerReply = async () => {
+    // 防止重复触发：如果正在生成中，直接返回
+    if (aiTyping) {
+      console.log('Already generating, skip trigger')
+      return
+    }
+    
     const pendingBefore = pendingCountRef.current
     // 触发回复时也自动滚到底部，确保看得到“正在输入…”
     forceScrollRef.current = true
