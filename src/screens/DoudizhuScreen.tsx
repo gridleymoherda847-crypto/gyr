@@ -162,7 +162,7 @@ function PlayerAvatar({
         </div>
       </div>
       <div className="text-white text-[11px] font-medium drop-shadow">{name}</div>
-      <div className="bg-black/60 backdrop-blur rounded-full px-2 py-0.5 text-[10px] text-white font-bold">{cardCount}张</div>
+      <div className="bg-black/70 rounded-full px-2 py-0.5 text-[10px] text-white font-bold">{cardCount}张</div>
       {coins !== undefined && (
         <div className="bg-gradient-to-r from-yellow-500 to-amber-500 rounded-full px-2 py-0.5 text-[9px] text-white font-bold shadow">💰{coins}</div>
       )}
@@ -246,7 +246,7 @@ function ShareDialog({
   }
   
   return (
-    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+    <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
       <div className="bg-gradient-to-br from-white to-gray-100 rounded-xl w-[72vw] max-w-[240px] max-h-[50vh] flex flex-col shadow-2xl overflow-hidden">
         <div className="px-2 pt-2 pb-1">
           <h3 className="text-center font-bold text-sm">📤 分享战绩</h3>
@@ -884,7 +884,7 @@ export default function DoudizhuScreen() {
   
   // 渲染出的牌 - 统一大小，放中间
   const renderPlayedCards = (cards: Card[]) => {
-    if (cards.length === 0) return <div className="text-pink-300 text-sm bg-black/40 backdrop-blur px-3 py-1.5 rounded-full font-medium">不出</div>
+    if (cards.length === 0) return <div className="text-pink-300 text-sm bg-black/50 px-3 py-1.5 rounded-full font-medium">不出</div>
     
     const cardW = 44
     const cardH = 64
@@ -984,7 +984,7 @@ export default function DoudizhuScreen() {
       </div>
       
       {/* 顶部栏 */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-black/30 backdrop-blur-sm flex-shrink-0 border-b border-white/10">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-black/40 flex-shrink-0 border-b border-white/10">
         <button onClick={() => navigate(-1)} className="text-white/80 p-1.5 hover:bg-white/10 rounded-lg transition-colors">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -1009,12 +1009,12 @@ export default function DoudizhuScreen() {
         
         {/* 右上角 */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-black/40 backdrop-blur rounded-full px-3 py-1.5">
+          <div className="flex items-center gap-1.5 bg-black/50 rounded-full px-3 py-1.5">
             <span className="text-yellow-400 text-base">💰</span>
             <span className="text-yellow-300 text-sm font-bold">{stats.coins}</span>
             <button onClick={() => setShowRecharge(true)} className="ml-1 bg-gradient-to-r from-yellow-400 to-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold active:scale-95 shadow">充值</button>
           </div>
-          <div className="flex items-center gap-2 bg-black/40 backdrop-blur rounded-full px-3 py-1.5">
+          <div className="flex items-center gap-2 bg-black/50 rounded-full px-3 py-1.5">
             <span className="text-green-400 text-sm font-bold">胜{stats.wins}</span>
             <span className="text-white/30">|</span>
             <span className="text-red-400 text-sm font-bold">负{stats.losses}</span>
@@ -1032,7 +1032,7 @@ export default function DoudizhuScreen() {
       
       {/* 充值弹窗 */}
       {showRecharge && (
-        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
           <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl p-5 w-72 shadow-2xl">
             <h3 className="text-center font-bold text-xl mb-3 flex items-center justify-center gap-2">
               <span className="text-2xl">💰</span> 金币充值
@@ -1067,7 +1067,7 @@ export default function DoudizhuScreen() {
       
       {/* 消息 */}
       {message && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-sm text-white px-6 py-3 rounded-2xl text-base font-medium shadow-2xl border border-white/10">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/90 text-white px-6 py-3 rounded-2xl text-base font-medium shadow-2xl border border-white/10">
           {message}
         </div>
       )}
@@ -1183,7 +1183,7 @@ export default function DoudizhuScreen() {
               <>
                 {currentBidder === 0 && !aiThinking && (
                   <div className="flex gap-3">
-                    <button onClick={() => handleBid(0)} className="px-5 py-2 bg-gray-600/80 backdrop-blur text-white rounded-xl text-sm font-medium active:scale-95 hover:bg-gray-500 transition-colors">不叫</button>
+                    <button onClick={() => handleBid(0)} className="px-5 py-2 bg-gray-600 text-white rounded-xl text-sm font-medium active:scale-95 hover:bg-gray-500 transition-colors">不叫</button>
                     {bidScore < 1 && <button onClick={() => handleBid(1)} className="px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-bold active:scale-95 hover:bg-blue-400 transition-colors shadow-lg">1分</button>}
                     {bidScore < 2 && <button onClick={() => handleBid(2)} className="px-5 py-2 bg-purple-500 text-white rounded-xl text-sm font-bold active:scale-95 hover:bg-purple-400 transition-colors shadow-lg">2分</button>}
                     {bidScore < 3 && <button onClick={() => handleBid(3)} className="px-5 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl text-sm font-bold active:scale-95 hover:shadow-lg transition-all shadow-lg">3分</button>}
@@ -1208,8 +1208,8 @@ export default function DoudizhuScreen() {
           <div className="flex-shrink-0 pb-2">
             {phase === 'playing' && currentPlayer === 0 && !aiThinking && (
               <div className="flex justify-center gap-3 mb-2">
-                <button onClick={handleHint} className="px-5 py-2 bg-blue-500/80 backdrop-blur text-white rounded-xl text-sm font-medium active:scale-95 hover:bg-blue-400 transition-colors">提示</button>
-                <button onClick={handlePass} disabled={lastPlayPlayer === 0 || lastPlayPlayer === null} className="px-5 py-2 bg-gray-600/80 backdrop-blur text-white rounded-xl text-sm font-medium active:scale-95 disabled:opacity-40 hover:bg-gray-500 transition-colors">不出</button>
+                <button onClick={handleHint} className="px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-medium active:scale-95 hover:bg-blue-400 transition-colors">提示</button>
+                <button onClick={handlePass} disabled={lastPlayPlayer === 0 || lastPlayPlayer === null} className="px-5 py-2 bg-gray-600 text-white rounded-xl text-sm font-medium active:scale-95 disabled:opacity-40 hover:bg-gray-500 transition-colors">不出</button>
                 <button onClick={handlePlay} className="px-6 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl text-sm font-bold active:scale-95 shadow-lg hover:shadow-xl transition-all">出牌</button>
               </div>
             )}
@@ -1247,7 +1247,7 @@ export default function DoudizhuScreen() {
             <h2 className="text-white text-xl font-bold">{gameResult.isWin ? '恭喜你赢了！' : '很遗憾，你输了'}</h2>
           </div>
           
-          <div className="bg-black/40 backdrop-blur rounded-xl p-3 w-full max-w-xs border border-white/10">
+          <div className="bg-black/50 rounded-xl p-3 w-full max-w-xs border border-white/10">
             <div className="text-white/70 text-xs text-center mb-2">
               底分{gameResult.baseScore} × 叫分{gameResult.bidScore} × {gameResult.multiplier}倍
               {gameResult.bombCount > 0 && ` (💣×${gameResult.bombCount})`}
