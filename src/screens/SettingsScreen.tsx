@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS } from '../context/OSContext'
 import { useWeChat } from '../context/WeChatContext'
@@ -18,6 +18,31 @@ export default function SettingsScreen() {
   const [showImportSuccess, setShowImportSuccess] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // 监听全屏状态变化
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  // 切换全屏模式
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        // 进入全屏
+        await document.documentElement.requestFullscreen()
+      } else {
+        // 退出全屏
+        await document.exitFullscreen()
+      }
+    } catch (error) {
+      console.error('全屏切换失败:', error)
+    }
+  }
 
   const handleShutdown = () => {
     setLocked(true)
@@ -127,6 +152,15 @@ export default function SettingsScreen() {
             <SettingsItem label="字体颜色" value={fontColor.name} to="/apps/settings/color" />
             <SettingsItem label="表情包管理" to="/apps/settings/stickers" />
             <SettingsItem label="位置与天气" to="/apps/settings/location" />
+          </SettingsGroup>
+
+          <SettingsGroup title="显示">
+            <SettingsItem
+              label="全屏模式"
+              value={isFullscreen ? '已开启' : '已关闭'}
+              onClick={toggleFullscreen}
+              showArrow={false}
+            />
           </SettingsGroup>
 
           <SettingsGroup title="数据管理">
