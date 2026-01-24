@@ -221,7 +221,7 @@ function ShareDialog({
   
   return (
     <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl w-[88vw] max-w-[320px] max-h-[72vh] flex flex-col shadow-2xl overflow-hidden">
+      <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl w-[84vw] max-w-[300px] max-h-[60vh] flex flex-col shadow-2xl overflow-hidden">
         <div className="px-3 pt-3 pb-2">
           <h3 className="text-center font-bold text-base">📤 分享战绩</h3>
         </div>
@@ -235,17 +235,17 @@ function ShareDialog({
           <>
             <div className="px-3 flex-1 min-h-0 overflow-y-auto pb-2">
               {/* 战报卡片预览 */}
-              <div className="bg-gradient-to-br from-purple-600 to-pink-500 rounded-xl p-3 mb-3 text-white shadow-lg">
+              <div className="bg-gradient-to-br from-purple-600 to-pink-500 rounded-xl p-2.5 mb-2.5 text-white shadow-lg">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs opacity-80">🃏 斗地主战报</span>
-                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{difficultyText}</span>
+                <span className="text-[11px] opacity-80">🃏 斗地主战报</span>
+                <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full">{difficultyText}</span>
               </div>
-              <div className="text-center py-2">
-                <div className="text-3xl mb-1">{gameResult.isWin ? '🎉' : '😢'}</div>
-                <div className="text-xl font-bold">{resultText}</div>
-                <div className="text-sm opacity-80">{roleText}</div>
+              <div className="text-center py-1.5">
+                <div className="text-2xl mb-0.5">{gameResult.isWin ? '🎉' : '😢'}</div>
+                <div className="text-lg font-bold">{resultText}</div>
+                <div className="text-[12px] opacity-80">{roleText}</div>
               </div>
-              <div className="grid grid-cols-3 gap-1 text-center text-xs mt-2 bg-black/20 rounded-lg p-2">
+              <div className="grid grid-cols-3 gap-1 text-center text-[11px] mt-2 bg-black/20 rounded-lg p-2">
                 <div>
                   <div className="opacity-70">底分</div>
                   <div className="font-bold">{gameResult.baseScore}</div>
@@ -259,19 +259,19 @@ function ShareDialog({
                   <div className="font-bold">{summary.totalRounds}</div>
                 </div>
               </div>
-              <div className="flex justify-between items-center mt-2 pt-2 border-t border-white/20 text-sm">
+              <div className="flex justify-between items-center mt-2 pt-2 border-t border-white/20 text-[12px]">
                 <span>金币变化</span>
                 <span className={`font-bold ${coinChange > 0 ? 'text-yellow-300' : 'text-red-300'}`}>
                   {coinChange > 0 ? '+' : ''}{coinChange}
                 </span>
               </div>
               {gameResult.bombCount > 0 && (
-                <div className="text-center text-xs mt-1 opacity-80">💣 炸弹 ×{gameResult.bombCount}</div>
+                <div className="text-center text-[11px] mt-1 opacity-80">💣 炸弹 ×{gameResult.bombCount}</div>
               )}
             </div>
             
             {/* 选择好友 */}
-            <p className="text-sm text-gray-600 mb-2">选择要分享的好友：</p>
+            <p className="text-[12px] text-gray-600 mb-2">选择要分享的好友：</p>
             <div className="space-y-1">
               {characters.filter(c => !c.isHiddenFromChat).map(char => (
                 <button

@@ -111,14 +111,21 @@ export default function ChatScreen() {
   const [showTimeoutDialog, setShowTimeoutDialog] = useState(false)
   const showTyping = aiTyping || !!character?.isTyping
   
-  // 组件挂载时：清除可能残留的输入状态
-  // 如果角色的 isTyping 是 true，但本地 aiTyping 是 false，说明是上次刷新/中断残留的
+  // 组件挂载/切换聊天时：不要“立刻清掉”正在输入
+  // 只在明确“残留超时”时才清理（避免你退出再进来，输入中消失+按钮又亮导致误触重复生成）
   useEffect(() => {
-    if (character?.isTyping && !aiTyping) {
-      // 清除残留的输入状态
+    if (!character?.id) return
+    if (!character.isTyping) return
+    if (aiTyping) return
+    const updatedAt = (character as any).typingUpdatedAt as number | null | undefined
+    // 若没有 updatedAt，就保守不清，避免误伤真实生成
+    if (!updatedAt) return
+    const stale = Date.now() - updatedAt >= 5 * 60 * 1000
+    if (stale) {
+      setShowTimeoutDialog(true)
       setCharacterTyping(character.id, false)
     }
-  }, []) // 只在挂载时执行一次
+  }, [character?.id, character?.isTyping, (character as any)?.typingUpdatedAt, aiTyping, setCharacterTyping])
   
   // 5分钟超时检测
   useEffect(() => {
@@ -916,7 +923,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
   // 手动触发回复（随时可按，不需要先发消息）
   const triggerReply = async () => {
     // 防止重复触发：如果正在生成中，直接返回
-    if (aiTyping) {
+    if (showTyping) {
       console.log('Already generating, skip trigger')
       return
     }
@@ -2490,7 +2497,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           )}
           
           {/* 重新生成按钮（只在最后一条消息是AI回复时显示，用户发消息后不显示） */}
-          {!aiTyping && messages.length > 0 && !messages[messages.length - 1].isUser && messages[messages.length - 1].type !== 'system' && (
+          {!showTyping && messages.length > 0 && !messages[messages.length - 1].isUser && messages[messages.length - 1].type !== 'system' && (
             <div className="flex justify-center mb-3">
               <button
                 type="button"
@@ -2537,8 +2544,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             <button
               type="button"
               onClick={triggerReply}
-              disabled={aiTyping}
-              className={`w-7 h-7 rounded-full flex items-center justify-center shadow-sm transition-all flex-shrink-0 bg-gradient-to-r from-pink-400 to-pink-500 ${aiTyping ? 'opacity-50' : 'active:scale-90'}`}
+              disabled={showTyping}
+              className={`w-7 h-7 rounded-full flex items-center justify-center shadow-sm transition-all flex-shrink-0 bg-gradient-to-r from-pink-400 to-pink-500 ${showTyping ? 'opacity-50' : 'active:scale-90'}`}
               title="触发对方回复"
             >
               <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
