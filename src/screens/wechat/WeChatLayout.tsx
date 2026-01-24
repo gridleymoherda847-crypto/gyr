@@ -1,6 +1,7 @@
-import { type PropsWithChildren, useState, useMemo } from 'react'
+import { type PropsWithChildren, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWeChat } from '../../context/WeChatContext'
+import { useOS } from '../../context/OSContext'
 
 type Props = PropsWithChildren<{
   className?: string
@@ -9,6 +10,7 @@ type Props = PropsWithChildren<{
 // 微信统一背景布局 - 贯穿所有微信界面，背景图100%显示
 export default function WeChatLayout({ children, className = '' }: Props) {
   const navigate = useNavigate()
+  const { pauseMusic } = useOS()
   const { listenTogether, stopListenTogether, getCharacter, getCurrentPersona } = useWeChat()
   const [showListenPanel, setShowListenPanel] = useState(false)
   
@@ -18,6 +20,12 @@ export default function WeChatLayout({ children, className = '' }: Props) {
     [listenTogether, getCharacter]
   )
   const currentPersona = useMemo(() => getCurrentPersona(), [getCurrentPersona])
+  
+  // 停止一起听歌（同时停止音乐播放）
+  const handleStopListening = useCallback(() => {
+    stopListenTogether()
+    pauseMusic()
+  }, [stopListenTogether, pauseMusic])
   
   return (
     <div 
@@ -42,7 +50,7 @@ export default function WeChatLayout({ children, className = '' }: Props) {
           </span>
           <button 
             type="button"
-            onClick={(e) => { e.stopPropagation(); stopListenTogether() }}
+            onClick={(e) => { e.stopPropagation(); handleStopListening() }}
             className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center"
           >
             <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -167,7 +175,7 @@ export default function WeChatLayout({ children, className = '' }: Props) {
               </button>
               <button
                 type="button"
-                onClick={() => { stopListenTogether(); setShowListenPanel(false) }}
+                onClick={() => { handleStopListening(); setShowListenPanel(false) }}
                 className="px-6 py-3 rounded-full bg-white/80 text-emerald-700 text-sm font-medium active:scale-95 transition-transform shadow-lg"
               >
                 结束一起听

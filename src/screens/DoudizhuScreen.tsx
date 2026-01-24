@@ -16,7 +16,8 @@ import { useWeChat } from '../context/WeChatContext'
 type GamePhase = 'idle' | 'matching' | 'selectBase' | 'bidding' | 'playing' | 'ended'
 type Player = 0 | 1 | 2
 
-const PLAYER_NAMES = ['我', '电脑A', '电脑B']
+// 默认玩家名称（单机模式）
+// const DEFAULT_PLAYER_NAMES = ['我', '电脑A', '电脑B']
 const DOUDIZHU_STORAGE_KEY = 'doudizhu_stats'
 
 interface DoudizhuStats {
@@ -338,9 +339,20 @@ function ShareDialog({
   )
 }
 
+// 联机模式类型
+type GameMode = 'solo' | 'online'
+
+// 联机好友信息
+interface OnlineFriend {
+  id: string
+  name: string
+  avatar?: string
+  position: 1 | 2 // 1=电脑A位置, 2=电脑B位置
+}
+
 export default function DoudizhuScreen() {
   const navigate = useNavigate()
-  const { userPersonas, walletBalance, updateWalletBalance, addWalletBill } = useWeChat()
+  const { userPersonas, walletBalance, updateWalletBalance, addWalletBill, characters, addMessage } = useWeChat()
   
   const defaultPersona = userPersonas[0]
   const myAvatarUrl = defaultPersona?.avatar || ''
@@ -349,6 +361,12 @@ export default function DoudizhuScreen() {
   const [showRecharge, setShowRecharge] = useState(false)
   const [rechargeAmount, setRechargeAmount] = useState(10)
   const [showRechargeSuccess, setShowRechargeSuccess] = useState(false)
+  
+  // 游戏模式选择
+  const [showModeSelect, setShowModeSelect] = useState(false)
+  const [gameMode, setGameMode] = useState<GameMode>('solo')
+  const [showFriendSelect, setShowFriendSelect] = useState(false)
+  const [selectedFriends, setSelectedFriends] = useState<OnlineFriend[]>([])
   
   const [phase, setPhase] = useState<GamePhase>('idle')
   const [matchProgress, setMatchProgress] = useState(0)
@@ -374,6 +392,27 @@ export default function DoudizhuScreen() {
   const [, setGameHistory] = useState<GameRound[]>([])
   const [, setBombRecords] = useState<BombRecord[]>([])
   const [gameDifficulty, setGameDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal')
+  
+  // 动态玩家名称（联机模式显示好友名字）
+  const PLAYER_NAMES = [
+    '我',
+    selectedFriends.find(f => f.position === 1)?.name || '电脑A',
+    selectedFriends.find(f => f.position === 2)?.name || '电脑B'
+  ]
+  
+  // 玩家头像（联机模式显示好友头像）
+  const PLAYER_AVATARS = [
+    myAvatarUrl,
+    selectedFriends.find(f => f.position === 1)?.avatar || '',
+    selectedFriends.find(f => f.position === 2)?.avatar || ''
+  ]
+  
+  // 是否是电脑玩家
+  const isComputerPlayer = (player: Player) => {
+    if (player === 0) return false
+    const position = player as 1 | 2
+    return !selectedFriends.some(f => f.position === position)
+  }
   
   const stateRef = useRef({
     phase: 'idle' as GamePhase,
@@ -441,6 +480,51 @@ export default function DoudizhuScreen() {
       setTimeout(() => setPhase('selectBase'), 300)
     }
   }, [phase, matchProgress])
+  
+  // 打开游戏模式选择
+  const openModeSelect = () => {
+    if (stats.coins < 1000) { setShowRecharge(true); return }
+    setShowModeSelect(true)
+  }
+  
+  // 选择单机模式
+  const selectSoloMode = () => {
+    setGameMode('solo')
+    setSelectedFriends([])
+    setShowModeSelect(false)
+    startGame()
+  }
+  
+  // 选择联机模式
+  const selectOnlineMode = () => {
+    setGameMode('online')
+    setSelectedFriends([])
+    setShowModeSelect(false)
+    setShowFriendSelect(true)
+  }
+  
+  // 选择/取消选择好友
+  const toggleFriendSelect = (char: typeof characters[0]) => {
+    const existing = selectedFriends.find(f => f.id === char.id)
+    if (existing) {
+      setSelectedFriends(selectedFriends.filter(f => f.id !== char.id))
+    } else if (selectedFriends.length < 2) {
+      const position = selectedFriends.length === 0 ? 1 : 2
+      setSelectedFriends([...selectedFriends, {
+        id: char.id,
+        name: char.name,
+        avatar: char.avatar,
+        position: position as 1 | 2
+      }])
+    }
+  }
+  
+  // 确认好友选择并开始游戏
+  const confirmFriendsAndStart = () => {
+    if (selectedFriends.length === 0) return
+    setShowFriendSelect(false)
+    startGame()
+  }
   
   const startGame = () => {
     if (stats.coins < 1000) { setShowRecharge(true); return }
@@ -636,7 +720,7 @@ export default function DoudizhuScreen() {
       totalRounds: 0, 
       gameHistory: [], 
       difficulty: s.difficulty,
-      opponents: ['人机A', '人机B'] as [string, string]
+      opponents: [PLAYER_NAMES[1], PLAYER_NAMES[2]] as [string, string]
     }
   }
   
@@ -727,6 +811,58 @@ export default function DoudizhuScreen() {
         ])
         
         setPhase('ended')
+        
+        // 联机模式：自动分享战绩给参与的好友
+        if (gameMode === 'online' && selectedFriends.length > 0) {
+          const roleText = stateRef.current.landlord === 0 ? '地主' : '农民'
+          const difficultyText = stateRef.current.difficulty === 'easy' ? '简单' : stateRef.current.difficulty === 'normal' ? '普通' : '困难'
+          
+          // 生成炸弹描述
+          let bombDescription = ''
+          if (calcResult.bombCount > 0) {
+            setBombRecords(currentBombs => {
+              const myBombs = currentBombs.filter(b => b.player === 0).length
+              const aiBombs = currentBombs.filter(b => b.player !== 0)
+              const parts: string[] = []
+              if (myBombs > 0) parts.push(`我丢了${myBombs}个炸弹`)
+              const aiGrouped = new Map<string, number>()
+              aiBombs.forEach(b => aiGrouped.set(b.playerName, (aiGrouped.get(b.playerName) || 0) + 1))
+              aiGrouped.forEach((count, name) => parts.push(`${name}丢了${count}个炸弹`))
+              bombDescription = parts.join('，')
+              return currentBombs
+            })
+          }
+          
+          // 获取对手名称
+          const opponentNames: [string, string] = [
+            selectedFriends.find(f => f.position === 1)?.name || '人机A',
+            selectedFriends.find(f => f.position === 2)?.name || '人机B'
+          ]
+          
+          // 延迟发送消息，确保游戏结果已设置
+          setTimeout(() => {
+            selectedFriends.forEach(friend => {
+              addMessage({
+                characterId: friend.id,
+                content: JSON.stringify({
+                  type: 'doudizhu_result',
+                  isWin,
+                  role: roleText,
+                  baseScore: stateRef.current.baseScore,
+                  multiplier: calcResult.multiplier,
+                  coinChange: calcResult.playerCoins[0],
+                  bombCount: calcResult.bombCount,
+                  bombDescription: bombDescription || undefined,
+                  difficulty: difficultyText,
+                  opponents: opponentNames,
+                }),
+                isUser: true,
+                type: 'doudizhu_share',
+              })
+            })
+          }, 500)
+        }
+        
         return
       }
     }
@@ -1077,15 +1213,123 @@ export default function DoudizhuScreen() {
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           <div className="text-6xl animate-bounce">🃏</div>
           <h2 className="text-white text-2xl font-bold">欢乐斗地主</h2>
-          <p className="text-white/60 text-sm">单机模式 · 不消耗API</p>
+          <p className="text-white/60 text-sm">不消耗API · 可邀请好友</p>
           {stats.coins < 1000 ? (
             <>
               <p className="text-red-400 text-sm font-medium">⚠️ 金币不足1000，无法开始游戏</p>
               <button onClick={() => setShowRecharge(true)} className="px-8 py-3 bg-gradient-to-r from-yellow-400 to-amber-500 text-white font-bold rounded-full text-lg shadow-xl active:scale-95 hover:shadow-2xl transition-all">充值金币</button>
             </>
           ) : (
-            <button onClick={startGame} className="px-8 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-full text-lg shadow-xl active:scale-95 hover:shadow-2xl transition-all">开始游戏</button>
+            <button onClick={openModeSelect} className="px-8 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-full text-lg shadow-xl active:scale-95 hover:shadow-2xl transition-all">开始游戏</button>
           )}
+        </div>
+      )}
+      
+      {/* 模式选择弹窗 */}
+      {showModeSelect && (
+        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl w-[80vw] max-w-[280px] overflow-hidden shadow-2xl">
+            <div className="bg-gradient-to-r from-pink-500 to-rose-500 px-4 py-3 text-center">
+              <h3 className="text-white font-bold text-lg">选择游戏模式</h3>
+            </div>
+            <div className="p-4 space-y-3">
+              <button
+                onClick={selectSoloMode}
+                className="w-full py-4 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold rounded-xl text-base shadow-lg active:scale-95 transition-all flex flex-col items-center gap-1"
+              >
+                <span className="text-2xl">🤖</span>
+                <span>单机模式</span>
+                <span className="text-xs opacity-80">与电脑对战</span>
+              </button>
+              <button
+                onClick={selectOnlineMode}
+                className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold rounded-xl text-base shadow-lg active:scale-95 transition-all flex flex-col items-center gap-1"
+              >
+                <span className="text-2xl">👥</span>
+                <span>邀请好友</span>
+                <span className="text-xs opacity-80">选择1-2位好友一起玩</span>
+              </button>
+              <button
+                onClick={() => setShowModeSelect(false)}
+                className="w-full py-2 bg-gray-200 text-gray-600 font-medium rounded-xl text-sm active:scale-95"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 好友选择弹窗 */}
+      {showFriendSelect && (
+        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl w-[85vw] max-w-[300px] max-h-[70vh] overflow-hidden shadow-2xl flex flex-col">
+            <div className="bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-3 text-center flex-shrink-0">
+              <h3 className="text-white font-bold text-lg">邀请好友</h3>
+              <p className="text-white/80 text-xs">选择1-2位好友，不足3人由电脑补位</p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              {characters.filter(c => !c.isHiddenFromChat).length === 0 ? (
+                <p className="text-center text-gray-400 text-sm py-8">暂无好友，请先在微信添加</p>
+              ) : (
+                <div className="space-y-2">
+                  {characters.filter(c => !c.isHiddenFromChat).map(char => {
+                    const isSelected = selectedFriends.some(f => f.id === char.id)
+                    const selectedPosition = selectedFriends.find(f => f.id === char.id)?.position
+                    return (
+                      <button
+                        key={char.id}
+                        onClick={() => toggleFriendSelect(char)}
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
+                          isSelected 
+                            ? 'bg-green-100 border-2 border-green-500' 
+                            : 'bg-gray-50 border-2 border-transparent'
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
+                          {char.avatar ? (
+                            <img src={char.avatar} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                              {char.name.slice(0, 1)}
+                            </div>
+                          )}
+                        </div>
+                        <span className="flex-1 text-left font-medium truncate">{char.name}</span>
+                        {isSelected && (
+                          <span className="bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                            玩家{selectedPosition === 1 ? 'A' : 'B'}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="p-3 border-t border-gray-200 flex-shrink-0">
+              <div className="text-center text-xs text-gray-500 mb-2">
+                已选择 {selectedFriends.length}/2 位好友
+                {selectedFriends.length === 1 && '（将匹配1个电脑）'}
+                {selectedFriends.length === 0 && '（将匹配2个电脑）'}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowFriendSelect(false); setSelectedFriends([]) }}
+                  className="flex-1 py-2.5 bg-gray-200 text-gray-600 font-medium rounded-xl text-sm active:scale-95"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={confirmFriendsAndStart}
+                  disabled={selectedFriends.length === 0}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold rounded-xl text-sm active:scale-95 disabled:opacity-50"
+                >
+                  开始游戏
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
       
@@ -1093,11 +1337,23 @@ export default function DoudizhuScreen() {
       {phase === 'matching' && (
         <div className="flex-1 flex flex-col items-center justify-center gap-5">
           <div className="text-5xl animate-bounce">🔍</div>
-          <h2 className="text-white text-xl font-bold">正在匹配对手...</h2>
+          <h2 className="text-white text-xl font-bold">
+            {gameMode === 'online' ? '邀请好友中...' : '正在匹配对手...'}
+          </h2>
           <div className="w-56 h-3 bg-black/30 rounded-full overflow-hidden">
             <div className="h-full bg-gradient-to-r from-pink-500 to-rose-500 transition-all duration-100 rounded-full" style={{ width: `${matchProgress}%` }} />
           </div>
-          <p className="text-white/60 text-sm">{matchProgress < 30 ? '搜索玩家中...' : matchProgress < 70 ? '匹配到电脑A' : '匹配到电脑B'}</p>
+          <p className="text-white/60 text-sm">
+            {gameMode === 'online' ? (
+              matchProgress < 50 
+                ? `邀请 ${selectedFriends.map(f => f.name).join('、')} 中...`
+                : selectedFriends.length < 2 
+                  ? '匹配电脑补位...'
+                  : '准备开始...'
+            ) : (
+              matchProgress < 30 ? '搜索玩家中...' : matchProgress < 70 ? '匹配到电脑A' : '匹配到电脑B'
+            )}
+          </p>
         </div>
       )}
       
@@ -1133,20 +1389,20 @@ export default function DoudizhuScreen() {
             {dizhuCards.map(card => renderSmallCard(card))}
           </div>
           
-          {/* 顶部：两个AI头像和出牌区 */}
+          {/* 顶部：两个对手头像和出牌区 */}
           <div className="flex justify-between items-start px-4 pt-2">
-            {/* 左侧：电脑B头像 + 出牌 */}
+            {/* 左侧：玩家B头像 + 出牌 */}
             <div className="flex items-start gap-2">
               <PlayerAvatar 
-                avatarUrl="" 
+                avatarUrl={PLAYER_AVATARS[2]} 
                 isActive={phase === 'bidding' ? currentBidder === 2 : currentPlayer === 2} 
                 isLandlord={landlord === 2} 
-                isComputer={true} 
+                isComputer={isComputerPlayer(2)} 
                 cardCount={hands[2].length} 
                 coins={aiCoins[1]}
-                name="电脑B"
+                name={PLAYER_NAMES[2]}
               />
-              {/* 电脑B出的牌 - 在头像右侧 */}
+              {/* 玩家B出的牌 - 在头像右侧 */}
               {phase === 'playing' && playedCards.has(2) && (
                 <div className="mt-2">
                   {renderPlayedCards(playedCards.get(2) || [])}
@@ -1157,22 +1413,22 @@ export default function DoudizhuScreen() {
             {/* 中间留空给底牌 */}
             <div className="w-32" />
             
-            {/* 右侧：电脑A出牌 + 头像 */}
+            {/* 右侧：玩家A出牌 + 头像 */}
             <div className="flex items-start gap-2">
-              {/* 电脑A出的牌 - 在头像左侧 */}
+              {/* 玩家A出的牌 - 在头像左侧 */}
               {phase === 'playing' && playedCards.has(1) && (
                 <div className="mt-2">
                   {renderPlayedCards(playedCards.get(1) || [])}
                 </div>
               )}
               <PlayerAvatar 
-                avatarUrl="" 
+                avatarUrl={PLAYER_AVATARS[1]} 
                 isActive={phase === 'bidding' ? currentBidder === 1 : currentPlayer === 1} 
                 isLandlord={landlord === 1} 
-                isComputer={true} 
+                isComputer={isComputerPlayer(1)} 
                 cardCount={hands[1].length} 
                 coins={aiCoins[0]}
-                name="电脑A"
+                name={PLAYER_NAMES[1]}
               />
             </div>
           </div>
