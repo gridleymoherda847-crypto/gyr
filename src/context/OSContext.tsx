@@ -94,7 +94,6 @@ const defaultWeather: WeatherData = {
 }
 
 // 内置默认歌曲（打包时会包含）
-// 注意：文件名中的 # 符号需要编码为 %23，否则浏览器会把它当作 URL 锚点
 const DEFAULT_SONGS: Song[] = [
   {
     id: 'default-1',
@@ -109,7 +108,7 @@ const DEFAULT_SONGS: Song[] = [
     title: 'City of Stars (Live)',
     artist: '周深 / INTO1-米卡',
     cover: DEFAULT_COVER,
-    url: '/music/City of Stars.Live.-周深.INTO1-米卡%232qcbGD.mp3',
+    url: '/music/City of Stars.Live.-周深.INTO1-米卡#2qcbGD.mp3',
     duration: 240
   },
   {
@@ -117,7 +116,7 @@ const DEFAULT_SONGS: Song[] = [
     title: 'If',
     artist: '丁可',
     cover: DEFAULT_COVER,
-    url: '/music/If-丁可%23f4SxS.mp3',
+    url: '/music/If-丁可#f4SxS.mp3',
     duration: 210
   },
   {
@@ -125,7 +124,7 @@ const DEFAULT_SONGS: Song[] = [
     title: 'Paris in the Rain',
     artist: 'Lauv',
     cover: DEFAULT_COVER,
-    url: '/music/Paris in the Rain-Lauv%23j4c3n.mp3',
+    url: '/music/Paris in the Rain-Lauv#j4c3n.mp3',
     duration: 195
   },
   {
@@ -133,7 +132,7 @@ const DEFAULT_SONGS: Song[] = [
     title: 'Time Machine (feat. Aren Park)',
     artist: 'MJ Apanay / Aren Park',
     cover: DEFAULT_COVER,
-    url: '/music/time machine .feat. aren park.-mj apanay.aren park%232wL1ri.mp3',
+    url: '/music/time machine .feat. aren park.-mj apanay.aren park#2wL1ri.mp3',
     duration: 220
   }
 ]
@@ -391,6 +390,14 @@ export function OSProvider({ children }: PropsWithChildren) {
           setMusicProgress(0)
         }
       })
+      // 添加错误监听
+      audioRef.current.addEventListener('error', (e) => {
+        const audio = e.target as HTMLAudioElement
+        console.error('Audio error:', audio.error?.code, audio.error?.message, 'src:', audio.src)
+      })
+      audioRef.current.addEventListener('canplay', () => {
+        console.log('Audio can play now')
+      })
     }
   }, [currentSong, musicPlaylist])
 
@@ -419,8 +426,34 @@ export function OSProvider({ children }: PropsWithChildren) {
   // 音乐控制函数
   const playSong = (song: Song) => {
     if (audioRef.current) {
-      audioRef.current.src = song.url
-      audioRef.current.play()
+      // 先停止当前播放
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      
+      // 设置新的音频源 - 对URL进行编码处理
+      // blob URL不编码，其他URL需要编码（特别是#符号）
+      let audioUrl = song.url
+      if (!song.url.startsWith('blob:')) {
+        // 先用encodeURI编码中文等字符，再手动把#替换为%23
+        audioUrl = encodeURI(song.url).replace(/#/g, '%23')
+      }
+      
+      console.log('Loading audio:', audioUrl)
+      audioRef.current.src = audioUrl
+      audioRef.current.load() // 强制加载
+      
+      // 尝试播放
+      const playPromise = audioRef.current.play()
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log('Music playing:', song.title)
+          })
+          .catch((error) => {
+            console.error('Music play failed:', error, 'URL:', audioUrl)
+          })
+      }
+      
       setCurrentSong(song)
       setMusicPlaying(true)
       setMusicProgress(0)
