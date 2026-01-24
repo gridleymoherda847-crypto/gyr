@@ -363,6 +363,9 @@ export default function DoudizhuScreen() {
   const [rechargeAmount, setRechargeAmount] = useState(10)
   const [showRechargeSuccess, setShowRechargeSuccess] = useState(false)
   
+  // 背景音乐
+  const bgmRef = useRef<HTMLAudioElement | null>(null)
+  
   // 游戏模式选择
   const [showModeSelect, setShowModeSelect] = useState(false)
   const [gameMode, setGameMode] = useState<GameMode>('solo')
@@ -410,6 +413,35 @@ export default function DoudizhuScreen() {
   const [, setGameHistory] = useState<GameRound[]>([])
   const [, setBombRecords] = useState<BombRecord[]>([])
   const [gameDifficulty, setGameDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal')
+  
+  // 背景音乐控制：选底分时开始播放，游戏结束或退出时停止
+  useEffect(() => {
+    const shouldPlay = phase === 'selectBase' || phase === 'bidding' || phase === 'playing'
+    
+    if (shouldPlay) {
+      if (!bgmRef.current) {
+        bgmRef.current = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
+        bgmRef.current.loop = true
+        bgmRef.current.volume = 0.3
+      }
+      bgmRef.current.play().catch(() => {})
+    } else {
+      if (bgmRef.current) {
+        bgmRef.current.pause()
+        bgmRef.current.currentTime = 0
+      }
+    }
+  }, [phase])
+  
+  // 组件卸载时停止音乐
+  useEffect(() => {
+    return () => {
+      if (bgmRef.current) {
+        bgmRef.current.pause()
+        bgmRef.current = null
+      }
+    }
+  }, [])
   
   // 动态玩家名称（联机模式显示好友名字）
   const PLAYER_NAMES = [
