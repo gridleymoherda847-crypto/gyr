@@ -1,4 +1,4 @@
-import { type PropsWithChildren, useEffect, useRef } from 'react'
+import { type PropsWithChildren, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useOS } from '../context/OSContext'
 import BottomHomeBar from './BottomHomeBar'
@@ -7,10 +7,36 @@ import VirtualStatusBar from './VirtualStatusBar'
 export default function PhoneShell({ children }: PropsWithChildren) {
   const { wallpaper, currentFont, fontColor, isLocked, lockWallpaper, notifications, markNotificationRead } = useOS()
   const location = useLocation()
+  const [isFullscreen, setIsFullscreen] = useState(false)
   
   const currentWallpaper = isLocked ? lockWallpaper : wallpaper
   const timerRef = useRef<Record<string, number>>({})
   const isFullScreenApp = !isLocked && (location.pathname === '/apps/doudizhu')
+
+  // 监听全屏状态
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  // 全屏模式下阻止边缘滑动手势退出
+  useEffect(() => {
+    if (!isFullscreen) return
+
+    const preventEdgeSwipe = (e: TouchEvent) => {
+      const touch = e.touches[0]
+      // 如果触摸点在屏幕边缘（左右各30px），阻止默认行为
+      if (touch.clientX < 30 || touch.clientX > window.innerWidth - 30) {
+        e.preventDefault()
+      }
+    }
+
+    document.addEventListener('touchstart', preventEdgeSwipe, { passive: false })
+    return () => document.removeEventListener('touchstart', preventEdgeSwipe)
+  }, [isFullscreen])
 
   useEffect(() => {
     const unread = notifications.filter(n => !n.read)

@@ -1179,7 +1179,7 @@ export default function DoudizhuScreen() {
       
       {/* 顶部栏 */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-black/40 flex-shrink-0 border-b border-white/10">
-        <button onClick={() => navigate(-1)} className="text-white/80 p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+        <button onClick={() => navigate(-1)} className="text-white/80 p-1.5 hover:bg-white/10 rounded-lg transition-colors ml-10">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
@@ -1448,9 +1448,9 @@ export default function DoudizhuScreen() {
           </div>
           
           {/* 顶部：两个对手头像和出牌区 */}
-          <div className="flex justify-between items-start px-10 pt-2">
+          <div className="flex justify-between items-start px-12 pt-2">
             {/* 左侧：玩家B头像 + 出牌 */}
-            <div className="flex items-start gap-2 ml-4">
+            <div className="flex items-start gap-2 ml-6">
               <PlayerAvatar 
                 avatarUrl={PLAYER_AVATARS[2]} 
                 isActive={phase === 'bidding' ? currentBidder === 2 : currentPlayer === 2} 
@@ -1472,7 +1472,7 @@ export default function DoudizhuScreen() {
             <div className="w-16" />
             
             {/* 右侧：玩家A出牌 + 头像 */}
-            <div className="flex items-start gap-2 mr-4">
+            <div className="flex items-start gap-2 mr-6">
               {/* 玩家A出的牌 - 在头像左侧 */}
               {phase === 'playing' && playedCards.has(1) && (
                 <div className="mt-2">
@@ -1532,8 +1532,8 @@ export default function DoudizhuScreen() {
             )}
             
             {/* 手牌和头像 */}
-            <div className="h-[100px] flex items-center px-10">
-              <div className="mr-3 ml-4">
+            <div className="h-[100px] flex items-center px-12">
+              <div className="mr-3 ml-6">
                 <PlayerAvatar 
                   avatarUrl={myAvatarUrl} 
                   isActive={phase === 'bidding' ? currentBidder === 0 : currentPlayer === 0} 
@@ -1543,7 +1543,7 @@ export default function DoudizhuScreen() {
                   name="我"
                 />
               </div>
-              <div className="flex-1 flex justify-center overflow-visible mr-4">
+              <div className="flex-1 flex justify-center overflow-visible mr-6">
                 <div className="relative" style={{ width: `${handWidth}px`, height: '72px' }}>
                   {hands[0].map((card, i) => renderFanCard(card, i, selectedCards.has(card.id), () => toggleCard(card.id)))}
                 </div>
