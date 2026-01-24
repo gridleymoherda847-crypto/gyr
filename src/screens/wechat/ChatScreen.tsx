@@ -99,6 +99,11 @@ export default function ChatScreen() {
   const [coupleInviteConfirmOpen, setCoupleInviteConfirmOpen] = useState(false)
   const [coupleInviteBusy, setCoupleInviteBusy] = useState(false)
   
+  // 斗地主邀请状态
+  const [showDoudizhuInviteConfirm, setShowDoudizhuInviteConfirm] = useState(false)
+  const [doudizhuInviteMsg, setDoudizhuInviteMsg] = useState<typeof messages[0] | null>(null)
+  const [showDoudizhuAcceptedDialog, setShowDoudizhuAcceptedDialog] = useState(false)
+  
   // 经期日历状态
   const [calendarMonth, setCalendarMonth] = useState(new Date())
   
@@ -347,6 +352,29 @@ export default function ChatScreen() {
               content = `<DIARY title="${title}" author="${author}" authorId="${authorId}" diaryAt="${at}" note="${note}">` +
                 `${ownership}\n${body}` +
                 `</DIARY>`
+            }
+            // 斗地主战绩分享 - 让AI知道自己是否参与了游戏
+            if (m.type === 'doudizhu_share') {
+              try {
+                const data = JSON.parse(m.content)
+                const opponents = data.opponents || ['人机A', '人机B']
+                const isWin = data.isWin ? '胜利' : '失败'
+                const role = data.role || '未知'
+                const coinChange = data.coinChange || 0
+                const bombDesc = data.bombDescription || (data.bombCount > 0 ? `共${data.bombCount}个炸弹` : '无炸弹')
+                // 关键：判断AI角色是否在对战名单中
+                const myNameInOpponents = opponents.some((name: string) => 
+                  name === character.name || name.includes(character.name) || character.name.includes(name)
+                )
+                const participation = myNameInOpponents 
+                  ? `（重要：你"${character.name}"是这场斗地主的参与者之一！你刚刚和用户一起玩了这局斗地主，你应该有这段记忆）`
+                  : '（你没有参与这场斗地主，这是用户分享给你的战绩）'
+                content = `<DOUDIZHU_RESULT result="${isWin}" role="${role}" coinChange="${coinChange}" opponents="${opponents.join('、')}" bombInfo="${bombDesc}">` +
+                  `${participation}` +
+                  `</DOUDIZHU_RESULT>`
+              } catch {
+                content = '<DOUDIZHU_RESULT />'
+              }
             }
             if (!content.trim()) continue
 
@@ -654,6 +682,15 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           m.isUser && m.type === 'music' && m.musicStatus === 'pending'
         )
         
+        // 检查是否有待处理的用户斗地主邀请
+        const pendingDoudizhuInvites = workingMessages.filter(m => {
+          if (!m.isUser || m.type !== 'doudizhu_invite') return false
+          try {
+            const data = JSON.parse(m.content)
+            return data.status === 'pending'
+          } catch { return false }
+        })
+        
         // 随机决定在哪条回复后处理转账（如果有的话）
         const transferProcessIndex = pendingUserTransfers.length > 0 
           ? Math.floor(Math.random() * Math.max(1, replies.length)) 
@@ -661,6 +698,11 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         
         // 随机决定在哪条回复后处理音乐邀请
         const musicProcessIndex = pendingUserMusicInvites.length > 0 
+          ? Math.floor(Math.random() * Math.max(1, replies.length)) 
+          : -1
+        
+        // 随机决定在哪条回复后处理斗地主邀请
+        const doudizhuProcessIndex = pendingDoudizhuInvites.length > 0 
           ? Math.floor(Math.random() * Math.max(1, replies.length)) 
           : -1
         
@@ -730,17 +772,31 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         }
 
         replies.forEach((content, index) => {
-          // 第一条消息立即发送（50-100ms），后面的消息根据字数有0.5-3秒的间隔
+          // 第一条消息立即发送（50-100ms），后面的消息根据字数有1-5秒的间隔
           let charDelay: number
           if (index === 0) {
             // 第一条消息：几乎立即发送
             charDelay = 50 + Math.random() * 50
           } else {
-            // 后续消息：根据字数计算延迟（0.5-3秒）
-            const baseDelay = 500 // 最少0.5秒
-            const charFactor = Math.min(content.length * 30, 2000) // 字数越多延迟越长，最多加2秒
-            const randomFactor = Math.random() * 500 // 随机0-0.5秒
-            charDelay = Math.min(3000, baseDelay + charFactor + randomFactor)
+            // 后续消息：根据字数计算延迟（1-5秒），增加随机性
+            const charLen = content.length
+            // 短消息（1-10字）：1-2秒
+            // 中等消息（11-30字）：2-3.5秒
+            // 长消息（31字以上）：3-5秒
+            let baseMin: number, baseMax: number
+            if (charLen <= 10) {
+              baseMin = 1000
+              baseMax = 2000
+            } else if (charLen <= 30) {
+              baseMin = 2000
+              baseMax = 3500
+            } else {
+              baseMin = 3000
+              baseMax = 5000
+            }
+            // 增加随机波动（±30%），让间隔更不规律
+            const randomMultiplier = 0.7 + Math.random() * 0.6 // 0.7-1.3
+            charDelay = (baseMin + Math.random() * (baseMax - baseMin)) * randomMultiplier
           }
           totalDelay += charDelay
           
@@ -940,6 +996,49 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     open: true,
                     song: { title: songTitle, artist: songArtist },
                     accepted: false,
+                  })
+                }
+              }, totalDelay, { background: true })
+              
+              totalDelay += 350
+            }
+          }
+          
+          // 在指定位置处理用户的待处理斗地主邀请
+          if (index === doudizhuProcessIndex && pendingDoudizhuInvites.length > 0) {
+            totalDelay += 400 + Math.random() * 500
+            
+            for (const invite of pendingDoudizhuInvites) {
+              // 根据角色性格决定是否接受（70%概率接受）
+              const willAccept = Math.random() > 0.3
+              
+              safeTimeoutEx(() => {
+                // 更新原邀请状态
+                try {
+                  const data = JSON.parse(invite.content)
+                  updateMessage(invite.id, { 
+                    content: JSON.stringify({ ...data, status: willAccept ? 'accepted' : 'rejected' })
+                  })
+                } catch {}
+                
+                if (willAccept) {
+                  // 接受邀请
+                  addMessage({
+                    characterId: character.id,
+                    content: `${character.name}接受了你的斗地主邀请`,
+                    isUser: false,
+                    type: 'system',
+                  })
+                  
+                  // 显示接受弹窗
+                  setShowDoudizhuAcceptedDialog(true)
+                } else {
+                  // 拒绝邀请
+                  addMessage({
+                    characterId: character.id,
+                    content: `${character.name}拒绝了你的斗地主邀请`,
+                    isUser: false,
+                    type: 'system',
                   })
                 }
               }, totalDelay, { background: true })
@@ -1358,6 +1457,83 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     
     // 统一手动：增加待回复计数（点击箭头触发对方回复/是否接受邀请）
     setPendingCount(prev => prev + 1)
+  }
+  
+  // 发送斗地主邀请
+  const handleSendDoudizhuInvite = () => {
+    const newMsg = addMessage({
+      characterId: character.id,
+      content: JSON.stringify({
+        type: 'doudizhu_invite',
+        status: 'pending',
+        inviterName: getCurrentPersona()?.name || '我',
+      }),
+      isUser: true,
+      type: 'doudizhu_invite',
+    })
+    messagesRef.current = [...messagesRef.current, newMsg]
+    
+    setShowPlusMenu(false)
+    setShowDoudizhuInviteConfirm(false)
+    
+    // 增加待回复计数
+    setPendingCount(prev => prev + 1)
+  }
+  
+  // 点击对方的斗地主邀请
+  const handleClickDoudizhuInvite = (msg: typeof messages[0]) => {
+    if (msg.isUser) return // 自己发的不能点
+    setDoudizhuInviteMsg(msg)
+  }
+  
+  // 接受对方的斗地主邀请
+  const handleAcceptDoudizhuInvite = () => {
+    if (!doudizhuInviteMsg) return
+    
+    // 更新邀请状态
+    updateMessage(doudizhuInviteMsg.id, { 
+      content: JSON.stringify({
+        ...JSON.parse(doudizhuInviteMsg.content || '{}'),
+        status: 'accepted'
+      })
+    })
+    
+    // 添加系统消息
+    addMessage({
+      characterId: character.id,
+      content: `你接受了${character.name}的斗地主邀请`,
+      isUser: false,
+      type: 'system',
+    })
+    
+    setDoudizhuInviteMsg(null)
+    setShowDoudizhuAcceptedDialog(true)
+  }
+  
+  // 拒绝对方的斗地主邀请
+  const handleRejectDoudizhuInvite = () => {
+    if (!doudizhuInviteMsg) return
+    
+    // 更新邀请状态
+    updateMessage(doudizhuInviteMsg.id, { 
+      content: JSON.stringify({
+        ...JSON.parse(doudizhuInviteMsg.content || '{}'),
+        status: 'rejected'
+      })
+    })
+    
+    // 添加系统消息
+    addMessage({
+      characterId: character.id,
+      content: `你拒绝了${character.name}的斗地主邀请`,
+      isUser: false,
+      type: 'system',
+    })
+    
+    setDoudizhuInviteMsg(null)
+    
+    // 生成AI回复（表达失望）
+    generateHumanLikeReplies(`对方拒绝了你的斗地主邀请`)
   }
   
   // 点击对方的音乐邀请 - 弹窗询问
@@ -2103,6 +2279,49 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       }
     }
     
+    // 斗地主邀请卡片
+    if (msg.type === 'doudizhu_invite') {
+      try {
+        const data = JSON.parse(msg.content)
+        const status = data.status || 'pending'
+        const canAccept = !msg.isUser && status === 'pending'
+        
+        return (
+          <div 
+            className={`min-w-[180px] max-w-[220px] rounded-xl overflow-hidden shadow-lg ${canAccept ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
+            onClick={() => canAccept && handleClickDoudizhuInvite(msg)}
+          >
+            <div className="bg-gradient-to-r from-pink-500 to-rose-500 p-3 text-white">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-2xl">🃏</span>
+                <span className="font-bold">斗地主邀请</span>
+              </div>
+              <div className="text-sm opacity-90">
+                {msg.isUser ? '邀请对方一起玩斗地主' : `${character.name}邀请你一起玩斗地主`}
+              </div>
+            </div>
+            <div className={`px-3 py-2 text-sm font-medium ${
+              status === 'pending' ? 'bg-yellow-50 text-yellow-700' :
+              status === 'accepted' ? 'bg-green-50 text-green-700' :
+              'bg-gray-100 text-gray-500'
+            }`}>
+              {msg.isUser ? (
+                status === 'pending' ? '等待对方接受...' :
+                status === 'accepted' ? '✅ 对方已接受' :
+                '❌ 对方已拒绝'
+              ) : (
+                status === 'pending' ? '👆 点击接受邀请' :
+                status === 'accepted' ? '✅ 已接受' :
+                '❌ 已拒绝'
+              )}
+            </div>
+          </div>
+        )
+      } catch {
+        return <span>{msg.content}</span>
+      }
+    }
+    
     return <span>{msg.content}</span>
   }
 
@@ -2733,6 +2952,14 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     <span className="text-xs text-gray-600">编辑</span>
                   </button>
                   
+                  {/* 斗地主 */}
+                  <button type="button" onClick={() => setShowDoudizhuInviteConfirm(true)} className="flex flex-col items-center gap-1">
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <span className="text-2xl">🃏</span>
+                    </div>
+                    <span className="text-xs text-gray-600">斗地主</span>
+                  </button>
+                  
                   {/* 清空 */}
                   <button type="button" onClick={() => { setShowPlusMenu(false); setShowClearConfirm(true) }} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
@@ -3330,6 +3557,48 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         confirmText="知道了"
         onConfirm={() => setShowTimeoutDialog(false)}
         onCancel={() => setShowTimeoutDialog(false)}
+      />
+      
+      {/* 斗地主邀请确认弹窗 */}
+      <WeChatDialog
+        open={showDoudizhuInviteConfirm}
+        title="邀请斗地主"
+        message={`确定向${character.name}发送斗地主邀请吗？`}
+        confirmText="发送邀请"
+        cancelText="取消"
+        onConfirm={handleSendDoudizhuInvite}
+        onCancel={() => setShowDoudizhuInviteConfirm(false)}
+      />
+      
+      {/* 收到斗地主邀请弹窗 */}
+      <WeChatDialog
+        open={!!doudizhuInviteMsg}
+        title="斗地主邀请"
+        message={`${character.name}邀请你一起玩斗地主，是否接受？`}
+        confirmText="接受"
+        cancelText="拒绝"
+        onConfirm={handleAcceptDoudizhuInvite}
+        onCancel={handleRejectDoudizhuInvite}
+      />
+      
+      {/* 斗地主邀请已接受弹窗 */}
+      <WeChatDialog
+        open={showDoudizhuAcceptedDialog}
+        title={`${character.name}已接受邀请`}
+        message="是否现在开始游戏？"
+        confirmText="开始游戏"
+        cancelText="稍后再玩"
+        onConfirm={() => {
+          setShowDoudizhuAcceptedDialog(false)
+          // 跳转到斗地主并设置联机模式
+          navigate('/apps/doudizhu', { 
+            state: { 
+              mode: 'online', 
+              friends: [{ id: character.id, name: character.name, avatar: character.avatar, position: 1 }] 
+            } 
+          })
+        }}
+        onCancel={() => setShowDoudizhuAcceptedDialog(false)}
       />
     </WeChatLayout>
   )

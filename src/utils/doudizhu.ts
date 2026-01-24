@@ -775,23 +775,37 @@ export function aiDecide(
   // 是否选择不出
   if (lastPlay) {
     const bestScore = scored[0].score
+    const bestResult = analyzeHand(scored[0].cards)
     
-    // 如果上家是队友，更倾向于不出
-    if (isTeammatePlay && bestScore < 60) {
-      return null // 让队友走
+    // 如果上家是队友，根据情况决定是否出牌
+    if (isTeammatePlay) {
+      // 队友出牌时，农民有一定概率不出让队友走
+      // 但不能完全不出，否则万一队友后面打不过地主就完蛋了
+      const passChance = Math.min(0.5, Math.max(0.1, 0.4 - hand.length * 0.02)) // 手牌越少越不想让
+      
+      // 如果自己手牌很少（快赢了），不要让
+      if (hand.length <= 4) {
+        // 继续出牌，不让
+      } else if (bestScore < 40 && Math.random() < passChance) {
+        return null // 让队友走
+      }
+      // 如果自己有很好的组合牌，还是要出
+      if (bestResult.type === 'straight' || bestResult.type === 'pair_straight' || 
+          bestResult.type === 'plane' || bestResult.type === 'plane_single' || bestResult.type === 'plane_pair') {
+        // 有好牌就出，不让
+      }
     }
     
-    // 如果最好的选择分数很低，考虑不出
-    if (bestScore < 20 && hand.length > 6) {
-      if (Math.random() < 0.3) {
+    // 如果最好的选择分数很低，考虑不出（但概率降低）
+    if (bestScore < 10 && hand.length > 8) {
+      if (Math.random() < 0.2) {
         return null
       }
     }
     
     // 如果要出炸弹但手牌还很多且地主不危险，更可能不出
-    const bestResult = analyzeHand(scored[0].cards)
     if ((bestResult.type === 'bomb' || bestResult.type === 'rocket') && hand.length > 10 && !landlordDanger) {
-      if (Math.random() < 0.6) {
+      if (Math.random() < 0.5) {
         return null
       }
     }

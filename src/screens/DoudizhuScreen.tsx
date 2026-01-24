@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import type { Card, PlayResult } from '../utils/doudizhu'
 import {
   dealCards,
@@ -352,6 +352,7 @@ interface OnlineFriend {
 
 export default function DoudizhuScreen() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { userPersonas, walletBalance, updateWalletBalance, addWalletBill, characters, addMessage } = useWeChat()
   
   const defaultPersona = userPersonas[0]
@@ -367,6 +368,23 @@ export default function DoudizhuScreen() {
   const [gameMode, setGameMode] = useState<GameMode>('solo')
   const [showFriendSelect, setShowFriendSelect] = useState(false)
   const [selectedFriends, setSelectedFriends] = useState<OnlineFriend[]>([])
+  
+  // 从聊天界面跳转过来时自动开始联机模式
+  useEffect(() => {
+    const state = location.state as { mode?: string; friends?: OnlineFriend[] } | null
+    if (state?.mode === 'online' && state?.friends?.length) {
+      setGameMode('online')
+      setSelectedFriends(state.friends)
+      // 自动开始游戏
+      if (stats.coins >= 1000) {
+        playSound('start')
+        setMatchProgress(0)
+        setGameHistory([])
+        setBombRecords([])
+        setPhase('matching')
+      }
+    }
+  }, [location.state])
   
   const [phase, setPhase] = useState<GamePhase>('idle')
   const [matchProgress, setMatchProgress] = useState(0)
@@ -736,14 +754,10 @@ export default function DoudizhuScreen() {
     // 记录游戏过程（简单记录）
     setGameHistory(prev => [...prev, { player, cardCount: cards.length, isPass: cards.length === 0, isBomb: isBombPlay }])
     
-    // 更新出牌记录
-    setPlayedCards(prev => {
-      const newMap = new Map(prev)
-      // 如果轮到玩家(0)出牌，先清除玩家自己上一轮的牌
-      if (player === 0) {
-        newMap.delete(0)
-      }
-      // 设置新出的牌（空数组表示"不出"）
+    // 更新出牌记录 - 每次出牌前先清除所有人上一轮的牌，只保留当前出牌者的牌
+    setPlayedCards(() => {
+      const newMap = new Map<Player, Card[]>()
+      // 只设置当前出牌者的牌（空数组表示"不出"）
       newMap.set(player, cards)
       return newMap
     })
@@ -1503,6 +1517,13 @@ export default function DoudizhuScreen() {
             <h2 className="text-white text-xl font-bold">{gameResult.isWin ? '恭喜你赢了！' : '很遗憾，你输了'}</h2>
           </div>
           
+          {/* 联机模式提示 */}
+          {gameMode === 'online' && selectedFriends.length > 0 && (
+            <div className="bg-green-500/20 border border-green-400/50 rounded-lg px-3 py-1.5 flex items-center gap-2">
+              <span className="text-green-300 text-xs">✅ 战绩已自动同步给 {selectedFriends.map(f => f.name).join('、')}</span>
+            </div>
+          )}
+          
           <div className="bg-black/50 rounded-xl p-3 w-full max-w-xs border border-white/10">
             <div className="text-white/70 text-xs text-center mb-2">
               底分{gameResult.baseScore} × 叫分{gameResult.bidScore} × {gameResult.multiplier}倍
@@ -1517,13 +1538,13 @@ export default function DoudizhuScreen() {
                 </span>
               </div>
               <div className="flex justify-between items-center bg-white/5 rounded px-2 py-1.5">
-                <span className="text-white/70 text-sm">{gameResult.landlordPlayer === 1 ? '👑电脑A' : '电脑A'}</span>
+                <span className="text-white/70 text-sm">{gameResult.landlordPlayer === 1 ? `👑${PLAYER_NAMES[1]}` : PLAYER_NAMES[1]}</span>
                 <span className={`font-bold text-sm ${gameResult.playerCoins[1] > 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {gameResult.playerCoins[1] > 0 ? '+' : ''}{gameResult.playerCoins[1]}
                 </span>
               </div>
               <div className="flex justify-between items-center bg-white/5 rounded px-2 py-1.5">
-                <span className="text-white/70 text-sm">{gameResult.landlordPlayer === 2 ? '👑电脑B' : '电脑B'}</span>
+                <span className="text-white/70 text-sm">{gameResult.landlordPlayer === 2 ? `👑${PLAYER_NAMES[2]}` : PLAYER_NAMES[2]}</span>
                 <span className={`font-bold text-sm ${gameResult.playerCoins[2] > 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {gameResult.playerCoins[2] > 0 ? '+' : ''}{gameResult.playerCoins[2]}
                 </span>
