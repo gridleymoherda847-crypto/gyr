@@ -9,12 +9,11 @@ export type AppMeta = {
 // 主屏幕应用 - 先用可爱emoji，你放好图片后会自动替换
 export const GRID_APPS: AppMeta[] = [
   { id: 'wechat', name: '微信', route: '/apps/wechat', icon: '/icons/wechat.png', gradient: 'from-pink-100 to-pink-200' },
-  { id: 'meituan', name: '美团', route: '/apps/meituan', icon: '/icons/meituan.png', gradient: 'from-pink-100 to-pink-200' },
+  { id: 'doudizhu', name: '斗地主', route: '/apps/doudizhu', icon: '/icons/doudizhu.png', gradient: 'from-pink-100 to-pink-200' },
   // 收藏日记（替换淘宝；默认图标在 /public/icons/diary.svg，可在设置里替换）
   { id: 'diaryVault', name: '日记', route: '/apps/diary-vault', icon: '/icons/diary.svg', gradient: 'from-pink-100 to-pink-200' },
   { id: 'weibo', name: '微博', route: '/apps/weibo', icon: '/icons/weibo.png', gradient: 'from-pink-100 to-pink-200' },
   { id: 'music', name: '音乐', route: '/apps/music', icon: '/icons/music.png', gradient: 'from-pink-100 to-pink-200' },
-  { id: 'doudizhu', name: '斗地主', route: '/apps/doudizhu', icon: '/icons/doudizhu.svg', gradient: 'from-green-100 to-emerald-200' },
 ]
 
 // Dock 栏应用
