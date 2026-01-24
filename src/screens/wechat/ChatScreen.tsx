@@ -2631,6 +2631,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         <div
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto px-3 py-4"
+          style={{ WebkitOverflowScrolling: 'touch' }}
           onScroll={() => {
             const el = messagesContainerRef.current
             if (!el) return
@@ -2648,7 +2649,12 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               // 系统消息特殊渲染
               if (msg.type === 'system') {
                 return (
-                  <div key={msg.id} className="flex justify-center mb-3">
+                  <div
+                    key={msg.id}
+                    className="flex justify-center mb-3"
+                    // 性能优化：让浏览器跳过离屏渲染（不改变功能/滚动行为）
+                    style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 64px' }}
+                  >
                     <div className="px-3 py-1.5 rounded-lg bg-white/90 shadow-sm text-xs text-gray-500">
                       {msg.content}
                     </div>
@@ -2666,7 +2672,11 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               const isSelected = selectedMsgIds.has(msg.id)
               
               return (
-                <div key={msg.id}>
+                <div
+                  key={msg.id}
+                  // 性能优化：聊天长列表在移动端非常吃力；content-visibility 可显著减少重绘/布局开销
+                  style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 140px' }}
+                >
                   <div className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
                     {/* 编辑模式：可勾选双方消息 */}
                     {editMode && (
@@ -2732,7 +2742,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                         msg.messageLanguage &&
                         msg.messageLanguage !== 'zh' &&
                         msg.chatTranslationEnabledAtSend && (
-                        <div className="mt-2 w-fit max-w-full px-2.5 py-2 rounded-xl bg-white/85 backdrop-blur border border-white/70 shadow-sm">
+                        <div className="mt-2 w-fit max-w-full px-2.5 py-2 rounded-xl bg-white/90 md:bg-white/85 md:backdrop-blur border border-white/70 shadow-sm">
                           <div className="text-[10px] text-gray-500 mb-1">翻译</div>
                           <div className="text-[12px] text-gray-800 whitespace-pre-wrap break-words">
                             {msg.translationStatus === 'error'
@@ -2745,7 +2755,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                       )}
                       {/* 每条消息显示时间（小号字体） */}
                       <div className="mt-2">
-                        <span className="inline-block px-2 py-[2px] rounded-md bg-white/70 backdrop-blur border border-white/60 text-[10px] text-gray-600">
+                        <span className="inline-block px-2 py-[2px] rounded-md bg-white/85 md:bg-white/70 md:backdrop-blur border border-white/60 text-[10px] text-gray-600">
                           {formatTime(msg.timestamp)}
                         </span>
                       </div>
@@ -2806,7 +2816,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         </div>
 
         {/* 输入框 */}
-        <div className="px-3 py-2 bg-white/80 backdrop-blur-sm border-t border-gray-200/40">
+        {/* 移动端禁用 blur（滚动+输入会非常卡），桌面端保留 */}
+        <div className="px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40">
           <div className="flex items-center gap-2">
             {/* 加号按钮 */}
             <button
@@ -2828,7 +2839,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              className="flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/80 backdrop-blur outline-none text-gray-800 text-sm"
+              className="flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/90 md:bg-white/80 md:backdrop-blur outline-none text-gray-800 text-sm"
             />
             
             {/* 手动：触发回复按钮（随时可按，可连续点继续生成） */}
@@ -3199,7 +3210,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       {/* 日记本（偷看） */}
       {diaryOpen && (
         <div className="absolute inset-0 z-50 flex flex-col bg-[#F7F4EE]">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 bg-white/70 backdrop-blur">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 bg-white/85 md:bg-white/70 md:backdrop-blur">
             <button type="button" onClick={() => setDiaryOpen(false)} className="text-gray-700 text-sm">返回</button>
             <div className="text-[16px] font-bold text-[#111]">偷看日记</div>
             <div className="flex items-center gap-2">
@@ -3297,7 +3308,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       {openDiaryShare && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/35" onClick={() => setOpenDiaryShare(null)} role="presentation" />
-          <div className="relative w-full max-w-[340px] rounded-[22px] border border-white/35 bg-white/90 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+          <div className="relative w-full max-w-[340px] rounded-[22px] border border-white/35 bg-white/95 md:bg-white/90 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] md:backdrop-blur-xl">
             <div className="text-[15px] font-semibold text-[#111] text-center">日记</div>
             <div className="mt-2 text-[12px] text-gray-600 text-center">
               {(openDiaryShare.diaryAuthorName || '（未知）')}{openDiaryShare.diaryAt ? ` · ${new Date(openDiaryShare.diaryAt).toLocaleString('zh-CN', { hour12: false })}` : ''}
