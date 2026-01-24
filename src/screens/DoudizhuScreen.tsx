@@ -520,6 +520,22 @@ export default function DoudizhuScreen() {
   useEffect(() => {
     stateRef.current = { phase, hands, currentBidder, currentPlayer, bidScore, bidRound, lastPlay, lastPlayPlayer, passCount, landlord, dizhuCards, aiThinking, bombCount, baseScore, difficulty: gameDifficulty }
   }, [phase, hands, currentBidder, currentPlayer, bidScore, bidRound, lastPlay, lastPlayPlayer, passCount, landlord, dizhuCards, aiThinking, bombCount, baseScore])
+
+  // 桌面牌显示规则（关键）：
+  // - 轮到谁出牌：立刻清空“他自己上一轮出的牌”（避免影响判断）
+  // - 其他玩家上一轮出的牌保留，直到他们自己下一次出牌才被替换/清空
+  // - “不出”需要保留到该玩家下一次真正出牌（空数组不清）
+  useEffect(() => {
+    if (phase !== 'playing') return
+    setPlayedCards(prev => {
+      const current = prev.get(currentPlayer)
+      if (!current) return prev
+      if (current.length === 0) return prev // “不出”保留到下一次出牌
+      const next = new Map(prev)
+      next.delete(currentPlayer)
+      return next
+    })
+  }, [phase, currentPlayer])
   
   const handleRecharge = () => {
     if (walletBalance >= rechargeAmount) {
