@@ -5,7 +5,7 @@ import { useWeChat } from '../context/WeChatContext'
 import AppHeader from '../components/AppHeader'
 import PageContainer from '../components/PageContainer'
 import { SettingsGroup, SettingsItem } from '../components/SettingsGroup'
-import { kvGet, kvKeys, kvSet } from '../storage/kv'
+import { importLegacyBackupJsonText } from '../storage/legacyBackupImport'
 
 export default function SettingsScreen() {
   const navigate = useNavigate()
@@ -14,14 +14,13 @@ export default function SettingsScreen() {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [showClearedTip, setShowClearedTip] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
-  const [showExportSuccess, setShowExportSuccess] = useState(false)
   const [showImportConfirm, setShowImportConfirm] = useState(false)
   const [showImportSuccess, setShowImportSuccess] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [importSummary, setImportSummary] = useState<{ written: number; skipped: number } | null>(null)
+  const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [showExportNameDialog, setShowExportNameDialog] = useState(false)
-  const [exportFileName, setExportFileName] = useState('')
 
   // 监听全屏状态变化
   useEffect(() => {
@@ -56,136 +55,28 @@ export default function SettingsScreen() {
     setShowClearConfirm(true)
   }
 
-  // 打开导出命名弹窗
-  const openExportDialog = () => {
-    setExportFileName(`LittlePhone_backup_${new Date().toISOString().slice(0, 10)}`)
-    setShowExportNameDialog(true)
-  }
-
-  // 导出所有数据
-  const handleExportData = () => {
-    try {
-      const doExport = async () => {
-        const allData: Record<string, string> = {}
-
-        // IndexedDB(kv) 数据
-        const keys = await kvKeys()
-        for (const key of keys) {
-          const v = await kvGet(key)
-          if (typeof v === 'string') allData[key] = v
-        }
-
-        // 仍保留 localStorage（少量 UI 状态等）
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i)
-          if (!key) continue
-          if (allData[key] == null) {
-            allData[key] = localStorage.getItem(key) || ''
-          }
-        }
-      
-        const exportData = {
-          version: '2.0.0',
-          exportTime: new Date().toISOString(),
-          data: allData
-        }
-        
-        const fileName = exportFileName.trim() || `LittlePhone_backup_${new Date().toISOString().slice(0, 10)}`
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${fileName}.json`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-        
-        setShowExportNameDialog(false)
-        setShowExportSuccess(true)
-      }
-      void doExport()
-    } catch (error) {
-      console.error('导出失败:', error)
-    }
-  }
-
-  // 导入数据
+  // 全新导入（旧备份 -> 迁移 -> 写入 IndexedDB）
   const handleImportData = (file: File) => {
+    setImportError(null)
+    setImportSummary(null)
+    setImporting(true)
     const reader = new FileReader()
-    reader.onload = (e) => {
-      const doImport = async () => {
-        ;(window as any).__LP_IMPORTING__ = true
-        // 先校验文件内容，确认没问题再清空（避免“导入失败=数据全没了”）
+    reader.onload = async (e) => {
+      try {
         const content = String(e.target?.result ?? '')
-        if (!content.trim()) {
-          setImportError('文件为空或读取失败')
-          return
-        }
-
-        let importData: any
-        try {
-          importData = JSON.parse(content)
-        } catch {
-          setImportError('文件解析失败，请确保是有效的备份文件')
-          return
-        }
-
-        if (!importData?.data || typeof importData.data !== 'object') {
-          setImportError('文件格式不正确')
-          return
-        }
-
-        // 兼容旧备份：value 可能是 string / object / array / number / boolean
-        // 我们统一落成“字符串”，存入 IndexedDB(kv) 与 localStorage
-        const entries = Object.entries(importData.data)
-          .filter(([, v]) => v !== undefined && v !== null)
-          .map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)] as [string, string])
-
-        if (entries.length === 0) {
-          setImportError('备份文件里没有可导入的数据')
-          return
-        }
-
-        // ⚠️安全策略：不再先清空（避免导入失败把现有数据也清掉）
-        // 只覆盖导入文件内包含的 key；未包含的 key 会保留。
-
-        // 分批写入 IndexedDB（更快，也避免单条 await 太慢导致“像没反应”）
-        const CHUNK = 30
-        for (let i = 0; i < entries.length; i += CHUNK) {
-          const chunk = entries.slice(i, i + CHUNK)
-          await Promise.all(chunk.map(async ([key, value]) => {
-            // localStorage: 仍保留少量 UI 状态兼容；失败也不阻断
-            try { localStorage.setItem(key, value) } catch {}
-            // IndexedDB(kv): 关键存储
-            await kvSet(key, value)
-          }))
-        }
-
-        // 校验：至少应能读回关键数据（否则就是写入失败/被覆盖）
-        const hasWeChat = !!(await kvGet('wechat_characters'))
-        const hasOS = !!(await kvGet('os_llm_config')) || !!(await kvGet('os_current_font_id')) || !!(await kvGet('os_font_color_id'))
-        if (!hasWeChat && !hasOS) {
-          setImportError('导入失败：写入存储未生效（请重试；若仍失败请换浏览器）')
-          return
-        }
-
+        const res = await importLegacyBackupJsonText(content)
+        setImportSummary({ written: res.written, skipped: res.skipped.length })
         setShowImportSuccess(true)
-        // 立即重启，确保 Context 重新 hydration 到新数据（用户数据安全第一）
-        setTimeout(() => window.location.reload(), 300)
+      } catch (err: any) {
+        console.error('导入失败:', err)
+        setImportError(String(err?.message || '导入失败：请确认备份文件正确，并重试'))
+      } finally {
+        setImporting(false)
       }
-
-      doImport().catch((error: any) => {
-        console.error('导入失败:', error)
-        ;(window as any).__LP_IMPORTING__ = false
-        const name = String(error?.name || '')
-        const msg = String(error?.message || '')
-        if (name.includes('Quota') || msg.toLowerCase().includes('quota')) {
-          setImportError('导入失败：存储空间不足（请清理浏览器存储或换个浏览器）')
-        } else {
-          setImportError('导入失败：请确认备份文件正确，并重试')
-        }
-      })
+    }
+    reader.onerror = () => {
+      setImporting(false)
+      setImportError('文件读取失败')
     }
     reader.readAsText(file)
   }
@@ -237,12 +128,7 @@ export default function SettingsScreen() {
 
           <SettingsGroup title="数据管理">
             <SettingsItem
-              label="导出数据"
-              onClick={openExportDialog}
-              showArrow={false}
-            />
-            <SettingsItem
-              label="导入数据"
+              label="导入旧备份（迁移）"
               onClick={() => fileInputRef.current?.click()}
               showArrow={false}
             />
@@ -275,54 +161,6 @@ export default function SettingsScreen() {
             <SettingsItem label="LittlePhone" value="v1.0.0" showArrow={false} />
           </SettingsGroup>
         </div>
-
-        {/* 导出文件命名弹窗 */}
-        {showExportNameDialog && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
-            <div
-              className="absolute inset-0 bg-black/35"
-              onClick={() => setShowExportNameDialog(false)}
-              role="presentation"
-            />
-            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl">
-              <div className="text-center">
-                <div className="text-[15px] font-semibold text-[#111]">导出数据</div>
-                <div className="mt-2 text-[13px] text-[#666]">
-                  请输入备份文件名称
-                </div>
-              </div>
-              <div className="mt-3">
-                <input
-                  type="text"
-                  value={exportFileName}
-                  onChange={(e) => setExportFileName(e.target.value)}
-                  placeholder="请输入文件名"
-                  className="w-full rounded-lg border border-black/10 bg-white/60 px-3 py-2 text-[14px] text-[#333] outline-none focus:border-pink-400"
-                />
-                <div className="mt-1 text-[11px] text-[#999]">
-                  文件将保存为: {exportFileName.trim() || 'LittlePhone_backup'}.json
-                </div>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowExportNameDialog(false)}
-                  className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportData}
-                  className="flex-1 rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
-                  style={{ background: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)' }}
-                >
-                  导出
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* 清空数据确认弹窗 */}
         {showClearConfirm && (
@@ -400,31 +238,14 @@ export default function SettingsScreen() {
           </div>
         )}
 
-        {/* 导出成功提示 */}
-        {showExportSuccess && (
+        {/* 导入中提示（防止用户重复点） */}
+        {importing && (
           <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
-            <div
-              className="absolute inset-0 bg-black/35"
-              onClick={() => setShowExportSuccess(false)}
-              role="presentation"
-            />
-            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
+            <div className="absolute inset-0 bg-black/35" role="presentation" />
+            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/85 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
               <div className="text-center">
-                <div className="text-4xl mb-2">✅</div>
-                <div className="text-[15px] font-semibold text-[#111]">导出成功</div>
-                <div className="mt-2 text-[13px] text-[#333]">
-                  数据已保存到下载文件夹，可以导入到其他设备的小手机中。
-                </div>
-              </div>
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowExportSuccess(false)}
-                  className="w-full rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
-                  style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
-                >
-                  好的
-                </button>
+                <div className="text-[15px] font-semibold text-[#111]">正在导入…</div>
+                <div className="mt-2 text-[13px] text-[#666]">请不要退出页面</div>
               </div>
             </div>
           </div>
@@ -467,7 +288,7 @@ export default function SettingsScreen() {
           </div>
         )}
 
-        {/* 导入成功提示 */}
+        {/* 导入成功提示（导入完成后由用户手动点击重启） */}
         {showImportSuccess && (
           <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
             <div
@@ -480,8 +301,13 @@ export default function SettingsScreen() {
                 <div className="text-4xl mb-2">✅</div>
                 <div className="text-[15px] font-semibold text-[#111]">导入成功</div>
                 <div className="mt-2 text-[13px] text-[#333]">
-                  数据已导入完成，需要重启小手机才能生效。
+                  旧备份已迁移导入完成，需要重启小手机才能生效。
                 </div>
+                {importSummary && (
+                  <div className="mt-2 text-[12px] text-[#666]">
+                    写入 {importSummary.written} 项，跳过 {importSummary.skipped} 项（已删除/不需要的功能会跳过）
+                  </div>
+                )}
               </div>
               <div className="mt-4 flex gap-2">
                 <button
