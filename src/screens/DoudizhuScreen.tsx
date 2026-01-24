@@ -423,7 +423,7 @@ export default function DoudizhuScreen() {
     audio.preload = 'auto'
     
     // 设置音频源 - 夸克等浏览器可能对ogg支持不好，但我们只有ogg文件
-    audio.src = '/music/文武贝 - QQ斗地主背景音乐_H.ogg'
+    audio.src = '/music/斗地主.mp3'
     bgmRef.current = audio
     
     let hasPlayed = false
