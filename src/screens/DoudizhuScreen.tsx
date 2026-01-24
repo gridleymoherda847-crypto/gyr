@@ -754,10 +754,16 @@ export default function DoudizhuScreen() {
     // 记录游戏过程（简单记录）
     setGameHistory(prev => [...prev, { player, cardCount: cards.length, isPass: cards.length === 0, isBomb: isBombPlay }])
     
-    // 更新出牌记录 - 每次出牌前先清除所有人上一轮的牌，只保留当前出牌者的牌
-    setPlayedCards(() => {
-      const newMap = new Map<Player, Card[]>()
-      // 只设置当前出牌者的牌（空数组表示"不出"）
+    // 更新出牌记录
+    // 规则：轮到玩家(0)出牌时，清除玩家自己上一轮的牌，但保留对手的牌（这样玩家能看到对手出了什么）
+    // 对手出牌时，正常累加显示
+    setPlayedCards(prev => {
+      const newMap = new Map(prev)
+      // 如果是玩家出牌，先清除玩家自己上一轮的牌
+      if (player === 0) {
+        newMap.delete(0)
+      }
+      // 设置当前出牌者的牌（空数组表示"不出"）
       newMap.set(player, cards)
       return newMap
     })
