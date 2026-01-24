@@ -296,6 +296,7 @@ type WeChatContextValue = {
   deleteMessagesByIds: (ids: string[]) => void
   deleteMessagesAfter: (characterId: string, messageId: string) => void
   getMessagesByCharacter: (characterId: string) => WeChatMessage[]
+  getMessagesPage: (characterId: string, opts?: { limit?: number; beforeTimestamp?: number }) => WeChatMessage[]
   getLastMessage: (characterId: string) => WeChatMessage | undefined
   clearMessages: (characterId: string) => void
   
@@ -678,6 +679,29 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     return messagesByCharacter[characterId] || []
   }, [messagesByCharacter])
 
+  const getMessagesPage = useCallback(
+    (characterId: string, opts?: { limit?: number; beforeTimestamp?: number }) => {
+      const list = messagesByCharacter[characterId] || []
+      const limit = Math.max(1, Math.min(200, opts?.limit ?? 15))
+      const before = opts?.beforeTimestamp
+      if (before == null) {
+        return list.slice(Math.max(0, list.length - limit))
+      }
+      // 找到严格小于 before 的最后一个位置
+      let hi = list.length
+      let lo = 0
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (list[mid].timestamp < before) lo = mid + 1
+        else hi = mid
+      }
+      const end = Math.max(0, lo) // lo 是第一个 >= before 的位置
+      const start = Math.max(0, end - limit)
+      return list.slice(start, end)
+    },
+    [messagesByCharacter]
+  )
+
   const getLastMessage = useCallback((characterId: string) => {
     return lastMessageByCharacter[characterId]
   }, [lastMessageByCharacter])
@@ -991,6 +1015,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     addCharacter, updateCharacter, deleteCharacter, getCharacter,
     togglePinned, toggleSpecialCare, toggleBlocked, hideFromChat, showInChat, setCurrentChatId, setCharacterTyping,
     addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter, getMessagesByCharacter, getLastMessage, clearMessages,
+    getMessagesPage,
     addSticker, removeSticker, getStickersByCharacter, addStickerToCharacter, addStickerToAll,
     addFavoriteDiary, removeFavoriteDiary, isDiaryFavorited,
     addMoment, deleteMoment, likeMoment, addMomentComment,
@@ -1005,7 +1030,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     // 钱包
     walletBalance, walletInitialized, walletBills,
     initializeWallet, addWalletBill, updateWalletBalance,
-  }), [characters, messages, stickers, favoriteDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills])
+  }), [characters, messages, stickers, favoriteDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage])
 
   return <WeChatContext.Provider value={value}>{children}</WeChatContext.Provider>
 }

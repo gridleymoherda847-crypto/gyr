@@ -11,7 +11,7 @@ export default function ChatScreen() {
   const { fontColor, musicPlaylist, llmConfig, callLLM, playSong } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
-    getCharacter, getMessagesByCharacter, addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter,
+    getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter,
     getStickersByCharacter, deleteCharacter, clearMessages,
     addTransfer, getPeriodRecords, addPeriodRecord,
     removePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether,
@@ -22,6 +22,7 @@ export default function ChatScreen() {
   } = useWeChat()
   
   const character = getCharacter(characterId || '')
+  // 全量消息只用于“重生成/回溯/记忆构建”等功能，不用于首屏渲染
   const messages = getMessagesByCharacter(characterId || '')
   // 性能：避免打字时反复 filter 全量贴纸
   const stickers = useMemo(() => getStickersByCharacter(characterId || ''), [characterId, getStickersByCharacter])
@@ -225,13 +226,24 @@ export default function ChatScreen() {
     }
   }, [messages])
 
-  // 进入/切换聊天：初始化渲染窗口到最近 PAGE_SIZE 条
+  // 进入/切换聊天：从数据源头只取最近 PAGE_SIZE 条渲染
   useEffect(() => {
+    const cid = characterId || ''
+    if (!cid) return
+    const page = getMessagesPage(cid, { limit: PAGE_SIZE })
+    // 这里的 startIndex 只用于“全量 messages 的窗口”，先固定到尾部
     const total = messages.length
     const nextStart = Math.max(0, total - PAGE_SIZE)
     setStartIndex(nextStart)
     tailModeRef.current = true
-  }, [characterId, messages.length])
+    // 用 page 触发可视窗口（兼容：如果消息很少，page 会更短）
+    // startIndex 仍可用来上拉时向前扩大窗口
+    if (page.length > 0) {
+      const firstId = page[0].id
+      const idx = messages.findIndex(m => m.id === firstId)
+      if (idx >= 0) setStartIndex(idx)
+    }
+  }, [characterId, getMessagesPage, messages])
 
   // 只渲染窗口内消息（数据源仍保留全量，功能不受影响）
   const visibleMessages = useMemo(() => {
