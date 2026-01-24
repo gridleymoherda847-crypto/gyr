@@ -416,18 +416,36 @@ export default function DoudizhuScreen() {
   
   // 背景音乐控制：打开斗地主App就开始播放，退出时停止
   useEffect(() => {
-    // 组件挂载时立即播放
-    bgmRef.current = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
-    bgmRef.current.loop = true
-    bgmRef.current.volume = 0.3
-    bgmRef.current.play().catch(() => {})
+    // 创建音频
+    const audio = new Audio('/music/文武贝 - QQ斗地主背景音乐_H.ogg')
+    audio.loop = true
+    audio.volume = 0.3
+    bgmRef.current = audio
+    
+    // 尝试立即播放
+    const tryPlay = () => {
+      audio.play().catch(() => {})
+    }
+    
+    tryPlay()
+    
+    // 如果自动播放失败，监听用户交互后播放
+    const handleInteraction = () => {
+      if (audio.paused) {
+        tryPlay()
+      }
+    }
+    
+    document.addEventListener('click', handleInteraction)
+    document.addEventListener('touchstart', handleInteraction)
     
     // 组件卸载时停止
     return () => {
-      if (bgmRef.current) {
-        bgmRef.current.pause()
-        bgmRef.current = null
-      }
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+      audio.pause()
+      audio.src = ''
+      bgmRef.current = null
     }
   }, [])
   
