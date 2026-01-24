@@ -2,6 +2,7 @@ import { type PropsWithChildren, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useOS } from '../context/OSContext'
 import BottomHomeBar from './BottomHomeBar'
+import VirtualStatusBar from './VirtualStatusBar'
 
 export default function PhoneShell({ children }: PropsWithChildren) {
   const { wallpaper, currentFont, fontColor, isLocked, lockWallpaper, notifications, markNotificationRead } = useOS()
@@ -46,7 +47,8 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           <div className="relative z-10 h-full w-full">{children}</div>
         ) : (
           <div className="relative z-10 flex h-full flex-col">
-            {/* 已移除模拟状态栏：使用手机系统自带状态栏，提升代入感 */}
+            {/* 虚拟状态栏 */}
+            <VirtualStatusBar />
             <div className="flex-1 overflow-hidden">{children}</div>
             {!isFullScreenApp && <BottomHomeBar />}
           </div>
@@ -54,7 +56,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
 
         {/* 顶部通知浮窗 */}
         {!isLocked && unreadNotifications.length > 0 && (
-          <div className="absolute top-12 left-3 right-3 z-40 space-y-2 pointer-events-none">
+          <div className="absolute top-10 left-3 right-3 z-40 space-y-2 pointer-events-none">
             {unreadNotifications.map((n) => (
               <div key={n.id} className="flex items-center gap-2 rounded-2xl bg-white/80 backdrop-blur px-3 py-2 shadow-sm">
                 <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center flex-shrink-0">
@@ -106,7 +108,8 @@ export default function PhoneShell({ children }: PropsWithChildren) {
               <div className="relative z-10 h-full w-full">{children}</div>
             ) : (
               <div className="relative z-10 flex h-full flex-col">
-                {/* 已移除模拟状态栏：使用手机系统自带状态栏，提升代入感 */}
+                {/* 虚拟状态栏 */}
+                <VirtualStatusBar />
                 <div className="flex-1 overflow-hidden">{children}</div>
                 {!isFullScreenApp && <BottomHomeBar />}
               </div>
@@ -114,7 +117,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
 
             {/* 顶部通知浮窗 */}
             {!isLocked && unreadNotifications.length > 0 && (
-              <div className="absolute top-14 left-4 right-4 z-40 space-y-2 pointer-events-none">
+              <div className="absolute top-12 left-4 right-4 z-40 space-y-2 pointer-events-none">
                 {unreadNotifications.map((n) => (
                   <div key={n.id} className="flex items-center gap-2 rounded-2xl bg-white/80 backdrop-blur px-3 py-2 shadow-sm">
                     <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center flex-shrink-0">
