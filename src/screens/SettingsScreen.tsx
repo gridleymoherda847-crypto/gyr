@@ -115,6 +115,7 @@ export default function SettingsScreen() {
     const reader = new FileReader()
     reader.onload = (e) => {
       const doImport = async () => {
+        ;(window as any).__LP_IMPORTING__ = true
         // 先校验文件内容，确认没问题再清空（避免“导入失败=数据全没了”）
         const content = String(e.target?.result ?? '')
         if (!content.trim()) {
@@ -157,11 +158,22 @@ export default function SettingsScreen() {
           }))
         }
 
+        // 校验：至少应能读回关键数据（否则就是写入失败/被覆盖）
+        const hasWeChat = !!(await kvGet('wechat_characters'))
+        const hasOS = !!(await kvGet('os_llm_config')) || !!(await kvGet('os_current_font_id')) || !!(await kvGet('os_font_color_id'))
+        if (!hasWeChat && !hasOS) {
+          setImportError('导入失败：写入存储未生效（请重试；若仍失败请换浏览器）')
+          return
+        }
+
         setShowImportSuccess(true)
+        // 立即重启，确保 Context 重新 hydration 到新数据（用户数据安全第一）
+        setTimeout(() => window.location.reload(), 300)
       }
 
       doImport().catch((error: any) => {
         console.error('导入失败:', error)
+        ;(window as any).__LP_IMPORTING__ = false
         const name = String(error?.name || '')
         const msg = String(error?.message || '')
         if (name.includes('Quota') || msg.toLowerCase().includes('quota')) {

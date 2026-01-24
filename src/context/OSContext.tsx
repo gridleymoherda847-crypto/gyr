@@ -343,16 +343,18 @@ export function OSProvider({ children }: PropsWithChildren) {
   }, [])
 
   // 异步持久化（IndexedDB）
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.llmConfig, llmConfig) }, [llmConfig])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.miCoinBalance, miCoinBalance) }, [miCoinBalance])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id])
+  const isImporting = () => !!(window as any).__LP_IMPORTING__
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.llmConfig, llmConfig) }, [llmConfig])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.miCoinBalance, miCoinBalance) }, [miCoinBalance])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id])
 
   const setCurrentFont = (font: FontOption) => setCurrentFontState(font)
   const setFontColor = (color: ColorOption) => setFontColorState(color)
   
   // 持久化：音乐列表（IndexedDB）
   useEffect(() => {
+    if (isImporting()) return
     void kvSetJSON(MUSIC_STORAGE_KEY, musicPlaylist)
     void kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
   }, [musicPlaylist])
@@ -535,6 +537,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   const setLocationSettings = (settings: Partial<LocationSettings>) => {
     setLocationSettingsState(prev => {
       const next = { ...prev, ...settings }
+      if (!!(window as any).__LP_IMPORTING__) return next
       void kvSetJSON(LOCATION_STORAGE_KEY, next)
       return next
     })

@@ -568,21 +568,22 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   }, [])
 
   // 异步保存（IndexedDB）
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.characters, characters) }, [characters])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.messages, messages) }, [messages])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.stickers, stickers) }, [stickers])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.favoriteDiaries, favoriteDiaries) }, [favoriteDiaries])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.stickerCategories, stickerCategories) }, [stickerCategories])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.moments, moments) }, [moments])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.userSettings, userSettings) }, [userSettings])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.userPersonas, userPersonas) }, [userPersonas])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.transfers, transfers) }, [transfers])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.anniversaries, anniversaries) }, [anniversaries])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.periods, periods) }, [periods])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.listenTogether, listenTogether) }, [listenTogether])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.walletBalance, walletBalance) }, [walletBalance])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.walletInitialized, walletInitialized) }, [walletInitialized])
-  useEffect(() => { void kvSetJSON(STORAGE_KEYS.walletBills, walletBills) }, [walletBills])
+  const isImporting = () => !!(window as any).__LP_IMPORTING__
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.characters, characters) }, [characters])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.messages, messages) }, [messages])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.stickers, stickers) }, [stickers])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.favoriteDiaries, favoriteDiaries) }, [favoriteDiaries])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.stickerCategories, stickerCategories) }, [stickerCategories])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.moments, moments) }, [moments])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.userSettings, userSettings) }, [userSettings])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.userPersonas, userPersonas) }, [userPersonas])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.transfers, transfers) }, [transfers])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.anniversaries, anniversaries) }, [anniversaries])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.periods, periods) }, [periods])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.listenTogether, listenTogether) }, [listenTogether])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.walletBalance, walletBalance) }, [walletBalance])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.walletInitialized, walletInitialized) }, [walletInitialized])
+  useEffect(() => { if (isImporting()) return; void kvSetJSON(STORAGE_KEYS.walletBills, walletBills) }, [walletBills])
 
   // 预计算：按角色分组的消息（避免在列表/聊天界面反复 filter+sort 导致手机端卡顿）
   const messagesByCharacter = useMemo(() => {
