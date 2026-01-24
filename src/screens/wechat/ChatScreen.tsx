@@ -60,6 +60,13 @@ export default function ChatScreen() {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
   const forceScrollRef = useRef(false)
+  // 分页渲染窗口：只渲染最近 N 条，上拉再加载更早的
+  const PAGE_SIZE = 15
+  const [startIndex, setStartIndex] = useState(0)
+  const tailModeRef = useRef(true) // 是否处在“看最新消息”模式
+  const loadingMoreRef = useRef(false)
+  const prevScrollHeightRef = useRef<number | null>(null)
+  const prevScrollTopRef = useRef<number | null>(null)
   const navLockRef = useRef(0)
   const [showMenu, setShowMenu] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -217,6 +224,35 @@ export default function ChatScreen() {
       }
     }
   }, [messages])
+
+  // 进入/切换聊天：初始化渲染窗口到最近 PAGE_SIZE 条
+  useEffect(() => {
+    const total = messages.length
+    const nextStart = Math.max(0, total - PAGE_SIZE)
+    setStartIndex(nextStart)
+    tailModeRef.current = true
+  }, [characterId, messages.length])
+
+  // 只渲染窗口内消息（数据源仍保留全量，功能不受影响）
+  const visibleMessages = useMemo(() => {
+    return messages.slice(startIndex)
+  }, [messages, startIndex])
+
+  // 上拉加载更多：保持滚动位置不跳
+  useEffect(() => {
+    if (!loadingMoreRef.current) return
+    const el = messagesContainerRef.current
+    if (!el) return
+    const prevH = prevScrollHeightRef.current
+    const prevTop = prevScrollTopRef.current
+    if (prevH == null || prevTop == null) return
+    const newH = el.scrollHeight
+    // 让内容“往下推”的高度抵消掉，保持用户看到的内容不变
+    el.scrollTop = newH - prevH + prevTop
+    loadingMoreRef.current = false
+    prevScrollHeightRef.current = null
+    prevScrollTopRef.current = null
+  }, [visibleMessages.length])
 
   // 进入聊天时设置当前聊天ID（清除未读），离开时清空
   useEffect(() => {
@@ -2558,7 +2594,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
   const renderedMessageItems = useMemo(() => {
     if (!character?.id) return null
-    return messages.map((msg) => {
+    return visibleMessages.map((msg) => {
       // 系统消息特殊渲染
       if (msg.type === 'system') {
         return (
@@ -2694,7 +2730,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       )
     })
   }, [
-    messages,
+    visibleMessages,
     character?.id,
     character?.avatar,
     character?.name,
@@ -2805,8 +2841,19 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
           onScroll={() => {
             const el = messagesContainerRef.current
             if (!el) return
+            // 触顶：加载更早消息
+            if (el.scrollTop < 80 && startIndex > 0 && !loadingMoreRef.current) {
+              loadingMoreRef.current = true
+              tailModeRef.current = false
+              prevScrollHeightRef.current = el.scrollHeight
+              prevScrollTopRef.current = el.scrollTop
+              setStartIndex((prev) => Math.max(0, prev - PAGE_SIZE))
+            }
             const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
             nearBottomRef.current = distanceToBottom < 140
+            if (nearBottomRef.current) {
+              tailModeRef.current = true
+            }
           }}
         >
           {messages.length === 0 ? (
