@@ -1448,9 +1448,9 @@ export default function DoudizhuScreen() {
           </div>
           
           {/* 顶部：两个对手头像和出牌区 */}
-          <div className="flex justify-between items-start px-4 pt-2">
+          <div className="flex justify-between items-start px-6 pt-2">
             {/* 左侧：玩家B头像 + 出牌 */}
-            <div className="flex items-start gap-2">
+            <div className="flex items-start gap-2 ml-2">
               <PlayerAvatar 
                 avatarUrl={PLAYER_AVATARS[2]} 
                 isActive={phase === 'bidding' ? currentBidder === 2 : currentPlayer === 2} 
@@ -1469,10 +1469,10 @@ export default function DoudizhuScreen() {
             </div>
             
             {/* 中间留空给底牌 */}
-            <div className="w-32" />
+            <div className="w-24" />
             
             {/* 右侧：玩家A出牌 + 头像 */}
-            <div className="flex items-start gap-2">
+            <div className="flex items-start gap-2 mr-2">
               {/* 玩家A出的牌 - 在头像左侧 */}
               {phase === 'playing' && playedCards.has(1) && (
                 <div className="mt-2">
