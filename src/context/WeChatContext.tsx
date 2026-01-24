@@ -8,7 +8,7 @@ import {
   useRef,
   type PropsWithChildren,
 } from 'react'
-import { kvGetJSON, kvSetJSON, kvGet, kvSet } from '../storage/kv'
+import { kvGetJSONDeep, kvSetJSON, kvGet, kvSet } from '../storage/kv'
 
 // ==================== 类型定义 ====================
 
@@ -527,21 +527,21 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         }
       }
 
-      const nextCharacters = await kvGetJSON<WeChatCharacter[]>(STORAGE_KEYS.characters, [])
-      const nextMessages = await kvGetJSON<WeChatMessage[]>(STORAGE_KEYS.messages, [])
-      const nextStickers = await kvGetJSON<StickerConfig[]>(STORAGE_KEYS.stickers, [])
-      const nextFavoriteDiaries = await kvGetJSON<FavoriteDiary[]>(STORAGE_KEYS.favoriteDiaries, [])
-      const nextStickerCategories = await kvGetJSON<StickerCategory[]>(STORAGE_KEYS.stickerCategories, [])
-      const nextMoments = await kvGetJSON<MomentPost[]>(STORAGE_KEYS.moments, [])
-      const nextUserSettings = await kvGetJSON<WeChatUserSettings>(STORAGE_KEYS.userSettings, defaultUserSettings)
-      const nextUserPersonas = await kvGetJSON<UserPersona[]>(STORAGE_KEYS.userPersonas, [])
-      const nextTransfers = await kvGetJSON<TransferRecord[]>(STORAGE_KEYS.transfers, [])
-      const nextAnniversaries = await kvGetJSON<Anniversary[]>(STORAGE_KEYS.anniversaries, [])
-      const nextPeriods = await kvGetJSON<PeriodRecord[]>(STORAGE_KEYS.periods, [])
-      const nextListenTogether = await kvGetJSON<ListenTogetherState>(STORAGE_KEYS.listenTogether, null)
-      const nextWalletBalance = await kvGetJSON<number>(STORAGE_KEYS.walletBalance, 0)
-      const nextWalletInitialized = await kvGetJSON<boolean>(STORAGE_KEYS.walletInitialized, false)
-      const nextWalletBills = await kvGetJSON<WalletBill[]>(STORAGE_KEYS.walletBills, [])
+      const nextCharacters = await kvGetJSONDeep<WeChatCharacter[]>(STORAGE_KEYS.characters, [])
+      const nextMessages = await kvGetJSONDeep<WeChatMessage[]>(STORAGE_KEYS.messages, [])
+      const nextStickers = await kvGetJSONDeep<StickerConfig[]>(STORAGE_KEYS.stickers, [])
+      const nextFavoriteDiaries = await kvGetJSONDeep<FavoriteDiary[]>(STORAGE_KEYS.favoriteDiaries, [])
+      const nextStickerCategories = await kvGetJSONDeep<StickerCategory[]>(STORAGE_KEYS.stickerCategories, [])
+      const nextMoments = await kvGetJSONDeep<MomentPost[]>(STORAGE_KEYS.moments, [])
+      const nextUserSettings = await kvGetJSONDeep<WeChatUserSettings>(STORAGE_KEYS.userSettings, defaultUserSettings)
+      const nextUserPersonas = await kvGetJSONDeep<UserPersona[]>(STORAGE_KEYS.userPersonas, [])
+      const nextTransfers = await kvGetJSONDeep<TransferRecord[]>(STORAGE_KEYS.transfers, [])
+      const nextAnniversaries = await kvGetJSONDeep<Anniversary[]>(STORAGE_KEYS.anniversaries, [])
+      const nextPeriods = await kvGetJSONDeep<PeriodRecord[]>(STORAGE_KEYS.periods, [])
+      const nextListenTogether = await kvGetJSONDeep<ListenTogetherState>(STORAGE_KEYS.listenTogether, null)
+      const nextWalletBalance = await kvGetJSONDeep<number>(STORAGE_KEYS.walletBalance, 0)
+      const nextWalletInitialized = await kvGetJSONDeep<boolean>(STORAGE_KEYS.walletInitialized, false)
+      const nextWalletBills = await kvGetJSONDeep<WalletBill[]>(STORAGE_KEYS.walletBills, [])
 
       if (cancelled) return
       setCharacters(nextCharacters)

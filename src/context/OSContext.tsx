@@ -7,7 +7,7 @@ import {
   useRef,
   type PropsWithChildren,
 } from 'react'
-import { kvGet, kvGetJSON, kvSet, kvSetJSON } from '../storage/kv'
+import { kvGet, kvGetJSONDeep, kvSet, kvSetJSON } from '../storage/kv'
 
 export type UserProfile = { avatar: string; nickname: string; persona: string }
 export type LLMConfig = { apiBaseUrl: string; apiKey: string; selectedModel: string; availableModels: string[] }
@@ -307,23 +307,23 @@ export function OSProvider({ children }: PropsWithChildren) {
         }
       }
 
-      const nextLocked = await kvGetJSON<boolean>(LOCK_STORAGE_KEY, true)
-      const nextLLM = await kvGetJSON<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig)
-      const nextMi = await kvGetJSON<number>(STORAGE_KEYS.miCoinBalance, 100)
-      const nextFontId = await kvGetJSON<string>(STORAGE_KEYS.currentFontId, (FONT_OPTIONS.find(f => f.id === 'elegant')?.id || FONT_OPTIONS[0].id))
-      const nextColorId = await kvGetJSON<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id)
-      const nextLocation = await kvGetJSON<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings)
-      const nextWeather = await kvGetJSON<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather)
+      const nextLocked = await kvGetJSONDeep<boolean>(LOCK_STORAGE_KEY, true)
+      const nextLLM = await kvGetJSONDeep<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig)
+      const nextMi = await kvGetJSONDeep<number>(STORAGE_KEYS.miCoinBalance, 100)
+      const nextFontId = await kvGetJSONDeep<string>(STORAGE_KEYS.currentFontId, (FONT_OPTIONS.find(f => f.id === 'elegant')?.id || FONT_OPTIONS[0].id))
+      const nextColorId = await kvGetJSONDeep<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id)
+      const nextLocation = await kvGetJSONDeep<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings)
+      const nextWeather = await kvGetJSONDeep<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather)
 
       // 音乐：版本控制
-      const savedVersion = await kvGetJSON<string>(MUSIC_VERSION_KEY, '')
+      const savedVersion = await kvGetJSONDeep<string>(MUSIC_VERSION_KEY, '')
       let nextPlaylist = [...DEFAULT_SONGS]
       if (savedVersion !== CURRENT_MUSIC_VERSION) {
         await kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
         await kvSetJSON(MUSIC_STORAGE_KEY, DEFAULT_SONGS)
         nextPlaylist = [...DEFAULT_SONGS]
       } else {
-        nextPlaylist = await kvGetJSON<Song[]>(MUSIC_STORAGE_KEY, [...DEFAULT_SONGS])
+        nextPlaylist = await kvGetJSONDeep<Song[]>(MUSIC_STORAGE_KEY, [...DEFAULT_SONGS])
       }
 
       if (cancelled) return

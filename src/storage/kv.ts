@@ -37,6 +37,34 @@ export async function kvGetJSON<T>(key: string, fallback: T): Promise<T> {
   }
 }
 
+// 兼容旧备份：有些值会被“二次 JSON 序列化”
+// 例如：raw 是 "\"[{...}]\""，第一次 parse 得到字符串 "[{...}]"，需要再 parse 一次才是真正数组/对象
+export async function kvGetJSONDeep<T>(key: string, fallback: T): Promise<T> {
+  try {
+    const raw = await kvGet(key)
+    if (!raw) return fallback
+    let v: any = JSON.parse(raw)
+    if (typeof v === 'string') {
+      const s = v.trim()
+      if (
+        (s.startsWith('{') && s.endsWith('}')) ||
+        (s.startsWith('[') && s.endsWith(']')) ||
+        (s.startsWith('"') && s.endsWith('"')) ||
+        (/^-?\d+(\.\d+)?$/.test(s))
+      ) {
+        try {
+          v = JSON.parse(s)
+        } catch {
+          // keep as string
+        }
+      }
+    }
+    return v as T
+  } catch {
+    return fallback
+  }
+}
+
 export async function kvSetJSON<T>(key: string, value: T): Promise<void> {
   await kvSet(key, JSON.stringify(value))
 }
