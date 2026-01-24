@@ -72,7 +72,7 @@ const DEFAULT_COVER = '/icons/music-cover.png'
 // 音乐列表存储键
 const MUSIC_STORAGE_KEY = 'littlephone_music_playlist'
 const MUSIC_VERSION_KEY = 'littlephone_music_version'
-const CURRENT_MUSIC_VERSION = '6' // 更新这个数字会强制重置音乐列表
+const CURRENT_MUSIC_VERSION = '7' // 更新这个数字会强制重置音乐列表
 
 // 位置和天气存储键
 const LOCATION_STORAGE_KEY = 'littlephone_location'
@@ -94,6 +94,7 @@ const defaultWeather: WeatherData = {
 }
 
 // 内置默认歌曲（打包时会包含）
+// 注意：文件名中的 # 符号需要编码为 %23，否则浏览器会把它当作 URL 锚点
 const DEFAULT_SONGS: Song[] = [
   {
     id: 'default-1',
@@ -108,7 +109,7 @@ const DEFAULT_SONGS: Song[] = [
     title: 'City of Stars (Live)',
     artist: '周深 / INTO1-米卡',
     cover: DEFAULT_COVER,
-    url: '/music/City of Stars.Live.-周深.INTO1-米卡#2qcbGD.mp3',
+    url: '/music/City of Stars.Live.-周深.INTO1-米卡%232qcbGD.mp3',
     duration: 240
   },
   {
@@ -116,7 +117,7 @@ const DEFAULT_SONGS: Song[] = [
     title: 'If',
     artist: '丁可',
     cover: DEFAULT_COVER,
-    url: '/music/If-丁可#f4SxS.mp3',
+    url: '/music/If-丁可%23f4SxS.mp3',
     duration: 210
   },
   {
@@ -124,7 +125,7 @@ const DEFAULT_SONGS: Song[] = [
     title: 'Paris in the Rain',
     artist: 'Lauv',
     cover: DEFAULT_COVER,
-    url: '/music/Paris in the Rain-Lauv#j4c3n.mp3',
+    url: '/music/Paris in the Rain-Lauv%23j4c3n.mp3',
     duration: 195
   },
   {
@@ -132,7 +133,7 @@ const DEFAULT_SONGS: Song[] = [
     title: 'Time Machine (feat. Aren Park)',
     artist: 'MJ Apanay / Aren Park',
     cover: DEFAULT_COVER,
-    url: '/music/time machine .feat. aren park.-mj apanay.aren park#2wL1ri.mp3',
+    url: '/music/time machine .feat. aren park.-mj apanay.aren park%232wL1ri.mp3',
     duration: 220
   }
 ]
