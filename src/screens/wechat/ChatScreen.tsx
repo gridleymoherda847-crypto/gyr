@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
@@ -23,7 +23,8 @@ export default function ChatScreen() {
   
   const character = getCharacter(characterId || '')
   const messages = getMessagesByCharacter(characterId || '')
-  const stickers = getStickersByCharacter(characterId || '')
+  // 性能：避免打字时反复 filter 全量贴纸
+  const stickers = useMemo(() => getStickersByCharacter(characterId || ''), [characterId, getStickersByCharacter])
   const currentPeriod = getCurrentPeriod()
 
   // 修复“点很快会读到倒数第二条”：用 ref 同步最新 messages 快照
@@ -33,9 +34,11 @@ export default function ChatScreen() {
   }, [messages])
 
   // 该对话选择的“我的人设”（没有选则回退到当前全局人设）
-  const selectedPersona = character?.selectedUserPersonaId
-    ? getUserPersona(character.selectedUserPersonaId)
-    : getCurrentPersona()
+  const selectedPersona = useMemo(() => {
+    return character?.selectedUserPersonaId
+      ? getUserPersona(character.selectedUserPersonaId)
+      : getCurrentPersona()
+  }, [character?.selectedUserPersonaId, getUserPersona, getCurrentPersona])
 
   const characterLanguage = (character as any)?.language || 'zh'
   const chatTranslationEnabled = !!(character as any)?.chatTranslationEnabled
@@ -1996,7 +1999,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   }
   
-  const periodRecords = getPeriodRecords()
+  // 性能：经期数据只在“经期面板”打开时才需要，避免打字时反复计算
+  const periodRecords = activePanel === 'period' ? getPeriodRecords() : []
   
   const isInPeriod = (dateStr: string) => {
     return periodRecords.some(record => {
@@ -2399,6 +2403,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
   const getBubbleStyle = (isUser: boolean) => {
     const bubble = isUser ? userBubbleStyle : charBubbleStyle
+    // 移动端性能保护：禁用/减弱高成本效果（不影响功能，只影响视觉质感）
+    const isMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : false
     // 新语义：bgOpacity/borderOpacity 表示“透明度%”（100=最透明，0=不透明）
     const bgAlpha = 1 - Math.max(0, Math.min(100, bubble.bgOpacity ?? 0)) / 100
     const borderAlpha = 1 - Math.max(0, Math.min(100, bubble.borderOpacity ?? 0)) / 100
@@ -2424,11 +2430,13 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
     // 02 玻璃磨砂
     if (presetId === '02') {
-      style.backdropFilter = 'blur(10px) saturate(1.2)'
-      style.WebkitBackdropFilter = 'blur(10px) saturate(1.2)'
+      if (!isMobile) {
+        style.backdropFilter = 'blur(10px) saturate(1.2)'
+        style.WebkitBackdropFilter = 'blur(10px) saturate(1.2)'
+      }
       style.backgroundImage = `linear-gradient(135deg, ${rgba('#ffffff', layer(0.40))}, ${rgba('#ffffff', layer(0.05))})`
       style.border = `1px solid ${rgba('#ffffff', 0.35)}`
-      style.boxShadow = '0 10px 22px rgba(0,0,0,0.10)'
+      style.boxShadow = isMobile ? '0 6px 14px rgba(0,0,0,0.06)' : '0 10px 22px rgba(0,0,0,0.10)'
     }
 
     // 03 渐变微光
@@ -2467,10 +2475,12 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     // 08 暗色玻璃（适合深色背景）
     if (presetId === '08') {
       style.backgroundColor = rgba(bubble.bgColor, Math.min(0.70, bgAlpha))
-      style.backdropFilter = 'blur(12px) saturate(1.1)'
-      style.WebkitBackdropFilter = 'blur(12px) saturate(1.1)'
+      if (!isMobile) {
+        style.backdropFilter = 'blur(12px) saturate(1.1)'
+        style.WebkitBackdropFilter = 'blur(12px) saturate(1.1)'
+      }
       style.border = `1px solid ${rgba('#ffffff', 0.16)}`
-      style.boxShadow = '0 12px 26px rgba(0,0,0,0.22)'
+      style.boxShadow = isMobile ? '0 8px 18px rgba(0,0,0,0.12)' : '0 12px 26px rgba(0,0,0,0.22)'
     }
 
     // 09 糖果（亮边+高光）
@@ -2536,6 +2546,166 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
     return style
   }
+
+  // 性能：消息气泡/时间格式化很重；用 useMemo 把它们从“打字重渲染”里隔离出去
+  const bubbleStyles = useMemo(() => {
+    return {
+      user: getBubbleStyle(true),
+      char: getBubbleStyle(false),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userBubbleStyle, charBubbleStyle])
+
+  const renderedMessageItems = useMemo(() => {
+    if (!character?.id) return null
+    return messages.map((msg) => {
+      // 系统消息特殊渲染
+      if (msg.type === 'system') {
+        return (
+          <div
+            key={msg.id}
+            className="flex justify-center mb-3"
+            // 性能优化：让浏览器跳过离屏渲染（不改变功能/滚动行为）
+            style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 64px' }}
+          >
+            <div className="px-3 py-1.5 rounded-lg bg-white/90 shadow-sm text-xs text-gray-500">
+              {msg.content}
+            </div>
+          </div>
+        )
+      }
+
+      // 判断是否是拉黑后对方新发的消息（只有拉黑后发的才显示感叹号）
+      const isBlockedMessage =
+        !msg.isUser && character.isBlocked && character.blockedAt && msg.timestamp > character.blockedAt
+
+      // 编辑模式：是否被选中
+      const isSelected = selectedMsgIds.has(msg.id)
+
+      const bubbleStyle =
+        msg.type !== 'transfer' && msg.type !== 'music'
+          ? (msg.isUser ? bubbleStyles.user : bubbleStyles.char)
+          : undefined
+
+      return (
+        <div
+          key={msg.id}
+          // 性能优化：聊天长列表在移动端非常吃力；content-visibility 可显著减少重绘/布局开销
+          style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 140px' }}
+        >
+          <div className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
+            {/* 编辑模式：可勾选双方消息 */}
+            {editMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMsgIds((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(msg.id)) next.delete(msg.id)
+                    else next.add(msg.id)
+                    return next
+                  })
+                }}
+                className="flex items-center self-center"
+                title="选择消息"
+              >
+                <div
+                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                    isSelected ? 'border-pink-500 bg-pink-500' : 'border-gray-400 bg-white/70'
+                  }`}
+                >
+                  {isSelected && (
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+              </button>
+            )}
+
+            <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
+              {msg.isUser ? (
+                selectedPersona?.avatar ? (
+                  <img src={selectedPersona.avatar} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-[15px] font-medium">
+                    {(selectedPersona?.name || '我')[0]}
+                  </div>
+                )
+              ) : character.avatar ? (
+                <img src={character.avatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-[15px] font-medium">
+                  {character.name[0]}
+                </div>
+              )}
+            </div>
+
+            <div className={`flex flex-col max-w-[70%] ${msg.isUser ? 'items-end' : 'items-start'}`}>
+              <div
+                className={`w-fit px-3.5 py-2.5 text-[15px] shadow-sm ${
+                  msg.type === 'transfer' || msg.type === 'music'
+                    ? 'bg-transparent p-0 shadow-none'
+                    : msg.isUser
+                      ? 'text-gray-800 rounded-2xl rounded-tr-md'
+                      : 'text-gray-800 rounded-2xl rounded-tl-md'
+                }`}
+                style={bubbleStyle as any}
+              >
+                {renderMessageContent(msg)}
+              </div>
+
+              {/* 翻译（仅对方文本消息 & 非中文角色） */}
+              {!msg.isUser &&
+                msg.type === 'text' &&
+                msg.messageLanguage &&
+                msg.messageLanguage !== 'zh' &&
+                msg.chatTranslationEnabledAtSend && (
+                  <div className="mt-2 w-fit max-w-full px-2.5 py-2 rounded-xl bg-white/90 md:bg-white/85 md:backdrop-blur border border-white/70 shadow-sm">
+                    <div className="text-[10px] text-gray-500 mb-1">翻译</div>
+                    <div className="text-[12px] text-gray-800 whitespace-pre-wrap break-words">
+                      {msg.translationStatus === 'error'
+                        ? '翻译失败'
+                        : msg.translatedZh
+                          ? msg.translatedZh
+                          : '翻译中…'}
+                    </div>
+                  </div>
+                )}
+
+              {/* 每条消息显示时间（小号字体） */}
+              <div className="mt-2">
+                <span className="inline-block px-2 py-[2px] rounded-md bg-white/85 md:bg-white/70 md:backdrop-blur border border-white/60 text-[10px] text-gray-600">
+                  {formatTime(msg.timestamp)}
+                </span>
+              </div>
+            </div>
+
+            {/* 拉黑后对方新发的消息，气泡右边显示小感叹号 */}
+            {isBlockedMessage && (
+              <div className="flex items-center self-center" title="发送失败（对方视角）">
+                <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
+                  <span className="text-white text-[10px] font-bold">!</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    })
+  }, [
+    messages,
+    character?.id,
+    character?.avatar,
+    character?.name,
+    character?.isBlocked,
+    character?.blockedAt,
+    editMode,
+    selectedMsgIds,
+    selectedPersona?.avatar,
+    selectedPersona?.name,
+    bubbleStyles,
+  ])
 
   return (
     <WeChatLayout>
@@ -2644,135 +2814,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               开始和{character.name}聊天吧~
             </div>
           ) : (
-            messages.map((msg) => {
-              
-              // 系统消息特殊渲染
-              if (msg.type === 'system') {
-                return (
-                  <div
-                    key={msg.id}
-                    className="flex justify-center mb-3"
-                    // 性能优化：让浏览器跳过离屏渲染（不改变功能/滚动行为）
-                    style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 64px' }}
-                  >
-                    <div className="px-3 py-1.5 rounded-lg bg-white/90 shadow-sm text-xs text-gray-500">
-                      {msg.content}
-                    </div>
-                  </div>
-                )
-              }
-              
-              // 判断是否是拉黑后对方新发的消息（只有拉黑后发的才显示感叹号）
-              const isBlockedMessage = !msg.isUser && 
-                character.isBlocked && 
-                character.blockedAt && 
-                msg.timestamp > character.blockedAt
-              
-              // 编辑模式：是否被选中
-              const isSelected = selectedMsgIds.has(msg.id)
-              
-              return (
-                <div
-                  key={msg.id}
-                  // 性能优化：聊天长列表在移动端非常吃力；content-visibility 可显著减少重绘/布局开销
-                  style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 140px' }}
-                >
-                  <div className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
-                    {/* 编辑模式：可勾选双方消息 */}
-                    {editMode && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedMsgIds(prev => {
-                            const next = new Set(prev)
-                            if (next.has(msg.id)) next.delete(msg.id)
-                            else next.add(msg.id)
-                            return next
-                          })
-                        }}
-                        className="flex items-center self-center"
-                        title="选择消息"
-                      >
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                          isSelected ? 'border-pink-500 bg-pink-500' : 'border-gray-400 bg-white/70'
-                        }`}>
-                          {isSelected && (
-                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </div>
-                      </button>
-                    )}
-                    
-                    <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
-                      {msg.isUser ? (
-                        selectedPersona?.avatar ? (
-                          <img src={selectedPersona.avatar} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-[15px] font-medium">
-                            {(selectedPersona?.name || '我')[0]}
-                          </div>
-                        )
-                      ) : character.avatar ? (
-                        <img src={character.avatar} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-[15px] font-medium">
-                          {character.name[0]}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className={`flex flex-col max-w-[70%] ${msg.isUser ? 'items-end' : 'items-start'}`}>
-                      <div 
-                        className={`w-fit px-3.5 py-2.5 text-[15px] shadow-sm ${
-                          msg.type === 'transfer' || msg.type === 'music' 
-                            ? 'bg-transparent p-0 shadow-none' 
-                            : msg.isUser 
-                              ? 'text-gray-800 rounded-2xl rounded-tr-md' 
-                              : 'text-gray-800 rounded-2xl rounded-tl-md'
-                        }`}
-                        style={msg.type !== 'transfer' && msg.type !== 'music' ? getBubbleStyle(msg.isUser) : undefined}
-                      >
-                        {renderMessageContent(msg)}
-                      </div>
-                      {/* 翻译（仅对方文本消息 & 非中文角色） */}
-                      {!msg.isUser &&
-                        msg.type === 'text' &&
-                        msg.messageLanguage &&
-                        msg.messageLanguage !== 'zh' &&
-                        msg.chatTranslationEnabledAtSend && (
-                        <div className="mt-2 w-fit max-w-full px-2.5 py-2 rounded-xl bg-white/90 md:bg-white/85 md:backdrop-blur border border-white/70 shadow-sm">
-                          <div className="text-[10px] text-gray-500 mb-1">翻译</div>
-                          <div className="text-[12px] text-gray-800 whitespace-pre-wrap break-words">
-                            {msg.translationStatus === 'error'
-                              ? '翻译失败'
-                              : msg.translatedZh
-                                ? msg.translatedZh
-                                : '翻译中…'}
-                          </div>
-                        </div>
-                      )}
-                      {/* 每条消息显示时间（小号字体） */}
-                      <div className="mt-2">
-                        <span className="inline-block px-2 py-[2px] rounded-md bg-white/85 md:bg-white/70 md:backdrop-blur border border-white/60 text-[10px] text-gray-600">
-                          {formatTime(msg.timestamp)}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    {/* 拉黑后对方新发的消息，气泡右边显示小感叹号 */}
-                    {isBlockedMessage && (
-                      <div className="flex items-center self-center" title="发送失败（对方视角）">
-                        <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
-                          <span className="text-white text-[10px] font-bold">!</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })
+            renderedMessageItems
           )}
           
           {/* AI正在输入提示 */}

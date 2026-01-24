@@ -773,8 +773,10 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     setStickers(prev => prev.filter(s => s.id !== id))
   }
 
-  const getStickersByCharacter = (characterId: string) => 
-    stickers.filter(s => s.characterId === characterId || s.characterId === 'all')
+  const getStickersByCharacter = useCallback(
+    (characterId: string) => stickers.filter(s => s.characterId === characterId || s.characterId === 'all'),
+    [stickers]
+  )
 
   const addStickerToCharacter = (stickerId: string, targetCharacterId: string) => {
     const sticker = stickers.find(s => s.id === stickerId)
