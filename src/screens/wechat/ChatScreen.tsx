@@ -415,6 +415,9 @@ export default function ChatScreen() {
               const st = m.musicStatus || 'pending'
               content = `<MUSIC title="${title}" artist="${artist}" status="${st}" />`
             }
+            if (m.type === 'period') {
+              content = `<PERIOD_SHARED />`
+            }
             if (m.type === 'diary') {
               const authorId = (m.diaryAuthorId || '').slice(0, 80)
               const author = (m.diaryAuthorName || '（未知）').replace(/\s+/g, ' ').slice(0, 40)
@@ -500,6 +503,7 @@ export default function ChatScreen() {
             const st = m.musicStatus || 'pending'
             return `音乐（${st}｜${title}）`
           }
+          if (m.type === 'period') return '经期记录卡片'
           if (m.type === 'diary') return `日记（${(m.diaryTitle || '日记').replace(/\s+/g, ' ').slice(0, 18)}）`
           if (m.type === 'couple') return `情侣空间卡片（${m.coupleStatus || 'pending'}）`
           if (m.type === 'image') return '图片'
@@ -557,7 +561,7 @@ export default function ChatScreen() {
                 return range
               })
               .join('；')
-            return `【经期日历记录】最近${Math.min(8, records.length)}次：${recent}`
+            return `【经期真实日历记录（必须相信并使用）】最近${Math.min(8, records.length)}次：${recent}\n- 这些是用户在“经期日历”里真实保存的记录，你必须按此判断/关心。`
           } catch {
             return ''
           }
@@ -1099,6 +1103,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                         `- 如果你偏黏人/关系亲密/气氛甜：更可能接受。\n` +
                         `- 允许一点随机性，但必须“讲得通”。\n` +
                         `- 严禁出现辱女/性羞辱词。\n` +
+                        `- chatReply 必须是普通微信文字，禁止包含任何 [音乐:...]、【音乐：...】、[转账:...] 等“指令格式”。\n` +
                         `\n` +
                         `【只输出 JSON】\n` +
                         `{\n` +
@@ -1126,6 +1131,9 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                   }
 
                   // 更新原音乐邀请状态
+                  // 让“对方已处理”的反馈马上出现在视野里
+                  forceScrollRef.current = true
+                  nearBottomRef.current = true
                   updateMessage(musicInvite.id, { musicStatus: decision === 'accept' ? 'accepted' : 'rejected' })
 
                   if (decision === 'accept') {
@@ -1177,9 +1185,20 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     decision === 'accept'
                       ? `行，来。`
                       : `我现在不太想听，晚点吧。`
+
+                  const sanitizeChatReply = (s: string) => {
+                    const raw = (s || '').trim()
+                    if (!raw) return ''
+                    // 去掉任何“指令格式”的片段，避免用户看到 [音乐：xxx]
+                    const stripped = raw
+                      .replace(/[【\[]\s*(音乐|转账)\s*[:：][^】\]]*[】\]]/g, '')
+                      .replace(/\s+/g, ' ')
+                      .trim()
+                    return stripped.slice(0, 180)
+                  }
                   addMessage({
                     characterId: character.id,
-                    content: chatReply || fallbackReply,
+                    content: sanitizeChatReply(chatReply) || fallbackReply,
                     isUser: false,
                     type: 'text',
                   })
@@ -1354,6 +1373,24 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       
       // 获取可用歌曲列表
       const availableSongs = musicPlaylist.map(s => `${s.title}-${s.artist}`).slice(0, 5).join('、')
+
+      // +号功能也需要“实时读取已保存的经期日历记录”
+      const periodCalendarForLLM = (() => {
+        try {
+          const records = getPeriodRecords()
+          if (!records || records.length === 0) return ''
+          const recent = records
+            .slice(0, 8)
+            .map((r) => {
+              const range = r.endDate ? `${r.startDate}~${r.endDate}` : `${r.startDate}~（未填结束）`
+              return range
+            })
+            .join('；')
+          return `【经期真实日历记录（必须相信并使用）】最近${Math.min(8, records.length)}次：${recent}`
+        } catch {
+          return ''
+        }
+      })()
       
       // 构建系统提示（包含全局预设）
       let systemPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}【角色信息】
@@ -1364,6 +1401,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 你们的关系：${character.relationship || '朋友'}
 你的国家/地区：${(character as any).country || '（未设置）'}
 你的主要语言：${languageName((character as any).language || 'zh')}
+${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 
 【当前情境】
 对方${context}
@@ -1627,6 +1665,9 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
   // 发送音乐分享
   const handleShareMusic = (song: { title: string; artist: string; id?: string }) => {
+    // 用户主动发送：强制滚到底部（否则需要手动滑一下才看到“对方处理结果”）
+    forceScrollRef.current = true
+    nearBottomRef.current = true
     const newMsg = addMessage({
       characterId: character.id,
       content: `分享音乐: ${song.title}`,
@@ -1987,29 +2028,23 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       }
     }
     
-    // 附带“日历里的内容”（最近几次经期区间），让对方能读到具体日期，而不是只有一句话
-    const records = getPeriodRecords()
-    const recent = (records || [])
-      .slice(0, 6)
-      .map(r => {
-        const range = r.endDate ? `${r.startDate}~${r.endDate}` : `${r.startDate}~（未填结束）`
-        return range
-      })
-      .join('；')
+    // 用户主动发送：强制滚到底部
+    forceScrollRef.current = true
+    nearBottomRef.current = true
 
+    // 以“卡片形式”发送（卡片只是通知对方“请读取经期日历”，真正信息从经期日历实时读取）
     addMessage({
       characterId: character.id,
-      content: `[经期记录] ${periodInfo}${recent ? `\n经期日历（最近${Math.min(6, records.length)}次）：${recent}` : ''}`,
+      content: `经期记录已同步`,
       isUser: true,
-      // 不能用 system：system 会被历史/时间线过滤，导致“发了经期对方读不到”
-      type: 'text',
+      type: 'period',
     })
     
     setShowPlusMenu(false)
     setActivePanel(null)
     
     // 用AI生成关心的回复
-    generateHumanLikeReplies(`${periodInfo}，请根据这个信息关心对方，表达你的体贴和爱意`)
+    generateHumanLikeReplies(`你收到了对方同步的经期日历记录（请你实时读取经期日历里的内容），并根据${periodInfo || '经期情况'}关心她，表达体贴但不要像人机。`)
   }
 
   // 偷看日记（每次打开都会生成新的）
@@ -2246,6 +2281,31 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             {note && <div className="text-[11px] text-gray-500 truncate mt-1">备注：{note}</div>}
           </div>
         </button>
+      )
+    }
+
+    if (msg.type === 'period') {
+      // 经期同步卡片（仅用于“通知对方去读取经期日历”，真实记录由系统提示实时提供）
+      const hint = currentPeriod ? '我现在在经期，麻烦你多关心一下～' : '我把经期日历同步给你啦'
+      return (
+        <div className="min-w-[190px] max-w-[240px] rounded-xl overflow-hidden border border-black/10 bg-white/80 shadow-sm">
+          <div className="px-3 py-2 flex items-start gap-2">
+            <div className="w-9 h-9 rounded-lg bg-pink-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-pink-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7-4.35-7-10a4 4 0 017-2.25A4 4 0 0119 11c0 5.65-7 10-7 10z" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-gray-800 truncate">经期记录</div>
+              <div className="text-[11px] text-gray-500 mt-0.5 leading-snug">
+                {hint}
+              </div>
+            </div>
+          </div>
+          <div className="px-3 py-1.5 text-[10px] bg-black/5 text-gray-500">
+            已同步 · 对方会实时读取你的经期日历
+          </div>
+        </div>
       )
     }
 

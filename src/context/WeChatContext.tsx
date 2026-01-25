@@ -81,7 +81,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'couple' | 'system' | 'doudizhu_share' | 'doudizhu_invite'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite'
   // 转账相关
   transferAmount?: number
   transferNote?: string
