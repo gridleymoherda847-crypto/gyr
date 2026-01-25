@@ -129,6 +129,7 @@ export default function ChatScreen() {
     accepted?: boolean
     needsConfirm?: boolean // 接受后需用户点“确认”才进入一起听界面
     direction?: 'outgoing' | 'incoming'
+    loading?: boolean // 等待对方回应中
   }>({ open: false })
   
   // 收到对方音乐邀请时的确认弹窗
@@ -1239,6 +1240,14 @@ ${recentTimeline || '（无）'}
               safeTimeoutEx(() => {
                 ;(async () => {
                   // 需要 API 才能“按人设/关系/聊天上下文”做决定
+                  // 立即显示"等待对方回应"加载弹窗
+                  setMusicInviteDialog({
+                    open: true,
+                    song: { title: songTitle, artist: songArtist },
+                    loading: true,
+                    direction: 'outgoing',
+                  })
+
                   const hasApi = !!(llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel)
                   let decision: 'accept' | 'reject' = 'accept'
                   let chatReply = ''
@@ -4154,6 +4163,25 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             onClick={() => setMusicInviteDialog({ open: false })}
           />
           <div className="relative w-full max-w-[260px] rounded-2xl bg-white shadow-xl overflow-hidden">
+            {/* 加载状态：等待对方回应 */}
+            {musicInviteDialog.loading ? (
+              <>
+                <div className="px-4 py-4 text-center bg-gradient-to-r from-pink-400 to-purple-500">
+                  <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-white/20 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                  <div className="text-white font-medium">等待{character.name}回应...</div>
+                </div>
+                <div className="p-4 text-center">
+                  <div className="text-sm text-gray-600 mb-1">《{musicInviteDialog.song?.title}》</div>
+                  <div className="text-xs text-gray-400">正在询问对方是否愿意一起听</div>
+                </div>
+              </>
+            ) : (
+            <>
             <div className={`px-4 py-4 text-center ${
               musicInviteDialog.accepted 
                 ? 'bg-gradient-to-r from-pink-400 to-purple-500' 
@@ -4227,6 +4255,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                 </button>
               )}
             </div>
+            </>
+            )}
           </div>
         </div>
       )}
