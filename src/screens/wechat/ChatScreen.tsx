@@ -5,6 +5,7 @@ import { useOS } from '../../context/OSContext'
 import WeChatLayout from './WeChatLayout'
 import WeChatDialog from './components/WeChatDialog'
 import { getGlobalPresets } from '../PresetScreen'
+import { xEnsureUser, xLoad, xNewPost, xSave } from '../../storage/x'
 
 export default function ChatScreen() {
   const navigate = useNavigate()
@@ -111,6 +112,7 @@ export default function ChatScreen() {
   const [diaryAt, setDiaryAt] = useState<number>(0)
   const [diaryNoteDraft, setDiaryNoteDraft] = useState('')
   const [openDiaryShare, setOpenDiaryShare] = useState<typeof messages[0] | null>(null)
+  const [openTweetShare, setOpenTweetShare] = useState<typeof messages[0] | null>(null)
   
   // 转账悬浮窗状态
   const [showTransferModal, setShowTransferModal] = useState(false)
@@ -367,7 +369,12 @@ export default function ChatScreen() {
           if (!text) return []
           // 先按换行切
           const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
-      const keepCmd = (s: string) => /\|\|\|/.test(s) || /\[转账:/.test(s) || /[【\[]\s*转账\s*[:：]/.test(s)
+      const keepCmd = (s: string) =>
+        /\|\|\|/.test(s) ||
+        /\[转账:/.test(s) ||
+        /[【\[]\s*转账\s*[:：]/.test(s) ||
+        /\[推文[:：]/.test(s) ||
+        /[【\[]\s*推文\s*[:：]/.test(s)
           const out: string[] = []
           for (const line of byLine) {
             if (keepCmd(line)) { out.push(line); continue }
@@ -437,6 +444,16 @@ export default function ChatScreen() {
               content = `<DIARY title="${title}" author="${author}" authorId="${authorId}" diaryAt="${at}" note="${note}">` +
                 `${ownership}\n${body}` +
                 `</DIARY>`
+            }
+            if (m.type === 'tweet_share') {
+              const author = (m.tweetAuthorName || '（未知）').replace(/\s+/g, ' ').slice(0, 40)
+              const at = m.tweetAt ? String(m.tweetAt) : ''
+              const stats = (m.tweetStats || '').replace(/\s+/g, ' ').slice(0, 60)
+              const body = (m.tweetContent || '').trim().slice(0, 700)
+              content =
+                `<TWEET_SHARED author="${author}" tweetAt="${at}" stats="${stats}">` +
+                `${body || '（无内容）'}` +
+                `</TWEET_SHARED>`
             }
             // 斗地主战绩分享 - 让AI知道自己是否参与了游戏
             if (m.type === 'doudizhu_share') {
@@ -511,6 +528,7 @@ export default function ChatScreen() {
           }
           if (m.type === 'period') return '经期记录卡片'
           if (m.type === 'diary') return `日记（${(m.diaryTitle || '日记').replace(/\s+/g, ' ').slice(0, 18)}）`
+          if (m.type === 'tweet_share') return `推文（${(m.tweetAuthorName || 'X').replace(/\s+/g, ' ').slice(0, 10)}）`
           if (m.type === 'couple') return `情侣空间卡片（${m.coupleStatus || 'pending'}）`
           if (m.type === 'image') return '图片'
           if (m.type === 'sticker') return '表情包'
@@ -648,12 +666,19 @@ ${recentTimeline || '（无）'}
 
         systemPrompt += `
 
+【日常设定】
+- 推特/X 是你和用户日常最常用的搜索/信息软件，可以自然提到
+`
+
+        systemPrompt += `
+
 【格式强约束】
 - 禁止输出任何“系统标记”（例如 <IMAGE /> / <TRANSFER ... /> / <MUSIC ... /> / <DIARY ...> 等），只按真实微信聊天输出
 - 你可能会在历史里看到 <DIARY ...>：那是“用户转发的一篇日记”，作者信息在 author/authorId。
   - 如果 authorId/author 显示是“你自己”，说明这是你写的日记被用户转发回来，你要对此有反应（羞耻/炸毛/装死/嘴硬/否认/解释等按人设）。
   - 如果作者不是你，就当作别人写的日记来评价/吐槽/震惊/共情（按人设）。
 - 若要触发转账，必须使用上面的 [转账:金额:备注] 格式，且单独一行
+- 若要分享推文，单独一行写：[推文:内容]（内容<=140字）
 - 【重要】你绝对不要在普通聊天里无缘无故报歌名/列歌单/复读歌名。听歌邀请只通过“音乐卡片”流程处理（用户发卡片→点箭头→你决定→弹确认→进入一起听界面）。`
 
         systemPrompt += `
@@ -866,6 +891,14 @@ ${recentTimeline || '（无）'}
           if (hit) return { title: hit.title, artist: hit.artist }
           return { title: single, artist: '' }
         }
+        const parseTweetCommand = (text: string) => {
+          // 兼容：[推文:内容] / 【推文：内容】
+          const m = text.match(/[【\[]\s*推文\s*[:：]\s*([^\]】]+)\s*[】\]]/)
+          if (!m) return null
+          const body = (m[1] || '').trim()
+          if (!body) return null
+          return { content: body }
+        }
 
         // 预扫描：找出适合插表情包的“文本回复行”
         if (stickerPool.length > 0) {
@@ -874,6 +907,7 @@ ${recentTimeline || '（无）'}
             if (!t) continue
             if (parseTransferCommand(t)) continue
             if (parseMusicCommand(t)) continue
+            if (parseTweetCommand(t)) continue
             stickerCandidates.push(i)
           }
         }
@@ -932,6 +966,7 @@ ${recentTimeline || '（无）'}
             return { amount: parseFloat(m[1]), note: (m[2] || '').trim(), status: 'pending' as const }
           })()
           const musicCmd = suppressAiMusicInvite ? null : parseMusicCommand(trimmedContent)
+          const tweetCmd = parseTweetCommand(trimmedContent)
           
           safeTimeoutEx(() => {
             if (transferCmd) {
@@ -972,6 +1007,47 @@ ${recentTimeline || '（无）'}
                   type: 'text',
                 })
               }
+            } else if (tweetCmd) {
+              // AI发推文卡片（自动写入 X）
+              void (async () => {
+                try {
+                  const meName = selectedPersona?.name || '我'
+                  let nextX = await xLoad(meName)
+                  const ensured = (() => {
+                    const { data: d2, userId } = xEnsureUser(nextX, { id: character.id, name: character.name })
+                    nextX = d2
+                    return { userId }
+                  })()
+                  const u = nextX.users.find((x) => x.id === ensured.userId)
+                  const post = xNewPost(ensured.userId, character.name, tweetCmd.content)
+                  post.authorHandle = u?.handle
+                  post.authorColor = u?.color
+                  post.likeCount = Math.floor(Math.random() * 180)
+                  post.repostCount = Math.floor(Math.random() * 40)
+                  post.replyCount = Math.floor(Math.random() * 30)
+                  nextX = { ...nextX, posts: [post, ...(nextX.posts || [])].slice(0, 650) }
+                  await xSave(nextX)
+                  addMessage({
+                    characterId: character.id,
+                    content: '推文',
+                    isUser: false,
+                    type: 'tweet_share',
+                    tweetId: post.id,
+                    tweetAuthorName: post.authorName,
+                    tweetAt: post.createdAt,
+                    tweetExcerpt: post.text.replace(/\s+/g, ' ').slice(0, 60),
+                    tweetContent: post.text,
+                    tweetStats: `赞 ${post.likeCount} · 转发 ${post.repostCount} · 评论 ${post.replyCount}`,
+                  })
+                } catch {
+                  addMessage({
+                    characterId: character.id,
+                    content: tweetCmd.content,
+                    isUser: false,
+                    type: 'text',
+                  })
+                }
+              })()
             } else {
               // 普通文本消息（可选：伪翻译信号）
               const translationMode = characterLanguage !== 'zh' && chatTranslationEnabled
@@ -1019,7 +1095,7 @@ ${recentTimeline || '（无）'}
                             { role: 'user', content: trimmedContent },
                           ],
                           undefined,
-                          { maxTokens: 220, timeoutMs: 600000, temperature: 0.2 }
+                          { maxTokens: 140, timeoutMs: 60000, temperature: 0.2 }
                         )
                         const cleaned = (zh || '').trim()
                         updateMessage(msg.id, { translatedZh: cleaned || '（空）', translationStatus: cleaned ? 'done' : 'error' })
@@ -1390,7 +1466,10 @@ ${recentTimeline || '（无）'}
         const text = (raw || '').trim()
         if (!text) return []
         const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
-        const keepCmd = (s: string) => /\|\|\|/.test(s) || /\[(转账|音乐):/.test(s) || /[【\[]\s*(转账|音乐)\s*[:：]/.test(s)
+        const keepCmd = (s: string) =>
+          /\|\|\|/.test(s) ||
+          /\[(转账|音乐|推文):/.test(s) ||
+          /[【\[]\s*(转账|音乐|推文)\s*[:：]/.test(s)
         const out: string[] = []
         for (const line of byLine) {
           if (keepCmd(line)) { out.push(line); continue }
@@ -2355,6 +2434,36 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
           <div className="px-2.5 py-2 text-[12px] text-gray-700">
             <div className="truncate">{(msg.diaryExcerpt || '').trim() || '（点击查看）'}</div>
             {note && <div className="text-[11px] text-gray-500 truncate mt-1">备注：{note}</div>}
+          </div>
+        </button>
+      )
+    }
+
+    if (msg.type === 'tweet_share') {
+      const authorName = msg.tweetAuthorName || '（未知）'
+      const at = msg.tweetAt ? new Date(msg.tweetAt).toLocaleString('zh-CN', { hour12: false }) : ''
+      const stats = String(msg.tweetStats || '').trim()
+      const excerpt = String(msg.tweetExcerpt || '').trim()
+      return (
+        <button
+          type="button"
+          onClick={() => setOpenTweetShare(msg)}
+          className="min-w-[170px] max-w-[240px] rounded-xl bg-white/85 border border-black/10 overflow-hidden text-left active:scale-[0.99] transition"
+        >
+          <div className="px-2.5 py-2 flex items-center gap-2 border-b border-black/5">
+            <div className="w-8 h-8 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0">
+              <span className="text-white font-extrabold text-[14px]">X</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-[#111] truncate">推文</div>
+              <div className="text-[11px] text-gray-500 truncate">
+                {authorName}{at ? ` · ${at}` : ''}
+              </div>
+            </div>
+          </div>
+          <div className="px-2.5 py-2 text-[12px] text-gray-800">
+            <div className="line-clamp-2 whitespace-pre-wrap break-words">{excerpt || '（点击查看）'}</div>
+            {!!stats && <div className="text-[11px] text-gray-500 mt-1 truncate">{stats}</div>}
           </div>
         </button>
       )
@@ -3814,6 +3923,50 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               >
                 关闭
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 推文分享：查看全文 */}
+      {openTweetShare && openTweetShare.type === 'tweet_share' && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/35" onClick={() => setOpenTweetShare(null)} role="presentation" />
+          <div className="relative w-full max-w-[340px] rounded-[22px] border border-white/35 bg-white/95 md:bg-white/90 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] md:backdrop-blur-xl">
+            <div className="text-[15px] font-semibold text-[#111] text-center">推文</div>
+            <div className="mt-2 text-[12px] text-gray-600 text-center">
+              {String(openTweetShare.tweetAuthorName || '（未知）')}
+              {openTweetShare.tweetAt ? ` · ${new Date(openTweetShare.tweetAt).toLocaleString('zh-CN', { hour12: false })}` : ''}
+            </div>
+            {!!String(openTweetShare.tweetStats || '').trim() && (
+              <div className="mt-2 text-[12px] text-gray-600 text-center">{String(openTweetShare.tweetStats || '').trim()}</div>
+            )}
+            <div className="mt-3 max-h-[52vh] overflow-y-auto rounded-2xl bg-white border border-black/10 p-3">
+              <div className="text-[12px] leading-[20px] text-[#111] whitespace-pre-wrap">
+                {String(openTweetShare.tweetContent || '').trim() || '（无内容）'}
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = openTweetShare.tweetId
+                    setOpenTweetShare(null)
+                    if (id) navigate(`/apps/x?postId=${encodeURIComponent(id)}`)
+                  }}
+                  className="flex-1 py-2 rounded-xl bg-black text-sm text-white"
+                >
+                  打开 X 查看
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpenTweetShare(null)}
+                  className="flex-1 py-2 rounded-xl bg-gray-100 text-sm text-gray-700"
+                >
+                  关闭
+                </button>
+              </div>
             </div>
           </div>
         </div>
