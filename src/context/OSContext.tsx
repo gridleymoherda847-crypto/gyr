@@ -297,26 +297,43 @@ export function OSProvider({ children }: PropsWithChildren) {
           LOCATION_STORAGE_KEY,
           WEATHER_STORAGE_KEY,
         ]
-        for (const k of keysToMove) {
-          try {
-            const raw = localStorage.getItem(k)
-            if (raw != null) await kvSet(k, raw)
-          } catch {
-            // ignore
-          }
-        }
+        await Promise.allSettled(
+          keysToMove.map(async (k) => {
+            try {
+              const raw = localStorage.getItem(k)
+              if (raw != null) await kvSet(k, raw)
+            } catch {
+              // ignore
+            }
+          })
+        )
       }
 
-      const nextLocked = await kvGetJSONDeep<boolean>(LOCK_STORAGE_KEY, true)
-      const nextLLM = await kvGetJSONDeep<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig)
-      const nextMi = await kvGetJSONDeep<number>(STORAGE_KEYS.miCoinBalance, 100)
-      const nextFontId = await kvGetJSONDeep<string>(STORAGE_KEYS.currentFontId, (FONT_OPTIONS.find(f => f.id === 'elegant')?.id || FONT_OPTIONS[0].id))
-      const nextColorId = await kvGetJSONDeep<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id)
-      const nextLocation = await kvGetJSONDeep<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings)
-      const nextWeather = await kvGetJSONDeep<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather)
+      // 并行读取：减少启动等待
+      const [
+        nextLocked,
+        nextLLM,
+        nextMi,
+        nextFontId,
+        nextColorId,
+        nextLocation,
+        nextWeather,
+        savedVersion,
+      ] = await Promise.all([
+        kvGetJSONDeep<boolean>(LOCK_STORAGE_KEY, true),
+        kvGetJSONDeep<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig),
+        kvGetJSONDeep<number>(STORAGE_KEYS.miCoinBalance, 100),
+        kvGetJSONDeep<string>(
+          STORAGE_KEYS.currentFontId,
+          (FONT_OPTIONS.find(f => f.id === 'elegant')?.id || FONT_OPTIONS[0].id)
+        ),
+        kvGetJSONDeep<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id),
+        kvGetJSONDeep<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings),
+        kvGetJSONDeep<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather),
+        kvGetJSONDeep<string>(MUSIC_VERSION_KEY, ''),
+      ])
 
       // 音乐：版本控制
-      const savedVersion = await kvGetJSONDeep<string>(MUSIC_VERSION_KEY, '')
       let nextPlaylist = [...DEFAULT_SONGS]
       if (savedVersion !== CURRENT_MUSIC_VERSION) {
         await kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
