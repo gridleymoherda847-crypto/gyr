@@ -100,6 +100,10 @@ export type WeChatMessage = {
   diaryContent?: string
   diaryNote?: string
 
+  // 经期分享相关（卡片展示简短，内部可携带完整内容供AI读取）
+  periodSummary?: string
+  periodContent?: string
+
   // 情侣空间申请/结果卡片（“像转账一样”的小窗口）
   coupleAction?: 'request' | 'response'
   coupleStatus?: 'pending' | 'accepted' | 'rejected'
@@ -140,7 +144,19 @@ export type PeriodRecord = {
   endDate?: string // YYYY-MM-DD
   notes: string
   symptoms: string[] // 症状标签
+  // 每日记录（疼痛/血量等）
+  daily?: PeriodDailyEntry[]
   createdAt: number
+}
+
+export type PeriodFlowLevel = 'none' | 'light' | 'medium' | 'heavy'
+export type PeriodPainLevel = 0 | 1 | 2 | 3 | 4
+export type PeriodDailyEntry = {
+  date: string // YYYY-MM-DD
+  pain: PeriodPainLevel
+  flow: PeriodFlowLevel
+  note?: string
+  updatedAt: number
 }
 
 // 一起听状态

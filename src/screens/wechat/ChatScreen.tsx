@@ -14,7 +14,7 @@ export default function ChatScreen() {
     getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds,
     getStickersByCharacter, deleteCharacter, clearMessages,
     addTransfer, getPeriodRecords, addPeriodRecord,
-    removePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether,
+    updatePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether,
     setCurrentChatId, toggleBlocked, setCharacterTyping, updateCharacter,
     walletBalance, updateWalletBalance, addWalletBill,
     getUserPersona, getCurrentPersona,
@@ -143,6 +143,10 @@ export default function ChatScreen() {
   
   // 经期日历状态
   const [calendarMonth, setCalendarMonth] = useState(new Date())
+  const [selectedPeriodDate, setSelectedPeriodDate] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [periodPainDraft, setPeriodPainDraft] = useState<0 | 1 | 2 | 3 | 4>(0)
+  const [periodFlowDraft, setPeriodFlowDraft] = useState<'none' | 'light' | 'medium' | 'heavy'>('none')
+  const [periodNoteDraft, setPeriodNoteDraft] = useState('')
   
   // 手动模式下待发送的消息数量（保留用于显示/以后扩展）
   const [pendingCount, setPendingCount] = useState(0)
@@ -418,7 +422,8 @@ export default function ChatScreen() {
               content = `<MUSIC title="${title}" artist="${artist}" status="${st}" />`
             }
             if (m.type === 'period') {
-              content = `<PERIOD_SHARED />`
+              const body = (m.periodContent || '').trim().slice(0, 1500)
+              content = `<PERIOD_SHARED>\n${body || '（无）'}\n</PERIOD_SHARED>`
             }
             if (m.type === 'diary') {
               const authorId = (m.diaryAuthorId || '').slice(0, 80)
@@ -2000,6 +2005,37 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       }
     }
     
+    const buildPeriodContent = () => {
+      const records = getPeriodRecords()
+      const predicted = (() => {
+        try { return calcPredictedNextStart() } catch { return null }
+      })()
+      const today = new Date().toISOString().split('T')[0]
+      const latest = records?.[0]
+      const latestRange = latest ? `${latest.startDate}~${(latest.endDate || addDays(latest.startDate, 6))}` : '（无）'
+      const inLatest = latest ? (today >= latest.startDate && today <= (latest.endDate || addDays(latest.startDate, 6))) : false
+      const todayEntry = latest?.daily?.find((e: any) => e?.date === today)
+      const painLabel = (p: number) => (p === 0 ? '无' : p === 1 ? '轻' : p === 2 ? '中' : p === 3 ? '重' : '爆')
+      const flowLabel = (f: string) => (f === 'none' ? '无' : f === 'light' ? '少' : f === 'medium' ? '中' : '多')
+      const recentDaily = (latest?.daily || [])
+        .slice()
+        .sort((a: any, b: any) => (a?.date || '').localeCompare(b?.date || ''))
+        .slice(-10)
+        .map((e: any) => `${e.date} 疼痛:${painLabel(e.pain ?? 0)} 血量:${flowLabel(e.flow ?? 'none')}${e.note ? ` 备注:${String(e.note).slice(0, 30)}` : ''}`)
+        .join('\n')
+      const recentRanges = (records || []).slice(0, 10).map((r: any) => `${r.startDate}~${r.endDate || addDays(r.startDate, 6)}`).join('；')
+      return [
+        `【经期记录（来自经期小程序保存数据）】`,
+        `- 今天：${today}`,
+        `- 本次范围：${latestRange}`,
+        predicted ? `- 预计下次开始：${predicted}` : '',
+        inLatest ? `- 今日状态：经期中（第${Math.floor((Date.now() - new Date(latest.startDate).getTime()) / (1000*60*60*24)) + 1}天）` : `- 今日状态：非经期或未记录`,
+        todayEntry ? `- 今日记录：疼痛 ${painLabel(todayEntry.pain ?? 0)}｜血量 ${flowLabel(todayEntry.flow ?? 'none')}${todayEntry.note ? `｜备注 ${String(todayEntry.note).slice(0, 30)}` : ''}` : `- 今日记录：未填写`,
+        `\n【最近经期区间】\n${recentRanges || '（无）'}`,
+        recentDaily ? `\n【最近10天每日记录】\n${recentDaily}` : '',
+      ].filter(Boolean).join('\n')
+    }
+
     // 用户主动发送：强制滚到底部
     forceScrollRef.current = true
     nearBottomRef.current = true
@@ -2010,6 +2046,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       content: `经期记录已同步`,
       isUser: true,
       type: 'period',
+      periodSummary: periodInfo || '经期记录已同步',
+      periodContent: buildPeriodContent(),
     })
     
     setShowPlusMenu(false)
@@ -2171,6 +2209,48 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
   
   // 性能：经期数据只在“经期面板”打开时才需要，避免打字时反复计算
   const periodRecords = activePanel === 'period' ? getPeriodRecords() : []
+
+  const addDays = (dateStr: string, days: number) => {
+    const d = new Date(dateStr)
+    d.setDate(d.getDate() + days)
+    return d.toISOString().split('T')[0]
+  }
+
+  const getRecordEnd = (r: any) => {
+    return typeof r?.endDate === 'string' && r.endDate ? r.endDate : addDays(r.startDate, 6)
+  }
+
+  const findRecordForDate = (dateStr: string) => {
+    return periodRecords.find(r => dateStr >= r.startDate && dateStr <= getRecordEnd(r))
+  }
+
+  const calcPredictedNextStart = () => {
+    const rs = periodRecords
+      .filter(r => typeof r?.startDate === 'string' && r.startDate)
+      .slice()
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+    if (rs.length === 0) return null
+    const starts = rs.map(r => new Date(r.startDate).getTime())
+    const diffs: number[] = []
+    for (let i = 1; i < starts.length; i++) {
+      const d = Math.round((starts[i] - starts[i - 1]) / (1000 * 60 * 60 * 24))
+      if (Number.isFinite(d) && d >= 18 && d <= 45) diffs.push(d)
+    }
+    const avg = diffs.length > 0 ? Math.round(diffs.slice(-6).reduce((a, b) => a + b, 0) / diffs.slice(-6).length) : 28
+    const lastStart = rs[rs.length - 1].startDate
+    return addDays(lastStart, avg)
+  }
+
+  // 打开经期面板或切换选中日期时，把已保存的“当天疼痛/血量”带出来
+  useEffect(() => {
+    if (activePanel !== 'period') return
+    const r = findRecordForDate(selectedPeriodDate)
+    const entry = r?.daily?.find((e: any) => e?.date === selectedPeriodDate)
+    setPeriodPainDraft((entry?.pain ?? 0) as any)
+    setPeriodFlowDraft((entry?.flow ?? 'none') as any)
+    setPeriodNoteDraft(String(entry?.note ?? ''))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePanel, selectedPeriodDate])
   
   const isInPeriod = (dateStr: string) => {
     return periodRecords.some(record => {
@@ -2199,16 +2279,9 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
   }
   
   const togglePeriodDay = (dateStr: string) => {
-    const existingRecord = periodRecords.find(r => r.startDate === dateStr)
-    if (existingRecord) {
-      removePeriodRecord(existingRecord.id)
-    } else {
-      addPeriodRecord({
-        startDate: dateStr,
-        notes: '',
-        symptoms: [],
-      })
-    }
+    // 旧逻辑：点击日期直接新增/删除“开始日记录”
+    // 新逻辑：点击仅用于“选择日期”，具体设置开始/结束日由按钮完成
+    setSelectedPeriodDate(dateStr)
   }
 
   // 渲染消息内容
@@ -2259,6 +2332,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     if (msg.type === 'period') {
       // 经期同步卡片（仅用于“通知对方去读取经期日历”，真实记录由系统提示实时提供）
       const hint = currentPeriod ? '我现在在经期，麻烦你多关心一下～' : '我把经期日历同步给你啦'
+      const summary = (msg as any).periodSummary ? String((msg as any).periodSummary).trim() : ''
       return (
         <div className="min-w-[190px] max-w-[240px] rounded-xl overflow-hidden border border-black/10 bg-white/80 shadow-sm">
           <div className="px-3 py-2 flex items-start gap-2">
@@ -2270,7 +2344,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             <div className="min-w-0">
               <div className="text-[13px] font-semibold text-gray-800 truncate">经期记录</div>
               <div className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-                {hint}
+                {summary || hint}
               </div>
             </div>
           </div>
@@ -2555,6 +2629,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       const inPeriod = isInPeriod(dateStr)
       const status = getPeriodStatus(dateStr)
       const isToday = dateStr === today
+      const isSelected = dateStr === selectedPeriodDate
       
       days.push(
         <button
@@ -2563,6 +2638,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
           onClick={() => togglePeriodDay(dateStr)}
           className={`w-8 h-8 rounded-full text-xs flex items-center justify-center relative transition-all
             ${isToday ? 'ring-2 ring-pink-400' : ''}
+            ${isSelected ? 'ring-2 ring-gray-700 ring-offset-1' : ''}
             ${inPeriod ? 'bg-pink-400 text-white' : 'hover:bg-gray-100'}
             ${status === 'ovulation' && !inPeriod ? 'bg-red-100 text-red-600' : ''}
             ${status === 'safe' && !inPeriod ? 'bg-green-50 text-green-600' : ''}
@@ -3272,8 +3348,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                   )}
                 </div>
               ) : activePanel === 'period' ? (
-                <div className="bg-white/90 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-3">
+                <div className="bg-white/90 rounded-xl p-3 max-h-[62vh] overflow-hidden flex flex-col">
+                  <div className="flex items-center justify-between mb-2">
                     <button type="button" onClick={() => setActivePanel(null)} className="text-gray-500">
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -3282,8 +3358,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     <span className="font-medium text-gray-800">经期记录</span>
                     <div className="w-5" />
                   </div>
-                  
-                  <div className="flex items-center justify-between mb-3">
+
+                  <div className="flex items-center justify-between mb-2">
                     <button
                       type="button"
                       onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1))}
@@ -3307,7 +3383,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     </button>
                   </div>
                   
-                  <div className="grid grid-cols-7 gap-1 mb-2">
+                  <div className="grid grid-cols-7 gap-1 mb-1">
                     {['日', '一', '二', '三', '四', '五', '六'].map(day => (
                       <div key={day} className="w-8 h-6 flex items-center justify-center text-xs text-gray-400">
                         {day}
@@ -3315,39 +3391,163 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     ))}
                   </div>
                   
-                  <div className="grid grid-cols-7 gap-1">
-                    {renderCalendar()}
-                  </div>
-                  
-                  <div className="flex items-center justify-center gap-4 mt-3 pt-3 border-t border-gray-100">
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 rounded-full bg-pink-400" />
-                      <span className="text-xs text-gray-500">经期</span>
+                  {/* 内容区：可滚动，避免占地过大 */}
+                  <div className="flex-1 overflow-y-auto pr-0.5">
+                    <div className="grid grid-cols-7 gap-1">
+                      {renderCalendar()}
                     </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 rounded-full bg-red-100" />
-                      <span className="text-xs text-gray-500">排卵期</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 rounded-full bg-green-50 border border-green-200" />
-                      <span className="text-xs text-gray-500">安全期</span>
+
+                    {/* 选中日期 + 录入 */}
+                    <div className="mt-2 pt-2 border-t border-gray-100">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[13px] font-medium text-gray-800">
+                          已选：{selectedPeriodDate}
+                        </div>
+                        <div className="text-[11px] text-gray-400">
+                          预计下次：{calcPredictedNextStart() || '—'}
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // 避免重复创建同一天开始日
+                            const exists = periodRecords.some(r => r.startDate === selectedPeriodDate)
+                            if (!exists) {
+                              addPeriodRecord({ startDate: selectedPeriodDate, notes: '', symptoms: [], daily: [] })
+                            }
+                            setInfoDialog({ open: true, title: '已保存', message: `已设置 ${selectedPeriodDate} 为本次开始日` })
+                          }}
+                          className="flex-1 py-2 rounded-lg bg-pink-500 text-white text-sm font-medium"
+                        >
+                          设为开始日
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // 修复：结束日应落在“当前选中的那次经期记录”上；否则用户会觉得点了没反应
+                            const target = findRecordForDate(selectedPeriodDate) || periodRecords[0]
+                            if (!target) {
+                              setInfoDialog({ open: true, title: '还没开始日', message: '请先设置开始日。' })
+                              return
+                            }
+                            if (selectedPeriodDate < target.startDate) {
+                              setInfoDialog({ open: true, title: '结束日不合法', message: '结束日不能早于开始日。' })
+                              return
+                            }
+                            updatePeriodRecord(target.id, { endDate: selectedPeriodDate })
+                            setInfoDialog({ open: true, title: '已保存', message: `已设置 ${selectedPeriodDate} 为本次结束日` })
+                          }}
+                          className="flex-1 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium"
+                        >
+                          设为结束日
+                        </button>
+                      </div>
+
+                      {/* 疼痛 */}
+                      <div className="mt-3">
+                        <div className="text-xs text-gray-500 mb-1">疼痛</div>
+                        <div className="flex gap-2">
+                          {[
+                            { v: 0 as const, t: '无' },
+                            { v: 1 as const, t: '轻' },
+                            { v: 2 as const, t: '中' },
+                            { v: 3 as const, t: '重' },
+                            { v: 4 as const, t: '爆' },
+                          ].map((it) => (
+                            <button
+                              key={it.v}
+                              type="button"
+                              onClick={() => setPeriodPainDraft(it.v)}
+                              className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${
+                                periodPainDraft === it.v ? 'bg-pink-100 text-pink-700 border border-pink-200' : 'bg-gray-50 text-gray-600'
+                              }`}
+                            >
+                              {it.t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 血量 */}
+                      <div className="mt-3">
+                        <div className="text-xs text-gray-500 mb-1">血量</div>
+                        <div className="flex gap-2">
+                          {[
+                            { v: 'none' as const, t: '无' },
+                            { v: 'light' as const, t: '少' },
+                            { v: 'medium' as const, t: '中' },
+                            { v: 'heavy' as const, t: '多' },
+                          ].map((it) => (
+                            <button
+                              key={it.v}
+                              type="button"
+                              onClick={() => setPeriodFlowDraft(it.v)}
+                              className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${
+                                periodFlowDraft === it.v ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-gray-50 text-gray-600'
+                              }`}
+                            >
+                              {it.t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 备注 */}
+                      <div className="mt-3">
+                        <div className="text-xs text-gray-500 mb-1">备注</div>
+                        <input
+                          value={periodNoteDraft}
+                          onChange={(e) => setPeriodNoteDraft(e.target.value)}
+                          placeholder="可选"
+                          className="w-full px-3 py-2 rounded-lg bg-gray-50 text-gray-700 placeholder-gray-400 outline-none text-sm"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const r = findRecordForDate(selectedPeriodDate)
+                          if (!r) {
+                            setInfoDialog({ open: true, title: '还没经期记录', message: '请先设置开始日，再记录当天疼痛/血量。' })
+                            return
+                          }
+                          const prev = Array.isArray((r as any).daily) ? (r as any).daily : []
+                          const next = prev.filter((e: any) => e?.date !== selectedPeriodDate)
+                          next.push({
+                            date: selectedPeriodDate,
+                            pain: periodPainDraft,
+                            flow: periodFlowDraft,
+                            note: (periodNoteDraft || '').trim(),
+                            updatedAt: Date.now(),
+                          })
+                          updatePeriodRecord(r.id, { daily: next })
+                          setInfoDialog({ open: true, title: '已保存', message: '已保存当天疼痛/血量记录。' })
+                        }}
+                        className="w-full mt-3 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium"
+                      >
+                        保存当天记录
+                      </button>
+
+                      <div className="text-center text-xs text-gray-400 mt-2">
+                        点日期选择，再设置开始/结束
+                      </div>
                     </div>
                   </div>
-                  
-                  <div className="text-center text-xs text-gray-400 mt-2">
-                    点击日期可标记/取消经期
-                  </div>
-                  
-                  {/* 发送经期记录按钮 */}
-                  <button
-                    type="button"
-                    onClick={handleSharePeriod}
-                    className="w-full mt-3 py-2 rounded-lg bg-gradient-to-r from-pink-400 to-pink-500 text-white text-sm font-medium"
-                  >
-                    发送给{character.name}
-                  </button>
-                  <div className="text-center text-xs text-gray-400 mt-1">
-                    {character.name}会根据你的经期情况关心你哦~
+
+                  {/* 底部固定区：避免被遮挡 */}
+                  <div className="pt-2 mt-2 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={handleSharePeriod}
+                      className="w-full py-2 rounded-lg bg-gradient-to-r from-pink-400 to-pink-500 text-white text-sm font-medium"
+                    >
+                      发送给{character.name}
+                    </button>
+                    <div className="text-center text-[11px] text-gray-400 mt-1">
+                      对方会读取你的完整记录
+                    </div>
                   </div>
                 </div>
               ) : null}
