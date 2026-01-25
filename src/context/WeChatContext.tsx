@@ -219,6 +219,18 @@ export type FavoriteDiary = {
   note?: string // 收藏备注（可选）
 }
 
+// 我的日记
+export type MyDiary = {
+  id: string
+  date: string // YYYY-MM-DD 格式
+  title: string // 日记标题
+  content: string // 日记内容
+  mood?: string // 心情标签（可选）
+  weather?: string // 天气（可选）
+  createdAt: number // 创建时间
+  updatedAt: number // 最后更新时间
+}
+
 // 朋友圈动态
 export type MomentPost = {
   id: string
@@ -348,6 +360,13 @@ type WeChatContextValue = {
   addFavoriteDiary: (diary: Omit<FavoriteDiary, 'id' | 'createdAt'>) => FavoriteDiary
   removeFavoriteDiary: (id: string) => void
   isDiaryFavorited: (characterId: string, diaryAt: number, content: string) => boolean
+
+  // 我的日记
+  myDiaries: MyDiary[]
+  addMyDiary: (diary: Omit<MyDiary, 'id' | 'createdAt' | 'updatedAt'>) => MyDiary
+  updateMyDiary: (id: string, updates: Partial<Omit<MyDiary, 'id' | 'createdAt'>>) => void
+  deleteMyDiary: (id: string) => void
+  getMyDiaryByDate: (date: string) => MyDiary | undefined
   
   // 朋友圈操作
   addMoment: (moment: Omit<MomentPost, 'id' | 'timestamp' | 'likes' | 'comments'> & { timestamp?: number }) => MomentPost
@@ -405,6 +424,7 @@ const STORAGE_KEYS = {
   stickers: 'wechat_stickers',
   stickerCategories: 'wechat_sticker_categories',
   favoriteDiaries: 'wechat_favorite_diaries',
+  myDiaries: 'wechat_my_diaries',
   moments: 'wechat_moments',
   userSettings: 'wechat_user_settings',
   userPersonas: 'wechat_user_personas',
@@ -439,6 +459,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     []
   )
   const [favoriteDiaries, setFavoriteDiaries] = useState<FavoriteDiary[]>(() =>
+    []
+  )
+  const [myDiaries, setMyDiaries] = useState<MyDiary[]>(() =>
     []
   )
   const [stickerCategories, setStickerCategories] = useState<StickerCategory[]>(() => 
@@ -566,6 +589,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         nextMessages,
         nextStickers,
         nextFavoriteDiaries,
+        nextMyDiaries,
         nextStickerCategories,
         nextMoments,
         nextUserSettings,
@@ -582,6 +606,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<WeChatMessage[]>(STORAGE_KEYS.messages, []),
         kvGetJSONDeep<StickerConfig[]>(STORAGE_KEYS.stickers, []),
         kvGetJSONDeep<FavoriteDiary[]>(STORAGE_KEYS.favoriteDiaries, []),
+        kvGetJSONDeep<MyDiary[]>(STORAGE_KEYS.myDiaries, []),
         kvGetJSONDeep<StickerCategory[]>(STORAGE_KEYS.stickerCategories, []),
         kvGetJSONDeep<MomentPost[]>(STORAGE_KEYS.moments, []),
         kvGetJSONDeep<WeChatUserSettings>(STORAGE_KEYS.userSettings, defaultUserSettings),
@@ -606,6 +631,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       setMessages(nextMessages)
       setStickers(nextStickers)
       setFavoriteDiaries(nextFavoriteDiaries)
+      setMyDiaries(nextMyDiaries)
       setStickerCategories(nextStickerCategories)
       setMoments(nextMoments)
       setUserSettings(nextUserSettings)
@@ -633,6 +659,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.messages, messages) }, [messages, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.stickers, stickers) }, [stickers, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.favoriteDiaries, favoriteDiaries) }, [favoriteDiaries, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.myDiaries, myDiaries) }, [myDiaries, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.stickerCategories, stickerCategories) }, [stickerCategories, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.moments, moments) }, [moments, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.userSettings, userSettings) }, [userSettings, isHydrated])
@@ -936,6 +963,34 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     return favoriteDiaries.some(d => `${d.characterId}|${d.diaryAt}|${(d.content || '').slice(0, 40)}` === key)
   }
 
+  // ==================== 我的日记操作 ====================
+
+  const addMyDiary = (diary: Omit<MyDiary, 'id' | 'createdAt' | 'updatedAt'>): MyDiary => {
+    const now = Date.now()
+    const newDiary: MyDiary = {
+      ...diary,
+      id: `my_diary_${now}_${Math.random().toString(36).slice(2)}`,
+      createdAt: now,
+      updatedAt: now,
+    }
+    setMyDiaries(prev => [newDiary, ...prev])
+    return newDiary
+  }
+
+  const updateMyDiary = (id: string, updates: Partial<Omit<MyDiary, 'id' | 'createdAt'>>) => {
+    setMyDiaries(prev => prev.map(d =>
+      d.id === id ? { ...d, ...updates, updatedAt: Date.now() } : d
+    ))
+  }
+
+  const deleteMyDiary = (id: string) => {
+    setMyDiaries(prev => prev.filter(d => d.id !== id))
+  }
+
+  const getMyDiaryByDate = (date: string): MyDiary | undefined => {
+    return myDiaries.find(d => d.date === date)
+  }
+
   // ==================== 朋友圈操作 ====================
 
   const addMoment = (moment: Omit<MomentPost, 'id' | 'timestamp' | 'likes' | 'comments'> & { timestamp?: number }): MomentPost => {
@@ -1148,6 +1203,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     getMessagesPage,
     addSticker, removeSticker, getStickersByCharacter, addStickerToCharacter, addStickerToAll,
     addFavoriteDiary, removeFavoriteDiary, isDiaryFavorited,
+    myDiaries, addMyDiary, updateMyDiary, deleteMyDiary, getMyDiaryByDate,
     addMoment, deleteMoment, likeMoment, addMomentComment,
     updateUserSettings,
     addUserPersona, updateUserPersona, deleteUserPersona, getUserPersona, getCurrentPersona,
@@ -1160,7 +1216,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     // 钱包
     walletBalance, walletInitialized, walletBills,
     initializeWallet, addWalletBill, updateWalletBalance,
-  }), [isHydrated, characters, messages, stickers, favoriteDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage])
+  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage])
 
   return <WeChatContext.Provider value={value}>{children}</WeChatContext.Provider>
 }
