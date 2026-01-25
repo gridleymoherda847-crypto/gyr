@@ -363,7 +363,7 @@ export default function ChatScreen() {
           if (!text) return []
           // 先按换行切
           const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
-          const keepCmd = (s: string) => /\|\|\|/.test(s) || /\[(转账|音乐):/.test(s) || /[【\[]\s*(转账|音乐)\s*[:：]/.test(s)
+      const keepCmd = (s: string) => /\|\|\|/.test(s) || /\[转账:/.test(s) || /[【\[]\s*转账\s*[:：]/.test(s)
           const out: string[] = []
           for (const line of byLine) {
             if (keepCmd(line)) { out.push(line); continue }
@@ -471,8 +471,7 @@ export default function ChatScreen() {
         // 获取全局预设
         const globalPresets = getGlobalPresets()
         
-        // 获取可用歌曲列表
-        const availableSongs = musicPlaylist.map(s => `${s.title}-${s.artist}`).join('、')
+        // 听歌邀请逻辑已改为“卡片→确认进入一起听界面”，这里禁止把歌单塞进 prompt（会导致模型在生产环境疯狂报歌名）
         
         // 计算时间差（增强“活人感”）
         const nowTs = character.timeSyncEnabled !== false
@@ -640,7 +639,7 @@ ${recentTimeline || '（无）'}
 - 不要强行每条都很完整/很礼貌，允许有自己的心情与小情绪
 - 根据对话情绪和内容，回复消息（${(character as any).language !== 'zh' ? '非中文语言时建议 1-5 条，避免太多' : '1-15 条都可以'}），每条消息用换行分隔（数量可少可多，随心情）
 - 如果想给对方转账，单独一行写：[转账:金额:备注]
-${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音乐:歌名:歌手]，可选歌曲：${availableSongs}` : ''}`
+`
 
         systemPrompt += `
 
@@ -649,7 +648,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 - 你可能会在历史里看到 <DIARY ...>：那是“用户转发的一篇日记”，作者信息在 author/authorId。
   - 如果 authorId/author 显示是“你自己”，说明这是你写的日记被用户转发回来，你要对此有反应（羞耻/炸毛/装死/嘴硬/否认/解释等按人设）。
   - 如果作者不是你，就当作别人写的日记来评价/吐槽/震惊/共情（按人设）。
-- 若要触发转账/音乐，必须使用上面的 [转账:金额:备注] / [音乐:歌名:歌手] 格式，且单独一行`
+- 若要触发转账，必须使用上面的 [转账:金额:备注] 格式，且单独一行
+- 【重要】你绝对不要在普通聊天里无缘无故报歌名/列歌单/复读歌名。听歌邀请只通过“音乐卡片”流程处理（用户发卡片→点箭头→你决定→弹确认→进入一起听界面）。`
 
         systemPrompt += `
 
@@ -1370,9 +1370,6 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       // 获取全局预设
       const globalPresets = getGlobalPresets()
       
-      // 获取可用歌曲列表
-      const availableSongs = musicPlaylist.map(s => `${s.title}-${s.artist}`).slice(0, 5).join('、')
-
       // +号功能也需要“实时读取已保存的经期日历记录”
       const periodCalendarForLLM = (() => {
         try {
@@ -1418,10 +1415,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         systemPrompt += `\n6. 如果你想给对方转账表达心意，在消息最后单独一行写：[转账:金额:备注]，例如：[转账:52.00:爱你]`
       }
       
-      // 添加音乐邀请提示（如果有歌曲可分享，必须从曲库选择）
-      if (musicPlaylist.length > 0) {
-        systemPrompt += `\n7. 如果你想邀请对方一起听歌，在消息最后单独一行写：[音乐:歌名:歌手]，只能从以下歌曲中选择：${availableSongs}`
-      }
+      // 听歌邀请逻辑已改为“卡片→确认进入一起听界面”，这里禁止让模型主动发“音乐指令/歌名”
       
       // 线下模式关闭时，禁止动作描述
       if (!character.offlineMode) {
@@ -1451,10 +1445,6 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
           // 检查是否是转账消息
           const transferMatch = trimmedLine.match(/\[转账:(\d+(?:\.\d+)?):(.+?)\]/)
           const transferAltMatch = trimmedLine.match(/[【\[]\s*转账\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*([^】\]]+)\s*[】\]]/)
-          // 检查是否是音乐邀请（兼容 [音乐:歌名] / [音乐:歌名:歌手] / 【音乐：...】）
-          const musicMatch = trimmedLine.match(/\[音乐:([^\]]+?)\]/)
-          const musicAltMatch = trimmedLine.match(/[【\[]\s*音乐\s*[:：]\s*([^】\]]+)\s*[】\]]/)
-          
           if (transferMatch || transferAltMatch) {
             const m = transferMatch || transferAltMatch!
             const amount = parseFloat(m[1])
@@ -1470,37 +1460,6 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                 transferStatus: /已领取|已收款|received/i.test(note) ? 'received' : /已退还|已退款|refunded/i.test(note) ? 'refunded' : 'pending',
               })
             }, msgDelay, { background: true })
-          } else if (musicMatch || musicAltMatch) {
-            const m = musicMatch || musicAltMatch!
-            const raw = (m[1] || '').trim()
-            const parts = raw.split(/[:：]/).map(s => s.trim()).filter(Boolean)
-            const rawTitle = parts[0] || raw
-            const songInPlaylist = musicPlaylist.find(s =>
-              s.title === rawTitle || s.title.includes(rawTitle) || rawTitle.includes(s.title)
-            )
-            if (songInPlaylist) {
-              safeTimeoutEx(() => {
-                addMessage({
-                  characterId: character.id,
-                  content: `邀请你一起听: ${songInPlaylist.title}`,
-                  isUser: false,
-                  type: 'music',
-                  musicTitle: songInPlaylist.title,
-                  musicArtist: songInPlaylist.artist,
-                  musicStatus: 'pending',
-                })
-              }, msgDelay, { background: true })
-            } else {
-              // 歌曲不在曲库中，转为普通文本
-              safeTimeoutEx(() => {
-                addMessage({
-                  characterId: character.id,
-                  content: `想和你一起听《${rawTitle}》~`,
-                  isUser: false,
-                  type: 'text',
-                })
-              }, msgDelay, { background: true })
-            }
           } else {
             safeTimeoutEx(() => {
               addMessage({
