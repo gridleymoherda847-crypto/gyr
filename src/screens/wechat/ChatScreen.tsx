@@ -11,7 +11,7 @@ export default function ChatScreen() {
   const { fontColor, musicPlaylist, llmConfig, callLLM, playSong } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
-    getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter,
+    getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds,
     getStickersByCharacter, deleteCharacter, clearMessages,
     addTransfer, getPeriodRecords, addPeriodRecord,
     removePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether,
@@ -22,7 +22,7 @@ export default function ChatScreen() {
   } = useWeChat()
   
   const character = getCharacter(characterId || '')
-  // 全量消息只用于“重生成/回溯/记忆构建”等功能，不用于首屏渲染
+  // 全量消息只用于“重生成/记忆构建”等功能，不用于首屏渲染
   const messages = getMessagesByCharacter(characterId || '')
   // 性能：避免打字时反复 filter 全量贴纸
   const stickers = useMemo(() => getStickersByCharacter(characterId || ''), [characterId, getStickersByCharacter])
@@ -33,6 +33,30 @@ export default function ChatScreen() {
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
+
+  // 给需要“按最近聊天上下文做决策”的功能复用（情侣空间/音乐邀请等）
+  const buildShortHistory = (maxChars: number) => {
+    const nonSystem = (messagesRef.current || []).filter(m => m.type !== 'system')
+    let used = 0
+    const out: { role: 'user' | 'assistant'; content: string }[] = []
+    for (let i = nonSystem.length - 1; i >= 0; i--) {
+      const m = nonSystem[i]
+      let content = (m.content || '').trim()
+      if (!content) continue
+      if (m.type === 'image') content = '<IMAGE />'
+      if (m.type === 'sticker') content = '<STICKER />'
+      if (m.type === 'transfer') content = '<TRANSFER />'
+      if (m.type === 'music') content = '<MUSIC />'
+      if (m.type === 'diary') content = '<DIARY />'
+      if (m.type === 'couple') content = '<COUPLE_SPACE />'
+
+      const extra = content.length + 10
+      if (used + extra > maxChars) break
+      used += extra
+      out.push({ role: m.isUser ? 'user' : 'assistant', content })
+    }
+    return out.reverse()
+  }
 
   // 该对话选择的“我的人设”（没有选则回退到当前全局人设）
   const selectedPersona = useMemo(() => {
@@ -162,7 +186,7 @@ export default function ChatScreen() {
   // - 当角色语言非中文且开启聊天翻译时：模型会在每条消息里“自带一份中文翻译”
   // - 我们只做“翻译中…”的假动画，然后展示这份中文
   
-  // 编辑/回溯模式：可勾选双方消息、批量删除；也可“回溯到某条”
+  // 编辑模式：可勾选双方消息、批量删除
   const [editMode, setEditMode] = useState(false)
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set())
 
@@ -171,7 +195,7 @@ export default function ChatScreen() {
     if (!editMode) setSelectedMsgIds(new Set())
   }, [editMode])
   const [showEditDeleteConfirm, setShowEditDeleteConfirm] = useState(false)
-  const [showEditRewindConfirm, setShowEditRewindConfirm] = useState(false)
+  // 回溯功能已移除（仅保留批量删除）
   
   // 清空消息确认
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -1017,55 +1041,105 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             totalDelay += 400 + Math.random() * 500
             
             for (const musicInvite of pendingUserMusicInvites) {
-              // 根据角色性格决定是否接受（80%概率接受）
-              const willAccept = Math.random() > 0.2
               const songTitle = musicInvite.musicTitle || '歌曲'
               const songArtist = musicInvite.musicArtist || ''
               
               safeTimeoutEx(() => {
-                // 更新原音乐邀请状态
-                updateMessage(musicInvite.id, { musicStatus: willAccept ? 'accepted' : 'rejected' })
-                
-                if (willAccept) {
-                  // 接受邀请 - 开启一起听
-                  startListenTogether(character.id, songTitle, songArtist)
-                  
-                  // 找到对应的歌曲并播放
-                  const fullSong = musicPlaylist.find(s => s.title === songTitle && s.artist === songArtist)
-                  if (fullSong) {
-                    playSong(fullSong)
+                ;(async () => {
+                  // 需要 API 才能“按人设/关系/聊天上下文”做决定
+                  const hasApi = !!(llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel)
+                  let decision: 'accept' | 'reject' = 'accept'
+                  let chatReply = ''
+
+                  const tryParseJson = (text: string) => {
+                    const raw = (text || '').trim()
+                    const match = raw.match(/\{[\s\S]*\}/)
+                    if (!match) return null
+                    try { return JSON.parse(match[0]) } catch { return null }
                   }
-                  
-                  // 添加系统消息
+
+                  if (hasApi) {
+                    try {
+                      const globalPresets = getGlobalPresets()
+                      const selectedPersonaName = selectedPersona?.name || '我'
+                      const systemPrompt =
+                        `${globalPresets ? globalPresets + '\n\n' : ''}` +
+                        `【任务：处理一起听歌邀请】\n` +
+                        `你是微信里的角色：${character.name}\n` +
+                        `你的人设：${(character.prompt || '').trim() || '（无）'}\n` +
+                        `你和用户的关系：${character.relationship || '（无）'}\n` +
+                        `你叫用户：${character.callMeName || '（未设置）'}\n` +
+                        `用户名字：${selectedPersonaName}\n` +
+                        `用户邀请你一起听《${songTitle}》${songArtist ? `- ${songArtist}` : ''}。\n` +
+                        `\n` +
+                        `【决策规则】\n` +
+                        `- 你拥有“拒绝”的权利，但绝不能像人机：必须结合你的性格、人设、你们关系、以及最近聊天氛围。\n` +
+                        `- 如果你现在心情不好/很忙/关系一般/对方刚惹你：更可能拒绝或先推一下。\n` +
+                        `- 如果你偏黏人/关系亲密/气氛甜：更可能接受。\n` +
+                        `- 允许一点随机性，但必须“讲得通”。\n` +
+                        `- 严禁出现辱女/性羞辱词。\n` +
+                        `\n` +
+                        `【只输出 JSON】\n` +
+                        `{\n` +
+                        `  "decision": "accept|reject",\n` +
+                        `  "chatReply": "你接下来发给对方的一条微信回复（自然口吻，别写系统提示）"\n` +
+                        `}\n`
+
+                      const llmMessages = [
+                        { role: 'system', content: systemPrompt },
+                        ...buildShortHistory(8000),
+                        { role: 'user', content: '请现在输出 JSON。' },
+                      ]
+
+                      const res = await callLLM(llmMessages, undefined, { maxTokens: 220, timeoutMs: 600000, temperature: 0.85 })
+                      const parsed = tryParseJson(res) || {}
+                      const decisionRaw = String(parsed.decision || '').trim().toLowerCase()
+                      decision = decisionRaw === 'reject' ? 'reject' : 'accept'
+                      chatReply = String(parsed.chatReply || '').trim().slice(0, 180)
+                    } catch {
+                      decision = Math.random() > 0.2 ? 'accept' : 'reject'
+                    }
+                  } else {
+                    // 没有 API：退化为“允许拒绝”的随机（不改其它线路）
+                    decision = Math.random() > 0.2 ? 'accept' : 'reject'
+                  }
+
+                  // 更新原音乐邀请状态
+                  updateMessage(musicInvite.id, { musicStatus: decision === 'accept' ? 'accepted' : 'rejected' })
+
+                  if (decision === 'accept') {
+                    // 接受邀请 - 开启一起听
+                    startListenTogether(character.id, songTitle, songArtist)
+
+                    // 找到对应的歌曲并播放
+                    const fullSong = musicPlaylist.find(s => s.title === songTitle && s.artist === songArtist)
+                    if (fullSong) playSong(fullSong)
+
+                    setMusicInviteDialog({
+                      open: true,
+                      song: { title: songTitle, artist: songArtist },
+                      accepted: true,
+                    })
+                  } else {
+                    setMusicInviteDialog({
+                      open: true,
+                      song: { title: songTitle, artist: songArtist },
+                      accepted: false,
+                    })
+                  }
+
+                  // 用“真人说话”的方式补一句（与决策一致）
+                  const fallbackReply =
+                    decision === 'accept'
+                      ? `行，来。`
+                      : `我现在不太想听，晚点吧。`
                   addMessage({
                     characterId: character.id,
-                    content: `${character.name}接受了你的邀请，开始一起听《${songTitle}》`,
+                    content: chatReply || fallbackReply,
                     isUser: false,
-                    type: 'system',
+                    type: 'text',
                   })
-                  
-                  // 显示接受弹窗
-                  setMusicInviteDialog({
-                    open: true,
-                    song: { title: songTitle, artist: songArtist },
-                    accepted: true,
-                  })
-                } else {
-                  // 拒绝邀请
-                  addMessage({
-                    characterId: character.id,
-                    content: `${character.name}拒绝了你一起听《${songTitle}》的邀请`,
-                    isUser: false,
-                    type: 'system',
-                  })
-                  
-                  // 显示拒绝弹窗
-                  setMusicInviteDialog({
-                    open: true,
-                    song: { title: songTitle, artist: songArtist },
-                    accepted: false,
-                  })
-                }
+                })()
               }, totalDelay, { background: true })
               
               totalDelay += 350
@@ -1694,29 +1768,6 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     setAiTyping(true)
     setCharacterTyping(character.id, true)
 
-    const buildShortHistory = (maxChars: number) => {
-      const nonSystem = (messages || []).filter(m => m.type !== 'system')
-      let used = 0
-      const out: { role: 'user' | 'assistant'; content: string }[] = []
-      for (let i = nonSystem.length - 1; i >= 0; i--) {
-        const m = nonSystem[i]
-        let content = (m.content || '').trim()
-        if (!content) continue
-        if (m.type === 'image') content = '<IMAGE />'
-        if (m.type === 'sticker') content = '<STICKER />'
-        if (m.type === 'transfer') content = '<TRANSFER />'
-        if (m.type === 'music') content = '<MUSIC />'
-        if (m.type === 'diary') content = '<DIARY />'
-        if (m.type === 'couple') content = '<COUPLE_SPACE />'
-
-        const extra = content.length + 10
-        if (used + extra > maxChars) break
-        used += extra
-        out.push({ role: m.isUser ? 'user' : 'assistant', content })
-      }
-      return out.reverse()
-    }
-
     const tryParseJson = (text: string) => {
       const raw = (text || '').trim()
       const match = raw.match(/\{[\s\S]*\}/)
@@ -1829,15 +1880,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
     setEditMode(false)
   }
 
-  // 编辑模式：回溯到某条（只允许选择 1 条）
-  const handleRewindToSelected = () => {
-    const ids = Array.from(selectedMsgIds)
-    if (ids.length !== 1) return
-    deleteMessagesAfter(character.id, ids[0])
-    setSelectedMsgIds(new Set())
-    setShowEditRewindConfirm(false)
-    setEditMode(false)
-  }
+  // 回溯功能已移除
 
   // 清空所有消息
   const handleClearAll = () => {
@@ -1904,7 +1947,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       characterId: character.id,
       content: `[经期记录] ${periodInfo}`,
       isUser: true,
-      type: 'system',
+      // 不能用 system：system 会被历史/时间线过滤，导致“发了经期对方读不到”
+      type: 'text',
     })
     
     setShowPlusMenu(false)
@@ -2817,14 +2861,6 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  disabled={selectedMsgIds.size !== 1}
-                  onClick={() => setShowEditRewindConfirm(true)}
-                  className={`text-sm font-medium ${selectedMsgIds.size === 1 ? 'text-pink-500' : 'text-gray-300'}`}
-                >
-                  回溯
-                </button>
-                <button
-                  type="button"
                   disabled={selectedMsgIds.size === 0}
                   onClick={() => setShowEditDeleteConfirm(true)}
                   className={`text-sm font-medium ${selectedMsgIds.size > 0 ? 'text-red-500' : 'text-gray-300'}`}
@@ -3085,7 +3121,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     <span className="text-xs text-gray-600">情侣</span>
                   </button>
                   
-                  {/* 编辑（回溯/删除） */}
+                  {/* 编辑（删除） */}
                   <button type="button" onClick={() => { setShowPlusMenu(false); setEditMode(true) }} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -3666,18 +3702,6 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         danger
         onCancel={() => setShowEditDeleteConfirm(false)}
         onConfirm={handleDeleteSelected}
-      />
-
-      {/* 编辑模式：回溯确认（选中 1 条时可用） */}
-      <WeChatDialog
-        open={showEditRewindConfirm}
-        title="回溯到这条消息？"
-        message="这条消息之后的所有对话将被永久删除，此操作不可逆！"
-        confirmText="确认回溯"
-        cancelText="取消"
-        danger
-        onCancel={() => setShowEditRewindConfirm(false)}
-        onConfirm={handleRewindToSelected}
       />
 
       {/* 清空消息确认弹窗 */}
