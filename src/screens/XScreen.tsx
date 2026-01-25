@@ -18,6 +18,7 @@ import {
   xNewReply,
   xSave,
   type XDataV1,
+  type XDMMessage,
   type XPost,
   type XReply,
 } from '../storage/x'
@@ -773,14 +774,14 @@ export default function XScreen() {
           const threads = (prev.dms || []).slice()
           const idx = threads.findIndex((t) => t.id === threadId)
           const isThreadOpen = viewRef.current === 'dm' && openThreadIdRef.current === threadId
-          const baseMsg = {
+          const baseMsg: XDMMessage = {
             id: item.id,
             from: 'peer' as const,
             text: item.text,
             at: now,
             lang,
             translatedZh: undefined,
-            translationStatus: lang !== 'zh' ? 'pending' : undefined,
+            translationStatus: lang !== 'zh' ? ('pending' as const) : undefined,
           }
           if (idx >= 0) {
             const t = threads[idx]
@@ -1289,7 +1290,7 @@ export default function XScreen() {
           if (peerName === meName) peerName = `${meName}的粉丝`
           const lang = normalizeLang(String(item?.lang || 'zh').trim())
           const rawTexts = Array.isArray(item?.texts) ? item.texts : [item?.text]
-          const textList = rawTexts
+          const textList: string[] = rawTexts
             .map((t: any) => String(t || '').trim())
             .filter(Boolean)
             .flatMap((t: string) => splitDmLines(t, 5))
@@ -1313,7 +1314,16 @@ export default function XScreen() {
           const threads = (next.dms || []).slice()
           const idx = threads.findIndex((t) => t.peerId === ensured.userId)
           const base = Date.now()
-          const newMsgs = textList.map((line, i) => {
+          const newMsgs: Array<{
+            id: string
+            from: 'peer'
+            text: string
+            at: number
+            lang: 'zh' | 'en' | 'ja' | 'ko'
+            translatedZh: undefined
+            translationStatus: 'pending' | undefined
+            _dual: ReturnType<typeof parseDualLine> | null
+          }> = textList.map((line: string, i: number) => {
             const trimmed = line.trim()
             const dual = lang !== 'zh' ? parseDualLine(trimmed) : null
             const text = dual ? dual.orig : trimmed
