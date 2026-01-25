@@ -57,6 +57,11 @@ const normalizeLang = (langRaw?: string) => {
   return v === 'en' || v === 'ja' || v === 'ko' || v === 'zh' ? v : 'zh'
 }
 
+const mapWeChatLang = (langRaw?: string) => {
+  const v = String(langRaw || '').trim()
+  return v === 'en' || v === 'ja' || v === 'ko' ? v : 'zh'
+}
+
 const parseDualLine = (line: string) => {
   const idx = line.indexOf('|||')
   if (idx < 0) return null
@@ -126,9 +131,10 @@ export default function XScreen() {
   const { getCurrentPersona, characters, addMessage } = useWeChat()
 
   const persona = useMemo(() => getCurrentPersona(), [getCurrentPersona])
-  const meName = persona?.name || '我'
+  const meNameBase = persona?.name || '我'
 
   const [data, setData] = useState<XDataV1 | null>(null)
+  const meName = data?.meDisplayName || meNameBase
   const [tab, setTab] = useState<MainTab>('home')
   const [homeMode, setHomeMode] = useState<'forYou' | 'following'>('forYou')
 
@@ -158,9 +164,21 @@ export default function XScreen() {
   const [composeOpen, setComposeOpen] = useState(false)
   const [composeText, setComposeText] = useState('')
 
-  // Profile edit (me)
-  const meAvatarInputRef = useRef<HTMLInputElement>(null)
-  const meBannerInputRef = useRef<HTMLInputElement>(null)
+  // Profile edit
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const bannerInputRef = useRef<HTMLInputElement>(null)
+
+  const [followingOpen, setFollowingOpen] = useState(false)
+  const [avatarEditTargetId, setAvatarEditTargetId] = useState<string | null>(null)
+  const [bannerEditTargetId, setBannerEditTargetId] = useState<string | null>(null)
+  const [otherProfileTipOpen, setOtherProfileTipOpen] = useState(false)
+  const [otherProfileTipDontShow, setOtherProfileTipDontShow] = useState(false)
+  const lastProfileTipIdRef = useRef<string | null>(null)
+  const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [profileDraftName, setProfileDraftName] = useState('')
+  const [profileDraftBio, setProfileDraftBio] = useState('')
+  const [profileTab, setProfileTab] = useState<'posts' | 'replies'>('posts')
+  const [tipDialog, setTipDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
 
   // Reply
   const [replyDraft, setReplyDraft] = useState('')
@@ -220,7 +238,7 @@ export default function XScreen() {
       setLoadingOpen(true)
       setLoadingStage('正在打开 X…')
       try {
-        const loaded = await xLoad(meName)
+        const loaded = await xLoad(meNameBase)
         setData(loaded)
         setLoadingProgress(100)
         window.setTimeout(() => setLoadingOpen(false), 220)
@@ -231,7 +249,7 @@ export default function XScreen() {
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meName])
+  }, [meNameBase])
 
   useEffect(() => {
     if (!data) return
@@ -243,6 +261,31 @@ export default function XScreen() {
     setOpenPostId(target.id)
     setTab('home')
   }, [data, searchParams])
+
+  useEffect(() => {
+    if (!data) return
+    const userId = searchParams.get('userId')
+    if (!userId) return
+    setData((prev) => {
+      if (!prev) return prev
+      const { data: d2 } = ensureXUserFromCharacter(prev, userId)
+      if (d2 === prev) return prev
+      void xSave(d2)
+      return d2
+    })
+    setOpenProfileUserId(userId)
+    setView('profile')
+    setTab('home')
+  }, [data, searchParams])
+
+  useEffect(() => {
+    if (!data || !openProfileUserId || openProfileUserId === 'me') return
+    if (data.suppressOtherProfileEditTip) return
+    if (lastProfileTipIdRef.current === openProfileUserId) return
+    lastProfileTipIdRef.current = openProfileUserId
+    setOtherProfileTipDontShow(false)
+    setOtherProfileTipOpen(true)
+  }, [data, openProfileUserId])
 
   const posts = useMemo(() => (data?.posts || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [data?.posts])
   const replies = useMemo(() => data?.replies || [], [data?.replies])
@@ -396,6 +439,12 @@ export default function XScreen() {
 
     const cached = data.searchCache?.[key]
     if (!force && cached?.postIds?.length) {
+      const nextHistory = [key, ...(data.searchHistory || []).filter((x) => x !== key)].slice(0, 10)
+      if ((data.searchHistory || []).join('|') !== nextHistory.join('|')) {
+        const next: XDataV1 = { ...data, searchHistory: nextHistory }
+        setData(next)
+        void xSave(next)
+      }
       setActiveQuery(key)
       return
     }
@@ -466,6 +515,7 @@ export default function XScreen() {
           ...(next.searchCache || {}),
           [key]: { postIds: ids, updatedAt: Date.now() },
         },
+        searchHistory: [key, ...(next.searchHistory || []).filter((x) => x !== key)].slice(0, 10),
       }
       setData(next)
       await xSave(next)
@@ -546,7 +596,8 @@ export default function XScreen() {
     const text = composeText.trim()
     if (!text) return
     const mePost = xNewPost('me', meName, text)
-    let next: XDataV1 = { ...data, posts: [mePost, ...data.posts] }
+    const follower = bumpFollowers(data.meFollowerCount || 0)
+    let next: XDataV1 = { ...data, posts: [mePost, ...data.posts], meFollowerCount: follower.nextVal }
     setData(next)
     await xSave(next)
     setComposeText('')
@@ -575,11 +626,39 @@ export default function XScreen() {
       arr.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
       pruned.push(...arr.slice(-50))
     }
-    const next: XDataV1 = { ...data, posts: updatedPosts, replies: pruned }
+    const follower = bumpFollowers(data.meFollowerCount || 0)
+    const next: XDataV1 = { ...data, posts: updatedPosts, replies: pruned, meFollowerCount: follower.nextVal }
     setData(next)
     await xSave(next)
     setReplyDraft('')
     // 你发了评论后：再点刷新就会触发路人互动（由 refreshReplies 做）
+  }
+
+  const deletePostById = async (postId: string) => {
+    if (!data) return
+    const nextPosts = (data.posts || []).filter((p) => p.id !== postId)
+    const nextReplies = (data.replies || []).filter((r) => r.postId !== postId)
+    const next: XDataV1 = { ...data, posts: nextPosts, replies: nextReplies }
+    setData(next)
+    await xSave(next)
+    if (openPostId === postId) {
+      setOpenPostId(null)
+      setView('main')
+    }
+  }
+
+  const deleteReplyById = async (replyId: string, postId?: string) => {
+    if (!data) return
+    const nextReplies = (data.replies || []).filter((r) => r.id !== replyId)
+    const nextPosts = (data.posts || []).map((p) => {
+      if (postId && p.id === postId) {
+        return { ...p, replyCount: Math.max(0, (p.replyCount || 0) - 1) }
+      }
+      return p
+    })
+    const next: XDataV1 = { ...data, replies: nextReplies, posts: nextPosts }
+    setData(next)
+    await xSave(next)
   }
 
   const toggleLike = async (postId: string) => {
@@ -610,6 +689,12 @@ export default function XScreen() {
   }
 
   const openUserProfile = (userId: string) => {
+    setData((prev) => {
+      if (!prev) return prev
+      const { data: d2 } = ensureXUserFromCharacter(prev, userId)
+      if (d2 !== prev) void xSave(d2)
+      return d2
+    })
     setOpenProfileUserId(userId)
     setView('profile')
   }
@@ -763,12 +848,18 @@ export default function XScreen() {
 
   const refreshDMThread = async (threadId: string) => {
     if (!data) return
+    const hasMyContent = (data.posts || []).some((p) => p.authorId === 'me') || (data.replies || []).some((r) => r.authorId === 'me')
+    if (!hasMyContent) {
+      setTipDialog({ open: true, title: '先发一条', message: '你还没有发过推文/评论，先发布一条再刷新私信吧。' })
+      return
+    }
     const thread = (data.dms || []).find((t) => t.id === threadId)
     if (!thread) return
     const meta = getUserMeta(thread.peerId)
     await withLoading('正在刷新私信…', async () => {
       const recent = (thread.messages || []).slice(-16).map((m) => ({ role: m.from === 'me' ? 'user' : 'assistant', content: m.text }))
-      const peerLang = normalizeLang((meta as any).lang)
+      const peerCharacter = characters.find((c) => c.id === thread.peerId)
+      const peerLang = peerCharacter ? mapWeChatLang((peerCharacter as any).language) : normalizeLang((meta as any).lang)
       const myRecentPosts = (data.posts || [])
         .filter((p) => p.authorId === 'me')
         .slice(0, 6)
@@ -786,6 +877,10 @@ export default function XScreen() {
         `对方账号：${meta.handle}\n` +
         `对方主要语言：${peerLang}\n` +
         `用户：${meName}（${data.meHandle || xMakeHandle(meName)}）\n` +
+        (peerCharacter
+          ? `对方角色人设：${(peerCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 280)}\n` +
+            `对方长期记忆摘要：${(peerCharacter as any).memorySummary || '（无）'}\n`
+          : '') +
         `用户最近发的推文：\n${myRecentPosts || '（无）'}\n` +
         `用户最近的评论：\n${myRecentReplies || '（无）'}\n` +
         `要求：\n` +
@@ -843,15 +938,30 @@ export default function XScreen() {
     // 发送后不自动生成对方（保持“刷新=生成”规则）
   }
 
+  const bumpFollowers = (base?: number) => {
+    const roll = Math.random()
+    let inc = 0
+    if (roll < 0.45) inc = Math.floor(Math.random() * 6) // 0-5
+    else if (roll < 0.8) inc = 6 + Math.floor(Math.random() * 9) // 6-14
+    else inc = 15 + Math.floor(Math.random() * 30) // 15-44
+    const nextVal = Math.max(0, (base || 0) + inc)
+    return { inc, nextVal }
+  }
+
   const toggleFollow = async (userId: string) => {
     if (!data) return
     if (userId === 'me') return
-    const set = new Set(data.follows || [])
+    let next = data
+    const set = new Set(next.follows || [])
     if (set.has(userId)) set.delete(userId)
-    else set.add(userId)
-    const next: XDataV1 = { ...data, follows: Array.from(set) }
-    setData(next)
-    await xSave(next)
+    else {
+      const ensured = ensureXUserFromCharacter(next, userId)
+      next = ensured.data
+      set.add(userId)
+    }
+    const updated: XDataV1 = { ...next, follows: Array.from(set) }
+    setData(updated)
+    await xSave(updated)
   }
 
   const muteUser = async (userId: string) => {
@@ -902,19 +1012,45 @@ export default function XScreen() {
     setShareResult({ open: true, targetId: targetCharacterId })
   }
 
-  const handlePickMeAvatar = () => meAvatarInputRef.current?.click()
-  const handlePickMeBanner = () => meBannerInputRef.current?.click()
+  const ensureXUserFromCharacter = (next: XDataV1, characterId: string) => {
+    const c = characters.find((ch) => ch.id === characterId)
+    if (!c) return { data: next, userId: characterId }
+    const { data: d2, userId } = xEnsureUser(next, {
+      id: c.id,
+      name: c.name,
+      avatarUrl: c.avatar || undefined,
+      bio: (c.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined,
+    })
+    return { data: d2, userId }
+  }
 
-  const handleMeAvatarChange = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handlePickMeAvatar = () => {
+    setAvatarEditTargetId('me')
+    avatarInputRef.current?.click()
+  }
+  const handlePickMeBanner = () => {
+    setBannerEditTargetId('me')
+    bannerInputRef.current?.click()
+  }
+
+  const handleAvatarChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     const dataUrl = await compressImageFileToDataUrl(file, { maxSide: 720 })
     setData((prev) => {
       if (!prev) return prev
-      const next = { ...prev, meAvatarUrl: dataUrl }
+      const targetId = avatarEditTargetId || 'me'
+      if (targetId === 'me') {
+        const next = { ...prev, meAvatarUrl: dataUrl }
+        void xSave(next)
+        return next
+      }
+      const users = (prev.users || []).map((u) => (u.id === targetId ? { ...u, avatarUrl: dataUrl } : u))
+      const next = { ...prev, users }
       void xSave(next)
       return next
     })
+    setAvatarEditTargetId(null)
     e.currentTarget.value = ''
   }
 
@@ -924,11 +1060,39 @@ export default function XScreen() {
     const dataUrl = await compressImageFileToDataUrl(file, { maxSide: 1400 })
     setData((prev) => {
       if (!prev) return prev
-      const next = { ...prev, meBannerUrl: dataUrl }
+      const targetId = bannerEditTargetId || 'me'
+      if (targetId === 'me') {
+        const next = { ...prev, meBannerUrl: dataUrl }
+        void xSave(next)
+        return next
+      }
+      const users = (prev.users || []).map((u) => (u.id === targetId ? { ...u, bannerUrl: dataUrl } : u))
+      const next = { ...prev, users }
       void xSave(next)
       return next
     })
+    setBannerEditTargetId(null)
     e.currentTarget.value = ''
+  }
+
+
+  const openProfileEditor = () => {
+    const meta = getUserMeta('me')
+    setProfileDraftName(String(meta.name || ''))
+    setProfileDraftBio(String(meta.bio || ''))
+    setProfileEditOpen(true)
+  }
+
+  const saveProfileEditor = () => {
+    const name = profileDraftName.trim().slice(0, 24)
+    const bio = profileDraftBio.trim().slice(0, 120)
+    setData((prev) => {
+      if (!prev) return prev
+      const next: XDataV1 = { ...prev, meDisplayName: name || prev.meName, meBio: bio }
+      void xSave(next)
+      return next
+    })
+    setProfileEditOpen(false)
   }
 
   const getUserMeta = (userId: string) => {
@@ -938,11 +1102,12 @@ export default function XScreen() {
     if (userId === 'me') {
       const handle = data.meHandle || xMakeHandle(meName)
       return {
-        name: meName,
+        name: data.meDisplayName || meName,
         handle,
         color: xMakeColor(handle),
-        avatarUrl: data.meAvatarUrl || xMakeAvatarSvgDataUrl(handle + '::' + meName),
+        avatarUrl: data.meAvatarUrl || xMakeAvatarSvgDataUrl(handle + '::' + meName, meName),
         bannerUrl: data.meBannerUrl || xMakeBannerSvgDataUrl(handle + '::banner'),
+        bio: data.meBio || '',
       }
     }
     const u = data.users.find((x) => x.id === userId)
@@ -953,9 +1118,10 @@ export default function XScreen() {
       name,
       handle,
       color,
-      avatarUrl: (u as any)?.avatarUrl as string | undefined,
-      bannerUrl: (u as any)?.bannerUrl as string | undefined,
+      avatarUrl: (u as any)?.avatarUrl as string | undefined || xMakeAvatarSvgDataUrl(handle + '::' + name, name),
+      bannerUrl: (u as any)?.bannerUrl as string | undefined || xMakeBannerSvgDataUrl(handle + '::banner'),
       lang: (u as any)?.lang as any,
+      bio: (u as any)?.bio as string | undefined,
     }
   }
 
@@ -963,6 +1129,58 @@ export default function XScreen() {
     if (!data) return
     if (view === 'post') return await refreshReplies()
     if (view === 'profile') {
+      if (openProfileUserId && openProfileUserId !== 'me') {
+        return await withLoading('正在刷新TA的日常…', async () => {
+          let next = data
+          const { data: synced } = ensureXUserFromCharacter(next, openProfileUserId)
+          next = synced
+          const meta = getUserMeta(openProfileUserId)
+          const myRecentPosts = (next.posts || [])
+            .filter((p) => p.authorId === openProfileUserId)
+            .slice(0, 6)
+            .map((p) => `- ${p.text.replace(/\s+/g, ' ').slice(0, 80)}`)
+            .join('\n')
+          const want = 1 + Math.floor(Math.random() * 5)
+          const sys =
+            sysPrefix() +
+            `【X（推特风格）/角色主页日常生成】\n` +
+            `角色：${meta.name}\n` +
+            `账号：${meta.handle}\n` +
+            `人物设定：${meta.bio || '（无）'}\n` +
+            `最近已发：\n${myRecentPosts || '（无）'}\n` +
+            `要求：\n` +
+            `- 生成 ${want} 条“日常/碎碎念”推文\n` +
+            `- 更像真实推特，不要过长\n` +
+            `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
+            `- 只输出 JSON\n` +
+            `\n` +
+            `JSON 格式：\n` +
+            `{\n` +
+            `  "posts": [ { "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]\n` +
+            `}\n`
+          const parsed = await callJson(sys, '现在生成 posts。', 700)
+          const raw = Array.isArray((parsed as any).posts) ? (parsed as any).posts : []
+          const newPosts: XPost[] = []
+          for (const p of raw.slice(0, want)) {
+            const text = String(p?.text || '').trim()
+            if (!text) continue
+            const post = xNewPost(openProfileUserId, meta.name, text)
+            post.authorHandle = meta.handle
+            post.authorColor = meta.color
+            post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 6).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
+            post.imageDesc = typeof p?.imageDesc === 'string' ? p.imageDesc.trim().slice(0, 260) : ''
+            post.likeCount = Math.floor(Math.random() * 800)
+            post.repostCount = Math.floor(Math.random() * 180)
+            post.replyCount = Math.floor(Math.random() * 90)
+            newPosts.push(post)
+          }
+          const mine = (next.posts || []).filter((p) => p.authorId === 'me')
+          const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 80)
+          next = { ...next, posts: [...mine, ...others].slice(0, 650) }
+          setData(next)
+          await xSave(next)
+        })
+      }
       // 轻量：刷新个人主页=生成一些通知（点赞/评论/关注）
       return await withLoading('正在刷新主页动态…', async () => {
         const minePosts = data.posts.filter((p) => p.authorId === 'me').slice(0, 6)
@@ -1017,6 +1235,11 @@ export default function XScreen() {
     if (tab === 'home') return await refreshHome()
     if (tab === 'search') return await doSearch(activeQuery || query, true)
     if (tab === 'messages') {
+      const hasMyContent = (data.posts || []).some((p) => p.authorId === 'me') || (data.replies || []).some((r) => r.authorId === 'me')
+      if (!hasMyContent) {
+        setTipDialog({ open: true, title: '先发一条', message: '你还没有发过推文/评论，先发布一条再刷新私信吧。' })
+        return
+      }
       return await withLoading('正在刷新私信…', async () => {
         const myRecentPosts = (data.posts || [])
           .filter((p) => p.authorId === 'me')
@@ -1285,16 +1508,11 @@ export default function XScreen() {
           title="进入主页"
         >
           {(() => {
-            const u = data?.users?.find((x) => x.id === p.authorId)
-            const avatarUrl = (u as any)?.avatarUrl as string | undefined
-            if (avatarUrl) {
-              return <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-            }
+            const meta = getUserMeta(p.authorId)
+            const avatarUrl = (meta as any)?.avatarUrl as string | undefined
+            if (avatarUrl) return <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
             return (
-              <div
-                className="w-full h-full text-white flex items-center justify-center font-extrabold"
-                style={{ background: p.authorColor || xMakeColor(p.authorHandle || p.authorName) }}
-              >
+              <div className="w-full h-full text-white flex items-center justify-center font-extrabold" style={{ background: p.authorColor || meta.color }}>
                 {initials(p.authorName)}
               </div>
             )
@@ -1314,7 +1532,7 @@ export default function XScreen() {
                 >
                   {p.authorName}
                 </button>
-                <div className="text-[12px] text-gray-500 truncate">{p.authorHandle || xMakeHandle(p.authorName)}</div>
+                <div className="text-[12px] text-gray-500 truncate">{p.authorHandle || getUserMeta(p.authorId).handle || xMakeHandle(p.authorName)}</div>
                 <div className="text-[12px] text-gray-400">· {fmtRelative(p.createdAt)}</div>
               </div>
             </div>
@@ -1379,17 +1597,39 @@ export default function XScreen() {
                 </button>
                 <div className="text-[16px] font-extrabold text-gray-900">X</div>
               </div>
-              <button
-                type="button"
-                onClick={() => void refreshCurrentPage()}
-                className="w-9 h-9 rounded-full bg-gray-100 text-gray-800 flex items-center justify-center active:scale-[0.98]"
-                title="刷新"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 8a8 8 0 0 0-14.7-3M4 16a8 8 0 0 0 14.7 3" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenProfileUserId('me')
+                    setView('profile')
+                  }}
+                  className="w-9 h-9 rounded-full overflow-hidden bg-gray-100"
+                  title="我的主页"
+                >
+                  {(() => {
+                    const meta = getUserMeta('me')
+                    return (meta as any).avatarUrl ? (
+                      <img src={(meta as any).avatarUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-white font-extrabold" style={{ background: meta.color }}>
+                        {initials(meta.name)}
+                      </div>
+                    )
+                  })()}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void refreshCurrentPage()}
+                  className="w-9 h-9 rounded-full bg-gray-100 text-gray-800 flex items-center justify-center active:scale-[0.98]"
+                  title="刷新"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20 8a8 8 0 0 0-14.7-3M4 16a8 8 0 0 0 14.7 3" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <div className="flex">
               <button
@@ -1458,6 +1698,28 @@ export default function XScreen() {
               </svg>
             </button>
           </div>
+          {(data.searchHistory || []).length > 0 && (
+            <div className="px-3 py-2 border-b border-black/5">
+              <div className="text-[11px] text-gray-500 mb-2">搜索历史</div>
+              <div className="flex flex-wrap gap-2">
+                {(data.searchHistory || []).slice(0, 10).map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => {
+                      setQuery(h)
+                      void doSearch(h, false)
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gray-100 text-[12px] text-gray-700 active:scale-[0.98]"
+                    title={h}
+                  >
+                    <span className="w-5 h-5 rounded-full bg-white flex items-center justify-center text-[11px] text-gray-600">🔎</span>
+                    <span className="max-w-[120px] truncate">{h}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {!activeQuery ? (
             <div className="py-14 text-center text-[13px] text-gray-500">搜一个话题试试。</div>
@@ -1507,7 +1769,15 @@ export default function XScreen() {
                     className="w-full text-left px-3 py-3 border-b border-black/5 active:bg-gray-50"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="relative w-11 h-11 rounded-full overflow-hidden bg-gray-100 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openUserProfile(t.peerId)
+                        }}
+                        className="relative w-11 h-11 rounded-full overflow-hidden bg-gray-100 shrink-0 active:scale-[0.98]"
+                        title="进入主页"
+                      >
                         {(meta as any).avatarUrl ? (
                           <img src={(meta as any).avatarUrl} alt="" className="w-full h-full object-cover" />
                         ) : (
@@ -1518,7 +1788,7 @@ export default function XScreen() {
                         {!!t.unreadCount && (
                           <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-white" />
                         )}
-                      </div>
+                      </button>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
@@ -1662,9 +1932,23 @@ export default function XScreen() {
               {openPostReplies.map((r) => (
                 <div key={r.id} className="px-3 py-3 border-b border-black/5">
                   <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold shrink-0">
-                      {initials(r.authorName)}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openUserProfile(r.authorId)}
+                      className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 shrink-0 active:scale-[0.98]"
+                      title="进入主页"
+                    >
+                      {(() => {
+                        const meta = getUserMeta(r.authorId)
+                        const avatarUrl = (meta as any).avatarUrl as string | undefined
+                        if (avatarUrl) return <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                        return (
+                          <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ background: meta.color }}>
+                            {initials(r.authorName)}
+                          </div>
+                        )
+                      })()}
+                    </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-[13px] font-bold text-gray-900 truncate">{r.authorName}</div>
@@ -1710,7 +1994,11 @@ export default function XScreen() {
     const meta = getUserMeta(uid)
     const userName = meta.name
     const mine = posts.filter((p) => p.authorId === uid).slice(0, 60)
+    const myReplies = isMe ? (replies || []).filter((r) => r.authorId === 'me').slice(-120).reverse() : []
     const followed = !isMe && (data.follows || []).includes(uid)
+    const followerCount = isMe
+      ? Math.max(0, data?.meFollowerCount || 0)
+      : Math.floor((Math.abs((meta.handle || '').length * 193) + 860) % 52000)
 
     return (
       <div className="flex h-full flex-col bg-white">
@@ -1720,6 +2008,9 @@ export default function XScreen() {
             onClick={() => {
               setView('main')
               setOpenProfileUserId(null)
+              const nextParams = new URLSearchParams(searchParams)
+              nextParams.delete('userId')
+              setSearchParams(nextParams, { replace: true })
             }}
             className="w-9 h-9 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center active:scale-[0.98]"
           >
@@ -1744,7 +2035,7 @@ export default function XScreen() {
         {/* Banner */}
         <div className="relative">
           <div
-            className={`h-[116px] w-full bg-gray-100 ${isMe ? 'cursor-pointer' : ''}`}
+            className={`h-[190px] w-full bg-gray-100 ${isMe ? 'cursor-pointer' : ''}`}
             onClick={isMe ? handlePickMeBanner : undefined}
             style={{
               backgroundImage: meta.bannerUrl ? `url(${meta.bannerUrl})` : undefined,
@@ -1752,44 +2043,55 @@ export default function XScreen() {
               backgroundPosition: 'center',
             }}
           />
-          {isMe && (
-            <div className="absolute top-2 right-2 px-2 py-1 rounded-full bg-black/60 text-white text-[10px]">
-              更换背景
-            </div>
-          )}
           <div
-            className={`absolute left-4 -bottom-7 w-14 h-14 rounded-full overflow-hidden border-4 border-white bg-gray-100 ${isMe ? 'cursor-pointer group' : ''}`}
+            className={`absolute left-4 -bottom-10 w-24 h-24 rounded-full overflow-hidden border-4 border-white bg-gray-100 ${isMe ? 'cursor-pointer' : ''}`}
             onClick={isMe ? handlePickMeAvatar : undefined}
+            title={isMe ? '更换头像' : undefined}
           >
             {(meta as any).avatarUrl ? (
               <img src={(meta as any).avatarUrl} alt="" className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-white font-extrabold" style={{ background: meta.color }}>
+              <div className="w-full h-full flex items-center justify-center text-white font-extrabold text-[18px]" style={{ background: meta.color }}>
                 {initials(userName)}
-              </div>
-            )}
-            {isMe && (
-              <div className="absolute inset-0 bg-black/40 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                更换
               </div>
             )}
           </div>
         </div>
 
-        <div className="px-4 pt-9 pb-4 border-b border-black/5">
+        <div className="px-4 pt-16 pb-4 border-b border-black/5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="text-[16px] font-extrabold text-gray-900">{userName}</div>
               <div className="text-[12px] text-gray-500 mt-0.5">{meta.handle}</div>
               <div className="mt-2 text-[12px] text-gray-700 leading-relaxed">
-                {isMe ? '点击头像/背景可更换。' : '一个路人账号。'}
+                {meta.bio
+                  ? `签名：${meta.bio}`
+                  : isMe && !data?.meAvatarUrl && !data?.meBannerUrl && !data?.meBio
+                    ? '点击更换头像、背景或简介'
+                    : ''}
               </div>
               <div className="mt-2 flex items-center gap-4 text-[12px] text-gray-600">
-                <span className="font-semibold">{Math.floor((Math.abs((meta.handle || '').length * 97) + 120) % 3200)} 关注</span>
-                <span className="font-semibold">{Math.floor((Math.abs((meta.handle || '').length * 193) + 860) % 52000)} 粉丝</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isMe) setFollowingOpen(true)
+                  }}
+                  className={`font-semibold ${isMe ? 'text-gray-900' : ''}`}
+                >
+                  {(data?.follows || []).length} 关注
+                </button>
+                <span className="font-semibold">{followerCount} 粉丝</span>
               </div>
             </div>
-            {!isMe && (
+            {isMe ? (
+              <button
+                type="button"
+                onClick={openProfileEditor}
+                className="px-4 h-10 rounded-full bg-gray-100 text-[12px] font-semibold text-gray-800 active:scale-[0.98]"
+              >
+                编辑个人资料
+              </button>
+            ) : (
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -1818,21 +2120,203 @@ export default function XScreen() {
               </div>
             )}
           </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {mine.length === 0 ? (
-            <div className="py-14 text-center text-[13px] text-gray-500">{isMe ? '你还没发过帖。' : 'TA 还没发过帖。'}</div>
-          ) : (
-            <div>{mine.map(renderPostCard)}</div>
+          {isMe && (
+            <div className="mt-3" />
           )}
         </div>
 
-        {isMe && (
-          <>
-            <input ref={meAvatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleMeAvatarChange} />
-            <input ref={meBannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleMeBannerChange} />
-          </>
+        <div className="flex-1 overflow-y-auto">
+          {isMe && (
+            <div className="sticky top-0 z-10 bg-white/95 border-b border-black/5 px-4 py-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setProfileTab('posts')}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold ${profileTab === 'posts' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
+              >
+                我的帖子
+              </button>
+              <button
+                type="button"
+                onClick={() => setProfileTab('replies')}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold ${profileTab === 'replies' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
+              >
+                我的评论
+              </button>
+            </div>
+          )}
+          {!isMe || profileTab === 'posts' ? (
+            mine.length === 0 ? (
+              <div className="py-14 text-center text-[13px] text-gray-500">{isMe ? '你还没发过帖。' : 'TA 还没发过帖。'}</div>
+            ) : (
+              <div>{mine.map(renderPostCard)}</div>
+            )
+          ) : myReplies.length === 0 ? (
+            <div className="py-14 text-center text-[13px] text-gray-500">你还没在别人评论区发过内容。</div>
+          ) : (
+            <div className="divide-y divide-black/5">
+              {myReplies.map((r) => {
+                const p = posts.find((x) => x.id === r.postId)
+                const pAuthor = p?.authorName || '未知'
+                const pExcerpt = (p?.text || '').replace(/\s+/g, ' ').slice(0, 80)
+                return (
+                  <div key={r.id} className="px-4 py-3">
+                    <div className="text-[12px] text-gray-500">评论 @ {pAuthor} · {fmtRelative(r.createdAt)}</div>
+                    <div className="mt-1 text-[13px] text-gray-900 whitespace-pre-wrap">{r.text}</div>
+                    {p && (
+                      <div className="mt-2 text-[11px] text-gray-500 bg-gray-50 rounded-lg px-2 py-1">
+                        原帖：{pExcerpt || '（无）'}
+                      </div>
+                    )}
+                    <div className="mt-2 flex items-center gap-2">
+                      {p && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setView('post')
+                            setOpenPostId(r.postId)
+                          }}
+                          className="px-3 h-8 rounded-full bg-gray-100 text-[12px] text-gray-700"
+                        >
+                          查看原帖
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void deleteReplyById(r.id, r.postId)}
+                        className="px-3 h-8 rounded-full bg-red-50 text-[12px] text-red-600"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <>
+          <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+          <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleMeBannerChange} />
+        </>
+
+        {followingOpen && (
+          <div className="absolute inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/35" onClick={() => setFollowingOpen(false)} role="presentation" />
+            <div className="relative w-full max-w-[320px] rounded-2xl bg-white/95 border border-white/30 shadow-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-black/5 text-center text-sm font-semibold">我的关注</div>
+              <div className="max-h-[60vh] overflow-y-auto p-2">
+                {(data?.follows || []).length === 0 ? (
+                  <div className="text-center text-sm text-gray-400 py-8">暂无关注</div>
+                ) : (
+                  <div className="space-y-1">
+                    {(data?.follows || []).map((uid) => {
+                      const meta = getUserMeta(uid)
+                      return (
+                        <button
+                          key={uid}
+                          type="button"
+                          onClick={() => {
+                            setFollowingOpen(false)
+                            openUserProfile(uid)
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 active:bg-gray-100"
+                        >
+                          <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
+                            {(meta as any).avatarUrl ? (
+                              <img src={(meta as any).avatarUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-white font-extrabold" style={{ background: meta.color }}>
+                                {initials(meta.name)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-left min-w-0">
+                            <div className="text-[13px] font-medium text-[#111] truncate">{meta.name}</div>
+                            <div className="text-[11px] text-gray-500 truncate">{(meta as any).handle || ''}</div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="p-3 border-t border-black/5">
+                <button type="button" onClick={() => setFollowingOpen(false)} className="w-full py-2 rounded-xl bg-gray-100 text-sm text-gray-700">
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!isMe && otherProfileTipOpen && (
+          <div className="absolute inset-0 z-[60] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/35"
+              onClick={() => {
+                if (otherProfileTipDontShow) {
+                  const next: XDataV1 = { ...data, suppressOtherProfileEditTip: true }
+                  setData(next)
+                  void xSave(next)
+                }
+                setOtherProfileTipOpen(false)
+              }}
+              role="presentation"
+            />
+            <div className="relative w-full max-w-[320px] rounded-2xl bg-white/95 border border-white/30 shadow-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-black/5 text-center text-sm font-semibold">编辑 TA 的主页</div>
+              <div className="p-4 space-y-3">
+                <div className="text-[12px] text-gray-600">你可以更换 TA 的头像和背景。</div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAvatarEditTargetId(uid)
+                      avatarInputRef.current?.click()
+                    }}
+                    className="flex-1 py-2 rounded-xl bg-gray-100 text-sm text-gray-800"
+                  >
+                    更换头像
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBannerEditTargetId(uid)
+                      bannerInputRef.current?.click()
+                    }}
+                    className="flex-1 py-2 rounded-xl bg-gray-100 text-sm text-gray-800"
+                  >
+                    更换背景
+                  </button>
+                </div>
+                <label className="flex items-center gap-2 text-[12px] text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={otherProfileTipDontShow}
+                    onChange={(e) => setOtherProfileTipDontShow(e.target.checked)}
+                  />
+                  不再提示
+                </label>
+              </div>
+              <div className="p-3 border-t border-black/5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (otherProfileTipDontShow) {
+                      const next: XDataV1 = { ...data, suppressOtherProfileEditTip: true }
+                      setData(next)
+                      void xSave(next)
+                    }
+                    setOtherProfileTipOpen(false)
+                  }}
+                  className="w-full py-2 rounded-xl bg-black text-sm text-white"
+                >
+                  知道了
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     )
@@ -1847,21 +2331,26 @@ export default function XScreen() {
 
     return (
       <div className="flex h-full flex-col bg-white">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-black/10">
+        <div className="relative flex items-center justify-center px-3 py-3 border-b border-black/10 min-h-[96px]">
           <button
             type="button"
             onClick={() => {
               setView('main')
               setOpenThreadId(null)
             }}
-            className="w-9 h-9 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center active:scale-[0.98]"
+            className="absolute left-3 w-9 h-9 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center active:scale-[0.98]"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <div className="flex flex-col items-center min-w-0">
-            <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-100 mb-1">
+            <button
+              type="button"
+              onClick={() => openUserProfile(thread.peerId)}
+              className="w-16 h-16 rounded-full overflow-hidden bg-gray-100 mb-1 active:scale-[0.98]"
+              title="进入主页"
+            >
               {(meta as any).avatarUrl ? (
                 <img src={(meta as any).avatarUrl} alt="" className="w-full h-full object-cover" />
               ) : (
@@ -1869,14 +2358,14 @@ export default function XScreen() {
                   {initials(meta.name)}
                 </div>
               )}
-            </div>
+            </button>
             <div className="text-[12px] font-extrabold text-gray-900 truncate max-w-[180px]">{meta.name}</div>
             <div className="text-[11px] text-gray-500 truncate max-w-[180px]">{meta.handle}</div>
           </div>
           <button
             type="button"
             onClick={() => void refreshDMThread(thread.id)}
-            className="w-9 h-9 rounded-full bg-gray-100 text-gray-800 flex items-center justify-center active:scale-[0.98]"
+            className="absolute right-3 w-9 h-9 rounded-full bg-gray-100 text-gray-800 flex items-center justify-center active:scale-[0.98]"
             title="刷新"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1985,6 +2474,57 @@ export default function XScreen() {
           </div>
         </WeChatDialog>
 
+        <WeChatDialog
+          open={profileEditOpen}
+          title="编辑个人资料"
+          message="可以编辑头像、背景、名称与简介。"
+          confirmText="保存"
+          cancelText="取消"
+          onConfirm={saveProfileEditor}
+          onCancel={() => setProfileEditOpen(false)}
+        >
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handlePickMeAvatar}
+                className="flex-1 py-2 rounded-xl bg-gray-100 text-sm text-gray-800"
+              >
+                更换头像
+              </button>
+              <button
+                type="button"
+                onClick={handlePickMeBanner}
+                className="flex-1 py-2 rounded-xl bg-gray-100 text-sm text-gray-800"
+              >
+                更换背景
+              </button>
+            </div>
+            <input
+              value={profileDraftName}
+              onChange={(e) => setProfileDraftName(e.target.value)}
+              placeholder="昵称"
+              className="w-full px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none"
+            />
+            <textarea
+              value={profileDraftBio}
+              onChange={(e) => setProfileDraftBio(e.target.value)}
+              placeholder="简介/签名"
+              className="w-full min-h-[90px] resize-none px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none"
+            />
+            <div className="text-[11px] text-gray-500">昵称最多 24 字，简介最多 120 字。</div>
+          </div>
+        </WeChatDialog>
+
+        <WeChatDialog
+          open={tipDialog.open}
+          title={tipDialog.title}
+          message={tipDialog.message}
+          confirmText="知道了"
+          onConfirm={() => setTipDialog({ open: false, title: '', message: '' })}
+          onCancel={() => setTipDialog({ open: false, title: '', message: '' })}
+        />
+
         {/* 分享弹窗（复用日记分享样式） */}
         {shareOpen && shareTargetPostId && (
           <div className="absolute inset-0 z-[60] flex items-center justify-center p-4">
@@ -2047,6 +2587,7 @@ export default function XScreen() {
         {/* Loading */}
         <WeChatDialog open={loadingOpen} title="加载中" message={loadingStage} confirmText="稍等" onConfirm={() => {}} onCancel={() => {}}>
           <div className="mt-2">
+            <div className="text-[11px] text-amber-600 text-center mb-2">本次将消耗 API 调用，请勿退出浏览器或此界面。</div>
             <div className="h-2.5 w-full overflow-hidden rounded-full bg-black/10">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-gray-700 to-black transition-all"
@@ -2074,6 +2615,18 @@ export default function XScreen() {
               onCancel={() => setPostMenu({ open: false })}
             >
               <div className="space-y-2">
+                {isMePost && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPostMenu({ open: false })
+                      void deletePostById(p.id)
+                    }}
+                    className="w-full py-2 rounded-xl bg-red-50 text-red-600 text-[13px] font-semibold active:scale-[0.99]"
+                  >
+                    删除这条
+                  </button>
+                )}
                 {!isMePost && (
                   <button
                     type="button"

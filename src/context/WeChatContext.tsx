@@ -81,7 +81,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite'
   // 转账相关
   transferAmount?: number
   transferNote?: string
@@ -99,6 +99,20 @@ export type WeChatMessage = {
   diaryExcerpt?: string
   diaryContent?: string
   diaryNote?: string
+
+  // 推文分享（卡片展示短，内部可携带全文供 AI 读取）
+  tweetId?: string
+  tweetAuthorName?: string
+  tweetAt?: number
+  tweetExcerpt?: string
+  tweetContent?: string
+  tweetStats?: string
+
+  // 推特主页分享
+  xUserId?: string
+  xUserName?: string
+  xUserHandle?: string
+  xUserAvatar?: string
 
   // 经期分享相关（卡片展示简短，内部可携带完整内容供AI读取）
   periodSummary?: string
@@ -532,33 +546,54 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       if (!existing) {
         // 迁移 WeChat 相关 key（只复制我们自己维护的 keys）
         const toMove = Object.values(STORAGE_KEYS)
-        for (const k of toMove) {
-          try {
-            const raw = localStorage.getItem(k)
-            if (raw != null) {
-              await kvSet(k, raw)
+        await Promise.allSettled(
+          toMove.map(async (k) => {
+            try {
+              const raw = localStorage.getItem(k)
+              if (raw != null) {
+                await kvSet(k, raw)
+              }
+            } catch {
+              // ignore
             }
-          } catch {
-            // ignore
-          }
-        }
+          })
+        )
       }
 
-      const nextCharacters = await kvGetJSONDeep<WeChatCharacter[]>(STORAGE_KEYS.characters, [])
-      const nextMessages = await kvGetJSONDeep<WeChatMessage[]>(STORAGE_KEYS.messages, [])
-      const nextStickers = await kvGetJSONDeep<StickerConfig[]>(STORAGE_KEYS.stickers, [])
-      const nextFavoriteDiaries = await kvGetJSONDeep<FavoriteDiary[]>(STORAGE_KEYS.favoriteDiaries, [])
-      const nextStickerCategories = await kvGetJSONDeep<StickerCategory[]>(STORAGE_KEYS.stickerCategories, [])
-      const nextMoments = await kvGetJSONDeep<MomentPost[]>(STORAGE_KEYS.moments, [])
-      const nextUserSettings = await kvGetJSONDeep<WeChatUserSettings>(STORAGE_KEYS.userSettings, defaultUserSettings)
-      const nextUserPersonas = await kvGetJSONDeep<UserPersona[]>(STORAGE_KEYS.userPersonas, [])
-      const nextTransfers = await kvGetJSONDeep<TransferRecord[]>(STORAGE_KEYS.transfers, [])
-      const nextAnniversaries = await kvGetJSONDeep<Anniversary[]>(STORAGE_KEYS.anniversaries, [])
-      const nextPeriods = await kvGetJSONDeep<PeriodRecord[]>(STORAGE_KEYS.periods, [])
-      const nextListenTogether = await kvGetJSONDeep<ListenTogetherState>(STORAGE_KEYS.listenTogether, null)
-      const nextWalletBalance = await kvGetJSONDeep<number>(STORAGE_KEYS.walletBalance, 0)
-      const nextWalletInitialized = await kvGetJSONDeep<boolean>(STORAGE_KEYS.walletInitialized, false)
-      const nextWalletBills = await kvGetJSONDeep<WalletBill[]>(STORAGE_KEYS.walletBills, [])
+      // 并行读取：减少启动等待（尤其消息/朋友圈数据较大时）
+      const [
+        nextCharacters,
+        nextMessages,
+        nextStickers,
+        nextFavoriteDiaries,
+        nextStickerCategories,
+        nextMoments,
+        nextUserSettings,
+        nextUserPersonas,
+        nextTransfers,
+        nextAnniversaries,
+        nextPeriods,
+        nextListenTogether,
+        nextWalletBalance,
+        nextWalletInitialized,
+        nextWalletBills,
+      ] = await Promise.all([
+        kvGetJSONDeep<WeChatCharacter[]>(STORAGE_KEYS.characters, []),
+        kvGetJSONDeep<WeChatMessage[]>(STORAGE_KEYS.messages, []),
+        kvGetJSONDeep<StickerConfig[]>(STORAGE_KEYS.stickers, []),
+        kvGetJSONDeep<FavoriteDiary[]>(STORAGE_KEYS.favoriteDiaries, []),
+        kvGetJSONDeep<StickerCategory[]>(STORAGE_KEYS.stickerCategories, []),
+        kvGetJSONDeep<MomentPost[]>(STORAGE_KEYS.moments, []),
+        kvGetJSONDeep<WeChatUserSettings>(STORAGE_KEYS.userSettings, defaultUserSettings),
+        kvGetJSONDeep<UserPersona[]>(STORAGE_KEYS.userPersonas, []),
+        kvGetJSONDeep<TransferRecord[]>(STORAGE_KEYS.transfers, []),
+        kvGetJSONDeep<Anniversary[]>(STORAGE_KEYS.anniversaries, []),
+        kvGetJSONDeep<PeriodRecord[]>(STORAGE_KEYS.periods, []),
+        kvGetJSONDeep<ListenTogetherState>(STORAGE_KEYS.listenTogether, null),
+        kvGetJSONDeep<number>(STORAGE_KEYS.walletBalance, 0),
+        kvGetJSONDeep<boolean>(STORAGE_KEYS.walletInitialized, false),
+        kvGetJSONDeep<WalletBill[]>(STORAGE_KEYS.walletBills, []),
+      ])
 
       if (cancelled) return
       setCharacters(nextCharacters)

@@ -374,7 +374,9 @@ export default function ChatScreen() {
         /\[转账:/.test(s) ||
         /[【\[]\s*转账\s*[:：]/.test(s) ||
         /\[推文[:：]/.test(s) ||
-        /[【\[]\s*推文\s*[:：]/.test(s)
+        /[【\[]\s*推文\s*[:：]/.test(s) ||
+        /\[推特主页[:：\]]/.test(s) ||
+        /[【\[]\s*(推特主页|X主页)\s*[:：\]]/.test(s)
           const out: string[] = []
           for (const line of byLine) {
             if (keepCmd(line)) { out.push(line); continue }
@@ -455,6 +457,11 @@ export default function ChatScreen() {
                 `${body || '（无内容）'}` +
                 `</TWEET_SHARED>`
             }
+            if (m.type === 'x_profile_share') {
+              const name = (m.xUserName || '（未知）').replace(/\s+/g, ' ').slice(0, 40)
+              const handle = (m.xUserHandle || '').replace(/\s+/g, ' ').slice(0, 40)
+              content = `<X_PROFILE name="${name}" handle="${handle}">推特主页分享</X_PROFILE>`
+            }
             // 斗地主战绩分享 - 让AI知道自己是否参与了游戏
             if (m.type === 'doudizhu_share') {
               try {
@@ -529,6 +536,7 @@ export default function ChatScreen() {
           if (m.type === 'period') return '经期记录卡片'
           if (m.type === 'diary') return `日记（${(m.diaryTitle || '日记').replace(/\s+/g, ' ').slice(0, 18)}）`
           if (m.type === 'tweet_share') return `推文（${(m.tweetAuthorName || 'X').replace(/\s+/g, ' ').slice(0, 10)}）`
+          if (m.type === 'x_profile_share') return `推特主页（${(m.xUserName || 'TA').replace(/\s+/g, ' ').slice(0, 10)}）`
           if (m.type === 'couple') return `情侣空间卡片（${m.coupleStatus || 'pending'}）`
           if (m.type === 'image') return '图片'
           if (m.type === 'sticker') return '表情包'
@@ -679,6 +687,7 @@ ${recentTimeline || '（无）'}
   - 如果作者不是你，就当作别人写的日记来评价/吐槽/震惊/共情（按人设）。
 - 若要触发转账，必须使用上面的 [转账:金额:备注] 格式，且单独一行
 - 若要分享推文，单独一行写：[推文:内容]（内容<=140字）
+- 若要分享你的推特主页，单独一行写：[推特主页] 或 [X主页]
 - 【重要】你绝对不要在普通聊天里无缘无故报歌名/列歌单/复读歌名。听歌邀请只通过“音乐卡片”流程处理（用户发卡片→点箭头→你决定→弹确认→进入一起听界面）。`
 
         systemPrompt += `
@@ -899,6 +908,11 @@ ${recentTimeline || '（无）'}
           if (!body) return null
           return { content: body }
         }
+        const parseXProfileCommand = (text: string) => {
+          // 兼容：[推特主页] / [X主页] / 【推特主页】 / 【X主页】
+          if (/[【\[]\s*(推特主页|X主页)\s*[】\]]/.test(text)) return { ok: true }
+          return null
+        }
 
         // 预扫描：找出适合插表情包的“文本回复行”
         if (stickerPool.length > 0) {
@@ -908,6 +922,7 @@ ${recentTimeline || '（无）'}
             if (parseTransferCommand(t)) continue
             if (parseMusicCommand(t)) continue
             if (parseTweetCommand(t)) continue
+            if (parseXProfileCommand(t)) continue
             stickerCandidates.push(i)
           }
         }
@@ -967,6 +982,7 @@ ${recentTimeline || '（无）'}
           })()
           const musicCmd = suppressAiMusicInvite ? null : parseMusicCommand(trimmedContent)
           const tweetCmd = parseTweetCommand(trimmedContent)
+          const xProfileCmd = parseXProfileCommand(trimmedContent)
           
           safeTimeoutEx(() => {
             if (transferCmd) {
@@ -1043,6 +1059,43 @@ ${recentTimeline || '（无）'}
                   addMessage({
                     characterId: character.id,
                     content: tweetCmd.content,
+                    isUser: false,
+                    type: 'text',
+                  })
+                }
+              })()
+            } else if (xProfileCmd) {
+              // AI分享推特主页卡片
+              void (async () => {
+                try {
+                  const meName = selectedPersona?.name || '我'
+                  let nextX = await xLoad(meName)
+                  const ensured = (() => {
+                    const { data: d2, userId } = xEnsureUser(nextX, {
+                      id: character.id,
+                      name: character.name,
+                      avatarUrl: character.avatar || undefined,
+                      bio: character.prompt || undefined,
+                    })
+                    nextX = d2
+                    return { userId }
+                  })()
+                  const u = nextX.users.find((x) => x.id === ensured.userId)
+                  await xSave(nextX)
+                  addMessage({
+                    characterId: character.id,
+                    content: '推特主页',
+                    isUser: false,
+                    type: 'x_profile_share',
+                    xUserId: ensured.userId,
+                    xUserName: u?.name || character.name,
+                    xUserHandle: u?.handle || '',
+                    xUserAvatar: u?.avatarUrl || character.avatar || '',
+                  })
+                } catch {
+                  addMessage({
+                    characterId: character.id,
+                    content: `${character.name} 的推特主页`,
                     isUser: false,
                     type: 'text',
                   })
@@ -1468,8 +1521,8 @@ ${recentTimeline || '（无）'}
         const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
         const keepCmd = (s: string) =>
           /\|\|\|/.test(s) ||
-          /\[(转账|音乐|推文):/.test(s) ||
-          /[【\[]\s*(转账|音乐|推文)\s*[:：]/.test(s)
+          /\[(转账|音乐|推文|推特主页|X主页):/.test(s) ||
+          /[【\[]\s*(转账|音乐|推文|推特主页|X主页)\s*[:：]/.test(s)
         const out: string[] = []
         for (const line of byLine) {
           if (keepCmd(line)) { out.push(line); continue }
@@ -2464,6 +2517,38 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
           <div className="px-2.5 py-2 text-[12px] text-gray-800">
             <div className="line-clamp-2 whitespace-pre-wrap break-words">{excerpt || '（点击查看）'}</div>
             {!!stats && <div className="text-[11px] text-gray-500 mt-1 truncate">{stats}</div>}
+          </div>
+        </button>
+      )
+    }
+
+    if (msg.type === 'x_profile_share') {
+      const name = msg.xUserName || '（未知）'
+      const handle = msg.xUserHandle || ''
+      const avatar = msg.xUserAvatar || ''
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            if (msg.xUserId) navigate(`/apps/x?userId=${encodeURIComponent(msg.xUserId)}`)
+          }}
+          className="min-w-[180px] max-w-[240px] rounded-xl bg-white/85 border border-black/10 overflow-hidden text-left active:scale-[0.99] transition"
+        >
+          <div className="px-2.5 py-2 flex items-center gap-2 border-b border-black/5">
+            <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center flex-shrink-0">
+              {avatar ? (
+                <img src={avatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-gray-500 font-extrabold text-[13px]">X</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-[#111] truncate">推特主页</div>
+              <div className="text-[11px] text-gray-500 truncate">{name}{handle ? ` · ${handle}` : ''}</div>
+            </div>
+          </div>
+          <div className="px-2.5 py-2 text-[12px] text-gray-700">
+            点击查看 TA 的推特主页
           </div>
         </button>
       )

@@ -82,6 +82,10 @@ export type XDataV1 = {
   meHandle: string
   meAvatarUrl?: string
   meBannerUrl?: string
+  meDisplayName?: string
+  meBio?: string
+  meFollowerCount?: number
+  suppressOtherProfileEditTip?: boolean
   follows: string[] // userIds
   muted: string[] // muted userIds
   blocked: string[] // blocked userIds
@@ -92,6 +96,7 @@ export type XDataV1 = {
   dms: XDMThread[]
   // 缓存：避免重复生成导致卡/耗 API
   searchCache: Record<string, { postIds: string[]; updatedAt: number }>
+  searchHistory: string[]
   lastRefreshAt?: Record<string, number> // per-page throttling
 }
 
@@ -123,25 +128,65 @@ export function xMakeColor(seed: string) {
   return palette[hash(seed) % palette.length]
 }
 
-export function xMakeAvatarSvgDataUrl(seed: string) {
+export function xMakeAvatarSvgDataUrl(seed: string, label?: string) {
   const h = hash(seed)
+  const s = 256
   const c1 = palette[h % palette.length]
   const c2 = palette[(h >>> 5) % palette.length]
   const c3 = palette[(h >>> 9) % palette.length]
-  const a = 0.55 + ((h % 30) / 100)
-  const s = 256
+  const style = h % 4
+  const initial = (String(label || seed).trim().slice(0, 1) || '?').toUpperCase()
+  let body = ''
+  if (style === 0) {
+    const a = 0.55 + ((h % 30) / 100)
+    body =
+      `<defs>` +
+      `<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
+      `<stop offset="0" stop-color="${c1}"/><stop offset="0.6" stop-color="${c2}"/><stop offset="1" stop-color="${c3}"/>` +
+      `</linearGradient>` +
+      `</defs>` +
+      `<rect width="${s}" height="${s}" rx="128" fill="url(#g)"/>` +
+      `<circle cx="${(h % 120) + 70}" cy="${((h >>> 7) % 120) + 70}" r="${(h % 40) + 28}" fill="rgba(255,255,255,${a.toFixed(2)})"/>` +
+      `<circle cx="${((h >>> 11) % 140) + 50}" cy="${((h >>> 15) % 140) + 50}" r="${((h >>> 3) % 32) + 18}" fill="rgba(0,0,0,0.10)"/>`
+  } else if (style === 1) {
+    body =
+      `<rect width="${s}" height="${s}" rx="128" fill="${c1}"/>` +
+      `<circle cx="${(h % 80) + 40}" cy="${((h >>> 7) % 80) + 40}" r="${(h % 26) + 18}" fill="rgba(255,255,255,0.18)"/>` +
+      `<circle cx="${((h >>> 5) % 120) + 80}" cy="${((h >>> 11) % 120) + 80}" r="${((h >>> 2) % 30) + 20}" fill="rgba(0,0,0,0.12)"/>` +
+      `<text x="50%" y="56%" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="96" font-weight="800" fill="rgba(255,255,255,0.85)">${initial}</text>`
+  } else if (style === 2) {
+    body =
+      `<rect width="${s}" height="${s}" rx="128" fill="${c2}"/>` +
+      `<g stroke="rgba(255,255,255,0.55)" stroke-width="${(h % 4) + 2}">` +
+      `<line x1="${(h % 40)}" y1="30" x2="260" y2="${(h % 40) + 100}"/>` +
+      `<line x1="-10" y1="${(h % 60) + 60}" x2="270" y2="${(h % 60) + 140}"/>` +
+      `<line x1="0" y1="${(h % 80) + 140}" x2="256" y2="${(h % 80) + 200}"/>` +
+      `</g>` +
+      `<circle cx="${(h % 120) + 70}" cy="${((h >>> 7) % 120) + 70}" r="${(h % 30) + 20}" fill="rgba(0,0,0,0.12)"/>`
+  } else {
+    body =
+      `<rect width="${s}" height="${s}" rx="128" fill="${c3}"/>` +
+      `<rect x="${(h % 40) + 30}" y="${((h >>> 6) % 40) + 30}" width="120" height="120" rx="28" fill="rgba(255,255,255,0.18)"/>` +
+      `<rect x="${((h >>> 2) % 50) + 90}" y="${((h >>> 9) % 50) + 90}" width="110" height="110" rx="28" fill="rgba(0,0,0,0.14)"/>` +
+      `<path d="M40 ${140 + (h % 20)} Q120 ${60 + (h % 30)} 216 ${140 + ((h >>> 4) % 20)}" stroke="rgba(255,255,255,0.55)" stroke-width="6" fill="none"/>`
+  }
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">` +
-    `<defs>` +
-    `<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
-    `<stop offset="0" stop-color="${c1}"/><stop offset="0.6" stop-color="${c2}"/><stop offset="1" stop-color="${c3}"/>` +
-    `</linearGradient>` +
-    `</defs>` +
-    `<rect width="${s}" height="${s}" rx="128" fill="url(#g)"/>` +
-    `<circle cx="${(h % 120) + 70}" cy="${((h >>> 7) % 120) + 70}" r="${(h % 40) + 28}" fill="rgba(255,255,255,${a.toFixed(2)})"/>` +
-    `<circle cx="${((h >>> 11) % 140) + 50}" cy="${((h >>> 15) % 140) + 50}" r="${((h >>> 3) % 32) + 18}" fill="rgba(0,0,0,0.10)"/>` +
+    `<svg xmlns="http://www.w3.org/2000/svg" data-x="xv2" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">` +
+    body +
     `</svg>`
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+export function xMakeBio(seed: string) {
+  const h = hash(seed)
+  const pools = [
+    ['清醒一点', '别太当真', '随便看看', '懂的人都懂', '忙着生活'],
+    ['今天也想躺平', '努力营业中', '脑子短路了', '快乐第一', '别催我'],
+    ['随缘上线', '无话可说', '仅代表个人观点', '别在意', '做人好难'],
+  ]
+  const pick = (arr: string[]) => arr[h % arr.length]
+  const pick2 = (arr: string[]) => arr[(h >>> 7) % arr.length]
+  return `${pick(pools[0])} · ${pick2(pools[1])}`
 }
 
 export function xMakeBannerSvgDataUrl(seed: string) {
@@ -175,6 +220,10 @@ export function xBase(meName: string): XDataV1 {
     meHandle: xMakeHandle(meName),
     meAvatarUrl: undefined,
     meBannerUrl: undefined,
+    meDisplayName: '',
+    meBio: '',
+    meFollowerCount: 0,
+    suppressOtherProfileEditTip: false,
     follows: [],
     muted: [],
     blocked: [],
@@ -184,6 +233,7 @@ export function xBase(meName: string): XDataV1 {
     notifications: [],
     dms: [],
     searchCache: {},
+    searchHistory: [],
     lastRefreshAt: {},
   }
 }
@@ -200,8 +250,8 @@ export async function xLoad(meName: string): Promise<XDataV1> {
     const color = typeof u?.color === 'string' && u.color ? u.color : xMakeColor(handle || name)
     const avatarUrl =
       typeof u?.avatarUrl === 'string' && u.avatarUrl
-        ? u.avatarUrl
-        : xMakeAvatarSvgDataUrl(handle + '::' + name)
+        ? (u.avatarUrl.includes('xv2') || !u.avatarUrl.startsWith('data:image/svg+xml') ? u.avatarUrl : xMakeAvatarSvgDataUrl(handle + '::' + name, name))
+        : xMakeAvatarSvgDataUrl(handle + '::' + name, name)
     const bannerUrl =
       typeof u?.bannerUrl === 'string' && u.bannerUrl
         ? u.bannerUrl
@@ -215,7 +265,7 @@ export async function xLoad(meName: string): Promise<XDataV1> {
       avatarUrl,
       bannerUrl,
       lang: lang === 'en' || lang === 'ja' || lang === 'ko' || lang === 'zh' ? lang : undefined,
-      bio: typeof u?.bio === 'string' ? u.bio : undefined,
+      bio: typeof u?.bio === 'string' ? u.bio : xMakeBio(handle + '::bio'),
       createdAt: typeof u?.createdAt === 'number' ? u.createdAt : Date.now(),
     }
   })
@@ -256,6 +306,10 @@ export async function xLoad(meName: string): Promise<XDataV1> {
     meHandle,
     meAvatarUrl: typeof safe.meAvatarUrl === 'string' ? safe.meAvatarUrl : undefined,
     meBannerUrl: typeof safe.meBannerUrl === 'string' ? safe.meBannerUrl : undefined,
+    meDisplayName: typeof (safe as any).meDisplayName === 'string' ? (safe as any).meDisplayName : '',
+    meBio: typeof safe.meBio === 'string' ? safe.meBio : '',
+    meFollowerCount: typeof safe.meFollowerCount === 'number' ? safe.meFollowerCount : 0,
+    suppressOtherProfileEditTip: typeof safe.suppressOtherProfileEditTip === 'boolean' ? safe.suppressOtherProfileEditTip : false,
     follows: Array.isArray(safe.follows) ? safe.follows : [],
     muted: Array.isArray((safe as any).muted) ? ((safe as any).muted as any[]) : [],
     blocked: Array.isArray((safe as any).blocked) ? ((safe as any).blocked as any[]) : [],
@@ -265,6 +319,7 @@ export async function xLoad(meName: string): Promise<XDataV1> {
     notifications: Array.isArray(safe.notifications) ? safe.notifications : [],
     dms,
     searchCache: safe.searchCache && typeof safe.searchCache === 'object' ? safe.searchCache : {},
+    searchHistory: Array.isArray((safe as any).searchHistory) ? (safe as any).searchHistory.filter((x: any) => typeof x === 'string').slice(0, 10) : [],
     lastRefreshAt: safe.lastRefreshAt && typeof safe.lastRefreshAt === 'object' ? safe.lastRefreshAt : {},
   }
 }
@@ -273,17 +328,31 @@ export async function xSave(data: XDataV1): Promise<void> {
   await kvSetJSON(KEY, data)
 }
 
-export function xEnsureUser(data: XDataV1, user: { id?: string; name: string; bio?: string }): { data: XDataV1; userId: string } {
+export function xEnsureUser(
+  data: XDataV1,
+  user: { id?: string; name: string; bio?: string; avatarUrl?: string; bannerUrl?: string }
+): { data: XDataV1; userId: string } {
   const name = (user.name || '').trim() || 'User'
   const exists = data.users.find((u) => u.name === name)
-  if (exists) return { data, userId: exists.id }
+  if (exists) {
+    const nextUsers = data.users.map((u) => {
+      if (u.id !== exists.id) return u
+      return {
+        ...u,
+        avatarUrl: user.avatarUrl || u.avatarUrl,
+        bannerUrl: user.bannerUrl || u.bannerUrl,
+        bio: user.bio || u.bio || xMakeBio(u.handle + '::bio'),
+      }
+    })
+    return { data: { ...data, users: nextUsers }, userId: exists.id }
+  }
   const id = user.id || genId('xu')
   const handle = xMakeHandle(name)
   const color = xMakeColor(handle)
   // 全量“真实头像”：用本地 SVG 生成（不走生图接口，轻量且稳定）
-  const avatarUrl = xMakeAvatarSvgDataUrl(handle + '::' + name)
-  const bannerUrl = xMakeBannerSvgDataUrl(handle + '::banner')
-  const next: XUser = { id, name, handle, color, avatarUrl, bannerUrl, bio: user.bio, createdAt: Date.now() }
+  const avatarUrl = user.avatarUrl || xMakeAvatarSvgDataUrl(handle + '::' + name, name)
+  const bannerUrl = user.bannerUrl || xMakeBannerSvgDataUrl(handle + '::banner')
+  const next: XUser = { id, name, handle, color, avatarUrl, bannerUrl, bio: user.bio || xMakeBio(handle + '::bio'), createdAt: Date.now() }
   return { data: { ...data, users: [next, ...data.users].slice(0, 400) }, userId: id }
 }
 

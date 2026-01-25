@@ -59,6 +59,8 @@ export default function ChatsTab({ onBack }: Props) {
     if (msg.type === 'transfer') return '转账'
     if (msg.type === 'music') return '音乐'
     if (msg.type === 'diary') return '日记'
+    if (msg.type === 'tweet_share') return '推文'
+    if (msg.type === 'x_profile_share') return '推特主页'
     if (msg.type === 'couple') return '情侣空间'
     if (msg.type === 'doudizhu_share') return '🃏 斗地主战绩'
     return msg.content || '暂无消息'

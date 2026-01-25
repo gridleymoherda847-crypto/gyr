@@ -874,6 +874,7 @@ export default function CoupleSpaceScreen() {
           onCancel={() => {}}
         >
           <div className="mt-2">
+            <div className="text-[11px] text-amber-600 text-center mb-2">本次将消耗 API 调用，请勿退出浏览器或此界面。</div>
             <div className="h-2.5 w-full overflow-hidden rounded-full bg-black/10">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-pink-400 to-rose-400 transition-all"
