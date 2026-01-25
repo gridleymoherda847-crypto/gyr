@@ -423,13 +423,15 @@ export default function ChatScreen() {
               const amt = (m.transferAmount ?? 0).toFixed(2)
               const note = (m.transferNote || '转账').replace(/\s+/g, ' ').slice(0, 30)
               const st = m.transferStatus || 'pending'
-              content = `<TRANSFER amount="${amt}" note="${note}" status="${st}" />`
+              const stText = st === 'received' ? '已领取' : st === 'refunded' ? '已退还' : '待处理'
+              content = `[发送了转账：¥${amt}，备注"${note}"，${stText}]`
             }
             if (m.type === 'music') {
               const title = (m.musicTitle || '未知歌曲').replace(/\s+/g, ' ').slice(0, 60)
               const artist = (m.musicArtist || '').replace(/\s+/g, ' ').slice(0, 60)
               const st = m.musicStatus || 'pending'
-              content = `<MUSIC title="${title}" artist="${artist}" status="${st}" />`
+              const stText = st === 'accepted' ? '已接受' : st === 'rejected' ? '已拒绝' : '待回应'
+              content = `[发送了一起听歌邀请：${title}${artist ? ` - ${artist}` : ''}，${stText}]`
             }
             if (m.type === 'period') {
               const body = (m.periodContent || '').trim().slice(0, 1500)
@@ -682,7 +684,8 @@ ${recentTimeline || '（无）'}
         systemPrompt += `
 
 【格式强约束】
-- 禁止输出任何“系统标记”（例如 <IMAGE /> / <TRANSFER ... /> / <MUSIC ... /> / <DIARY ...> 等），只按真实微信聊天输出
+- 禁止输出任何“系统标记”（例如 <IMAGE /> / <TRANSFER /> / <MUSIC /> 等），只按真实微信聊天输出
+- 禁止复述方括号描述如"[发送了转账]"或"[发送了一起听歌邀请]"，这些只是上下文
 - 你可能会在历史里看到 <DIARY ...>：那是“用户转发的一篇日记”，作者信息在 author/authorId。
   - 如果 authorId/author 显示是“你自己”，说明这是你写的日记被用户转发回来，你要对此有反应（羞耻/炸毛/装死/嘴硬/否认/解释等按人设）。
   - 如果作者不是你，就当作别人写的日记来评价/吐槽/震惊/共情（按人设）。
