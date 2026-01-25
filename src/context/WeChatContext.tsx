@@ -645,6 +645,26 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.walletInitialized, walletInitialized) }, [walletInitialized, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.walletBills, walletBills) }, [walletBills, isHydrated])
 
+  // 清理“卡住的正在输入中”状态（防止重启后一直显示）
+  useEffect(() => {
+    if (!isHydrated) return
+    const interval = window.setInterval(() => {
+      const now = Date.now()
+      setCharacters(prev => {
+        let changed = false
+        const next = prev.map(c => {
+          if (c.isTyping && c.typingUpdatedAt && now - c.typingUpdatedAt > 2 * 60 * 1000) {
+            changed = true
+            return { ...c, isTyping: false, typingUpdatedAt: null }
+          }
+          return c
+        })
+        return changed ? next : prev
+      })
+    }, 30000)
+    return () => window.clearInterval(interval)
+  }, [isHydrated])
+
   // 预计算：按角色分组的消息（避免在列表/聊天界面反复 filter+sort 导致手机端卡顿）
   const messagesByCharacter = useMemo(() => {
     const map: Record<string, WeChatMessage[]> = {}
