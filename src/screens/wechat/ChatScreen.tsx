@@ -8,7 +8,7 @@ import { getGlobalPresets } from '../PresetScreen'
 
 export default function ChatScreen() {
   const navigate = useNavigate()
-  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong } = useOS()
+  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, audioRef } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
     getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds,
@@ -545,6 +545,24 @@ export default function ChatScreen() {
           }
         })()
 
+        // 把“经期日历里的记录”也给模型（用户说“发了经期对方还是看不到”）
+        const periodCalendarForLLM = (() => {
+          try {
+            const records = getPeriodRecords()
+            if (!records || records.length === 0) return ''
+            const recent = records
+              .slice(0, 8)
+              .map((r) => {
+                const range = r.endDate ? `${r.startDate}~${r.endDate}` : `${r.startDate}~（未填结束）`
+                return range
+              })
+              .join('；')
+            return `【经期日历记录】最近${Math.min(8, records.length)}次：${recent}`
+          } catch {
+            return ''
+          }
+        })()
+
         let systemPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}【角色信息】
 你的名字：${character.name}
 你的性别：${character.gender === 'male' ? '男性' : character.gender === 'female' ? '女性' : '其他'}
@@ -554,6 +572,7 @@ export default function ChatScreen() {
 你的国家/地区：${(character as any).country || '（未设置）'}
 你的主要语言：${languageName((character as any).language || 'zh')}
 ${periodHintForLLM ? `\n${periodHintForLLM}` : ''}
+${periodCalendarForLLM ? `\n${periodCalendarForLLM}` : ''}
 
 【用户人设（本对话选择）】
 用户的人设名：${selectedPersona?.name || '（未选择）'}
@@ -773,6 +792,8 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         const pendingUserMusicInvites = workingMessages.filter(m => 
           m.isUser && m.type === 'music' && m.musicStatus === 'pending'
         )
+        // 用户已经发来“待处理的一起听歌邀请卡片”时，禁止 AI 在同一轮再发新的音乐邀请卡片（避免出现“又发回一张卡片”的错觉）
+        const suppressAiMusicInvite = pendingUserMusicInvites.length > 0
         
         // 检查是否有待处理的用户斗地主邀请
         const pendingDoudizhuInvites = workingMessages.filter(m => {
@@ -899,7 +920,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             if (!m) return null
             return { amount: parseFloat(m[1]), note: (m[2] || '').trim(), status: 'pending' as const }
           })()
-          const musicCmd = parseMusicCommand(trimmedContent)
+          const musicCmd = suppressAiMusicInvite ? null : parseMusicCommand(trimmedContent)
           
           safeTimeoutEx(() => {
             if (transferCmd) {
@@ -1109,17 +1130,40 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
 
                   if (decision === 'accept') {
                     // 接受邀请 - 开启一起听
-                    startListenTogether(character.id, songTitle, songArtist)
+                    // 尽量用曲库真实的歌手信息（否则后续找不到歌导致不自动播放）
+                    const resolvedSong =
+                      musicPlaylist.find(s => s.title === songTitle && (!songArtist || s.artist === songArtist)) ||
+                      musicPlaylist.find(s => s.title === songTitle) ||
+                      musicPlaylist.find(s => s.title.includes(songTitle) || songTitle.includes(s.title)) ||
+                      null
+                    const resolvedTitle = resolvedSong?.title || songTitle
+                    const resolvedArtist = resolvedSong?.artist || songArtist
+
+                    startListenTogether(character.id, resolvedTitle, resolvedArtist)
 
                     // 找到对应的歌曲并播放
-                    const fullSong = musicPlaylist.find(s => s.title === songTitle && s.artist === songArtist)
-                    if (fullSong) playSong(fullSong)
+                    if (resolvedSong) playSong(resolvedSong)
 
                     setMusicInviteDialog({
                       open: true,
-                      song: { title: songTitle, artist: songArtist },
+                      song: { title: resolvedTitle, artist: resolvedArtist },
                       accepted: true,
                     })
+
+                    // 某些浏览器会阻止“非手势触发”的自动播放：如果 600ms 后仍未播放，提示用户点一下浮窗继续
+                    safeTimeoutEx(() => {
+                      try {
+                        if (audioRef.current && audioRef.current.paused) {
+                          setInfoDialog({
+                            open: true,
+                            title: '需要点一下才能播放',
+                            message: '浏览器拦截了自动播放。点一下顶部“一起听歌”浮窗，就能继续播放～',
+                          })
+                        }
+                      } catch {
+                        // ignore
+                      }
+                    }, 600, { background: true })
                   } else {
                     setMusicInviteDialog({
                       open: true,
@@ -1943,9 +1987,19 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
       }
     }
     
+    // 附带“日历里的内容”（最近几次经期区间），让对方能读到具体日期，而不是只有一句话
+    const records = getPeriodRecords()
+    const recent = (records || [])
+      .slice(0, 6)
+      .map(r => {
+        const range = r.endDate ? `${r.startDate}~${r.endDate}` : `${r.startDate}~（未填结束）`
+        return range
+      })
+      .join('；')
+
     addMessage({
       characterId: character.id,
-      content: `[经期记录] ${periodInfo}`,
+      content: `[经期记录] ${periodInfo}${recent ? `\n经期日历（最近${Math.min(6, records.length)}次）：${recent}` : ''}`,
       isUser: true,
       // 不能用 system：system 会被历史/时间线过滤，导致“发了经期对方读不到”
       type: 'text',

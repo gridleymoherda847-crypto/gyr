@@ -1,4 +1,4 @@
-import { type PropsWithChildren, useState, useMemo, useCallback } from 'react'
+import { type PropsWithChildren, useState, useMemo, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
@@ -10,9 +10,19 @@ type Props = PropsWithChildren<{
 // 微信统一背景布局 - 贯穿所有微信界面，背景图100%显示
 export default function WeChatLayout({ children, className = '' }: Props) {
   const navigate = useNavigate()
-  const { pauseMusic } = useOS()
+  const { pauseMusic, audioRef } = useOS()
   const { listenTogether, stopListenTogether, getCharacter, getCurrentPersona } = useWeChat()
   const [showListenPanel, setShowListenPanel] = useState(false)
+
+  // 一起听歌：强制当前音频循环播放（更贴近“同一首歌一直放”）
+  useEffect(() => {
+    if (!audioRef.current) return
+    audioRef.current.loop = !!listenTogether
+    // 退出一起听后恢复为不循环
+    return () => {
+      if (audioRef.current) audioRef.current.loop = false
+    }
+  }, [listenTogether, audioRef])
   
   // 使用 useMemo 避免每次渲染都重新查询
   const listeningCharacter = useMemo(() => 
