@@ -504,6 +504,23 @@ export default function ChatScreen() {
           '允许表达不爽/脏话，但不能指向女性或用性羞辱。'
 
         // 构建系统提示（严格顺序：预设 → 角色设定 → 我的人设 → 长期记忆摘要 → 时间感 → 输出 → 说话风格）
+        const periodHintForLLM = (() => {
+          if (currentPeriod) return '【特殊状态】用户目前处于经期，请适当关心她的身体状况。'
+          try {
+            const today = new Date().toISOString().split('T')[0]
+            const records = getPeriodRecords()
+            const upcoming = records
+              .filter(r => typeof r?.startDate === 'string' && r.startDate > today)
+              .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0]
+            if (!upcoming) return ''
+            const days = Math.ceil((new Date(upcoming.startDate).getTime() - new Date(today).getTime()) / (1000 * 60 * 60 * 24))
+            if (days >= 0 && days <= 7) return `【特殊状态】用户的经期可能快要来了（约${days}天内），可以更体贴地关心她。`
+            return ''
+          } catch {
+            return ''
+          }
+        })()
+
         let systemPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}【角色信息】
 你的名字：${character.name}
 你的性别：${character.gender === 'male' ? '男性' : character.gender === 'female' ? '女性' : '其他'}
@@ -512,7 +529,7 @@ export default function ChatScreen() {
 你称呼用户为：${character.callMeName || '你'}
 你的国家/地区：${(character as any).country || '（未设置）'}
 你的主要语言：${languageName((character as any).language || 'zh')}
-${currentPeriod ? '\n【特殊状态】用户目前处于经期，请适当关心她的身体状况。' : ''}
+${periodHintForLLM ? `\n${periodHintForLLM}` : ''}
 
 【用户人设（本对话选择）】
 用户的人设名：${selectedPersona?.name || '（未选择）'}
@@ -2265,15 +2282,17 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
         const isWin = data.isWin
         const coinChange = data.coinChange || 0
         const opponents = data.opponents || ['人机A', '人机B']
+        const winnerNames = Array.isArray(data.winnerNames) ? data.winnerNames : null
+        const loserNames = Array.isArray(data.loserNames) ? data.loserNames : null
         
         // 胜利：喜庆红金色；失败：灰暗色
         const winGradient = 'linear-gradient(135deg, #ff6b6b 0%, #feca57 50%, #ff9ff3 100%)'
         const loseGradient = 'linear-gradient(135deg, #636e72 0%, #2d3436 100%)'
         
         return (
-          <div className="min-w-[170px] max-w-[210px] rounded-xl overflow-hidden shadow-lg">
+          <div className="min-w-[150px] max-w-[190px] rounded-xl overflow-hidden shadow-lg">
             <div 
-              className="p-3 text-white relative"
+              className="p-2.5 text-white relative"
               style={{ background: isWin ? winGradient : loseGradient }}
             >
               {/* 胜利时添加喜庆装饰 */}
@@ -2289,14 +2308,26 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                 <span className="text-[10px] bg-white/25 px-1.5 py-0.5 rounded-full font-medium">{data.difficulty}</span>
               </div>
               
-              <div className="text-center py-1">
-                <div className="text-3xl mb-1">{isWin ? '🏆' : '😢'}</div>
-                <div className="text-lg font-bold" style={{ textShadow: isWin ? '0 0 10px rgba(255,215,0,0.5)' : 'none' }}>
-                  {isWin ? '大获全胜！' : '惜败'}
+              <div className="text-center py-0.5">
+                <div className="text-2xl">{isWin ? '🏆' : '😢'}</div>
+                <div className="text-[13px] font-bold leading-tight" style={{ textShadow: isWin ? '0 0 10px rgba(255,215,0,0.35)' : 'none' }}>
+                  {isWin ? '胜利' : '失败'}
                 </div>
-                <div className="text-[11px] opacity-90 mt-0.5">身份：{data.role}</div>
+                <div className="text-[10px] opacity-90 mt-0.5">身份：{data.role}</div>
               </div>
               
+              {/* 胜负信息（解决“队友/对手不清楚”的问题） */}
+              {(winnerNames || loserNames) && (
+                <div className="mt-1 text-[9px] bg-black/20 rounded-lg px-2 py-1">
+                  {winnerNames && (
+                    <div className="truncate">赢家：{winnerNames.join('、')}</div>
+                  )}
+                  {loserNames && (
+                    <div className="truncate opacity-90">输家：{loserNames.join('、')}</div>
+                  )}
+                </div>
+              )}
+
               {/* 对手信息 */}
               <div className="text-[9px] text-center opacity-80 mt-1">
                 对战：{opponents[0]} & {opponents[1]}
@@ -2310,7 +2341,7 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
             </div>
             
             {/* 金币变化 */}
-            <div className={`px-3 py-2 text-[12px] font-bold ${isWin ? 'bg-gradient-to-r from-yellow-100 to-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+            <div className={`px-2.5 py-2 text-[12px] font-bold ${isWin ? 'bg-gradient-to-r from-yellow-100 to-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
               <div className="flex items-center justify-between">
                 <span>金币</span>
                 <span className={isWin ? 'text-amber-600' : 'text-red-500'}>

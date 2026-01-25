@@ -218,22 +218,39 @@ function ShareDialog({
   const handleShare = () => {
     if (!selectedCharacter) return
     
+    const opponents = gameResult.opponents || ['人机A', '人机B']
+    const playerNames = ['我', opponents[0], opponents[1]]
+    const landlordIdx = gameResult.landlordPlayer
+    const userSide: 'landlord' | 'farmer' = landlordIdx === 0 ? 'landlord' : 'farmer'
+    const winnerSide: 'landlord' | 'farmer' = gameResult.isWin ? userSide : (userSide === 'landlord' ? 'farmer' : 'landlord')
+    const winnerNames = winnerSide === 'landlord'
+      ? [playerNames[landlordIdx]]
+      : ([0, 1, 2].filter(i => i !== landlordIdx).map(i => playerNames[i]))
+    const loserNames = winnerSide === 'landlord'
+      ? ([0, 1, 2].filter(i => i !== landlordIdx).map(i => playerNames[i]))
+      : [playerNames[landlordIdx]]
+
     // 发送卡片式消息 - 包含更详细的信息
     addMessage({
       characterId: selectedCharacter,
       content: JSON.stringify({
         type: 'doudizhu_result',
         isWin: gameResult.isWin,
+        winnerSide,
+        winnerNames,
+        loserNames,
         role: roleText,
         baseScore: gameResult.baseScore,
         multiplier: gameResult.multiplier,
         bombCount: gameResult.bombCount,
         bombDescription: getBombDescription(), // 炸弹是谁丢的
         coinChange,
+        playerCoins: gameResult.playerCoins,
+        playerNames,
         difficulty: difficultyText,
         totalRounds: summary.totalRounds,
         myPlays: summary.myPlays,
-        opponents: gameResult.opponents || ['人机A', '人机B'] // 对手身份
+        opponents // 对手身份
       }),
       isUser: true,
       type: 'doudizhu_share'
@@ -940,6 +957,17 @@ export default function DoudizhuScreen() {
             selectedFriends.find(f => f.position === 1)?.name || '人机A',
             selectedFriends.find(f => f.position === 2)?.name || '人机B'
           ]
+
+          const playerNames = ['我', opponentNames[0], opponentNames[1]]
+          const landlordIdx = (stateRef.current.landlord ?? 0) as Player
+          const userSide: 'landlord' | 'farmer' = landlordIdx === 0 ? 'landlord' : 'farmer'
+          const winnerSide: 'landlord' | 'farmer' = isWin ? userSide : (userSide === 'landlord' ? 'farmer' : 'landlord')
+          const winnerNames = winnerSide === 'landlord'
+            ? [playerNames[landlordIdx]]
+            : ([0, 1, 2].filter(i => i !== landlordIdx).map(i => playerNames[i]))
+          const loserNames = winnerSide === 'landlord'
+            ? ([0, 1, 2].filter(i => i !== landlordIdx).map(i => playerNames[i]))
+            : [playerNames[landlordIdx]]
           
           // 延迟发送消息，确保游戏结果已设置
           setTimeout(() => {
@@ -949,10 +977,15 @@ export default function DoudizhuScreen() {
                 content: JSON.stringify({
                   type: 'doudizhu_result',
                   isWin,
+                  winnerSide,
+                  winnerNames,
+                  loserNames,
                   role: roleText,
                   baseScore: stateRef.current.baseScore,
                   multiplier: calcResult.multiplier,
                   coinChange: calcResult.playerCoins[0],
+                  playerCoins: calcResult.playerCoins,
+                  playerNames,
                   bombCount: calcResult.bombCount,
                   bombDescription: bombDescription || undefined,
                   difficulty: difficultyText,

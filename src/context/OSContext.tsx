@@ -325,6 +325,23 @@ export function OSProvider({ children }: PropsWithChildren) {
       } else {
         nextPlaylist = await kvGetJSONDeep<Song[]>(MUSIC_STORAGE_KEY, [...DEFAULT_SONGS])
       }
+      // 兼容：blob URL 不能跨刷新持久化；ogg 在部分浏览器（尤其 iOS）不可播放
+      try {
+        const probe = document.createElement('audio')
+        const canOgg = !!probe.canPlayType && probe.canPlayType('audio/ogg; codecs="vorbis"') !== ''
+        nextPlaylist = (nextPlaylist || []).filter((s) => {
+          if (!s?.url) return false
+          if (typeof s.url !== 'string') return false
+          if (s.url.startsWith('blob:')) return false
+          if (!canOgg && s.url.toLowerCase().endsWith('.ogg')) return false
+          return true
+        })
+        if (nextPlaylist.length === 0) {
+          nextPlaylist = [...DEFAULT_SONGS].filter(s => typeof s.url === 'string' && !s.url.toLowerCase().endsWith('.ogg'))
+        }
+      } catch {
+        // ignore
+      }
 
       if (cancelled) return
       setLockedState(nextLocked)
