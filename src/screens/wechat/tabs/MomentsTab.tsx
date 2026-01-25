@@ -20,6 +20,7 @@ export default function MomentsTab({ onBack }: Props) {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [dialog, setDialog] = useState<{ open: boolean; title?: string; message?: string }>({ open: false })
+  const [refreshWarnOpen, setRefreshWarnOpen] = useState(false)
   const [commentDraftByMoment, setCommentDraftByMoment] = useState<Record<string, string>>({})
   const [replyTarget, setReplyTarget] = useState<{ momentId: string; commentId: string; authorId: string; authorName: string } | null>(null)
   const [coverShrink, setCoverShrink] = useState(0)
@@ -352,7 +353,7 @@ ${newMomentContent || '（图片）'}
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              handleRefresh()
+              if (!refreshing) setRefreshWarnOpen(true)
             }}
             className="w-8 h-8 rounded-full bg-black/30 backdrop-blur flex items-center justify-center text-white"
             title="刷新"
@@ -612,6 +613,19 @@ ${newMomentContent || '（图片）'}
         message={dialog.message}
         confirmText="知道了"
         onConfirm={() => setDialog({ open: false })}
+      />
+
+      <WeChatDialog
+        open={refreshWarnOpen}
+        title="提示"
+        message="本次将消耗 API 调用，生成中请勿退出浏览器或此界面。"
+        confirmText="继续生成"
+        cancelText="取消"
+        onCancel={() => setRefreshWarnOpen(false)}
+        onConfirm={() => {
+          setRefreshWarnOpen(false)
+          handleRefresh()
+        }}
       />
 
       {/* 回复评论弹窗 */}

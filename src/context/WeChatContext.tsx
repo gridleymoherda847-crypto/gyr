@@ -596,7 +596,13 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       ])
 
       if (cancelled) return
-      setCharacters(nextCharacters)
+      // 防止重启后“正在输入中”卡死：启动时清空所有 typing
+      const resetTyping = nextCharacters.map(c => ({
+        ...c,
+        isTyping: false,
+        typingUpdatedAt: null,
+      }))
+      setCharacters(resetTyping)
       setMessages(nextMessages)
       setStickers(nextStickers)
       setFavoriteDiaries(nextFavoriteDiaries)

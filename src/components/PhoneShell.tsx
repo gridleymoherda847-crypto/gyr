@@ -27,9 +27,13 @@ export default function PhoneShell({ children }: PropsWithChildren) {
     if (!isFullscreen) return
 
     const preventEdgeSwipe = (e: TouchEvent) => {
+      if (!e.cancelable) return
       const touch = e.touches[0]
+      if (!touch) return
+      const target = e.target as HTMLElement | null
+      if (target && target.closest('button, a, input, textarea, select, [role="button"]')) return
       // 如果触摸点在屏幕边缘（左右各30px），阻止默认行为
-      if (touch.clientX < 30 || touch.clientX > window.innerWidth - 30) {
+      if (touch.clientX < 24 || touch.clientX > window.innerWidth - 24) {
         e.preventDefault()
       }
     }
