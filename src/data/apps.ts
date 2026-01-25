@@ -12,7 +12,7 @@ export const GRID_APPS: AppMeta[] = [
   { id: 'doudizhu', name: '斗地主', route: '/apps/doudizhu', icon: '/icons/doudizhu.png', gradient: 'from-pink-100 to-pink-200' },
   // 收藏日记（替换淘宝；默认图标在 /public/icons/diary.svg，可在设置里替换）
   { id: 'diaryVault', name: '日记', route: '/apps/diary-vault', icon: '/icons/diary.svg', gradient: 'from-pink-100 to-pink-200' },
-  { id: 'weibo', name: '微博', route: '/apps/weibo', icon: '/icons/weibo.png', gradient: 'from-pink-100 to-pink-200' },
+  { id: 'forum', name: '论坛', route: '/apps/forum', icon: '/icons/forum.svg', gradient: 'from-pink-100 to-pink-200' },
   { id: 'music', name: '音乐', route: '/apps/music', icon: '/icons/music.png', gradient: 'from-pink-100 to-pink-200' },
 ]
 

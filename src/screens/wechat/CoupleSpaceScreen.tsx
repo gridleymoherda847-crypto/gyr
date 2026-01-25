@@ -454,6 +454,17 @@ export default function CoupleSpaceScreen() {
   const baseBgUrl = data?.baseBgUrl || DEFAULT_BASE_BG
   const overlayBgUrl = data?.overlayBgUrl || DEFAULT_OVERLAY_BG
 
+  // 壁纸策略：
+  // - 默认 SVG：可平铺当底纹
+  // - 用户上传图片（data: / png/jpg 等）：一律 cover，避免“重复平铺”导致乱
+  const isRepeatablePattern = (url: string) => {
+    const u = (url || '').trim()
+    if (!u) return false
+    if (u.startsWith('data:image')) return false
+    // 默认内置 SVG 当做底纹
+    return /\.svg(\?|#|$)/i.test(u)
+  }
+
   const handleBack = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation()
     e.preventDefault()
@@ -641,16 +652,22 @@ export default function CoupleSpaceScreen() {
           className="absolute inset-0"
           style={{
             backgroundImage: `url(${baseBgUrl})`,
-            backgroundSize: '240px 240px',
-            backgroundRepeat: 'repeat',
+            backgroundSize: isRepeatablePattern(baseBgUrl) ? '240px 240px' : 'cover',
+            backgroundRepeat: isRepeatablePattern(baseBgUrl) ? 'repeat' : 'no-repeat',
             backgroundPosition: 'center',
           }}
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-pink-100/35 via-white/30 to-pink-100/40" />
         <div
-          className="absolute left-0 right-0 top-10 h-[260px] bg-center bg-no-repeat"
-          style={{ backgroundImage: `url(${overlayBgUrl})`, backgroundSize: 'contain' }}
+          className="absolute inset-0 bg-center bg-no-repeat"
+          style={{
+            backgroundImage: `url(${overlayBgUrl})`,
+            backgroundSize: isRepeatablePattern(overlayBgUrl) ? 'contain' : 'cover',
+            backgroundPosition: 'center top',
+            opacity: isRepeatablePattern(overlayBgUrl) ? 0.9 : 0.32,
+          }}
         />
+        {/* 轻薄遮罩：压住照片壁纸的杂讯，保证文字清晰（不使用重度 blur） */}
+        <div className="absolute inset-0 bg-gradient-to-b from-white/35 via-pink-50/25 to-white/35" />
 
         {/* 头部 */}
         <div className="relative z-10 flex items-center justify-between px-4 py-2">
@@ -1016,8 +1033,8 @@ export default function CoupleSpaceScreen() {
                   className="h-14"
                   style={{
                     backgroundImage: `url(${baseBgUrl})`,
-                    backgroundSize: '140px 140px',
-                    backgroundRepeat: 'repeat',
+                    backgroundSize: isRepeatablePattern(baseBgUrl) ? '140px 140px' : 'cover',
+                    backgroundRepeat: isRepeatablePattern(baseBgUrl) ? 'repeat' : 'no-repeat',
                     backgroundPosition: 'center',
                   }}
                 />
@@ -1026,7 +1043,11 @@ export default function CoupleSpaceScreen() {
                 <div className="text-[11px] text-gray-600 px-2 py-1">背景预览</div>
                 <div
                   className="h-14 bg-center bg-no-repeat"
-                  style={{ backgroundImage: `url(${overlayBgUrl})`, backgroundSize: 'contain' }}
+                  style={{
+                    backgroundImage: `url(${overlayBgUrl})`,
+                    backgroundSize: isRepeatablePattern(overlayBgUrl) ? 'contain' : 'cover',
+                    backgroundPosition: 'center top',
+                  }}
                 />
               </div>
             </div>
