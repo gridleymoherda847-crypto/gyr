@@ -8,7 +8,7 @@ import { getGlobalPresets } from '../PresetScreen'
 
 export default function ChatScreen() {
   const navigate = useNavigate()
-  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, audioRef } = useOS()
+  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
     getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds,
@@ -120,11 +120,13 @@ export default function ChatScreen() {
   // 点击转账消息时的操作弹窗
   const [transferActionMsg, setTransferActionMsg] = useState<typeof messages[0] | null>(null)
   
-  // 音乐邀请弹窗状态（对方接受/拒绝我的邀请）
+  // 听歌邀请：确认进入“一起听歌界面”（类似QQ音乐）
   const [musicInviteDialog, setMusicInviteDialog] = useState<{
     open: boolean
     song?: { title: string; artist: string; id?: string }
     accepted?: boolean
+    needsConfirm?: boolean // 接受后需用户点“确认”才进入一起听界面
+    direction?: 'outgoing' | 'incoming'
   }>({ open: false })
   
   // 收到对方音乐邀请时的确认弹窗
@@ -1137,8 +1139,6 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                   updateMessage(musicInvite.id, { musicStatus: decision === 'accept' ? 'accepted' : 'rejected' })
 
                   if (decision === 'accept') {
-                    // 接受邀请 - 开启一起听
-                    // 尽量用曲库真实的歌手信息（否则后续找不到歌导致不自动播放）
                     const resolvedSong =
                       musicPlaylist.find(s => s.title === songTitle && (!songArtist || s.artist === songArtist)) ||
                       musicPlaylist.find(s => s.title === songTitle) ||
@@ -1147,36 +1147,35 @@ ${availableSongs ? `- 如果想邀请对方一起听歌，单独一行写：[音
                     const resolvedTitle = resolvedSong?.title || songTitle
                     const resolvedArtist = resolvedSong?.artist || songArtist
 
-                    startListenTogether(character.id, resolvedTitle, resolvedArtist)
-
-                    // 找到对应的歌曲并播放
-                    if (resolvedSong) playSong(resolvedSong)
-
-                    setMusicInviteDialog({
-                      open: true,
-                      song: { title: resolvedTitle, artist: resolvedArtist },
-                      accepted: true,
+                    // 聊天内小字提示：给用户看、也给角色“知道你们正在一起听”
+                    addMessage({
+                      characterId: character.id,
+                      content: `${character.name}已接受你的听歌邀请`,
+                      isUser: false,
+                      type: 'system',
                     })
 
-                    // 某些浏览器会阻止“非手势触发”的自动播放：如果 600ms 后仍未播放，提示用户点一下浮窗继续
-                    safeTimeoutEx(() => {
-                      try {
-                        if (audioRef.current && audioRef.current.paused) {
-                          setInfoDialog({
-                            open: true,
-                            title: '需要点一下才能播放',
-                            message: '浏览器拦截了自动播放。点一下顶部“一起听歌”浮窗，就能继续播放～',
-                          })
-                        }
-                      } catch {
-                        // ignore
-                      }
-                    }, 600, { background: true })
+                    // 先弹悬浮确认：用户点“确认”后才进入一起听界面（此点击可解锁自动播放）
+                    setMusicInviteDialog({
+                      open: true,
+                      song: { title: resolvedTitle, artist: resolvedArtist, id: resolvedSong?.id },
+                      accepted: true,
+                      needsConfirm: true,
+                      direction: 'outgoing',
+                    })
                   } else {
+                    addMessage({
+                      characterId: character.id,
+                      content: `${character.name}拒绝了你的听歌邀请`,
+                      isUser: false,
+                      type: 'system',
+                    })
                     setMusicInviteDialog({
                       open: true,
                       song: { title: songTitle, artist: songArtist },
                       accepted: false,
+                      needsConfirm: false,
+                      direction: 'outgoing',
                     })
                   }
 
@@ -1685,6 +1684,23 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     // 统一手动：增加待回复计数（点击箭头触发对方回复/是否接受邀请）
     setPendingCount(prev => prev + 1)
   }
+
+  // 进入“一起听歌界面”（类似QQ音乐）：开始一起听 + 播放 + 打开面板
+  const enterListenTogether = (songTitle: string, songArtist: string) => {
+    const resolvedSong =
+      musicPlaylist.find(s => s.title === songTitle && (!songArtist || s.artist === songArtist)) ||
+      musicPlaylist.find(s => s.title === songTitle) ||
+      musicPlaylist.find(s => s.title.includes(songTitle) || songTitle.includes(s.title)) ||
+      null
+    const resolvedTitle = resolvedSong?.title || songTitle
+    const resolvedArtist = resolvedSong?.artist || songArtist
+
+    startListenTogether(character.id, resolvedTitle, resolvedArtist)
+    if (resolvedSong) playSong(resolvedSong)
+
+    // 让微信布局打开“一起听歌界面”
+    try { window.dispatchEvent(new Event('lp_open_listen_panel')) } catch {}
+  }
   
   // 发送斗地主邀请
   const handleSendDoudizhuInvite = () => {
@@ -1775,24 +1791,24 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     
     // 更新音乐消息状态
     updateMessage(musicInviteMsg.id, { musicStatus: 'accepted' })
-    
-    // 开启一起听
-    startListenTogether(character.id, musicInviteMsg.musicTitle, musicInviteMsg.musicArtist || '')
-    
-    // 找到对应的歌曲并播放
-    const fullSong = musicPlaylist.find(s => s.title === musicInviteMsg.musicTitle && s.artist === musicInviteMsg.musicArtist)
-    if (fullSong) {
-      playSong(fullSong) // 真正播放音乐
-    }
-    
-    // 添加系统消息
+
+    // 聊天内小字提示：提醒你/也给模型看到“已接受邀请”
     addMessage({
       characterId: character.id,
-      content: `你接受了一起听《${musicInviteMsg.musicTitle}》的邀请`,
-      isUser: true,
+      content: `你已接受${character.name}的听歌邀请`,
+      isUser: false,
       type: 'system',
     })
-    
+
+    // 悬浮确认：点击确认后进入“一起听歌界面”（可切歌）
+    setMusicInviteDialog({
+      open: true,
+      song: { title: musicInviteMsg.musicTitle, artist: musicInviteMsg.musicArtist || '' },
+      accepted: true,
+      needsConfirm: true,
+      direction: 'incoming',
+    })
+
     setMusicInviteMsg(null)
   }
   
@@ -1806,14 +1822,11 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     // 添加系统消息
     addMessage({
       characterId: character.id,
-      content: `你拒绝了一起听《${musicInviteMsg.musicTitle}》的邀请`,
-      isUser: true,
+      content: `你拒绝了${character.name}的听歌邀请`,
+      isUser: false,
       type: 'system',
     })
-    
-    // AI回复
-    generateHumanLikeReplies(`拒绝了你一起听《${musicInviteMsg.musicTitle}》的邀请`)
-    
+
     setMusicInviteMsg(null)
   }
 
@@ -3705,7 +3718,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         </div>
       )}
 
-      {/* 音乐邀请结果弹窗 */}
+      {/* 听歌邀请：悬浮确认 → 进入“一起听歌界面” */}
       {musicInviteDialog.open && (
         <div className="absolute inset-0 z-50 flex items-center justify-center px-8">
           <div 
@@ -3730,33 +3743,61 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                 )}
               </div>
               <div className="text-white font-medium">
-                {musicInviteDialog.accepted ? '邀请已接受' : '邀请被拒绝'}
+                {musicInviteDialog.accepted
+                  ? (musicInviteDialog.direction === 'incoming'
+                    ? `你已接受${character.name}的听歌邀请`
+                    : `对方已接受你的听歌邀请`)
+                  : (musicInviteDialog.direction === 'incoming'
+                    ? `你已拒绝${character.name}的听歌邀请`
+                    : `对方拒绝了你的听歌邀请`)
+                }
               </div>
             </div>
             <div className="p-4 text-center">
               <div className="text-sm text-gray-600 mb-1">
-                {musicInviteDialog.accepted 
-                  ? `${character.name}接受了你的邀请` 
-                  : `${character.name}拒绝了你的邀请`
-                }
+                《{musicInviteDialog.song?.title}》
               </div>
               <div className="text-xs text-gray-400 mb-4">
-                {musicInviteDialog.accepted 
-                  ? `正在一起听《${musicInviteDialog.song?.title}》` 
-                  : `《${musicInviteDialog.song?.title}》`
+                {musicInviteDialog.accepted
+                  ? '点击确认进入一起听歌界面（可切歌）'
+                  : '你可以换一首再试试'
                 }
               </div>
-              <button
-                type="button"
-                onClick={() => setMusicInviteDialog({ open: false })}
-                className={`w-full py-2 rounded-lg text-white text-sm font-medium ${
-                  musicInviteDialog.accepted 
-                    ? 'bg-gradient-to-r from-pink-400 to-purple-500' 
-                    : 'bg-gray-400'
-                }`}
-              >
-                知道了
-              </button>
+              {musicInviteDialog.accepted && musicInviteDialog.needsConfirm ? (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMusicInviteDialog({ open: false })}
+                    className="flex-1 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium"
+                  >
+                    稍后
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const t = musicInviteDialog.song?.title || ''
+                      const a = musicInviteDialog.song?.artist || ''
+                      setMusicInviteDialog({ open: false })
+                      if (t) enterListenTogether(t, a)
+                    }}
+                    className="flex-1 py-2 rounded-lg bg-gradient-to-r from-pink-400 to-purple-500 text-white text-sm font-medium"
+                  >
+                    确认
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setMusicInviteDialog({ open: false })}
+                  className={`w-full py-2 rounded-lg text-white text-sm font-medium ${
+                    musicInviteDialog.accepted 
+                      ? 'bg-gradient-to-r from-pink-400 to-purple-500' 
+                      : 'bg-gray-400'
+                  }`}
+                >
+                  知道了
+                </button>
+              )}
             </div>
           </div>
         </div>

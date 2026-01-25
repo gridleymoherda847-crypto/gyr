@@ -353,6 +353,7 @@ type WeChatContextValue = {
   
   // 一起听操作
   startListenTogether: (characterId: string, songTitle: string, songArtist: string) => void
+  updateListenTogetherSong: (songTitle: string, songArtist: string) => void
   stopListenTogether: () => void
   
   // 钱包操作
@@ -1018,6 +1019,13 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     })
   }
 
+  const updateListenTogetherSong = (songTitle: string, songArtist: string) => {
+    setListenTogether(prev => {
+      if (!prev) return prev
+      return { ...prev, songTitle, songArtist }
+    })
+  }
+
   const stopListenTogether = () => {
     setListenTogether(null)
   }
@@ -1069,7 +1077,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     addTransfer, getTransfersByCharacter,
     addAnniversary, removeAnniversary, getAnniversariesByCharacter,
     addPeriodRecord, updatePeriodRecord, removePeriodRecord, getPeriodRecords, getCurrentPeriod,
-    startListenTogether, stopListenTogether,
+    startListenTogether, updateListenTogetherSong, stopListenTogether,
     // 表情包分类
     stickerCategories, addStickerCategory, removeStickerCategory, getStickersByCategory,
     // 钱包

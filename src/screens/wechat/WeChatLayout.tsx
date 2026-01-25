@@ -10,9 +10,16 @@ type Props = PropsWithChildren<{
 // 微信统一背景布局 - 贯穿所有微信界面，背景图100%显示
 export default function WeChatLayout({ children, className = '' }: Props) {
   const navigate = useNavigate()
-  const { pauseMusic, audioRef } = useOS()
-  const { listenTogether, stopListenTogether, getCharacter, getCurrentPersona } = useWeChat()
+  const { pauseMusic, audioRef, musicPlaylist, playSong } = useOS()
+  const { listenTogether, stopListenTogether, updateListenTogetherSong, getCharacter, getCurrentPersona } = useWeChat()
   const [showListenPanel, setShowListenPanel] = useState(false)
+
+  // 外部触发打开“一起听歌界面”（例如：聊天里确认后进入）
+  useEffect(() => {
+    const handler = () => setShowListenPanel(true)
+    window.addEventListener('lp_open_listen_panel', handler as any)
+    return () => window.removeEventListener('lp_open_listen_panel', handler as any)
+  }, [])
 
   // 一起听歌：强制当前音频循环播放（更贴近“同一首歌一直放”）
   useEffect(() => {
@@ -36,6 +43,18 @@ export default function WeChatLayout({ children, className = '' }: Props) {
     stopListenTogether()
     pauseMusic()
   }, [stopListenTogether, pauseMusic])
+
+  const handleSwitchSong = useCallback((title: string, artist: string) => {
+    const hit =
+      musicPlaylist.find(s => s.title === title && s.artist === artist) ||
+      musicPlaylist.find(s => s.title === title) ||
+      musicPlaylist.find(s => s.title.includes(title) || title.includes(s.title)) ||
+      null
+    if (hit) {
+      playSong(hit)
+      updateListenTogetherSong(hit.title, hit.artist)
+    }
+  }, [musicPlaylist, playSong, updateListenTogetherSong])
   
   return (
     <div 
@@ -169,6 +188,33 @@ export default function WeChatLayout({ children, className = '' }: Props) {
             <div className="text-center px-8 mb-4">
               <div className="text-emerald-800 font-bold text-lg mb-1">{listenTogether.songTitle}</div>
               <div className="text-emerald-600/70 text-sm">正在一起聆听...</div>
+            </div>
+
+            {/* 类QQ音乐：可切换一起听的歌 */}
+            <div className="px-5 mb-4">
+              <div className="text-[12px] text-emerald-700 font-medium mb-2">切歌</div>
+              <div className="max-h-[22vh] overflow-y-auto rounded-2xl bg-white/70 border border-emerald-100 p-2">
+                {musicPlaylist.slice(0, 30).map((s) => {
+                  const active = s.title === listenTogether.songTitle && s.artist === listenTogether.songArtist
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => handleSwitchSong(s.title, s.artist)}
+                      className={`w-full text-left px-3 py-2 rounded-xl flex items-center gap-3 ${active ? 'bg-emerald-50 border border-emerald-200' : 'hover:bg-black/5'}`}
+                    >
+                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+                        <img src={s.cover || '/icons/music-cover.png'} alt="" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-semibold text-emerald-900 truncate">{s.title}</div>
+                        <div className="text-[11px] text-emerald-700/70 truncate">{s.artist}</div>
+                      </div>
+                      {active && <div className="text-[10px] text-emerald-600 font-semibold">正在听</div>}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
             
             {/* 底部按钮 - 清新绿色风格（移除blur） */}
