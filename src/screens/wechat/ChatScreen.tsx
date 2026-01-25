@@ -688,10 +688,7 @@ ${recentTimeline || '（无）'}
 - 若要触发转账，必须使用上面的 [转账:金额:备注] 格式，且单独一行
 - 若要分享推文，单独一行写：[推文:内容]（内容<=140字）
 - 若要分享你的推特主页，单独一行写：[推特主页] 或 [X主页]
-- 若要邀请对方一起听歌，单独一行写：[音乐:歌名:歌手]，例如：[音乐:City of Stars:周深]
-  - 只有在聊天氛围合适时才发（比如气氛甜蜜、想哄对方、想分享心情、对方心情不好想安慰等）
-  - 不要无缘无故频繁发音乐邀请，每次聊天最多发1次
-  - 不要在普通聊天里无缘无故报歌名/列歌单`
+- 【一起听歌】如果用户主动提出想一起听歌，你可以发送音乐邀请卡片，格式：[音乐:歌名:歌手]（单独一行），曲库：${musicPlaylist.slice(0, 10).map(s => s.title).join('、')}${musicPlaylist.length > 10 ? '...' : ''}；不要在无关对话主动提歌名。听歌邀请只通过“音乐卡片”流程处理（用户发卡片→点箭头→你决定→弹确认→进入一起听界面）。`
 
         systemPrompt += `
 
@@ -1233,8 +1230,7 @@ ${recentTimeline || '（无）'}
           
           // 在指定位置处理用户的待处理音乐邀请
           if (index === musicProcessIndex && pendingUserMusicInvites.length > 0) {
-            // 减少延迟，让弹窗更快出现
-            totalDelay += 200
+            totalDelay += 400 + Math.random() * 500
             
             for (const musicInvite of pendingUserMusicInvites) {
               const songTitle = musicInvite.musicTitle || '歌曲'
@@ -1302,36 +1298,11 @@ ${recentTimeline || '（无）'}
                   }
 
                   // 更新原音乐邀请状态
-                  // 让"对方已处理"的反馈马上出现在视野里
+                  // 让“对方已处理”的反馈马上出现在视野里
                   forceScrollRef.current = true
                   nearBottomRef.current = true
                   updateMessage(musicInvite.id, { musicStatus: decision === 'accept' ? 'accepted' : 'rejected' })
 
-                  // 用"真人说话"的方式补一句（与决策一致）
-                  const fallbackReply =
-                    decision === 'accept'
-                      ? `行，来。`
-                      : `我现在不太想听，晚点吧。`
-
-                  const sanitizeChatReply = (s: string) => {
-                    const raw = (s || '').trim()
-                    if (!raw) return ''
-                    const stripped = raw
-                      .replace(/[【\[]\s*(音乐|转账)\s*[:：][^】\]]*[】\]]/g, '')
-                      .replace(/\s+/g, ' ')
-                      .trim()
-                    return stripped.slice(0, 180)
-                  }
-                  
-                  // 先发 AI 的回复消息
-                  addMessage({
-                    characterId: character.id,
-                    content: sanitizeChatReply(chatReply) || fallbackReply,
-                    isUser: false,
-                    type: 'text',
-                  })
-
-                  // 然后立即显示弹窗和系统消息
                   if (decision === 'accept') {
                     const resolvedSong =
                       musicPlaylist.find(s => s.title === songTitle && (!songArtist || s.artist === songArtist)) ||
@@ -1341,6 +1312,7 @@ ${recentTimeline || '（无）'}
                     const resolvedTitle = resolvedSong?.title || songTitle
                     const resolvedArtist = resolvedSong?.artist || songArtist
 
+                    // 聊天内小字提示：给用户看、也给角色“知道你们正在一起听”
                     addMessage({
                       characterId: character.id,
                       content: `${character.name}已接受你的听歌邀请`,
@@ -1348,6 +1320,7 @@ ${recentTimeline || '（无）'}
                       type: 'system',
                     })
 
+                    // 先弹悬浮确认：用户点“确认”后才进入一起听界面（此点击可解锁自动播放）
                     setMusicInviteDialog({
                       open: true,
                       song: { title: resolvedTitle, artist: resolvedArtist, id: resolvedSong?.id },
@@ -1370,6 +1343,29 @@ ${recentTimeline || '（无）'}
                       direction: 'outgoing',
                     })
                   }
+
+                  // 用“真人说话”的方式补一句（与决策一致）
+                  const fallbackReply =
+                    decision === 'accept'
+                      ? `行，来。`
+                      : `我现在不太想听，晚点吧。`
+
+                  const sanitizeChatReply = (s: string) => {
+                    const raw = (s || '').trim()
+                    if (!raw) return ''
+                    // 去掉任何“指令格式”的片段，避免用户看到 [音乐：xxx]
+                    const stripped = raw
+                      .replace(/[【\[]\s*(音乐|转账)\s*[:：][^】\]]*[】\]]/g, '')
+                      .replace(/\s+/g, ' ')
+                      .trim()
+                    return stripped.slice(0, 180)
+                  }
+                  addMessage({
+                    characterId: character.id,
+                    content: sanitizeChatReply(chatReply) || fallbackReply,
+                    isUser: false,
+                    type: 'text',
+                  })
                 })()
               }, totalDelay, { background: true })
               
