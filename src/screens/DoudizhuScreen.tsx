@@ -897,9 +897,11 @@ export default function DoudizhuScreen() {
       
       if (newHands[player].length === 0) {
         const winnerSide = player === stateRef.current.landlord ? 'landlord' : 'farmer'
-        const isWin = (player === 0 && player === stateRef.current.landlord) || 
-                      (player !== 0 && stateRef.current.landlord !== 0) ||
-                      (player === 0 && stateRef.current.landlord !== 0)
+        // 判断玩家（0号位）是否获胜：
+        // - 玩家是地主（landlord=0）且地主方赢了 → 玩家赢
+        // - 玩家是农民（landlord!=0）且农民方赢了 → 玩家赢
+        const playerIsLandlord = stateRef.current.landlord === 0
+        const isWin = (playerIsLandlord && winnerSide === 'landlord') || (!playerIsLandlord && winnerSide === 'farmer')
         playSound(isWin ? 'win' : 'lose')
         
         const calcResult = calculateResult(winnerSide, newBombCount)
