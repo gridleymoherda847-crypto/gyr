@@ -22,7 +22,6 @@ export default function MusicScreen() {
   const [importSongData, setImportSongData] = useState<{ url: string; duration: number; isUrl?: boolean } | null>(null)
   const [importLoading, setImportLoading] = useState(false)
   const [importSuccess, setImportSuccess] = useState(false)
-  const [showImportMenu, setShowImportMenu] = useState(false)
   const [showUrlInput, setShowUrlInput] = useState(false)
   const [importUrl, setImportUrl] = useState('')
 
@@ -187,95 +186,66 @@ export default function MusicScreen() {
             </div>
           </div>
           
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowImportMenu(!showImportMenu)}
-              className="w-8 h-8 rounded-full bg-[#31c27c] flex items-center justify-center"
-            >
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-            {showImportMenu && (
-              <div 
-                className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-[100] min-w-[160px]"
-              >
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    setShowImportMenu(false)
-                    setTimeout(() => {
-                      if (fileInputRef.current) {
-                        fileInputRef.current.click()
-                      }
-                    }, 100)
-                  }}
-                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 cursor-pointer active:bg-gray-100"
-                >
-                  <span className="text-lg">📁</span> 
-                  <span>本地文件</span>
-                </div>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    setShowImportMenu(false)
-                    setShowUrlInput(true)
-                  }}
-                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 cursor-pointer active:bg-gray-100"
-                >
-                  <span className="text-lg">🔗</span> 
-                  <span>链接导入</span>
-                </div>
-              </div>
-            )}
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="audio/*"
-            className="hidden"
-            onChange={handleFileChange}
-          />
         </div>
 
-        {/* Tab 切换 - QQ音乐风格 */}
-        <div className="px-4 flex items-center gap-6 border-b border-white/10 pb-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab('recommend')}
-            className={`text-sm font-medium pb-2 border-b-2 transition-all ${
-              activeTab === 'recommend' 
-                ? 'text-[#31c27c] border-[#31c27c]' 
-                : 'text-white/60 border-transparent'
-            }`}
-          >
-            推荐
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('playlist')}
-            className={`text-sm font-medium pb-2 border-b-2 transition-all ${
-              activeTab === 'playlist' 
-                ? 'text-[#31c27c] border-[#31c27c]' 
-                : 'text-white/60 border-transparent'
-            }`}
-          >
-            歌单
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('favorites')}
-            className={`text-sm font-medium pb-2 border-b-2 transition-all ${
-              activeTab === 'favorites' 
-                ? 'text-[#31c27c] border-[#31c27c]' 
-                : 'text-white/60 border-transparent'
-            }`}
-          >
-            我喜欢
-          </button>
+        {/* Tab 切换 + 导入按钮 */}
+        <div className="px-4 flex items-center justify-between border-b border-white/10 pb-2">
+          <div className="flex items-center gap-6">
+            <button
+              type="button"
+              onClick={() => setActiveTab('recommend')}
+              className={`text-sm font-medium pb-2 border-b-2 transition-all ${
+                activeTab === 'recommend' 
+                  ? 'text-[#31c27c] border-[#31c27c]' 
+                  : 'text-white/60 border-transparent'
+              }`}
+            >
+              推荐
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('playlist')}
+              className={`text-sm font-medium pb-2 border-b-2 transition-all ${
+                activeTab === 'playlist' 
+                  ? 'text-[#31c27c] border-[#31c27c]' 
+                  : 'text-white/60 border-transparent'
+              }`}
+            >
+              歌单
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('favorites')}
+              className={`text-sm font-medium pb-2 border-b-2 transition-all ${
+                activeTab === 'favorites' 
+                  ? 'text-[#31c27c] border-[#31c27c]' 
+                  : 'text-white/60 border-transparent'
+              }`}
+            >
+              我喜欢
+            </button>
+          </div>
+          
+          {/* 导入按钮 - 直接显示，不用下拉菜单 */}
+          <div className="flex items-center gap-2">
+            <label className="px-3 py-1.5 rounded-full bg-[#31c27c] text-white text-xs font-medium cursor-pointer active:opacity-80">
+              📁 导入
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowUrlInput(true)}
+              className="px-3 py-1.5 rounded-full bg-white/20 text-white text-xs font-medium active:opacity-80"
+            >
+              🔗 链接
+            </button>
+          </div>
         </div>
 
         {/* 主内容区 */}
@@ -662,13 +632,6 @@ export default function MusicScreen() {
         </div>
       )}
       
-      {/* 点击其他地方关闭菜单 */}
-      {showImportMenu && (
-        <div 
-          className="fixed inset-0 z-[99]" 
-          onClick={() => setShowImportMenu(false)}
-        />
-      )}
     </PageContainer>
   )
 }
