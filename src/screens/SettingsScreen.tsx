@@ -32,6 +32,9 @@ export default function SettingsScreen() {
   const [screenPaddingBottom, setScreenPaddingBottom] = useState(() => {
     return parseInt(localStorage.getItem('mina_screen_padding_bottom') || '0')
   })
+  const [hideStatusBar, setHideStatusBar] = useState(() => {
+    return localStorage.getItem('mina_hide_status_bar') === 'true'
+  })
 
   // 监听全屏状态变化
   useEffect(() => {
@@ -528,49 +531,72 @@ export default function SettingsScreen() {
               onClick={() => setShowScreenFit(false)}
               role="presentation"
             />
-            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/90 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
+            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/90 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] max-h-[80vh] overflow-y-auto">
               <div className="text-center mb-4">
                 <div className="text-[15px] font-semibold text-[#111]">📱 屏幕适配</div>
                 <div className="mt-1 text-[12px] text-[#666]">
-                  如果按钮被遮挡，可以调整边距
+                  调整边距和状态栏显示
                 </div>
               </div>
               
               <div className="space-y-4">
+                {/* 隐藏状态栏 */}
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <div>
+                    <span className="text-sm text-[#333]">隐藏顶部状态栏</span>
+                    <p className="text-xs text-[#999]">隐藏时间、WiFi、电量显示</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHideStatusBar(!hideStatusBar)}
+                    className={`w-12 h-7 rounded-full transition-colors ${hideStatusBar ? 'bg-green-500' : 'bg-gray-300'}`}
+                  >
+                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform mx-1 ${hideStatusBar ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                
                 {/* 顶部边距 */}
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-[#333]">顶部边距</span>
-                    <span className="text-[#666] font-mono">{screenPaddingTop}px</span>
+                    <span className="text-[#666] font-mono">{screenPaddingTop > 0 ? '+' : ''}{screenPaddingTop}px</span>
                   </div>
                   <input
                     type="range"
-                    min="0"
+                    min="-30"
                     max="60"
                     value={screenPaddingTop}
                     onChange={(e) => setScreenPaddingTop(parseInt(e.target.value))}
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                   />
+                  <div className="flex justify-between text-[10px] text-[#999]">
+                    <span>上移</span>
+                    <span>下移</span>
+                  </div>
                 </div>
                 
                 {/* 底部边距 */}
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-[#333]">底部边距</span>
-                    <span className="text-[#666] font-mono">{screenPaddingBottom}px</span>
+                    <span className="text-[#666] font-mono">{screenPaddingBottom > 0 ? '+' : ''}{screenPaddingBottom}px</span>
                   </div>
                   <input
                     type="range"
-                    min="0"
+                    min="-30"
                     max="60"
                     value={screenPaddingBottom}
                     onChange={(e) => setScreenPaddingBottom(parseInt(e.target.value))}
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                   />
+                  <div className="flex justify-between text-[10px] text-[#999]">
+                    <span>下移</span>
+                    <span>上移</span>
+                  </div>
                 </div>
                 
-                <div className="text-xs text-[#999] text-center">
-                  iPhone 刘海屏建议：顶部 44px，底部 34px
+                <div className="text-xs text-[#999] text-center bg-gray-50 rounded-lg p-2">
+                  iPhone 刘海屏建议：顶部 +44px，底部 +34px
                 </div>
               </div>
               
@@ -580,6 +606,7 @@ export default function SettingsScreen() {
                   onClick={() => {
                     setScreenPaddingTop(0)
                     setScreenPaddingBottom(0)
+                    setHideStatusBar(false)
                   }}
                   className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
                 >
@@ -590,6 +617,7 @@ export default function SettingsScreen() {
                   onClick={() => {
                     localStorage.setItem('mina_screen_padding_top', String(screenPaddingTop))
                     localStorage.setItem('mina_screen_padding_bottom', String(screenPaddingBottom))
+                    localStorage.setItem('mina_hide_status_bar', String(hideStatusBar))
                     // 应用到 CSS 变量
                     document.documentElement.style.setProperty('--screen-padding-top', `${screenPaddingTop}px`)
                     document.documentElement.style.setProperty('--screen-padding-bottom', `${screenPaddingBottom}px`)

@@ -8,6 +8,18 @@ export default function PhoneShell({ children }: PropsWithChildren) {
   const { wallpaper, currentFont, fontColor, isLocked, lockWallpaper, notifications, markNotificationRead } = useOS()
   const location = useLocation()
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [hideStatusBar, setHideStatusBar] = useState(() => {
+    return localStorage.getItem('mina_hide_status_bar') === 'true'
+  })
+  
+  // 监听 localStorage 变化以响应设置更改
+  useEffect(() => {
+    const checkHideStatusBar = () => {
+      setHideStatusBar(localStorage.getItem('mina_hide_status_bar') === 'true')
+    }
+    window.addEventListener('storage', checkHideStatusBar)
+    return () => window.removeEventListener('storage', checkHideStatusBar)
+  }, [])
   
   const currentWallpaper = isLocked ? lockWallpaper : wallpaper
   const timerRef = useRef<Record<string, number>>({})
@@ -80,8 +92,8 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           <div className="relative z-10 h-full w-full">{children}</div>
         ) : (
           <div className="relative z-10 flex h-full flex-col">
-            {/* 虚拟状态栏 */}
-            <VirtualStatusBar />
+            {/* 虚拟状态栏（可隐藏） */}
+            {!hideStatusBar && <VirtualStatusBar />}
             <div className="flex-1 overflow-hidden">{children}</div>
             {!isFullScreenApp && <BottomHomeBar />}
           </div>
@@ -141,8 +153,8 @@ export default function PhoneShell({ children }: PropsWithChildren) {
               <div className="relative z-10 h-full w-full">{children}</div>
             ) : (
               <div className="relative z-10 flex h-full flex-col">
-                {/* 虚拟状态栏 */}
-                <VirtualStatusBar />
+                {/* 虚拟状态栏（可隐藏） */}
+                {!hideStatusBar && <VirtualStatusBar />}
                 <div className="flex-1 overflow-hidden">{children}</div>
                 {!isFullScreenApp && <BottomHomeBar />}
               </div>
