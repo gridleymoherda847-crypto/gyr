@@ -30,6 +30,7 @@ const MusicScreen = lazy(() => import('./screens/MusicScreen'))
 const PresetScreen = lazy(() => import('./screens/PresetScreen'))
 const DoudizhuScreen = lazy(() => import('./screens/DoudizhuScreen'))
 const XScreen = lazy(() => import('./screens/XScreen'))
+const ManualScreen = lazy(() => import('./screens/ManualScreen'))
 
 // WeChat
 const WeChatScreen = lazy(() => import('./screens/wechat/WeChatScreen'))
@@ -150,6 +151,7 @@ function InnerApp() {
               <Route path="/apps/preset" element={<PresetScreen />} />
               <Route path="/apps/doudizhu" element={<DoudizhuScreen />} />
               <Route path="/apps/x" element={<XScreen />} />
+              <Route path="/apps/manual" element={<ManualScreen />} />
               {/* WeChat Routes */}
               <Route path="/apps/wechat" element={<WeChatScreen />} />
               <Route path="/apps/wechat/create-character" element={<CreateCharacterScreen />} />
