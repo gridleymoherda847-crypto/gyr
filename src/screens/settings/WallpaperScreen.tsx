@@ -13,24 +13,59 @@ const PRESET_WALLPAPERS = [
   { id: 'dark', gradient: 'linear-gradient(180deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' },
 ]
 
+// 将文件转换为 base64（这样刷新后不会丢失）
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function WallpaperScreen() {
   const navigate = useNavigate()
   const { wallpaper, lockWallpaper, setWallpaper, setLockWallpaper, fontColor } = useOS()
   const [activeTab, setActiveTab] = useState<'home' | 'lock'>('home')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const currentWallpaper = activeTab === 'home' ? wallpaper : lockWallpaper
   const setCurrentWallpaper = activeTab === 'home' ? setWallpaper : setLockWallpaper
 
   const handleFileSelect = () => fileInputRef.current?.click()
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) { setCurrentWallpaper(URL.createObjectURL(file)); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+    if (!file) return
+    
+    // 检查文件大小（限制 5MB，壁纸不需要太大）
+    if (file.size > 5 * 1024 * 1024) {
+      alert('图片太大，最大支持 5MB')
+      e.target.value = ''
+      return
+    }
+    
+    setLoading(true)
+    try {
+      // 转换为 base64 格式，这样可以持久化保存
+      const base64 = await fileToBase64(file)
+      setCurrentWallpaper(base64)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1500)
+    } catch (err) {
+      alert('图片加载失败，请重试')
+    } finally {
+      setLoading(false)
+      e.target.value = ''
+    }
   }
+  
   const handlePresetSelect = (gradient: string) => { setCurrentWallpaper(gradient); setSaved(true); setTimeout(() => setSaved(false), 1500) }
 
-  const isImageUrl = currentWallpaper.startsWith('http') || currentWallpaper.startsWith('blob') || currentWallpaper.startsWith('/')
+  // 判断是否为图片（包括 base64、http URL、blob URL、本地路径）
+  const isImageUrl = currentWallpaper.startsWith('data:') || currentWallpaper.startsWith('http') || currentWallpaper.startsWith('blob') || currentWallpaper.startsWith('/')
 
   return (
     <PageContainer>
@@ -52,7 +87,22 @@ export default function WallpaperScreen() {
           </div>
 
           {/* 上传按钮 */}
-          <button onClick={handleFileSelect} className="w-full py-3 sm:py-3.5 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 border-dashed font-medium transition-colors press-effect flex items-center justify-center gap-2 text-sm sm:text-base" style={{ color: fontColor.value }}><span>📤</span> 上传自定义图片</button>
+          <button 
+            onClick={handleFileSelect} 
+            disabled={loading}
+            className="w-full py-3 sm:py-3.5 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 border-dashed font-medium transition-colors press-effect flex items-center justify-center gap-2 text-sm sm:text-base disabled:opacity-50" 
+            style={{ color: fontColor.value }}
+          >
+            {loading ? (
+              <>
+                <span className="animate-spin">⏳</span> 正在加载...
+              </>
+            ) : (
+              <>
+                <span>📤</span> 上传自定义图片
+              </>
+            )}
+          </button>
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
 
           {/* 预设壁纸 */}
