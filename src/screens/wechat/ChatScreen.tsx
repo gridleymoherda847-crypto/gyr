@@ -105,6 +105,7 @@ export default function ChatScreen() {
   const [showCallScreen, setShowCallScreen] = useState(false)
   const [callState, setCallState] = useState<'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking'>('idle')
   const [callTranscript, setCallTranscript] = useState('') // 当前识别的文字
+  const [callReplyText, setCallReplyText] = useState('') // AI回复的文字（显示在通话界面）
   const [speechSupported, setSpeechSupported] = useState(true)
   const [callConnected, setCallConnected] = useState(false) // 是否已接通
   const [callStartTime, setCallStartTime] = useState<number | null>(null) // 通话开始时间
@@ -539,81 +540,31 @@ export default function ChatScreen() {
     }
   }, [])
   
-  // 处理语音输入 - 发送给 LLM 并播放回复
+  // 处理语音输入 - 直接用语音回复，不写入聊天记录
   const handleVoiceInput = useCallback(async (text: string) => {
     if (!text || !character) return
     
     setCallState('thinking')
+    setCallReplyText('')
     
     try {
-      // 添加用户消息到聊天记录
-      addMessage({
-        characterId: character.id,
-        content: text,
-        isUser: true,
-        type: 'text',
-      })
-      
-      // 调用 LLM 获取回复（生成多条消息，但只调用一次）
-      const systemPrompt = `你是${character.name}，正在和用户进行语音通话。
-你的人设：${character.prompt || '（无）'}
-你们的关系：${character.relationship || '（无）'}
-你叫用户：${character.callMeName || '（未设置）'}
-
-【通话规则】
-- 这是实时语音通话，回复要自然，像真人打电话一样
-- 可以回复1-4条消息，每条用换行分隔
-- 用口语化的表达，可以有语气词（嗯、啊、哦、嘿）
-- 根据你的性格和人设来回应
-- 总字数控制在100字以内
-- 不要使用任何指令格式如[转账:]、[位置:]等
-- 不要使用编号或序号`
+      // 精简 prompt，加快 LLM 响应
+      const systemPrompt = `你是${character.name}。人设：${character.prompt || '无'}。关系：${character.relationship || '无'}。
+语音通话中，用一句话简短回复，20字以内，口语化，可用语气词。不要用任何格式符号。`
       
       const response = await callLLM([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: text },
-      ], undefined, { maxTokens: 200, temperature: 0.9 })
+      ], undefined, { maxTokens: 80, temperature: 0.8 })
       
-      // 分割成多条消息
-      const rawText = (response || '').trim() || '嗯...'
-      const splitMessages = (raw: string) => {
-        const lines = raw.split('\n').map(s => s.trim()).filter(Boolean)
-        if (lines.length === 0) return ['嗯...']
-        // 合并太短的片段
-        const merged: string[] = []
-        for (const line of lines) {
-          if (merged.length === 0) { merged.push(line); continue }
-          const last = merged[merged.length - 1]
-          if (last.length < 6 || line.length < 6) {
-            merged[merged.length - 1] = `${last}${line}`
-          } else {
-            merged.push(line)
-          }
-        }
-        return merged.slice(0, 5) // 最多5条
-      }
+      const replyText = (response || '').trim().replace(/\n/g, ' ') || '嗯？'
+      setCallReplyText(replyText) // 显示在通话界面
       
-      const messages = splitMessages(rawText)
-      const fullText = messages.join('') // 合并成一段用于TTS
-      
-      // 添加多条 AI 回复到聊天记录（间隔显示）
-      for (let i = 0; i < messages.length; i++) {
-        setTimeout(() => {
-          addMessage({
-            characterId: character.id,
-            content: messages[i],
-            isUser: false,
-            type: 'text',
-          })
-        }, i * 300) // 每条间隔300ms显示
-      }
-      
-      // 生成语音并播放（只调用一次TTS，播放完整内容）
+      // 直接生成语音并播放
       setCallState('speaking')
-      const voiceUrl = await generateVoiceUrl(fullText.slice(0, 500))
+      const voiceUrl = await generateVoiceUrl(replyText.slice(0, 200))
       
       if (voiceUrl) {
-        // 停止之前的播放
         if (callAudioRef.current) {
           callAudioRef.current.pause()
         }
@@ -626,22 +577,22 @@ export default function ChatScreen() {
           callAudioRef.current = null
         }
         audio.onerror = () => {
+          console.error('Audio play error')
           setCallState('idle')
           callAudioRef.current = null
         }
         
         await audio.play()
       } else {
-        // TTS 不可用，等消息显示完再回到空闲状态
-        setTimeout(() => {
-          setCallState('idle')
-        }, messages.length * 300 + 500)
+        // TTS 未配置，提示用户
+        console.log('TTS not available, please configure in settings')
+        setCallState('idle')
       }
     } catch (err) {
       console.error('Voice call error:', err)
       setCallState('idle')
     }
-  }, [character, addMessage, callLLM, generateVoiceUrl])
+  }, [character, callLLM, generateVoiceUrl])
   
   // 更新 ref 以供闭包使用
   handleVoiceInputRef.current = handleVoiceInput
@@ -3892,10 +3843,25 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             <div className="mt-6 text-white text-xl font-medium">{character.name}</div>
             
             {/* 识别文字显示 */}
-            {callConnected && callTranscript && (
-              <div className="mt-6 px-6 py-3 bg-white/10 rounded-2xl max-w-[280px]">
-                <div className="text-white/60 text-xs mb-1">你说：</div>
-                <div className="text-white text-sm">{callTranscript}</div>
+            {/* 对话气泡 */}
+            {callConnected && (callTranscript || callReplyText) && (
+              <div className="mt-6 w-full max-w-[300px] space-y-3">
+                {/* 你说的 */}
+                {callTranscript && (
+                  <div className="flex justify-end">
+                    <div className="px-4 py-2 bg-green-500/80 rounded-2xl rounded-tr-sm max-w-[85%]">
+                      <div className="text-white text-sm">{callTranscript}</div>
+                    </div>
+                  </div>
+                )}
+                {/* AI 回复 */}
+                {callReplyText && (
+                  <div className="flex justify-start">
+                    <div className="px-4 py-2 bg-white/20 rounded-2xl rounded-tl-sm max-w-[85%]">
+                      <div className="text-white text-sm">{callReplyText}</div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             
