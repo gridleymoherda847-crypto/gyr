@@ -99,9 +99,35 @@ export default function ApiConfigScreen() {
     try {
       setCloneError('')
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      
+      // 尝试使用 MiniMax 支持的格式，优先 mp4/m4a，其次 webm
+      let mimeType = 'audio/webm'
+      let fileExt = 'webm'
+      
+      // iOS Safari 支持 mp4
+      if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4'
+        fileExt = 'm4a'
+      } else if (MediaRecorder.isTypeSupported('audio/mpeg')) {
+        mimeType = 'audio/mpeg'
+        fileExt = 'mp3'
+      } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+        mimeType = 'audio/wav'
+        fileExt = 'wav'
+      } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+        mimeType = 'audio/ogg'
+        fileExt = 'ogg'
+      }
+      
+      console.log('Recording with mimeType:', mimeType)
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType })
       mediaRecorderRef.current = mediaRecorder
       audioChunksRef.current = []
+      
+      // 保存文件扩展名供后续使用
+      ;(mediaRecorder as any)._fileExt = fileExt
+      ;(mediaRecorder as any)._mimeType = mimeType
       
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
@@ -110,7 +136,11 @@ export default function ApiConfigScreen() {
       }
       
       mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+        const ext = (mediaRecorder as any)._fileExt || 'webm'
+        const mime = (mediaRecorder as any)._mimeType || 'audio/webm'
+        const blob = new Blob(audioChunksRef.current, { type: mime })
+        // 附加扩展名信息
+        ;(blob as any)._fileExt = ext
         setRecordedBlob(blob)
         stream.getTracks().forEach(track => track.stop())
       }
@@ -185,8 +215,20 @@ export default function ApiConfigScreen() {
       return
     }
     
-    // 转换为 File 对象
-    const file = new File([recordedBlob], 'recording.webm', { type: 'audio/webm' })
+    // 获取录音时保存的文件扩展名
+    const fileExt = (recordedBlob as any)._fileExt || 'webm'
+    const mimeType = recordedBlob.type || 'audio/webm'
+    
+    console.log('Uploading recording:', { fileExt, mimeType, size: recordedBlob.size })
+    
+    // MiniMax 支持的格式：mp3, wav, m4a, flac 等
+    // webm/ogg 可能不被支持
+    if (fileExt === 'webm' || fileExt === 'ogg') {
+      setCloneError('抱歉，当前浏览器录音格式(webm)不被 MiniMax 支持。\n\n请使用以下方式：\n1. 用手机录音 App 录制后，通过「链接」方式上传\n2. 在电脑端用「文件」方式上传 mp3/wav/m4a 格式的音频\n3. 使用 iOS Safari 浏览器（支持 m4a 格式录音）')
+      return
+    }
+    
+    const file = new File([recordedBlob], `recording.${fileExt}`, { type: mimeType })
     await handleCloneVoice(file)
   }
 
