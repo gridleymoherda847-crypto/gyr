@@ -54,6 +54,10 @@ export default function ApiConfigScreen() {
   const [ttsTestLoading, setTtsTestLoading] = useState(false)
   const [ttsTestError, setTtsTestError] = useState('')
   
+  // 板块折叠状态
+  const [showLLMSection, setShowLLMSection] = useState(false)
+  const [showTTSSection, setShowTTSSection] = useState(false)
+  
   // 高级选项展开状态
   const [showAdvanced, setShowAdvanced] = useState(false)
   
@@ -318,211 +322,27 @@ export default function ApiConfigScreen() {
         <AppHeader title="API 配置" onBack={() => navigate('/apps/settings')} />
         
         <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 space-y-4 sm:space-y-5">
-          {/* LLM 配置区域 */}
-          <div className="bg-white/30 rounded-2xl p-3 sm:p-4 space-y-3">
-            <h3 className="text-sm font-semibold opacity-80" style={{ color: fontColor.value }}>
-              🤖 AI 对话配置
-            </h3>
-            
-            <div className="space-y-2">
-              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
-              <input
-                type="url"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.openai.com/v1"
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-                style={{ color: fontColor.value }}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Key</label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-xxxxxxxx"
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-                style={{ color: fontColor.value }}
-              />
-            </div>
-
-            <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
-              {loading ? '获取中...' : '获取模型列表'}
-            </button>
-
-            {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">{error}</div>}
-
-            {models.length > 0 && (
-              <div className="space-y-2">
-                <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
-                <div className="relative">
-                  <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base" style={{ color: fontColor.value }}>
-                    <option value="" disabled>请选择模型</option>
-                    {models.map((model) => <option key={model} value={model}>{model}</option>)}
-                  </select>
-                  <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          {/* LLM 配置区域 - 可折叠 */}
+          <div className="bg-white/30 rounded-2xl overflow-hidden">
+            {/* 折叠头部 */}
+            <button
+              onClick={() => setShowLLMSection(!showLLMSection)}
+              className="w-full flex items-center justify-between p-3 sm:p-4 hover:bg-white/10 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🤖</span>
+                <div className="text-left">
+                  <h3 className="text-sm font-semibold" style={{ color: fontColor.value }}>
+                    AI 对话配置
+                  </h3>
+                  <p className="text-xs opacity-50" style={{ color: fontColor.value }}>
+                    {llmConfig.selectedModel ? `已配置：${llmConfig.selectedModel}` : '配置 LLM API 让角色能对话'}
+                  </p>
                 </div>
               </div>
-            )}
-
-            <button onClick={handleSave} className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect ${saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'}`}>
-              {saved ? '✓ 已保存' : '保存 AI 配置'}
-            </button>
-          </div>
-          
-          {/* TTS 语音配置区域 */}
-          <div className="bg-white/30 rounded-2xl p-3 sm:p-4 space-y-3">
-            <h3 className="text-sm font-semibold opacity-80" style={{ color: fontColor.value }}>
-              🎙️ MiniMax 语音配置
-            </h3>
-            
-            {/* 区域选择 */}
-            <div className="space-y-2">
-              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
-                选择区域（根据你注册的网站选）
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setTtsRegion('cn')}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                    ttsRegion === 'cn' 
-                      ? 'bg-green-500 text-white' 
-                      : 'bg-white/50 border border-white/30'
-                  }`}
-                  style={ttsRegion !== 'cn' ? { color: fontColor.value } : undefined}
-                >
-                  <div>🇨🇳 国内版</div>
-                  <div className="text-xs opacity-70">minimaxi.com</div>
-                </button>
-                <button
-                  onClick={() => setTtsRegion('global')}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                    ttsRegion === 'global' 
-                      ? 'bg-blue-500 text-white' 
-                      : 'bg-white/50 border border-white/30'
-                  }`}
-                  style={ttsRegion !== 'global' ? { color: fontColor.value } : undefined}
-                >
-                  <div>🌍 海外版</div>
-                  <div className="text-xs opacity-70">minimax.io</div>
-                </button>
-              </div>
-            </div>
-            
-            {/* 启用开关 */}
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm" style={{ color: fontColor.value }}>启用语音功能</span>
-              <button
-                onClick={() => setTtsEnabled(!ttsEnabled)}
-                className={`w-12 h-6 rounded-full transition-colors ${ttsEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
-              >
-                <div className={`w-5 h-5 rounded-full bg-white shadow transform transition-transform ${ttsEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>MiniMax API Key</label>
-              <input
-                type="password"
-                value={ttsApiKey}
-                onChange={(e) => setTtsApiKey(e.target.value)}
-                placeholder="从 MiniMax 控制台复制"
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-                style={{ color: fontColor.value }}
-              />
-            </div>
-            
-            {/* 音色选择 - 简化版 */}
-            <div className="space-y-2">
-              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
-                选择音色
-              </label>
-              <div className="relative">
-                <select 
-                  value={ttsVoiceId} 
-                  onChange={(e) => setTtsVoiceId(e.target.value)} 
-                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm" 
-                  style={{ color: fontColor.value }}
-                >
-                  <optgroup label="📢 系统预设音色（免费使用）">
-                    {SYSTEM_VOICE_OPTIONS.map((v) => (
-                      <option key={v.id} value={v.id}>{v.name} - {v.desc}</option>
-                    ))}
-                  </optgroup>
-                  {customVoices.length > 0 && (
-                    <optgroup label="🎭 我克隆的音色">
-                      {customVoices.map((v) => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-                <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-              </div>
-            </div>
-            
-            {/* 语速调节 */}
-            <div className="space-y-2">
-              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
-                语速：{ttsSpeed.toFixed(1)}x
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="2"
-                step="0.1"
-                value={ttsSpeed}
-                onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
-                className="w-full h-2 bg-white/50 rounded-lg appearance-none cursor-pointer"
-              />
-              <div className="flex justify-between text-xs opacity-50" style={{ color: fontColor.value }}>
-                <span>慢 0.5x</span>
-                <span>正常 1x</span>
-                <span>快 2x</span>
-              </div>
-            </div>
-            
-            {ttsTestError && (
-              <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">
-                {ttsTestError}
-              </div>
-            )}
-            
-            {cloneSuccess && (
-              <div className="text-xs sm:text-sm text-green-600 bg-green-50/50 px-3 py-2.5 rounded-2xl border border-green-200">
-                ✓ {cloneSuccess}
-              </div>
-            )}
-            
-            <div className="flex gap-2">
-              <button 
-                onClick={handleTestTTS} 
-                disabled={ttsTestLoading}
-                className="flex-1 py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm" 
-                style={{ color: fontColor.value }}
-              >
-                {ttsTestLoading ? '播放中...' : '🔊 试听'}
-              </button>
-              
-              <button 
-                onClick={handleSaveTTS} 
-                className={`flex-1 py-2.5 sm:py-3 rounded-2xl font-semibold text-white transition-all press-effect ${ttsSaved ? 'bg-green-500' : 'bg-gradient-to-r from-purple-500 to-pink-500 shadow-[0_6px_20px_rgba(168,85,247,0.3)]'}`}
-              >
-                {ttsSaved ? '✓ 已保存' : '保存'}
-              </button>
-            </div>
-            
-            {/* 高级选项折叠按钮 */}
-            <button
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full flex items-center justify-center gap-2 py-2 text-sm opacity-60 hover:opacity-80 transition-opacity"
-              style={{ color: fontColor.value }}
-            >
-              <span>{showAdvanced ? '收起高级选项' : '展开高级选项（克隆音色等）'}</span>
               <svg 
-                className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} 
+                className={`w-5 h-5 opacity-50 transition-transform ${showLLMSection ? 'rotate-180' : ''}`} 
+                style={{ color: fontColor.value }} 
                 fill="none" 
                 viewBox="0 0 24 24" 
                 stroke="currentColor"
@@ -531,118 +351,361 @@ export default function ApiConfigScreen() {
               </svg>
             </button>
             
-            {/* 高级选项内容 */}
-            {showAdvanced && (
-              <div className="space-y-4 pt-2 border-t border-white/20">
-                {/* 模型选择 */}
+            {/* 折叠内容 */}
+            {showLLMSection && (
+              <div className="p-3 sm:p-4 pt-0 space-y-3 border-t border-white/10">
                 <div className="space-y-2">
-                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>语音模型</label>
-                  <div className="relative">
-                    <select 
-                      value={ttsModel} 
-                      onChange={(e) => setTtsModel(e.target.value)} 
-                      className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm" 
-                      style={{ color: fontColor.value }}
-                    >
-                      {MODEL_OPTIONS.map((m) => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
-                    </select>
-                    <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                  </div>
+                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
+                  <input
+                    type="url"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://api.openai.com/v1"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+                    style={{ color: fontColor.value }}
+                  />
                 </div>
-                
-                {/* 刷新已有音色 */}
-                <button
-                  onClick={handleFetchVoices}
-                  disabled={fetchVoicesLoading || !ttsApiKey}
-                  className="w-full py-2.5 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm"
-                  style={{ color: fontColor.value }}
-                >
-                  {fetchVoicesLoading ? '获取中...' : '🔄 刷新我已克隆的音色'}
+
+                <div className="space-y-2">
+                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Key</label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-xxxxxxxx"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+                    style={{ color: fontColor.value }}
+                  />
+                </div>
+
+                <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
+                  {loading ? '获取中...' : '获取模型列表'}
                 </button>
-                
-                {/* 已克隆音色管理 */}
-                {customVoices.length > 0 && (
-                  <div className="bg-purple-50/30 rounded-xl p-3 space-y-2">
-                    <h4 className="text-sm font-medium" style={{ color: fontColor.value }}>
-                      🎭 我的克隆音色
-                    </h4>
-                    <div className="space-y-2">
-                      {customVoices.map((voice) => (
-                        <div key={voice.id} className="flex items-center justify-between bg-white/50 rounded-lg px-3 py-2">
-                          <div>
-                            <div className="text-sm font-medium" style={{ color: fontColor.value }}>{voice.name}</div>
-                            <div className="text-xs opacity-50" style={{ color: fontColor.value }}>{voice.id}</div>
-                          </div>
-                          <button
-                            onClick={() => {
-                              setCustomVoices(prev => prev.filter(v => v.id !== voice.id))
-                              if (ttsVoiceId === voice.id) {
-                                setTtsVoiceId('female-shaonv')
-                              }
-                            }}
-                            className="text-red-500 hover:text-red-600 text-xs px-2 py-1 rounded-lg hover:bg-red-50"
-                          >
-                            删除
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="text-xs opacity-50" style={{ color: fontColor.value }}>
-                      注：这里删除只是从本地列表移除，不会删除 MiniMax 服务器上的音色
+
+                {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">{error}</div>}
+
+                {models.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
+                    <div className="relative">
+                      <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base" style={{ color: fontColor.value }}>
+                        <option value="" disabled>请选择模型</option>
+                        {models.map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select>
+                      <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                     </div>
                   </div>
                 )}
+
+                <button onClick={handleSave} className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect ${saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'}`}>
+                  {saved ? '✓ 已保存' : '保存 AI 配置'}
+                </button>
+              </div>
+            )}
+          </div>
+          
+          {/* TTS 语音配置区域 - 可折叠 */}
+          <div className="bg-white/30 rounded-2xl overflow-hidden">
+            {/* 折叠头部 */}
+            <button
+              onClick={() => setShowTTSSection(!showTTSSection)}
+              className="w-full flex items-center justify-between p-3 sm:p-4 hover:bg-white/10 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🎙️</span>
+                <div className="text-left">
+                  <h3 className="text-sm font-semibold" style={{ color: fontColor.value }}>
+                    语音配置
+                  </h3>
+                  <p className="text-xs opacity-50" style={{ color: fontColor.value }}>
+                    {ttsConfig.enabled ? `已启用：${ttsConfig.voiceId || '默认音色'}` : '让角色用语音回复你'}
+                  </p>
+                </div>
+              </div>
+              <svg 
+                className={`w-5 h-5 opacity-50 transition-transform ${showTTSSection ? 'rotate-180' : ''}`} 
+                style={{ color: fontColor.value }} 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {/* 折叠内容 */}
+            {showTTSSection && (
+              <div className="p-3 sm:p-4 pt-0 space-y-3 border-t border-white/10">
+                {/* 区域选择 */}
+                <div className="space-y-2">
+                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
+                    选择区域（根据你注册的网站选）
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setTtsRegion('cn')}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                        ttsRegion === 'cn' 
+                          ? 'bg-green-500 text-white' 
+                          : 'bg-white/50 border border-white/30'
+                      }`}
+                      style={ttsRegion !== 'cn' ? { color: fontColor.value } : undefined}
+                    >
+                      <div>🇨🇳 国内版</div>
+                      <div className="text-xs opacity-70">minimaxi.com</div>
+                    </button>
+                    <button
+                      onClick={() => setTtsRegion('global')}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                        ttsRegion === 'global' 
+                          ? 'bg-blue-500 text-white' 
+                          : 'bg-white/50 border border-white/30'
+                      }`}
+                      style={ttsRegion !== 'global' ? { color: fontColor.value } : undefined}
+                    >
+                      <div>🌍 海外版</div>
+                      <div className="text-xs opacity-70">minimax.io</div>
+                    </button>
+                  </div>
+                </div>
                 
-                {/* 音色克隆区域 */}
-                <div className="bg-orange-50/30 rounded-xl p-3 space-y-3">
-                  <h4 className="text-sm font-medium" style={{ color: fontColor.value }}>
-                    🎭 克隆新音色
-                  </h4>
-                  
-                  <div className="text-xs opacity-60 space-y-1" style={{ color: fontColor.value }}>
-                    <p>上传一段音频（10秒-5分钟），系统会学习这个声音。</p>
-                    <p>之后就能用这个声音来朗读文字了。</p>
-                    <p className="text-orange-600">⚠️ 需要在 MiniMax 完成个人认证才能使用</p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium opacity-60" style={{ color: fontColor.value }}>
-                      给音色起个名字（可选）
-                    </label>
-                    <input
-                      type="text"
-                      value={cloneVoiceName}
-                      onChange={(e) => setCloneVoiceName(e.target.value)}
-                      placeholder="例如：小红的声音"
-                      className="w-full px-3 py-2 rounded-xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs"
-                      style={{ color: fontColor.value }}
-                    />
-                  </div>
-                  
-                  {cloneError && (
-                    <div className="text-xs text-red-500 bg-red-50/50 px-3 py-2 rounded-xl border border-red-200">
-                      {cloneError}
-                    </div>
-                  )}
-                  
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="audio/mp3,audio/m4a,audio/wav,audio/*"
-                    className="hidden"
-                    onChange={handleFileSelect}
-                  />
-                  
+                {/* 启用开关 */}
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm" style={{ color: fontColor.value }}>启用语音功能</span>
                   <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={cloneLoading || !ttsApiKey}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-pink-500 text-white font-medium text-sm disabled:opacity-50 press-effect"
+                    onClick={() => setTtsEnabled(!ttsEnabled)}
+                    className={`w-12 h-6 rounded-full transition-colors ${ttsEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
                   >
-                    {cloneLoading ? '正在克隆...' : '📤 选择音频文件并克隆'}
+                    <div className={`w-5 h-5 rounded-full bg-white shadow transform transition-transform ${ttsEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
                   </button>
                 </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>MiniMax API Key</label>
+                  <input
+                    type="password"
+                    value={ttsApiKey}
+                    onChange={(e) => setTtsApiKey(e.target.value)}
+                    placeholder="从 MiniMax 控制台复制"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+                    style={{ color: fontColor.value }}
+                  />
+                </div>
+                
+                {/* 音色选择 - 简化版 */}
+                <div className="space-y-2">
+                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
+                    默认音色
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={ttsVoiceId} 
+                      onChange={(e) => setTtsVoiceId(e.target.value)} 
+                      className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm" 
+                      style={{ color: fontColor.value }}
+                    >
+                      <optgroup label="📢 系统预设音色（免费使用）">
+                        {SYSTEM_VOICE_OPTIONS.map((v) => (
+                          <option key={v.id} value={v.id}>{v.name} - {v.desc}</option>
+                        ))}
+                      </optgroup>
+                      {customVoices.length > 0 && (
+                        <optgroup label="🎭 我克隆的音色">
+                          {customVoices.map((v) => (
+                            <option key={v.id} value={v.id}>{v.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  </div>
+                  <p className="text-xs opacity-40" style={{ color: fontColor.value }}>
+                    每个角色可以在聊天设置里单独选择音色
+                  </p>
+                </div>
+                
+                {/* 语速调节 */}
+                <div className="space-y-2">
+                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
+                    语速：{ttsSpeed.toFixed(1)}x
+                  </label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={ttsSpeed}
+                    onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-white/50 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-xs opacity-50" style={{ color: fontColor.value }}>
+                    <span>慢 0.5x</span>
+                    <span>正常 1x</span>
+                    <span>快 2x</span>
+                  </div>
+                </div>
+                
+                {ttsTestError && (
+                  <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">
+                    {ttsTestError}
+                  </div>
+                )}
+                
+                {cloneSuccess && (
+                  <div className="text-xs sm:text-sm text-green-600 bg-green-50/50 px-3 py-2.5 rounded-2xl border border-green-200">
+                    ✓ {cloneSuccess}
+                  </div>
+                )}
+                
+                <div className="flex gap-2">
+                  <button 
+                    onClick={handleTestTTS} 
+                    disabled={ttsTestLoading}
+                    className="flex-1 py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm" 
+                    style={{ color: fontColor.value }}
+                  >
+                    {ttsTestLoading ? '播放中...' : '🔊 试听'}
+                  </button>
+                  
+                  <button 
+                    onClick={handleSaveTTS} 
+                    className={`flex-1 py-2.5 sm:py-3 rounded-2xl font-semibold text-white transition-all press-effect ${ttsSaved ? 'bg-green-500' : 'bg-gradient-to-r from-purple-500 to-pink-500 shadow-[0_6px_20px_rgba(168,85,247,0.3)]'}`}
+                  >
+                    {ttsSaved ? '✓ 已保存' : '保存'}
+                  </button>
+                </div>
+                
+                {/* 高级选项折叠按钮 */}
+                <button
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="w-full flex items-center justify-center gap-2 py-2 text-sm opacity-60 hover:opacity-80 transition-opacity"
+                  style={{ color: fontColor.value }}
+                >
+                  <span>{showAdvanced ? '收起高级选项' : '展开高级选项（克隆音色等）'}</span>
+                  <svg 
+                    className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {/* 高级选项内容 */}
+                {showAdvanced && (
+                  <div className="space-y-4 pt-2 border-t border-white/20">
+                    {/* 模型选择 */}
+                    <div className="space-y-2">
+                      <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>语音模型</label>
+                      <div className="relative">
+                        <select 
+                          value={ttsModel} 
+                          onChange={(e) => setTtsModel(e.target.value)} 
+                          className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm" 
+                          style={{ color: fontColor.value }}
+                        >
+                          {MODEL_OPTIONS.map((m) => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))}
+                        </select>
+                        <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      </div>
+                    </div>
+                    
+                    {/* 刷新已有音色 */}
+                    <button
+                      onClick={handleFetchVoices}
+                      disabled={fetchVoicesLoading || !ttsApiKey}
+                      className="w-full py-2.5 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm"
+                      style={{ color: fontColor.value }}
+                    >
+                      {fetchVoicesLoading ? '获取中...' : '🔄 刷新我已克隆的音色'}
+                    </button>
+                    
+                    {/* 已克隆音色管理 */}
+                    {customVoices.length > 0 && (
+                      <div className="bg-purple-50/30 rounded-xl p-3 space-y-2">
+                        <h4 className="text-sm font-medium" style={{ color: fontColor.value }}>
+                          🎭 我的克隆音色
+                        </h4>
+                        <div className="space-y-2">
+                          {customVoices.map((voice) => (
+                            <div key={voice.id} className="flex items-center justify-between bg-white/50 rounded-lg px-3 py-2">
+                              <div>
+                                <div className="text-sm font-medium" style={{ color: fontColor.value }}>{voice.name}</div>
+                                <div className="text-xs opacity-50" style={{ color: fontColor.value }}>{voice.id}</div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setCustomVoices(prev => prev.filter(v => v.id !== voice.id))
+                                  if (ttsVoiceId === voice.id) {
+                                    setTtsVoiceId('female-shaonv')
+                                  }
+                                }}
+                                className="text-red-500 hover:text-red-600 text-xs px-2 py-1 rounded-lg hover:bg-red-50"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="text-xs opacity-50" style={{ color: fontColor.value }}>
+                          注：这里删除只是从本地列表移除，不会删除 MiniMax 服务器上的音色
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* 音色克隆区域 */}
+                    <div className="bg-orange-50/30 rounded-xl p-3 space-y-3">
+                      <h4 className="text-sm font-medium" style={{ color: fontColor.value }}>
+                        🎭 克隆新音色
+                      </h4>
+                      
+                      <div className="text-xs opacity-60 space-y-1" style={{ color: fontColor.value }}>
+                        <p>上传一段音频（10秒-5分钟），系统会学习这个声音。</p>
+                        <p>之后就能用这个声音来朗读文字了。</p>
+                        <p className="text-orange-600">⚠️ 需要在 MiniMax 完成个人认证才能使用</p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium opacity-60" style={{ color: fontColor.value }}>
+                          给音色起个名字（可选）
+                        </label>
+                        <input
+                          type="text"
+                          value={cloneVoiceName}
+                          onChange={(e) => setCloneVoiceName(e.target.value)}
+                          placeholder="例如：小红的声音"
+                          className="w-full px-3 py-2 rounded-xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs"
+                          style={{ color: fontColor.value }}
+                        />
+                      </div>
+                      
+                      {cloneError && (
+                        <div className="text-xs text-red-500 bg-red-50/50 px-3 py-2 rounded-xl border border-red-200">
+                          {cloneError}
+                        </div>
+                      )}
+                      
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="audio/mp3,audio/m4a,audio/wav,audio/*"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                      />
+                      
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={cloneLoading || !ttsApiKey}
+                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-pink-500 text-white font-medium text-sm disabled:opacity-50 press-effect"
+                      >
+                        {cloneLoading ? '正在克隆...' : '📤 选择音频文件并克隆'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
