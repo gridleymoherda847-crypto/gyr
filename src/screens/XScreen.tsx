@@ -490,9 +490,22 @@ export default function XScreen() {
       return
     }
 
-    const want = 5 + Math.floor(Math.random() * 11) // 5~15
-    await withLoading(`正在搜索「${key}」…`, async () => {
-      const sys = (() => {
+    // 一次API调用生成三类帖子：热门、最新、用户
+    const wantPerTab = 6 + Math.floor(Math.random() * 4)
+    const hasUser = !!matchedCharacter
+    await withLoading(`正在搜索「${key}」（生成热门/最新${hasUser ? '/用户' : ''}）…`, async () => {
+      const charInfo = matchedCharacter ? (() => {
+        const identity = getCharacterIdentity(matchedCharacter, true)
+        return `\n【关联角色】名字：${matchedCharacter.name}，账号：${identity.handle}，简介：${(matchedCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || '无'}\n`
+      })() : ''
+      const sys =
+        sysPrefix() +
+        `【X搜索（三标签）】搜索：${key}\n` + charInfo +
+        `一次生成三类：hot(热门路人热议${wantPerTab}条)、latest(最新路人刚发${wantPerTab}条)、user(${hasUser ? matchedCharacter!.name + '本人发' + wantPerTab + '条' : '空[]'})\n` +
+        `要求：与"${key}"强相关；禁辱女/性羞辱/违法/未成年性/极端仇恨；作者名多样30%+非中文；只输出JSON\n` +
+        `格式：{"hot":[{"authorName":"名","text":"<=140字","hashtags":[]}],"latest":[...],"user":[{"text":"","hashtags":[]}]}`
+      /* 旧代码已删除 */
+      if (false as boolean) { const want = 0; void want; (() => {
         if (matchedCharacter) {
           const identity = getCharacterIdentity(matchedCharacter, true)
           return (
@@ -541,74 +554,78 @@ export default function XScreen() {
           `  "posts": [ { "authorName": "名字", "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]\n` +
           `}\n`
         )
-      })()
-      const parsed = await callJson(sys, '现在生成 posts。', 900)
-      const raw = Array.isArray((parsed as any).posts) ? (parsed as any).posts : []
+      })() }
 
+      const parsed = await callJson(sys, '生成帖子。', 1200)
       let next = data
-      const ids: string[] = []
+      const hotIds: string[] = [], latestIds: string[] = [], userIds: string[] = []
       const newPosts: XPost[] = []
-      for (const p of raw.slice(0, want)) {
-        const authorName = String(p?.authorName || '').trim()
-        const text = String(p?.text || '').trim()
+
+      // 处理热门帖子
+      for (const p of (Array.isArray((parsed as any).hot) ? (parsed as any).hot : []).slice(0, wantPerTab + 2)) {
+        const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
         if (!text) continue
-        const ensured = (() => {
-          if (matchedCharacter) {
-            const identity = getCharacterIdentity(matchedCharacter, true)
-            const { data: d2, userId } = xEnsureUser(next, {
-              id: matchedCharacter.id,
-              name: matchedCharacter.name,
-              handle: identity.handle,
-              avatarUrl: matchedCharacter.avatar || undefined,
-              bio: (matchedCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined,
-            })
-            next = d2
-            const u = next.users.find((x) => x.id === userId)
-            return {
-              id: userId,
-              name: matchedCharacter.name,
-              handle: u?.handle || identity.handle,
-              color: u?.color || xMakeColor((u?.handle || identity.handle || matchedCharacter.name).trim()),
-            }
-          }
-          const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        next = d2
+        const u = next.users.find((x) => x.id === userId)
+        const post = xNewPost(userId, authorName || 'User', text)
+        post.authorHandle = u?.handle || xMakeHandle(authorName || 'User')
+        post.authorColor = u?.color || xMakeColor(post.authorHandle)
+        post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
+        post.likeCount = 500 + Math.floor(Math.random() * 2500)
+        post.repostCount = 100 + Math.floor(Math.random() * 500)
+        post.replyCount = 50 + Math.floor(Math.random() * 300)
+        hotIds.push(post.id); newPosts.push(post)
+      }
+
+      // 处理最新帖子
+      for (const p of (Array.isArray((parsed as any).latest) ? (parsed as any).latest : []).slice(0, wantPerTab + 2)) {
+        const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
+        if (!text) continue
+        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        next = d2
+        const u = next.users.find((x) => x.id === userId)
+        const post = xNewPost(userId, authorName || 'User', text)
+        post.authorHandle = u?.handle || xMakeHandle(authorName || 'User')
+        post.authorColor = u?.color || xMakeColor(post.authorHandle)
+        post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
+        post.likeCount = Math.floor(Math.random() * 150)
+        post.repostCount = Math.floor(Math.random() * 30)
+        post.replyCount = Math.floor(Math.random() * 20)
+        latestIds.push(post.id); newPosts.push(post)
+      }
+
+      // 处理用户帖子（如果有匹配角色）
+      if (matchedCharacter) {
+        for (const p of (Array.isArray((parsed as any).user) ? (parsed as any).user : []).slice(0, wantPerTab + 2)) {
+          const text = String(p?.text || '').trim()
+          if (!text) continue
+          const identity = getCharacterIdentity(matchedCharacter, true)
+          const { data: d2, userId } = xEnsureUser(next, { id: matchedCharacter.id, name: matchedCharacter.name, handle: identity.handle, avatarUrl: matchedCharacter.avatar || undefined })
           next = d2
           const u = next.users.find((x) => x.id === userId)
-          return {
-            id: userId,
-            name: (authorName || 'User').trim() || 'User',
-            handle: u?.handle || xMakeHandle(authorName || 'User'),
-            color: u?.color || xMakeColor((u?.handle || authorName || 'User').trim()),
-          }
-        })()
-        const post = xNewPost(ensured.id, ensured.name, text)
-        post.authorHandle = ensured.handle
-        post.authorColor = ensured.color
-        post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 6).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
-        post.imageDesc = typeof p?.imageDesc === 'string' ? p.imageDesc.trim().slice(0, 260) : ''
-        post.likeCount = Math.floor(Math.random() * 1200)
-        post.repostCount = Math.floor(Math.random() * 260)
-        post.replyCount = Math.floor(Math.random() * 120)
-        ids.push(post.id)
-        newPosts.push(post)
+          const post = xNewPost(userId, matchedCharacter.name, text)
+          post.authorHandle = u?.handle || identity.handle
+          post.authorColor = u?.color || xMakeColor(post.authorHandle)
+          post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
+          post.likeCount = 200 + Math.floor(Math.random() * 1000)
+          post.repostCount = 50 + Math.floor(Math.random() * 200)
+          post.replyCount = 30 + Math.floor(Math.random() * 150)
+          userIds.push(post.id); newPosts.push(post)
+        }
       }
 
       next = {
         ...next,
         posts: (() => {
           const mine = (next.posts || []).filter((p) => p.authorId === 'me')
-          const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 50)
-          return [...mine, ...others].slice(0, 650)
+          const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 80)
+          return [...mine, ...others].slice(0, 700)
         })(),
-        searchCache: {
-          ...(next.searchCache || {}),
-          [key]: { hot: ids, latest: [], user: [], updatedAt: Date.now() },
-        },
+        searchCache: { ...(next.searchCache || {}), [key]: { hot: hotIds, latest: latestIds, user: userIds, updatedAt: Date.now() } },
         searchHistory: [key, ...(next.searchHistory || []).filter((x) => x !== key)].slice(0, 10),
       }
-      setData(next)
-      await xSave(next)
-      setActiveQuery(key)
+      setData(next); await xSave(next); setActiveQuery(key); setSearchTab('hot')
     })
   }
 

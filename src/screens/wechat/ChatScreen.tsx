@@ -710,6 +710,11 @@ ${recentTimeline || '（无）'}
 
         systemPrompt += `
 
+【图片识别】
+- 如果用户发送了图片，你可以看到图片内容并据此回应
+- 请根据图片内容自然回应（描述、评价、关心、吐槽等都可以）
+- 不要说"我看不到图片"或"无法识别"
+
 【格式强约束】
 - 禁止输出任何“系统标记”（例如 <IMAGE /> / <TRANSFER /> / <MUSIC /> 等），只按真实微信聊天输出
 - 禁止复述方括号描述如"[发送了转账]"或"[发送了一起听歌邀请]"，这些只是上下文
@@ -2493,7 +2498,15 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     }
     
     if (msg.type === 'image') {
-      return <img src={msg.content} alt="图片" className="max-w-[40%] rounded-xl" />
+      // 图片消息：适配气泡样式，限制最大宽度，圆角与气泡一致
+      return (
+        <img 
+          src={msg.content} 
+          alt="图片" 
+          className="max-w-[180px] max-h-[240px] rounded-xl object-cover cursor-pointer active:scale-[0.98]"
+          onClick={() => window.open(msg.content, '_blank')}
+        />
+      )
     }
 
     if (msg.type === 'sticker') {
@@ -3192,14 +3205,14 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 
             <div className={`flex flex-col max-w-[70%] ${msg.isUser ? 'items-end' : 'items-start'}`}>
               <div
-                className={`w-fit px-3.5 py-2.5 text-[15px] shadow-sm ${
-                  msg.type === 'transfer' || msg.type === 'music'
+                className={`w-fit text-[15px] ${
+                  msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker'
                     ? 'bg-transparent p-0 shadow-none'
-                    : msg.isUser
-                      ? 'text-gray-800 rounded-2xl rounded-tr-md'
-                      : 'text-gray-800 rounded-2xl rounded-tl-md'
+                    : `px-3.5 py-2.5 shadow-sm ${msg.isUser
+                        ? 'text-gray-800 rounded-2xl rounded-tr-md'
+                        : 'text-gray-800 rounded-2xl rounded-tl-md'}`
                 }`}
-                style={bubbleStyle as any}
+                style={msg.type === 'image' || msg.type === 'sticker' ? undefined : bubbleStyle as any}
               >
                 {renderMessageContent(msg)}
               </div>
