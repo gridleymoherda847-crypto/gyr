@@ -91,7 +91,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice'
   // 转账相关
   transferAmount?: number
   transferNote?: string
@@ -146,6 +146,11 @@ export type WeChatMessage = {
   locationCity?: string // 城市名（虚拟）
   locationCountry?: string // 国家/地区
   locationRequestStatus?: 'pending' | 'shared' | 'declined' // 索要位置的状态
+  
+  // 语音消息相关
+  voiceText?: string // 语音对应的文字（用于显示"转文字"）
+  voiceDuration?: number // 语音时长（秒）
+  voiceUrl?: string // 语音文件URL（用于播放）
 }
 
 // 转账记录

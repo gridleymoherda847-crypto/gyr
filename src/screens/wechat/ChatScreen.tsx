@@ -356,8 +356,8 @@ export default function ChatScreen() {
   // 检查是否配置了API
   const hasApiConfig = llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel
   
-  // 语音播放辅助函数：根据角色设置和频率决定是否播放语音
-  const shouldPlayVoice = useCallback(() => {
+  // 语音消息辅助函数：根据角色设置和频率决定是否发语音
+  const shouldSendVoice = useCallback(() => {
     if (!ttsConfig.enabled || !character?.voiceEnabled) return false
     const freq = character.voiceFrequency || 'sometimes'
     const rand = Math.random()
@@ -368,70 +368,94 @@ export default function ChatScreen() {
     return false
   }, [ttsConfig.enabled, character?.voiceEnabled, character?.voiceFrequency])
   
-  const playVoiceForMessage = useCallback(async (text: string) => {
-    if (!shouldPlayVoice()) return
-    // 使用角色指定的音色，或默认全局音色
+  // 生成语音URL（不自动播放，返回URL供语音消息使用）
+  const generateVoiceUrl = useCallback(async (text: string): Promise<string | null> => {
     const voiceId = character?.voiceId || ttsConfig.voiceId
-    if (!voiceId) return
+    if (!voiceId || !ttsConfig.apiKey) return null
     
     try {
-      // 临时切换音色（如果角色有指定）
-      const originalVoiceId = ttsConfig.voiceId
-      if (character?.voiceId && character.voiceId !== originalVoiceId) {
-        // 直接调用 API 而不是通过 textToSpeech，以便使用指定音色
-        const baseUrl = ttsConfig.region === 'global' 
-          ? 'https://api.minimax.chat' 
-          : 'https://api.minimaxi.com'
-        const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${ttsConfig.apiKey}`,
-            'Content-Type': 'application/json',
+      const baseUrl = ttsConfig.region === 'global' 
+        ? 'https://api.minimax.chat' 
+        : 'https://api.minimaxi.com'
+      const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${ttsConfig.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: ttsConfig.model || 'speech-02-turbo',
+          text: text.slice(0, 500),
+          stream: false,
+          voice_setting: {
+            voice_id: voiceId,
+            speed: ttsConfig.speed || 1,
+            vol: 1,
+            pitch: 0,
           },
-          body: JSON.stringify({
-            model: ttsConfig.model || 'speech-02-turbo',
-            text: text.slice(0, 500),
-            stream: false,
-            voice_setting: {
-              voice_id: voiceId,
-              speed: ttsConfig.speed || 1,
-              vol: 1,
-              pitch: 0,
-            },
-            audio_setting: {
-              sample_rate: 24000,
-              bitrate: 128000,
-              format: 'mp3',
-              channel: 1,
-            },
-            output_format: 'url',
-          }),
-        })
-        if (response.ok) {
-          const data = await response.json()
-          if (data.base_resp?.status_code === 0 && data.data?.audio) {
-            let audioUrl = data.data.audio
-            if (!audioUrl.startsWith('http')) {
-              const bytes = new Uint8Array(audioUrl.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || [])
-              const blob = new Blob([bytes], { type: 'audio/mp3' })
-              audioUrl = URL.createObjectURL(blob)
-            }
-            const audio = new Audio(audioUrl)
-            audio.play().catch(() => {})
+          audio_setting: {
+            sample_rate: 24000,
+            bitrate: 128000,
+            format: 'mp3',
+            channel: 1,
+          },
+          output_format: 'url',
+        }),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        if (data.base_resp?.status_code === 0 && data.data?.audio) {
+          let audioUrl = data.data.audio
+          if (!audioUrl.startsWith('http')) {
+            const bytes = new Uint8Array(audioUrl.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || [])
+            const blob = new Blob([bytes], { type: 'audio/mp3' })
+            audioUrl = URL.createObjectURL(blob)
           }
-        }
-      } else {
-        // 使用默认音色
-        const audioUrl = await textToSpeech(text)
-        if (audioUrl) {
-          const audio = new Audio(audioUrl)
-          audio.play().catch(() => {})
+          return audioUrl
         }
       }
+      return null
     } catch (err) {
-      console.error('Voice playback failed:', err)
+      console.error('Voice generation failed:', err)
+      return null
     }
-  }, [shouldPlayVoice, character?.voiceId, ttsConfig, textToSpeech])
+  }, [character?.voiceId, ttsConfig])
+  
+  // 当前播放的语音消息ID
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  
+  // 播放语音消息
+  const playVoiceMessage = useCallback((messageId: string, voiceUrl: string) => {
+    // 停止之前的播放
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+    
+    if (playingVoiceId === messageId) {
+      // 点击同一条，停止播放
+      setPlayingVoiceId(null)
+      return
+    }
+    
+    const audio = new Audio(voiceUrl)
+    audioRef.current = audio
+    setPlayingVoiceId(messageId)
+    
+    audio.onended = () => {
+      setPlayingVoiceId(null)
+      audioRef.current = null
+    }
+    audio.onerror = () => {
+      setPlayingVoiceId(null)
+      audioRef.current = null
+    }
+    audio.play().catch(() => {
+      setPlayingVoiceId(null)
+      audioRef.current = null
+    })
+  }, [playingVoiceId])
 
   // 根据性格/情绪/经期生成1-15条回复，每条间隔1-8秒（按字数）
   const pendingCountRef = useRef(pendingCount)
@@ -1255,20 +1279,79 @@ ${recentTimeline || '（无）'}
                 return { orig, zh }
               }
               const dual = translationMode ? parseDual(trimmedContent) : null
-              const msg = addMessage({
-                characterId: character.id,
-                content: dual ? dual.orig : trimmedContent,
-                isUser: false,
-                type: 'text',
-                messageLanguage: characterLanguage,
-                chatTranslationEnabledAtSend: translationMode,
-                translationStatus: translationMode ? 'pending' : undefined,
-              })
+              const textContent = dual ? dual.orig : trimmedContent
               
-              // 语音播放：根据频率设置决定是否播放
-              playVoiceForMessage(dual ? dual.orig : trimmedContent)
+              // 根据频率决定是发语音消息还是文本消息
+              const sendAsVoice = shouldSendVoice()
               
-              // 翻译策略：
+              if (sendAsVoice) {
+                // 发送语音消息（先创建消息，再异步生成语音URL）
+                const voiceDuration = Math.max(2, Math.min(60, Math.ceil(textContent.length / 5)))
+                const voiceMsg = addMessage({
+                  characterId: character.id,
+                  content: '[语音消息]',
+                  isUser: false,
+                  type: 'voice',
+                  voiceText: textContent,
+                  voiceDuration: voiceDuration,
+                  voiceUrl: '', // 先为空，异步填充
+                })
+                
+                // 异步生成语音URL
+                ;(async () => {
+                  const url = await generateVoiceUrl(textContent)
+                  if (url) {
+                    updateMessage(voiceMsg.id, { voiceUrl: url })
+                  }
+                })()
+              } else {
+                // 发送普通文本消息
+                const msg = addMessage({
+                  characterId: character.id,
+                  content: textContent,
+                  isUser: false,
+                  type: 'text',
+                  messageLanguage: characterLanguage,
+                  chatTranslationEnabledAtSend: translationMode,
+                  translationStatus: translationMode ? 'pending' : undefined,
+                })
+                
+                // 翻译策略（仅文本消息需要）
+                if (translationMode) {
+                  if (dual) {
+                    safeTimeoutEx(() => {
+                      updateMessage(msg.id, { translatedZh: dual.zh, translationStatus: 'done' })
+                    }, 420 + Math.random() * 520, { background: true })
+                  } else {
+                    safeTimeoutEx(() => {
+                      ;(async () => {
+                        try {
+                          const sys =
+                            `你是一个翻译器。把用户给你的内容翻译成"简体中文"。\n` +
+                            `要求：\n` +
+                            `- 只输出中文翻译，不要解释\n` +
+                            `- 保留人名/歌名/专有名词原样\n` +
+                            `- 不要添加引号/括号/前后缀\n`
+                          const zh = await callLLM(
+                            [
+                              { role: 'system', content: sys },
+                              { role: 'user', content: textContent },
+                            ],
+                            undefined,
+                            { maxTokens: 140, timeoutMs: 60000, temperature: 0.2 }
+                          )
+                          const cleaned = (zh || '').trim()
+                          updateMessage(msg.id, { translatedZh: cleaned || '（空）', translationStatus: cleaned ? 'done' : 'error' })
+                        } catch {
+                          updateMessage(msg.id, { translationStatus: 'error' })
+                        }
+                      })()
+                    }, 200 + Math.random() * 250, { background: true })
+                  }
+                }
+              }
+              
+              // 翻译策略已移到上面，以下是原注释供参考:
               // - 优先使用模型自带的 `外语 ||| 中文翻译`（更快/更稳定）
               // - 若模型没按格式输出（dual=null）：再补一次“翻译请求”，避免一直卡在“翻译中…”
               if (translationMode) {
@@ -3066,6 +3149,82 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       }
     }
     
+    // 语音消息
+    if (msg.type === 'voice') {
+      const duration = msg.voiceDuration || 3
+      const isPlaying = playingVoiceId === msg.id
+      const hasUrl = !!msg.voiceUrl
+      // 语音条宽度根据时长变化（最小80px，最大200px）
+      const barWidth = Math.min(200, Math.max(80, 60 + duration * 4))
+      
+      return (
+        <div className="min-w-[100px] max-w-[250px]">
+          {/* 语音条 */}
+          <button
+            type="button"
+            onClick={() => {
+              if (hasUrl && msg.voiceUrl) {
+                playVoiceMessage(msg.id, msg.voiceUrl)
+              }
+            }}
+            disabled={!hasUrl}
+            className={`flex items-center gap-2 px-3 py-2 rounded-2xl transition-all active:scale-[0.98] ${
+              msg.isUser 
+                ? 'bg-green-500 text-white' 
+                : 'bg-white/90 text-gray-800 border border-gray-100'
+            } ${!hasUrl ? 'opacity-60' : ''}`}
+            style={{ width: barWidth }}
+          >
+            {/* 播放/加载图标 */}
+            {!hasUrl ? (
+              <div className="w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0" />
+            ) : isPlaying ? (
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <div className={`w-1 h-3 rounded-full ${msg.isUser ? 'bg-white' : 'bg-green-500'} animate-pulse`} />
+                <div className={`w-1 h-4 rounded-full ${msg.isUser ? 'bg-white' : 'bg-green-500'} animate-pulse`} style={{ animationDelay: '0.1s' }} />
+                <div className={`w-1 h-3 rounded-full ${msg.isUser ? 'bg-white' : 'bg-green-500'} animate-pulse`} style={{ animationDelay: '0.2s' }} />
+              </div>
+            ) : (
+              <svg className={`w-5 h-5 flex-shrink-0 ${msg.isUser ? 'text-white' : 'text-green-500'}`} fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+            
+            {/* 声波动画 */}
+            <div className="flex-1 flex items-center justify-end gap-0.5">
+              {[...Array(Math.min(8, Math.max(3, Math.floor(duration / 2))))].map((_, i) => (
+                <div
+                  key={i}
+                  className={`w-0.5 rounded-full transition-all ${
+                    msg.isUser ? 'bg-white/70' : 'bg-gray-400'
+                  } ${isPlaying ? 'animate-pulse' : ''}`}
+                  style={{ 
+                    height: `${8 + Math.random() * 8}px`,
+                    animationDelay: `${i * 0.1}s`
+                  }}
+                />
+              ))}
+            </div>
+            
+            {/* 时长 */}
+            <span className={`text-xs flex-shrink-0 ${msg.isUser ? 'text-white/80' : 'text-gray-500'}`}>
+              {duration}"
+            </span>
+          </button>
+          
+          {/* 语音转文字（展开） */}
+          {msg.voiceText && (
+            <div className={`mt-1.5 px-2 py-1.5 rounded-lg text-xs ${
+              msg.isUser ? 'bg-green-600/20 text-green-100' : 'bg-gray-50 text-gray-600 border border-gray-100'
+            }`}>
+              <div className={`text-[10px] mb-0.5 ${msg.isUser ? 'text-green-200' : 'text-gray-400'}`}>转文字</div>
+              <div className="whitespace-pre-wrap break-words">{msg.voiceText}</div>
+            </div>
+          )}
+        </div>
+      )
+    }
+    
     return <span>{msg.content}</span>
   }
 
@@ -3386,13 +3545,13 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             <div className={`flex flex-col max-w-[70%] ${msg.isUser ? 'items-end' : 'items-start'}`}>
               <div
                 className={`w-fit text-[15px] ${
-                  msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location'
+                  msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice'
                     ? 'bg-transparent p-0 shadow-none'
                     : `px-3.5 py-2.5 shadow-sm ${msg.isUser
                         ? 'text-gray-800 rounded-2xl rounded-tr-md'
                         : 'text-gray-800 rounded-2xl rounded-tl-md'}`
                 }`}
-                style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' ? undefined : bubbleStyle as any}
+                style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' ? undefined : bubbleStyle as any}
               >
                 {renderMessageContent(msg)}
               </div>
