@@ -14,6 +14,14 @@ export default function MusicScreen() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showPlayer, setShowPlayer] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // 导入音乐状态
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [importSongName, setImportSongName] = useState('')
+  const [importSongArtist, setImportSongArtist] = useState('本地音乐')
+  const [importSongData, setImportSongData] = useState<{ base64: string; duration: number } | null>(null)
+  const [importLoading, setImportLoading] = useState(false)
+  const [importSuccess, setImportSuccess] = useState(false)
 
   // 搜索过滤
   const filteredSongs = musicPlaylist.filter(song => {
@@ -39,32 +47,75 @@ export default function MusicScreen() {
     fileInputRef.current?.click()
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files) return
+  // 文件转 base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
 
-    Array.from(files).forEach(file => {
-      if (file.type.startsWith('audio/')) {
-        const url = URL.createObjectURL(file)
-        const fileName = file.name.replace(/\.[^/.]+$/, '') // 去掉扩展名
-        
-        // 创建音频元素获取时长
-        const audio = new Audio(url)
-        audio.addEventListener('loadedmetadata', () => {
-          addSong({
-            id: `song-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            title: fileName,
-            artist: '本地音乐',
-            cover: '/icons/music-cover.png',
-            url: url,
-            duration: Math.floor(audio.duration) || 180,
-          })
-        })
-      }
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    const file = files[0]
+    if (!file.type.startsWith('audio/')) {
+      return
+    }
+
+    // 检查文件大小（限制 15MB）
+    if (file.size > 15 * 1024 * 1024) {
+      alert('音频文件太大，最大支持 15MB')
+      e.target.value = ''
+      return
+    }
+
+    setImportLoading(true)
+    
+    try {
+      const fileName = file.name.replace(/\.[^/.]+$/, '') // 去掉扩展名
+      const base64 = await fileToBase64(file)
+      
+      // 创建音频元素获取时长
+      const audio = new Audio(base64)
+      await new Promise<void>((resolve) => {
+        audio.addEventListener('loadedmetadata', () => resolve())
+        audio.addEventListener('error', () => resolve())
+      })
+      
+      const duration = Math.floor(audio.duration) || 180
+      
+      setImportSongName(fileName)
+      setImportSongArtist('本地音乐')
+      setImportSongData({ base64, duration })
+      setShowImportDialog(true)
+    } catch (err) {
+      alert('导入失败，请重试')
+    } finally {
+      setImportLoading(false)
+      e.target.value = ''
+    }
+  }
+
+  const confirmImport = () => {
+    if (!importSongData) return
+    
+    addSong({
+      id: `song-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      title: importSongName.trim() || '未命名',
+      artist: importSongArtist.trim() || '本地音乐',
+      cover: '/icons/music-cover.png',
+      url: importSongData.base64,
+      duration: importSongData.duration,
     })
     
-    // 清空input，允许重复导入同一文件
-    e.target.value = ''
+    setShowImportDialog(false)
+    setImportSongData(null)
+    setImportSuccess(true)
+    setTimeout(() => setImportSuccess(false), 2000)
   }
 
   return (
@@ -425,6 +476,79 @@ export default function MusicScreen() {
           to { transform: rotate(360deg); }
         }
       `}</style>
+      
+      {/* 导入音乐对话框 */}
+      {showImportDialog && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center px-6 bg-black/50">
+          <div className="w-full max-w-[300px] rounded-2xl bg-white p-4 shadow-xl">
+            <div className="text-center mb-4">
+              <div className="text-lg font-semibold text-gray-800">导入音乐</div>
+              <div className="text-xs text-gray-500 mt-1">可修改歌曲名称和歌手</div>
+            </div>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">歌曲名称</label>
+                <input
+                  type="text"
+                  value={importSongName}
+                  onChange={(e) => setImportSongName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 text-sm outline-none"
+                  placeholder="输入歌曲名称"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">歌手/艺术家</label>
+                <input
+                  type="text"
+                  value={importSongArtist}
+                  onChange={(e) => setImportSongArtist(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 text-sm outline-none"
+                  placeholder="输入歌手名称"
+                />
+              </div>
+            </div>
+            
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImportDialog(false)
+                  setImportSongData(null)
+                }}
+                className="flex-1 py-2 rounded-full border border-gray-300 text-gray-600 text-sm"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmImport}
+                className="flex-1 py-2 rounded-full bg-[#31c27c] text-white text-sm font-medium"
+              >
+                确认导入
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 导入加载中 */}
+      {importLoading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl px-6 py-4 flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-[#31c27c] border-t-transparent rounded-full animate-spin" />
+            <span className="text-gray-700">正在导入...</span>
+          </div>
+        </div>
+      )}
+      
+      {/* 导入成功提示 */}
+      {importSuccess && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-[#31c27c] text-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-2 animate-bounce">
+          <span className="text-xl">✓</span>
+          <span className="font-medium">导入成功！</span>
+        </div>
+      )}
     </PageContainer>
   )
 }
