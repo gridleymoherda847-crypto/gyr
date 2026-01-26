@@ -213,15 +213,21 @@ export default function ApiConfigScreen() {
       return
     }
     
+    if (!file || file.size === 0) {
+      setCloneError('文件无效，请重新选择')
+      return
+    }
+    
     // 自动生成音色ID
     const voiceId = generateVoiceId()
-    const voiceName = cloneVoiceName.trim() || file.name.replace(/\.[^.]+$/, '') || voiceId
+    const voiceName = cloneVoiceName.trim() || file.name?.replace(/\.[^.]+$/, '') || voiceId
     
     setCloneLoading(true)
     setCloneError('')
     setCloneSuccess('')
     
     try {
+      console.log('Starting voice clone:', { fileName: file.name, fileSize: file.size, fileType: file.type })
       const baseUrl = getBaseUrl(ttsRegion)
       
       // 1. 上传音频文件
@@ -302,18 +308,48 @@ export default function ApiConfigScreen() {
       setTimeout(() => setCloneSuccess(''), 5000)
       
     } catch (err) {
-      setCloneError((err as Error).message)
+      console.error('Voice clone failed:', err)
+      const errMsg = (err as Error).message || '克隆失败，请重试'
+      setCloneError(errMsg)
     } finally {
       setCloneLoading(false)
     }
   }
   
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
+    try {
+      const file = e.target.files?.[0]
+      if (!file) {
+        e.target.value = ''
+        return
+      }
+      
+      // 检查文件大小（限制 20MB）
+      const maxSize = 20 * 1024 * 1024
+      if (file.size > maxSize) {
+        setCloneError('文件太大，请选择 20MB 以内的音频文件')
+        e.target.value = ''
+        return
+      }
+      
+      // 检查文件类型
+      const allowedTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/ogg', 'audio/webm', '']
+      if (file.type && !allowedTypes.includes(file.type) && !file.name.match(/\.(mp3|wav|m4a|aac|ogg|webm)$/i)) {
+        setCloneError('不支持的文件格式，请选择 MP3/WAV/M4A 等音频文件')
+        e.target.value = ''
+        return
+      }
+      
       handleCloneVoice(file)
+    } catch (err) {
+      console.error('File select error:', err)
+      setCloneError('文件选择失败，请重试')
+    } finally {
+      // 延迟清空，避免某些手机浏览器问题
+      setTimeout(() => {
+        if (e.target) e.target.value = ''
+      }, 100)
     }
-    e.target.value = ''
   }
 
   return (
@@ -691,7 +727,8 @@ export default function ApiConfigScreen() {
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept="audio/mp3,audio/m4a,audio/wav,audio/*"
+                        accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg"
+                        capture={undefined}
                         className="hidden"
                         onChange={handleFileSelect}
                       />
