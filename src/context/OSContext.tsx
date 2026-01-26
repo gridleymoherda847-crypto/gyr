@@ -13,12 +13,21 @@ export type UserProfile = { avatar: string; nickname: string; persona: string }
 export type LLMConfig = { apiBaseUrl: string; apiKey: string; selectedModel: string; availableModels: string[] }
 
 // MiniMax 语音配置
+export type TTSRegion = 'cn' | 'global'  // 国内版 / 海外版
+export type TTSVoice = {
+  id: string
+  name: string
+  desc?: string
+  isCloned?: boolean  // 是否是克隆音色
+}
 export type TTSConfig = {
   apiKey: string
   voiceId: string  // 音色ID
   model: string    // 模型版本
   speed: number    // 语速 0.5-2
   enabled: boolean // 是否启用语音
+  region: TTSRegion // 国内版/海外版
+  customVoices: TTSVoice[] // 用户克隆的音色列表
 }
 
 export type Notification = { id: string; app: string; title: string; body: string; avatar?: string; timestamp: number; read: boolean }
@@ -232,7 +241,9 @@ const defaultTTSConfig: TTSConfig = {
   voiceId: 'female-shaonv',  // 默认少女音色
   model: 'speech-02-turbo',  // 默认 turbo 模型（便宜快速）
   speed: 1,
-  enabled: false 
+  enabled: false,
+  region: 'cn',  // 默认国内版
+  customVoices: [],
 }
 
 const STORAGE_KEYS = {
@@ -495,11 +506,19 @@ export function OSProvider({ children }: PropsWithChildren) {
     setTTSConfigState((prev) => ({ ...prev, ...config }))
   
   // MiniMax 语音合成函数
+  // 根据区域获取 API 基础 URL
+  const getTTSBaseUrl = () => {
+    return ttsConfig.region === 'global' 
+      ? 'https://api.minimax.chat'  // 海外版
+      : 'https://api.minimaxi.com'   // 国内版
+  }
+  
   const textToSpeech = async (text: string): Promise<string | null> => {
     if (!ttsConfig.enabled || !ttsConfig.apiKey || !text.trim()) return null
     
     try {
-      const response = await fetch('https://api.minimaxi.com/v1/t2a_v2', {
+      const baseUrl = getTTSBaseUrl()
+      const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${ttsConfig.apiKey}`,
