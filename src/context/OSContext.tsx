@@ -12,6 +12,15 @@ import { kvGet, kvGetJSONDeep, kvSet, kvSetJSON } from '../storage/kv'
 export type UserProfile = { avatar: string; nickname: string; persona: string }
 export type LLMConfig = { apiBaseUrl: string; apiKey: string; selectedModel: string; availableModels: string[] }
 
+// MiniMax 语音配置
+export type TTSConfig = {
+  apiKey: string
+  voiceId: string  // 音色ID
+  model: string    // 模型版本
+  speed: number    // 语速 0.5-2
+  enabled: boolean // 是否启用语音
+}
+
 export type Notification = { id: string; app: string; title: string; body: string; avatar?: string; timestamp: number; read: boolean }
 export type VirtualCharacter = { id: string; name: string; avatar: string; prompt: string; intimacy: number }
 export type ChatMessage = { id: string; senderId: string; senderName: string; text: string; app?: string; timestamp: number }
@@ -144,7 +153,7 @@ type OSContextValue = {
   isHydrated: boolean
   time: string; isLocked: boolean; wallpaper: string; lockWallpaper: string
   currentFont: FontOption; fontColor: ColorOption; userProfile: UserProfile
-  llmConfig: LLMConfig; miCoinBalance: number; notifications: Notification[]
+  llmConfig: LLMConfig; ttsConfig: TTSConfig; miCoinBalance: number; notifications: Notification[]
   characters: VirtualCharacter[]; chatLog: ChatMessage[]
   customAppIcons: Record<string, string>; decorImage: string
   // 位置和天气
@@ -166,6 +175,8 @@ type OSContextValue = {
   setFontColor: (color: ColorOption) => void
   setUserProfile: (profile: Partial<UserProfile>) => void
   setLLMConfig: (config: Partial<LLMConfig>) => void
+  setTTSConfig: (config: Partial<TTSConfig>) => void
+  textToSpeech: (text: string) => Promise<string | null>  // 返回音频 URL 或 null
   setMiCoinBalance: (balance: number) => void
   addMiCoins: (amount: number) => void
   addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void
@@ -216,9 +227,17 @@ const formatTime = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit
 
 const defaultUserProfile: UserProfile = { avatar: '', nickname: '用户', persona: '' }
 const defaultLLMConfig: LLMConfig = { apiBaseUrl: '', apiKey: '', selectedModel: '', availableModels: [] }
+const defaultTTSConfig: TTSConfig = { 
+  apiKey: '', 
+  voiceId: 'female-shaonv',  // 默认少女音色
+  model: 'speech-02-turbo',  // 默认 turbo 模型（便宜快速）
+  speed: 1,
+  enabled: false 
+}
 
 const STORAGE_KEYS = {
   llmConfig: 'os_llm_config',
+  ttsConfig: 'os_tts_config',
   miCoinBalance: 'os_micoin_balance',
   currentFontId: 'os_current_font_id',
   fontColorId: 'os_font_color_id',
@@ -266,6 +285,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   })
   const [userProfile, setUserProfileState] = useState<UserProfile>(defaultUserProfile)
   const [llmConfig, setLLMConfigState] = useState<LLMConfig>(defaultLLMConfig)
+  const [ttsConfig, setTTSConfigState] = useState<TTSConfig>(defaultTTSConfig)
   const [miCoinBalance, setMiCoinBalance] = useState(() => 100)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [characters, setCharacters] = useState<VirtualCharacter[]>(seedCharacters)
@@ -324,6 +344,7 @@ export function OSProvider({ children }: PropsWithChildren) {
       const [
         nextLocked,
         nextLLM,
+        nextTTS,
         nextMi,
         nextFontId,
         nextColorId,
@@ -333,6 +354,7 @@ export function OSProvider({ children }: PropsWithChildren) {
       ] = await Promise.all([
         kvGetJSONDeep<boolean>(LOCK_STORAGE_KEY, true),
         kvGetJSONDeep<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig),
+        kvGetJSONDeep<TTSConfig>(STORAGE_KEYS.ttsConfig, defaultTTSConfig),
         kvGetJSONDeep<number>(STORAGE_KEYS.miCoinBalance, 100),
         kvGetJSONDeep<string>(
           STORAGE_KEYS.currentFontId,
@@ -374,6 +396,7 @@ export function OSProvider({ children }: PropsWithChildren) {
       if (cancelled) return
       setLockedState(nextLocked)
       setLLMConfigState(nextLLM)
+      setTTSConfigState(nextTTS)
       setMiCoinBalance(nextMi)
       setCurrentFontState(FONT_OPTIONS.find(f => f.id === nextFontId) || currentFont)
       setFontColorState(COLOR_OPTIONS.find(c => c.id === nextColorId) || fontColor)
@@ -392,6 +415,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   const isImporting = () => !!(window as any).__LP_IMPORTING__
   const canPersist = () => isHydrated && !isImporting()
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.llmConfig, llmConfig) }, [llmConfig, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.ttsConfig, ttsConfig) }, [ttsConfig, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.miCoinBalance, miCoinBalance) }, [miCoinBalance, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id, isHydrated])
@@ -467,6 +491,69 @@ export function OSProvider({ children }: PropsWithChildren) {
       }
       return next
     })
+  const setTTSConfig = (config: Partial<TTSConfig>) =>
+    setTTSConfigState((prev) => ({ ...prev, ...config }))
+  
+  // MiniMax 语音合成函数
+  const textToSpeech = async (text: string): Promise<string | null> => {
+    if (!ttsConfig.enabled || !ttsConfig.apiKey || !text.trim()) return null
+    
+    try {
+      const response = await fetch('https://api.minimaxi.com/v1/t2a_v2', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${ttsConfig.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: ttsConfig.model || 'speech-02-turbo',
+          text: text.slice(0, 1000), // 限制长度避免费用过高
+          stream: false,
+          voice_setting: {
+            voice_id: ttsConfig.voiceId || 'female-shaonv',
+            speed: ttsConfig.speed || 1,
+            vol: 1,
+            pitch: 0,
+          },
+          audio_setting: {
+            sample_rate: 24000,
+            bitrate: 128000,
+            format: 'mp3',
+            channel: 1,
+          },
+          output_format: 'url',  // 返回 URL 格式，更方便播放
+        }),
+      })
+      
+      if (!response.ok) {
+        console.error('TTS API error:', response.status)
+        return null
+      }
+      
+      const data = await response.json()
+      if (data.base_resp?.status_code !== 0) {
+        console.error('TTS error:', data.base_resp?.status_msg)
+        return null
+      }
+      
+      // 如果返回 URL
+      if (data.data?.audio && typeof data.data.audio === 'string') {
+        // 如果是 hex 编码的音频，转换为 blob URL
+        if (!data.data.audio.startsWith('http')) {
+          const bytes = new Uint8Array(data.data.audio.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || [])
+          const blob = new Blob([bytes], { type: 'audio/mp3' })
+          return URL.createObjectURL(blob)
+        }
+        return data.data.audio
+      }
+      
+      return null
+    } catch (err) {
+      console.error('TTS failed:', err)
+      return null
+    }
+  }
+  
   const addMiCoins = (amount: number) => setMiCoinBalance((prev) => prev + amount)
   const addNotification = (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     setNotifications((prev) => [{ ...notification, id: crypto.randomUUID(), timestamp: Date.now(), read: false }, ...prev])
@@ -804,17 +891,17 @@ export function OSProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<OSContextValue>(() => ({
     isHydrated,
-    time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, miCoinBalance,
+    time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance,
     notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
     locationSettings, weather, setLocationSettings, refreshWeather,
     musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, audioRef,
-    setLocked, setWallpaper, setLockWallpaper, setCurrentFont, setFontColor, setUserProfile, setLLMConfig,
+    setLocked, setWallpaper, setLockWallpaper, setCurrentFont, setFontColor, setUserProfile, setLLMConfig, setTTSConfig, textToSpeech,
     setMiCoinBalance, addMiCoins, addNotification, markNotificationRead, addChatMessage, updateIntimacy,
     setCustomAppIcon, setDecorImage, setWallpaperError,
     playSong, pauseMusic, resumeMusic, toggleMusic, nextSong, prevSong, seekMusic, toggleFavorite, isFavorite, addSong, removeSong,
     setMusicPlaying, setCurrentSong,
     fetchAvailableModels, callLLM,
-  }), [time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, miCoinBalance, 
+  }), [time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, 
       notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
       locationSettings, weather,
       musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, isHydrated])
