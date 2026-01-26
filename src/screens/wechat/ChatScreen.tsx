@@ -918,7 +918,57 @@ ${recentTimeline || '（无）'}
           })
         }
 
+        // 检查是否有待处理的斗地主邀请（在调用 LLM 之前）
+        const preLlmDoudizhuInvites = workingMessages.filter(m => {
+          if (!m.isUser || m.type !== 'doudizhu_invite') return false
+          try {
+            const data = JSON.parse(m.content)
+            return data.status === 'pending'
+          } catch { return false }
+        })
+        
+        // 如果有待处理的斗地主邀请，告诉 AI 要决定接受/拒绝
+        if (preLlmDoudizhuInvites.length > 0) {
+          llmMessages.push({
+            role: 'system',
+            content:
+              `【重要：斗地主邀请处理】用户发来了斗地主邀请，你必须决定接受或拒绝。\n` +
+              `- 根据你的人设、性格、和用户的关系、当前心情来决定\n` +
+              `- 如果接受：在回复中表达愿意一起玩的意思（如"好啊"、"来吧"、"打就打"等）\n` +
+              `- 如果拒绝：在回复中表达不想玩的意思（如"不想玩"、"没心情"、"下次吧"等）\n` +
+              `- 【关键】你的回复内容必须和你的决定一致！不能一边拒绝一边说"一起玩"\n` +
+              `- 在回复的第一行末尾加上标记：接受用 [ACCEPT_DOUDIZHU]，拒绝用 [REJECT_DOUDIZHU]\n` +
+              `- 例如：\n` +
+              `  接受示例："好啊，来打斗地主！[ACCEPT_DOUDIZHU]"\n` +
+              `  拒绝示例："不想玩，没心情 [REJECT_DOUDIZHU]"`,
+          })
+        }
+
         let response = await callLLM(llmMessages, undefined, { maxTokens: 420, timeoutMs: 600000 })
+        
+        // 解析斗地主决策
+        let doudizhuDecision: boolean | null = null
+        if (preLlmDoudizhuInvites.length > 0) {
+          if (response.includes('[ACCEPT_DOUDIZHU]')) {
+            doudizhuDecision = true
+            response = response.replace(/\s*\[ACCEPT_DOUDIZHU\]/g, '')
+          } else if (response.includes('[REJECT_DOUDIZHU]')) {
+            doudizhuDecision = false
+            response = response.replace(/\s*\[REJECT_DOUDIZHU\]/g, '')
+          } else {
+            // 如果 AI 没有明确标记，根据回复内容推测
+            const acceptKeywords = /好啊|来吧|打就打|一起玩|玩儿|走起|开打|来打|可以啊|行啊|没问题/
+            const rejectKeywords = /不想|不玩|没心情|下次|不要|算了|不行|懒得|没空|忙/
+            if (acceptKeywords.test(response) && !rejectKeywords.test(response)) {
+              doudizhuDecision = true
+            } else if (rejectKeywords.test(response)) {
+              doudizhuDecision = false
+            } else {
+              // 默认随机（70%接受）
+              doudizhuDecision = Math.random() > 0.3
+            }
+          }
+        }
 
         // 强制校验：避免“重生成后不问了/不提时间差”
         if (shouldForceAcknowledge) {
@@ -1580,12 +1630,12 @@ ${recentTimeline || '（无）'}
           }
           
           // 在指定位置处理用户的待处理斗地主邀请
-          if (index === doudizhuProcessIndex && pendingDoudizhuInvites.length > 0) {
+          // 注意：决策结果 doudizhuDecision 已经在前面根据 AI 回复内容确定
+          if (index === doudizhuProcessIndex && pendingDoudizhuInvites.length > 0 && doudizhuDecision !== null) {
             totalDelay += 400 + Math.random() * 500
             
             for (const invite of pendingDoudizhuInvites) {
-              // 根据角色性格决定是否接受（70%概率接受）
-              const willAccept = Math.random() > 0.3
+              const willAccept = doudizhuDecision
               
               safeTimeoutEx(() => {
                 // 更新原邀请状态
