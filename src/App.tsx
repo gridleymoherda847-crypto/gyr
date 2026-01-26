@@ -1,10 +1,12 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useState, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { OSProvider, useOS } from './context/OSContext'
 import { WeChatProvider, useWeChat } from './context/WeChatContext'
 import PhoneShell from './components/PhoneShell'
 import ErrorBoundary from './components/ErrorBoundary'
 import LockScreen from './components/LockScreen'
+import ActivationScreen from './components/ActivationScreen'
+import { checkDeviceActivation, getLocalActivationStatus } from './services/redemption'
 
 // 路由按需加载（减少首屏体积，避免移动端黑屏）
 const HomeScreen = lazy(() => import('./screens/HomeScreen'))
@@ -73,13 +75,61 @@ function InnerApp() {
   const { isLocked, isHydrated: osHydrated } = useOS()
   const { isHydrated: wechatHydrated } = useWeChat()
   const hydrated = osHydrated && wechatHydrated
+  
+  // 激活状态
+  const [isActivated, setIsActivated] = useState<boolean | null>(null)
+  const [checkingActivation, setCheckingActivation] = useState(true)
+  
+  // 检查激活状态
+  useEffect(() => {
+    const checkActivation = async () => {
+      // 先检查本地状态（快速）
+      const local = getLocalActivationStatus()
+      if (!local.isActivated) {
+        setIsActivated(false)
+        setCheckingActivation(false)
+        return
+      }
+      
+      // 后台验证服务器状态
+      setIsActivated(true) // 先假设激活，避免闪屏
+      setCheckingActivation(false)
+      
+      // 异步验证服务器
+      const serverValid = await checkDeviceActivation()
+      if (!serverValid) {
+        setIsActivated(false)
+      }
+    }
+    
+    checkActivation()
+  }, [])
+  
+  // 激活成功回调
+  const handleActivated = () => {
+    setIsActivated(true)
+  }
+  
+  // 还在检查激活状态
+  if (checkingActivation || !hydrated) {
+    return (
+      <ErrorBoundary>
+        <PhoneShell>
+          <PhoneSkeleton />
+        </PhoneShell>
+      </ErrorBoundary>
+    )
+  }
+  
+  // 未激活，显示激活界面
+  if (!isActivated) {
+    return <ActivationScreen onActivated={handleActivated} />
+  }
 
   return (
     <ErrorBoundary>
       <PhoneShell>
-        {!hydrated ? (
-          <PhoneSkeleton />
-        ) : isLocked ? (
+        {isLocked ? (
           <LockScreen />
         ) : (
           <Suspense fallback={<PhoneSkeleton />}>
