@@ -47,7 +47,6 @@ export default function ApiConfigScreen() {
   const [ttsVoiceId, setTtsVoiceId] = useState(ttsConfig.voiceId)
   const [ttsModel, setTtsModel] = useState(ttsConfig.model)
   const [ttsSpeed, setTtsSpeed] = useState(ttsConfig.speed)
-  const [ttsEnabled, setTtsEnabled] = useState(ttsConfig.enabled)
   const [ttsRegion, setTtsRegion] = useState<TTSRegion>(ttsConfig.region || 'cn')
   const [customVoices, setCustomVoices] = useState<TTSVoice[]>(ttsConfig.customVoices || [])
   const [ttsSaved, setTtsSaved] = useState(false)
@@ -102,12 +101,13 @@ export default function ApiConfigScreen() {
   }
   
   const handleSaveTTS = () => {
+    // enabled 根据 apiKey 是否填写自动判断
     setTTSConfig({ 
       apiKey: ttsApiKey, 
       voiceId: ttsVoiceId, 
       model: ttsModel, 
       speed: ttsSpeed, 
-      enabled: ttsEnabled,
+      enabled: !!ttsApiKey.trim(),
       region: ttsRegion,
       customVoices: customVoices,
     })
@@ -287,6 +287,7 @@ export default function ApiConfigScreen() {
         name: voiceName,
         desc: '我的克隆',
         isCloned: true,
+        createdAt: Date.now(),
       }
       setCustomVoices(prev => [...prev, newVoice])
       setTtsVoiceId(voiceId)
@@ -469,17 +470,6 @@ export default function ApiConfigScreen() {
                   </div>
                 </div>
                 
-                {/* 启用开关 */}
-                <div className="flex items-center justify-between py-2">
-                  <span className="text-sm" style={{ color: fontColor.value }}>启用语音功能</span>
-                  <button
-                    onClick={() => setTtsEnabled(!ttsEnabled)}
-                    className={`w-12 h-6 rounded-full transition-colors ${ttsEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
-                  >
-                    <div className={`w-5 h-5 rounded-full bg-white shadow transform transition-transform ${ttsEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
-                  </button>
-                </div>
-
                 <div className="space-y-2">
                   <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>MiniMax API Key</label>
                   <input
@@ -632,9 +622,14 @@ export default function ApiConfigScreen() {
                         <div className="space-y-2">
                           {customVoices.map((voice) => (
                             <div key={voice.id} className="flex items-center justify-between bg-white/50 rounded-lg px-3 py-2">
-                              <div>
-                                <div className="text-sm font-medium" style={{ color: fontColor.value }}>{voice.name}</div>
-                                <div className="text-xs opacity-50" style={{ color: fontColor.value }}>{voice.id}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate" style={{ color: fontColor.value }}>{voice.name}</div>
+                                <div className="text-xs opacity-50" style={{ color: fontColor.value }}>
+                                  {voice.createdAt 
+                                    ? `克隆于 ${new Date(voice.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                                    : voice.id
+                                  }
+                                </div>
                               </div>
                               <button
                                 onClick={() => {
@@ -643,7 +638,7 @@ export default function ApiConfigScreen() {
                                     setTtsVoiceId('female-shaonv')
                                   }
                                 }}
-                                className="text-red-500 hover:text-red-600 text-xs px-2 py-1 rounded-lg hover:bg-red-50"
+                                className="text-red-500 hover:text-red-600 text-xs px-2 py-1 rounded-lg hover:bg-red-50 flex-shrink-0"
                               >
                                 删除
                               </button>

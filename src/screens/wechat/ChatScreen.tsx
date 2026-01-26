@@ -3782,6 +3782,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             <div className="mt-3 pb-2">
               {!activePanel ? (
                 <div className="grid grid-cols-4 gap-4">
+                  {/* === 第一行：实用功能 === */}
+                  {/* 相册 */}
                   <button type="button" onClick={() => imageInputRef.current?.click()} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -3792,34 +3794,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                   </button>
                   <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleSendImage} />
                   
-                  <button type="button" onClick={() => { setShowPlusMenu(false); setShowTransferModal(true) }} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <span className="text-xs text-gray-600">转账</span>
-                  </button>
-                  
-                  <button type="button" onClick={() => setActivePanel('music')} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5l-10.5 3v7.803a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66A2.25 2.25 0 009 12.553z" />
-                      </svg>
-                    </div>
-                    <span className="text-xs text-gray-600">音乐</span>
-                  </button>
-                  
-                  <button type="button" onClick={() => setActivePanel('period')} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
-                      </svg>
-                    </div>
-                    <span className="text-xs text-gray-600">经期</span>
-                  </button>
-                  
-                  {/* 位置分享 */}
+                  {/* 位置 */}
                   <button type="button" onClick={() => setActivePanel('location')} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -3829,24 +3804,36 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     </div>
                     <span className="text-xs text-gray-600">位置</span>
                   </button>
-
-                  {/* 日记（偷看） */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowPlusMenu(false)
-                      setActivePanel(null)
-                      setDiaryConfirmOpen(true)
-                    }}
-                    className="flex flex-col items-center gap-1"
-                  >
+                  
+                  {/* 转账 */}
+                  <button type="button" onClick={() => { setShowPlusMenu(false); setShowTransferModal(true) }} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h10.5A1.5 1.5 0 0118 6v14.25a.75.75 0 01-1.2.6l-2.1-1.575a1.5 1.5 0 00-1.8 0l-2.1 1.575a1.5 1.5 0 01-1.8 0l-2.1-1.575a.75.75 0 00-1.2.6V6A1.5 1.5 0 016 4.5z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 8h8M8 11h8M8 14h6" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">日记</span>
+                    <span className="text-xs text-gray-600">转账</span>
+                  </button>
+                  
+                  {/* 经期 */}
+                  <button type="button" onClick={() => setActivePanel('period')} className="flex flex-col items-center gap-1">
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">经期</span>
+                  </button>
+                  
+                  {/* === 第二行：娱乐/社交 === */}
+                  {/* 音乐 */}
+                  <button type="button" onClick={() => setActivePanel('music')} className="flex flex-col items-center gap-1">
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5l-10.5 3v7.803a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66A2.25 2.25 0 009 12.553z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">音乐</span>
                   </button>
 
                   {/* 情侣空间 */}
@@ -3871,15 +3858,24 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     </div>
                     <span className="text-xs text-gray-600">情侣</span>
                   </button>
-                  
-                  {/* 编辑（删除） */}
-                  <button type="button" onClick={() => { setShowPlusMenu(false); setEditMode(true) }} className="flex flex-col items-center gap-1">
+
+                  {/* 日记 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlusMenu(false)
+                      setActivePanel(null)
+                      setDiaryConfirmOpen(true)
+                    }}
+                    className="flex flex-col items-center gap-1"
+                  >
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h10.5A1.5 1.5 0 0118 6v14.25a.75.75 0 01-1.2.6l-2.1-1.575a1.5 1.5 0 00-1.8 0l-2.1 1.575a1.5 1.5 0 01-1.8 0l-2.1-1.575a.75.75 0 00-1.2.6V6A1.5 1.5 0 016 4.5z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 8h8M8 11h8M8 14h6" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">编辑</span>
+                    <span className="text-xs text-gray-600">日记</span>
                   </button>
                   
                   {/* 斗地主 */}
@@ -3888,6 +3884,17 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                       <span className="text-2xl">🃏</span>
                     </div>
                     <span className="text-xs text-gray-600">斗地主</span>
+                  </button>
+                  
+                  {/* === 第三行：管理功能 === */}
+                  {/* 编辑 */}
+                  <button type="button" onClick={() => { setShowPlusMenu(false); setEditMode(true) }} className="flex flex-col items-center gap-1">
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">编辑</span>
                   </button>
                   
                   {/* 清空 */}

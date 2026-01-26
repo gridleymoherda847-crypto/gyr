@@ -19,6 +19,7 @@ export type TTSVoice = {
   name: string
   desc?: string
   isCloned?: boolean  // 是否是克隆音色
+  createdAt?: number  // 克隆时间戳
 }
 export type TTSConfig = {
   apiKey: string
