@@ -74,7 +74,7 @@ export default function ApiConfigScreen() {
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [recordingTime, setRecordingTime] = useState(0)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   
   // 获取音色列表状态

@@ -9,7 +9,7 @@ import { xEnsureUser, xLoad, xNewPost, xSave } from '../../storage/x'
 
 export default function ChatScreen() {
   const navigate = useNavigate()
-  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, ttsConfig, textToSpeech } = useOS()
+  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, ttsConfig } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
     getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds,
@@ -1618,44 +1618,6 @@ ${recentTimeline || '（无）'}
                 }
               }
               
-              // 翻译策略已移到上面，以下是原注释供参考:
-              // - 优先使用模型自带的 `外语 ||| 中文翻译`（更快/更稳定）
-              // - 若模型没按格式输出（dual=null）：再补一次“翻译请求”，避免一直卡在“翻译中…”
-              if (translationMode) {
-                if (dual) {
-                  // 假动作：先“翻译中…”，再显示中文（不发真实翻译请求）
-                  safeTimeoutEx(() => {
-                    updateMessage(msg.id, { translatedZh: dual.zh, translationStatus: 'done' })
-                  }, 420 + Math.random() * 520, { background: true })
-                } else {
-                  // 兜底：请求模型把这句翻译成中文
-                  safeTimeoutEx(() => {
-                    ;(async () => {
-                      try {
-                        const sys =
-                          `你是一个翻译器。把用户给你的内容翻译成“简体中文”。\n` +
-                          `要求：\n` +
-                          `- 只输出中文翻译，不要解释\n` +
-                          `- 保留人名/歌名/专有名词原样\n` +
-                          `- 不要添加引号/括号/前后缀\n`
-                        const zh = await callLLM(
-                          [
-                            { role: 'system', content: sys },
-                            { role: 'user', content: trimmedContent },
-                          ],
-                          undefined,
-                          { maxTokens: 140, timeoutMs: 60000, temperature: 0.2 }
-                        )
-                        const cleaned = (zh || '').trim()
-                        updateMessage(msg.id, { translatedZh: cleaned || '（空）', translationStatus: cleaned ? 'done' : 'error' })
-                      } catch {
-                        updateMessage(msg.id, { translationStatus: 'error' })
-                      }
-                    })()
-                  }, 200 + Math.random() * 250, { background: true })
-                }
-              }
-
               // 夹带表情包（不按情绪匹配：随机挑本角色已配置的）
               if (stickerPool.length > 0 && chosenStickerIdx.has(index)) {
                 const sticker = pickRandomSticker()
