@@ -420,6 +420,7 @@ export default function ChatScreen() {
       })
       if (response.ok) {
         const data = await response.json()
+        console.log('TTS response:', data)
         if (data.base_resp?.status_code === 0 && data.data?.audio) {
           let audioUrl = data.data.audio
           if (!audioUrl.startsWith('http')) {
@@ -427,8 +428,13 @@ export default function ChatScreen() {
             const blob = new Blob([bytes], { type: 'audio/mp3' })
             audioUrl = URL.createObjectURL(blob)
           }
+          console.log('TTS audio URL:', audioUrl)
           return audioUrl
+        } else {
+          console.error('TTS error:', data.base_resp)
         }
+      } else {
+        console.error('TTS request failed:', response.status, await response.text())
       }
       return null
     } catch (err) {
@@ -558,11 +564,14 @@ export default function ChatScreen() {
       ], undefined, { maxTokens: 80, temperature: 0.8 })
       
       const replyText = (response || '').trim().replace(/\n/g, ' ') || '嗯？'
+      console.log('Voice call - LLM reply:', replyText)
       setCallReplyText(replyText) // 显示在通话界面
       
       // 直接生成语音并播放
       setCallState('speaking')
+      console.log('Voice call - generating TTS...')
       const voiceUrl = await generateVoiceUrl(replyText.slice(0, 200))
+      console.log('Voice call - TTS result:', voiceUrl ? 'got URL' : 'no URL')
       
       if (voiceUrl) {
         if (callAudioRef.current) {
@@ -573,19 +582,22 @@ export default function ChatScreen() {
         callAudioRef.current = audio
         
         audio.onended = () => {
+          console.log('Voice call - audio ended')
           setCallState('idle')
           callAudioRef.current = null
         }
-        audio.onerror = () => {
-          console.error('Audio play error')
+        audio.onerror = (e) => {
+          console.error('Audio play error:', e)
           setCallState('idle')
           callAudioRef.current = null
         }
         
+        console.log('Voice call - playing audio...')
         await audio.play()
+        console.log('Voice call - audio playing')
       } else {
         // TTS 未配置，提示用户
-        console.log('TTS not available, please configure in settings')
+        console.log('TTS not available - check: voiceId and apiKey in settings')
         setCallState('idle')
       }
     } catch (err) {
@@ -3872,6 +3884,15 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                 <div className="text-yellow-200/70 text-xs">
                   请使用 Chrome 或 Edge 浏览器<br />
                   或者回到聊天页面用文字交流
+                </div>
+              </div>
+            )}
+            
+            {/* TTS 未配置提示 */}
+            {callConnected && (!ttsConfig.apiKey || (!character?.voiceId && !ttsConfig.voiceId)) && (
+              <div className="mt-4 px-4 py-2 bg-red-500/20 rounded-xl max-w-[280px] text-center">
+                <div className="text-red-300 text-xs">
+                  ⚠️ 语音未配置，请到设置 → 语音配置 中填写 API Key 和音色
                 </div>
               </div>
             )}
