@@ -110,6 +110,8 @@ export default function ChatScreen() {
   const [callStartTime, setCallStartTime] = useState<number | null>(null) // 通话开始时间
   const recognitionRef = useRef<any>(null)
   const callAudioRef = useRef<HTMLAudioElement | null>(null)
+  const callTranscriptRef = useRef('') // 用于闭包中获取最新值
+  const handleVoiceInputRef = useRef<(text: string) => void>(() => {}) // 用于避免闭包陷阱
   
   // 位置分享状态
   const [locationName, setLocationName] = useState('')
@@ -480,6 +482,11 @@ export default function ChatScreen() {
       return
     }
     
+    // 如果正在思考或说话，不要开始新的识别
+    if (recognitionRef.current) {
+      return
+    }
+    
     const recognition = new SpeechRecognition()
     recognition.lang = 'zh-CN'
     recognition.interimResults = true
@@ -488,6 +495,7 @@ export default function ChatScreen() {
     recognition.onstart = () => {
       setCallState('listening')
       setCallTranscript('')
+      callTranscriptRef.current = ''
     }
     
     recognition.onresult = (event: any) => {
@@ -496,12 +504,15 @@ export default function ChatScreen() {
         transcript += event.results[i][0].transcript
       }
       setCallTranscript(transcript)
+      callTranscriptRef.current = transcript // 同步更新 ref
     }
     
     recognition.onend = () => {
-      // 识别结束，处理结果
-      if (callTranscript.trim()) {
-        handleVoiceInput(callTranscript.trim())
+      recognitionRef.current = null
+      // 识别结束，处理结果（使用 ref 获取最新值）
+      const finalTranscript = callTranscriptRef.current.trim()
+      if (finalTranscript) {
+        handleVoiceInputRef.current(finalTranscript)
       } else {
         setCallState('idle')
       }
@@ -509,6 +520,7 @@ export default function ChatScreen() {
     
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error)
+      recognitionRef.current = null
       setCallState('idle')
       if (event.error === 'not-allowed') {
         alert('请允许麦克风权限')
@@ -517,7 +529,7 @@ export default function ChatScreen() {
     
     recognitionRef.current = recognition
     recognition.start()
-  }, [callTranscript])
+  }, [])
   
   // 停止语音识别
   const stopListening = useCallback(() => {
@@ -630,6 +642,9 @@ export default function ChatScreen() {
       setCallState('idle')
     }
   }, [character, addMessage, callLLM, generateVoiceUrl])
+  
+  // 更新 ref 以供闭包使用
+  handleVoiceInputRef.current = handleVoiceInput
   
   // 挂断电话
   const hangUp = useCallback(() => {
