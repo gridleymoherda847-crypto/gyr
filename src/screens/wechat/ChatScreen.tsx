@@ -726,6 +726,7 @@ ${recentTimeline || '（无）'}
 - 若要触发转账，必须使用上面的 [转账:金额:备注] 格式，且单独一行
 - 若要分享推文，单独一行写：[推文:内容]（内容<=140字）
 - 若要分享你的推特主页，单独一行写：[推特主页] 或 [X主页]
+- 若要分享你的位置，单独一行写：[位置:地点名称:详细地址:城市]
 - 【一起听歌】如果用户主动提出想一起听歌，你可以发送音乐邀请卡片，格式：[音乐:歌名:歌手]（单独一行），曲库：${musicPlaylist.slice(0, 10).map(s => s.title).join('、')}${musicPlaylist.length > 10 ? '...' : ''}；不要在无关对话主动提歌名。听歌邀请只通过“音乐卡片”流程处理（用户发卡片→点箭头→你决定→弹确认→进入一起听界面）。`
 
         systemPrompt += `
@@ -951,6 +952,14 @@ ${recentTimeline || '（无）'}
           if (/[【\[]\s*(推特主页|X主页)\s*[】\]]/.test(text)) return { ok: true }
           return null
         }
+        const parseLocationCommand = (text: string) => {
+          // 兼容：[位置:名称:地址:城市]
+          const m = text.match(/[【\[]\s*位置\s*[:：]\s*([^:：\]】]+)\s*(?:[:：]\s*([^:：\]】]*))?\s*(?:[:：]\s*([^\]】]*))?\s*[】\]]/)
+          if (!m) return null
+          const name = (m[1] || '').trim()
+          if (!name) return null
+          return { name, address: (m[2] || '').trim(), city: (m[3] || '').trim() }
+        }
 
         // 预扫描：找出适合插表情包的“文本回复行”
         if (stickerPool.length > 0) {
@@ -961,6 +970,7 @@ ${recentTimeline || '（无）'}
             if (parseMusicCommand(t)) continue
             if (parseTweetCommand(t)) continue
             if (parseXProfileCommand(t)) continue
+            if (parseLocationCommand(t)) continue
             stickerCandidates.push(i)
           }
         }
@@ -1021,9 +1031,21 @@ ${recentTimeline || '（无）'}
           const musicCmd = suppressAiMusicInvite ? null : parseMusicCommand(trimmedContent)
           const tweetCmd = parseTweetCommand(trimmedContent)
           const xProfileCmd = parseXProfileCommand(trimmedContent)
+          const locationCmd = parseLocationCommand(trimmedContent)
           
           safeTimeoutEx(() => {
-            if (transferCmd) {
+            if (locationCmd) {
+              addMessage({
+                characterId: character.id,
+                content: `[位置] ${locationCmd.name}`,
+                isUser: false,
+                type: 'location',
+                locationName: locationCmd.name,
+                locationAddress: locationCmd.address || '',
+                locationCity: locationCmd.city || '',
+                locationCountry: (character as any).country || '',
+              })
+            } else if (transferCmd) {
               // AI发转账美化框
               const amount = transferCmd.amount
               const note = transferCmd.note
@@ -2848,6 +2870,46 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         return <span>{msg.content}</span>
       }
     }
+
+    if (msg.type === 'location') {
+      const name = msg.locationName || '位置'
+      const address = msg.locationAddress || ''
+      const city = msg.locationCity || ''
+      const country = msg.locationCountry || ''
+      const fullAddr = [address, city, country].filter(Boolean).join(' · ')
+
+      return (
+        <div className="min-w-[180px] max-w-[240px] rounded-xl overflow-hidden bg-white border border-gray-100 shadow-sm">
+          <div className="h-20 relative bg-gradient-to-br from-green-100 via-green-50 to-blue-50">
+            <div className="absolute inset-0 opacity-30">
+              <div className="absolute top-1/4 left-0 right-0 h-px bg-green-200" />
+              <div className="absolute top-2/4 left-0 right-0 h-px bg-green-200" />
+              <div className="absolute top-3/4 left-0 right-0 h-px bg-green-200" />
+              <div className="absolute left-1/4 top-0 bottom-0 w-px bg-green-200" />
+              <div className="absolute left-2/4 top-0 bottom-0 w-px bg-green-200" />
+              <div className="absolute left-3/4 top-0 bottom-0 w-px bg-green-200" />
+            </div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full">
+              <div className="relative">
+                <svg className="w-8 h-8 text-red-500 drop-shadow-md" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                </svg>
+                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-red-500/30 animate-ping" />
+              </div>
+            </div>
+          </div>
+          <div className="px-3 py-2">
+            <div className="text-[13px] font-medium text-gray-800 truncate">{name}</div>
+            {fullAddr && (
+              <div className="text-[11px] text-gray-500 mt-0.5 truncate">{fullAddr}</div>
+            )}
+          </div>
+          <div className="px-3 py-1.5 text-[10px] bg-gray-50 text-gray-400 border-t border-gray-100">
+            位置共享
+          </div>
+        </div>
+      )
+    }
     
     // 斗地主邀请卡片
     if (msg.type === 'doudizhu_invite') {
@@ -3151,7 +3213,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       const isSelected = selectedMsgIds.has(msg.id)
 
       const bubbleStyle =
-        msg.type !== 'transfer' && msg.type !== 'music'
+        msg.type !== 'transfer' && msg.type !== 'music' && msg.type !== 'location'
           ? (msg.isUser ? bubbleStyles.user : bubbleStyles.char)
           : undefined
 
@@ -3212,13 +3274,13 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             <div className={`flex flex-col max-w-[70%] ${msg.isUser ? 'items-end' : 'items-start'}`}>
               <div
                 className={`w-fit text-[15px] ${
-                  msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker'
+                  msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location'
                     ? 'bg-transparent p-0 shadow-none'
                     : `px-3.5 py-2.5 shadow-sm ${msg.isUser
                         ? 'text-gray-800 rounded-2xl rounded-tr-md'
                         : 'text-gray-800 rounded-2xl rounded-tl-md'}`
                 }`}
-                style={msg.type === 'image' || msg.type === 'sticker' ? undefined : bubbleStyle as any}
+                style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' ? undefined : bubbleStyle as any}
               >
                 {renderMessageContent(msg)}
               </div>

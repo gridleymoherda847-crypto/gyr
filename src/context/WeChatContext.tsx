@@ -75,6 +75,9 @@ export type WeChatCharacter = {
   // X 账号绑定（用于稳定关联虚拟人物）
   xHandle?: string // 角色在 X 的唯一 handle（@xxx）
   xAliases?: string[] // 角色在 X 的别名/关键词
+  // 角色钱包（虚拟财富，防止通货膨胀）
+  walletBalance?: number // 角色钱包余额
+  walletInitialized?: boolean // 是否已根据人设初始化钱包
 }
 
 // 聊天消息
@@ -84,7 +87,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request'
   // 转账相关
   transferAmount?: number
   transferNote?: string
@@ -132,6 +135,13 @@ export type WeChatMessage = {
   translationStatus?: 'pending' | 'done' | 'error'
   messageLanguage?: CharacterLanguage
   chatTranslationEnabledAtSend?: boolean
+
+  // 位置共享相关
+  locationName?: string // 位置名称（如"星巴克咖啡"）
+  locationAddress?: string // 详细地址（如"樱花街88号"）
+  locationCity?: string // 城市名（虚拟）
+  locationCountry?: string // 国家/地区
+  locationRequestStatus?: 'pending' | 'shared' | 'declined' // 索要位置的状态
 }
 
 // 转账记录
