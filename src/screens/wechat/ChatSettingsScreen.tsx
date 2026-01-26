@@ -115,6 +115,29 @@ export default function ChatSettingsScreen() {
   const [previewBgMode, setPreviewBgMode] = useState<'checker' | 'light' | 'dark' | 'custom'>('checker')
   const [previewBgColor, setPreviewBgColor] = useState('#CBD5E1') // slate-300
 
+  // X 账号绑定（草稿）
+  const [xHandleDraft, setXHandleDraft] = useState(character?.xHandle || '')
+  const [xAliasesDraft, setXAliasesDraft] = useState((character?.xAliases || []).join('，'))
+
+  useEffect(() => {
+    setXHandleDraft(character?.xHandle || '')
+    setXAliasesDraft((character?.xAliases || []).join('，'))
+  }, [character?.id, character?.xHandle, (character?.xAliases || []).length])
+
+  const normalizeHandle = (h: string) => {
+    const raw = (h || '').trim()
+    if (!raw) return ''
+    return raw.startsWith('@') ? raw : `@${raw}`
+  }
+
+  const parseAliases = (raw: string) => {
+    const list = String(raw || '')
+      .split(/[，,、\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    return Array.from(new Set(list)).slice(0, 20)
+  }
+
   const getPreviewBgStyle = (): React.CSSProperties => {
     if (previewBgMode === 'light') {
       return { background: 'linear-gradient(180deg, #F8FAFC 0%, #EEF2F7 100%)' }
@@ -568,6 +591,60 @@ export default function ChatSettingsScreen() {
             </button>
             <div className="px-1 pt-2 text-[11px] text-gray-400">
               未选择时，将自动使用微信「我」里当前使用的人设。
+            </div>
+          </div>
+
+          {/* X 账号绑定 */}
+          <div className="bg-transparent mt-2 mx-3 rounded-xl p-4">
+            <div className="text-[13px] font-semibold text-[#000] mb-2">X 账号绑定</div>
+            <div className="text-[11px] text-gray-400 mb-3">用于在推特中稳定关联，避免同名混淆。</div>
+            <div className="space-y-2">
+              <div>
+                <label className="text-[12px] text-gray-500 block mb-1">推特账号（@handle）</label>
+                <input
+                  type="text"
+                  value={xHandleDraft}
+                  onChange={(e) => setXHandleDraft(e.target.value)}
+                  placeholder={`例如：@${character.name}`}
+                  className="w-full px-3 py-2 rounded-lg bg-white border border-black/10 text-[#000] text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-[12px] text-gray-500 block mb-1">别名/关键词（可选）</label>
+                <input
+                  type="text"
+                  value={xAliasesDraft}
+                  onChange={(e) => setXAliasesDraft(e.target.value)}
+                  placeholder="例如：小名、圈内称呼、昵称（用逗号分隔）"
+                  className="w-full px-3 py-2 rounded-lg bg-white border border-black/10 text-[#000] text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  updateCharacter(character.id, {
+                    xHandle: normalizeHandle(xHandleDraft),
+                    xAliases: parseAliases(xAliasesDraft),
+                  })
+                  setDialog({ open: true, title: '已保存', message: 'X 账号绑定已更新。', confirmText: '知道了' })
+                }}
+                className="px-4 py-2 rounded-lg bg-[#07C160] text-white text-sm font-medium"
+              >
+                保存绑定
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const handle = normalizeHandle(`@${character.name}`)
+                  setXHandleDraft(handle)
+                  setXAliasesDraft(character.name)
+                }}
+                className="px-4 py-2 rounded-lg bg-white border border-black/10 text-[#333] text-sm"
+              >
+                一键使用名字
+              </button>
             </div>
           </div>
 

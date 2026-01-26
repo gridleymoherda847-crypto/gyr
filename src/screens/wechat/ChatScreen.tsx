@@ -95,7 +95,6 @@ export default function ChatScreen() {
   const prevScrollTopRef = useRef<number | null>(null)
   const navLockRef = useRef(0)
   const [showMenu, setShowMenu] = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
   const [infoDialog, setInfoDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
   
   // 功能面板状态
@@ -3832,35 +3831,9 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             >
               {character.isBlocked ? '恢复好友' : '拉黑'}
             </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowMenu(false)
-                setDeleteOpen(true)
-              }}
-              className="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-red-50"
-            >
-              删除角色
-            </button>
           </div>
         </div>
       )}
-
-      <WeChatDialog
-        open={deleteOpen}
-        title="确认删除？"
-        message="是否确认删除角色，不可逆？"
-        confirmText="删除"
-        cancelText="取消"
-        danger
-        onCancel={() => setDeleteOpen(false)}
-        onConfirm={() => {
-          setDeleteOpen(false)
-          deleteCharacter(character.id)
-          navigate('/apps/wechat')
-        }}
-      />
 
       <WeChatDialog
         open={infoDialog.open}

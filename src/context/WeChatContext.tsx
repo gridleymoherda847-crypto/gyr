@@ -72,6 +72,9 @@ export type WeChatCharacter = {
   // 正在输入（用于离开聊天仍能显示“正在输入中…”）
   isTyping: boolean
   typingUpdatedAt: number | null
+  // X 账号绑定（用于稳定关联虚拟人物）
+  xHandle?: string // 角色在 X 的唯一 handle（@xxx）
+  xAliases?: string[] // 角色在 X 的别名/关键词
 }
 
 // 聊天消息
@@ -289,6 +292,8 @@ type AddCharacterInput = Omit<
   | 'country'
   | 'language'
   | 'chatTranslationEnabled'
+  | 'xHandle'
+  | 'xAliases'
 > & Partial<Pick<
   WeChatCharacter,
   | 'unreadCount'
@@ -303,6 +308,8 @@ type AddCharacterInput = Omit<
   | 'country'
   | 'language'
   | 'chatTranslationEnabled'
+  | 'xHandle'
+  | 'xAliases'
 >>
 
 type WeChatContextValue = {
@@ -527,6 +534,8 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       coupleStartedAt: typeof (c as any).coupleStartedAt === 'number'
         ? (c as any).coupleStartedAt
         : (c.coupleSpaceEnabled ? (typeof c.createdAt === 'number' ? c.createdAt : Date.now()) : null),
+      xHandle: typeof (c as any).xHandle === 'string' ? (c as any).xHandle : '',
+      xAliases: Array.isArray((c as any).xAliases) ? (c as any).xAliases.filter((x: any) => typeof x === 'string') : [],
       userBubbleStyle: (() => {
         const s = (c as any).userBubbleStyle
         if (!s) return s
@@ -742,6 +751,8 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       isTyping: character.isTyping ?? false,
       typingUpdatedAt: character.typingUpdatedAt ?? null,
       coupleStartedAt: character.coupleSpaceEnabled ? Date.now() : null,
+      xHandle: character.xHandle ?? '',
+      xAliases: Array.isArray(character.xAliases) ? character.xAliases : [],
     }
     setCharacters(prev => [...prev, newCharacter])
     return newCharacter

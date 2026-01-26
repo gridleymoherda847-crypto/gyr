@@ -42,6 +42,11 @@ const fmtRelative = (ts: number) => {
   return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
 }
 
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const normalizeHandle = (h: string) => String(h || '').trim().replace(/^@/, '').toLowerCase()
+
+
 function tryParseJsonBlock(text: string) {
   const raw = (text || '').trim()
   const m = raw.match(/\{[\s\S]*\}/)
@@ -129,7 +134,7 @@ export default function XScreen() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { callLLM } = useOS()
-  const { getCurrentPersona, characters, addMessage } = useWeChat()
+  const { getCurrentPersona, characters, addMessage, updateCharacter } = useWeChat()
 
   const persona = useMemo(() => getCurrentPersona(), [getCurrentPersona])
   const meNameBase = persona?.name || '我'
@@ -180,6 +185,39 @@ export default function XScreen() {
   const [profileDraftBio, setProfileDraftBio] = useState('')
   const [profileTab, setProfileTab] = useState<'posts' | 'replies'>('posts')
   const [tipDialog, setTipDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
+
+  const getCharacterIdentity = (c: (typeof characters)[number], persist: boolean) => {
+    const rawHandle = String(c.xHandle || '').trim()
+    const normalized = normalizeHandle(rawHandle)
+    const handle = normalized ? `@${normalized}` : xMakeHandle(`${c.name}-${c.id.slice(-4)}`)
+    const aliases = Array.isArray(c.xAliases) && c.xAliases.length > 0 ? c.xAliases : [c.name]
+    if (persist && (rawHandle !== handle || (c.xAliases || []).length === 0)) {
+      updateCharacter(c.id, { xHandle: handle, xAliases: aliases })
+    }
+    return { handle, aliases }
+  }
+
+  const findCharacterByQuery = (q: string) => {
+    const query = (q || '').trim().toLowerCase()
+    if (!query) return null
+    const handleMatches = Array.from(query.matchAll(/@([a-z0-9_]+)/g)).map((m) => m[1])
+    for (const c of characters) {
+      const identity = getCharacterIdentity(c, false)
+      const handleNorm = normalizeHandle(identity.handle)
+      if (handleNorm && (handleMatches.includes(handleNorm) || query.includes(`@${handleNorm}`))) {
+        return c
+      }
+      const aliases = identity.aliases.map((a) => String(a || '').trim()).filter(Boolean)
+      if (aliases.some((a) => query.includes(a.toLowerCase()))) {
+        return c
+      }
+      const name = String(c.name || '').trim().toLowerCase()
+      if (name && new RegExp(`(^|[^a-z0-9_])${escapeRegExp(name)}([^a-z0-9_]|$)`).test(query)) {
+        return c
+      }
+    }
+    return null
+  }
 
   // Reply
   const [replyDraft, setReplyDraft] = useState('')
@@ -401,17 +439,15 @@ export default function XScreen() {
         const authorName = String(p?.authorName || '').trim()
         const text = String(p?.text || '').trim()
         if (!text) continue
-        const ensured = (() => {
-          const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
-          next = d2
-          const u = next.users.find((x) => x.id === userId)
-          return {
-            id: userId,
-            name: (authorName || 'User').trim() || 'User',
-            handle: u?.handle || xMakeHandle(authorName || 'User'),
-            color: u?.color || xMakeColor((u?.handle || authorName || 'User').trim()),
-          }
-        })()
+        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        next = d2
+        const u = next.users.find((x) => x.id === userId)
+        const ensured = {
+          id: userId,
+          name: (authorName || 'User').trim() || 'User',
+          handle: u?.handle || xMakeHandle(authorName || 'User'),
+          color: u?.color || xMakeColor((u?.handle || authorName || 'User').trim()),
+        }
         const post = xNewPost(ensured.id, ensured.name, text)
         post.authorHandle = ensured.handle
         post.authorColor = ensured.color
@@ -438,6 +474,8 @@ export default function XScreen() {
     const key = (q || '').trim()
     if (!key) return
 
+    const matchedCharacter = findCharacterByQuery(key)
+
     const cached = data.searchCache?.[key]
     if (!force && cached?.postIds?.length) {
       const nextHistory = [key, ...(data.searchHistory || []).filter((x) => x !== key)].slice(0, 10)
@@ -452,26 +490,56 @@ export default function XScreen() {
 
     const want = 5 + Math.floor(Math.random() * 11) // 5~15
     await withLoading(`正在搜索「${key}」…`, async () => {
-      const sys =
-        sysPrefix() +
-        `【X（推特风格）/搜索生成】\n` +
-        `用户在搜索一个话题/关键词：${key}\n` +
-        `你要生成一组“像真的推特/X 搜索结果”的帖子（更贴合关键词，不要空泛）。\n` +
-        `要求（重要）：\n` +
-        `- 每次生成 ${want} 条\n` +
-        `- 长度分布：至少 4 条超短；至少 4 条中等；最多 2 条接近上限\n` +
-        `- 风格差异：至少 6 种不同口吻\n` +
-        `- 必须出现与关键词强相关的内容/细节/立场冲突/玩梗（但不要写成小作文）\n` +
-        `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
-        `- 不要出现违法内容、未成年人性内容、极端仇恨\n` +
-        `- 作者名字必须多样：至少 30% 非中文（英文/日文/韩文/混合都可以）\n` +
-        `- hashtags（0~3）建议包含关键词或其变体；imageDesc 可选\n` +
-        `- 只输出 JSON，不要解释\n` +
-        `\n` +
-        `JSON 格式：\n` +
-        `{\n` +
-        `  "posts": [ { "authorName": "名字", "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]\n` +
-        `}\n`
+      const sys = (() => {
+        if (matchedCharacter) {
+          const identity = getCharacterIdentity(matchedCharacter, true)
+          return (
+            sysPrefix() +
+            `【X（推特风格）/角色搜索结果】\n` +
+            `用户在搜索话题：${key}\n` +
+            `该话题与角色强关联，角色信息：\n` +
+            `- 名字：${matchedCharacter.name}\n` +
+            `- 账号：${identity.handle}\n` +
+            `- 简介：${(matchedCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || '（无）'}\n` +
+            `请只生成该角色发布的帖子。\n` +
+            `要求（重要）：\n` +
+            `- 每次生成 ${want} 条\n` +
+            `- 长度分布：至少 4 条超短；至少 4 条中等；最多 2 条接近上限\n` +
+            `- 口吻必须符合角色人设\n` +
+            `- 必须出现与关键词强相关的内容/细节/立场冲突/玩梗（但不要写成小作文）\n` +
+            `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
+            `- 不要出现违法内容、未成年人性内容、极端仇恨\n` +
+            `- hashtags（0~3）建议包含关键词或其变体；imageDesc 可选\n` +
+            `- 只输出 JSON，不要解释\n` +
+            `\n` +
+            `JSON 格式：\n` +
+            `{\n` +
+            `  "posts": [ { "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]\n` +
+            `}\n`
+          )
+        }
+        return (
+          sysPrefix() +
+          `【X（推特风格）/搜索生成】\n` +
+          `用户在搜索一个话题/关键词：${key}\n` +
+          `你要生成一组“像真的推特/X 搜索结果”的帖子（更贴合关键词，不要空泛）。\n` +
+          `要求（重要）：\n` +
+          `- 每次生成 ${want} 条\n` +
+          `- 长度分布：至少 4 条超短；至少 4 条中等；最多 2 条接近上限\n` +
+          `- 风格差异：至少 6 种不同口吻\n` +
+          `- 必须出现与关键词强相关的内容/细节/立场冲突/玩梗（但不要写成小作文）\n` +
+          `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
+          `- 不要出现违法内容、未成年人性内容、极端仇恨\n` +
+          `- 作者名字必须多样：至少 30% 非中文（英文/日文/韩文/混合都可以）\n` +
+          `- hashtags（0~3）建议包含关键词或其变体；imageDesc 可选\n` +
+          `- 只输出 JSON，不要解释\n` +
+          `\n` +
+          `JSON 格式：\n` +
+          `{\n` +
+          `  "posts": [ { "authorName": "名字", "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]\n` +
+          `}\n`
+        )
+      })()
       const parsed = await callJson(sys, '现在生成 posts。', 900)
       const raw = Array.isArray((parsed as any).posts) ? (parsed as any).posts : []
 
@@ -483,6 +551,24 @@ export default function XScreen() {
         const text = String(p?.text || '').trim()
         if (!text) continue
         const ensured = (() => {
+          if (matchedCharacter) {
+            const identity = getCharacterIdentity(matchedCharacter, true)
+            const { data: d2, userId } = xEnsureUser(next, {
+              id: matchedCharacter.id,
+              name: matchedCharacter.name,
+              handle: identity.handle,
+              avatarUrl: matchedCharacter.avatar || undefined,
+              bio: (matchedCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined,
+            })
+            next = d2
+            const u = next.users.find((x) => x.id === userId)
+            return {
+              id: userId,
+              name: matchedCharacter.name,
+              handle: u?.handle || identity.handle,
+              color: u?.color || xMakeColor((u?.handle || identity.handle || matchedCharacter.name).trim()),
+            }
+          }
           const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
           next = d2
           const u = next.users.find((x) => x.id === userId)
@@ -1016,9 +1102,11 @@ export default function XScreen() {
   const ensureXUserFromCharacter = (next: XDataV1, characterId: string) => {
     const c = characters.find((ch) => ch.id === characterId)
     if (!c) return { data: next, userId: characterId }
+    const identity = getCharacterIdentity(c, true)
     const { data: d2, userId } = xEnsureUser(next, {
       id: c.id,
       name: c.name,
+      handle: identity.handle,
       avatarUrl: c.avatar || undefined,
       bio: (c.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined,
     })

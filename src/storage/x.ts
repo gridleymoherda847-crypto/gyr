@@ -330,15 +330,21 @@ export async function xSave(data: XDataV1): Promise<void> {
 
 export function xEnsureUser(
   data: XDataV1,
-  user: { id?: string; name: string; bio?: string; avatarUrl?: string; bannerUrl?: string }
+  user: { id?: string; name: string; handle?: string; bio?: string; avatarUrl?: string; bannerUrl?: string }
 ): { data: XDataV1; userId: string } {
   const name = (user.name || '').trim() || 'User'
-  const exists = data.users.find((u) => u.name === name)
+  const handle = (user.handle || '').trim()
+  const exists =
+    (user.id ? data.users.find((u) => u.id === user.id) : undefined) ||
+    (handle ? data.users.find((u) => u.handle === handle) : undefined) ||
+    data.users.find((u) => u.name === name)
   if (exists) {
     const nextUsers = data.users.map((u) => {
       if (u.id !== exists.id) return u
       return {
         ...u,
+        name: user.name || u.name,
+        handle: handle || u.handle,
         avatarUrl: user.avatarUrl || u.avatarUrl,
         bannerUrl: user.bannerUrl || u.bannerUrl,
         bio: user.bio || u.bio || xMakeBio(u.handle + '::bio'),
@@ -347,12 +353,12 @@ export function xEnsureUser(
     return { data: { ...data, users: nextUsers }, userId: exists.id }
   }
   const id = user.id || genId('xu')
-  const handle = xMakeHandle(name)
-  const color = xMakeColor(handle)
+  const finalHandle = handle || xMakeHandle(name)
+  const color = xMakeColor(finalHandle)
   // 全量“真实头像”：用本地 SVG 生成（不走生图接口，轻量且稳定）
-  const avatarUrl = user.avatarUrl || xMakeAvatarSvgDataUrl(handle + '::' + name, name)
-  const bannerUrl = user.bannerUrl || xMakeBannerSvgDataUrl(handle + '::banner')
-  const next: XUser = { id, name, handle, color, avatarUrl, bannerUrl, bio: user.bio || xMakeBio(handle + '::bio'), createdAt: Date.now() }
+  const avatarUrl = user.avatarUrl || xMakeAvatarSvgDataUrl(finalHandle + '::' + name, name)
+  const bannerUrl = user.bannerUrl || xMakeBannerSvgDataUrl(finalHandle + '::banner')
+  const next: XUser = { id, name, handle: finalHandle, color, avatarUrl, bannerUrl, bio: user.bio || xMakeBio(finalHandle + '::bio'), createdAt: Date.now() }
   return { data: { ...data, users: [next, ...data.users].slice(0, 400) }, userId: id }
 }
 
