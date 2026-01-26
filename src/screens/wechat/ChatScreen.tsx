@@ -99,7 +99,12 @@ export default function ChatScreen() {
   
   // 功能面板状态
   const [showPlusMenu, setShowPlusMenu] = useState(false)
-  const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | null>(null)
+  const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | 'location' | null>(null)
+  
+  // 位置分享状态
+  const [locationName, setLocationName] = useState('')
+  const [locationAddress, setLocationAddress] = useState('')
+  const [locationCity, setLocationCity] = useState('')
 
   // 日记（偷看）状态
   const [diaryOpen, setDiaryOpen] = useState(false)
@@ -1901,6 +1906,32 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     try { window.dispatchEvent(new Event('lp_open_listen_panel')) } catch {}
   }
   
+  // 发送用户自己的位置
+  const handleSendLocation = () => {
+    if (!locationName.trim()) return
+    
+    addMessage({
+      characterId: character.id,
+      content: `[位置] ${locationName}`,
+      isUser: true,
+      type: 'location',
+      locationName: locationName.trim(),
+      locationAddress: locationAddress.trim(),
+      locationCity: locationCity.trim(),
+      locationCountry: '',
+    })
+    
+    // 清空状态
+    setLocationName('')
+    setLocationAddress('')
+    setLocationCity('')
+    setActivePanel(null)
+    setShowPlusMenu(false)
+    
+    // 增加待回复计数，让AI可以回应
+    setPendingCount(prev => prev + 1)
+  }
+  
   // 发送斗地主邀请
   const handleSendDoudizhuInvite = () => {
     const newMsg = addMessage({
@@ -3585,6 +3616,17 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     </div>
                     <span className="text-xs text-gray-600">经期</span>
                   </button>
+                  
+                  {/* 位置分享 */}
+                  <button type="button" onClick={() => setActivePanel('location')} className="flex flex-col items-center gap-1">
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">位置</span>
+                  </button>
 
                   {/* 日记（偷看） */}
                   <button
@@ -3893,6 +3935,63 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     <div className="text-center text-[11px] text-gray-400 mt-1">
                       对方会读取你的完整记录
                     </div>
+                  </div>
+                </div>
+              ) : activePanel === 'location' ? (
+                <div className="bg-white/90 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <button type="button" onClick={() => setActivePanel(null)} className="text-gray-500">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <span className="font-medium text-gray-800">发送位置</span>
+                    <div className="w-5" />
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">地点名称 *</label>
+                      <input
+                        value={locationName}
+                        onChange={(e) => setLocationName(e.target.value)}
+                        placeholder="如：星巴克咖啡"
+                        className="w-full px-3 py-2 rounded-lg bg-gray-50 text-gray-700 placeholder-gray-400 outline-none text-sm border border-gray-200 focus:border-green-400"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">详细地址</label>
+                      <input
+                        value={locationAddress}
+                        onChange={(e) => setLocationAddress(e.target.value)}
+                        placeholder="如：中关村大街1号"
+                        className="w-full px-3 py-2 rounded-lg bg-gray-50 text-gray-700 placeholder-gray-400 outline-none text-sm border border-gray-200 focus:border-green-400"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">城市</label>
+                      <input
+                        value={locationCity}
+                        onChange={(e) => setLocationCity(e.target.value)}
+                        placeholder="如：北京"
+                        className="w-full px-3 py-2 rounded-lg bg-gray-50 text-gray-700 placeholder-gray-400 outline-none text-sm border border-gray-200 focus:border-green-400"
+                      />
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={handleSendLocation}
+                      disabled={!locationName.trim()}
+                      className={`w-full py-2.5 rounded-lg text-white text-sm font-medium transition-colors ${
+                        locationName.trim()
+                          ? 'bg-gradient-to-r from-green-500 to-green-600'
+                          : 'bg-gray-300 cursor-not-allowed'
+                      }`}
+                    >
+                      发送位置
+                    </button>
                   </div>
                 </div>
               ) : null}
