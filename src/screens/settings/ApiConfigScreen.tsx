@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS, type TTSRegion, type TTSVoice } from '../../context/OSContext'
 import AppHeader from '../../components/AppHeader'
@@ -42,33 +42,14 @@ export default function ApiConfigScreen() {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   
-  // TTS 配置状态（初始化为空，等待 hydration）
-  const [ttsApiKey, setTtsApiKey] = useState('')
-  const [ttsVoiceId, setTtsVoiceId] = useState('')
-  const [ttsModel, setTtsModel] = useState('speech-02-turbo')
-  const [ttsSpeed, setTtsSpeed] = useState(1)
-  const [ttsEnabled, setTtsEnabled] = useState(false)
-  const [ttsRegion, setTtsRegion] = useState<TTSRegion>('cn')
-  const [customVoices, setCustomVoices] = useState<TTSVoice[]>([])
-  const [ttsInitialized, setTtsInitialized] = useState(false)
-  
-  // 当全局 ttsConfig 变化时（hydration 完成后），同步到本地状态
-  useEffect(() => {
-    if (ttsConfig.apiKey || ttsConfig.voiceId || ttsConfig.enabled) {
-      setTtsApiKey(ttsConfig.apiKey || '')
-      setTtsVoiceId(ttsConfig.voiceId || '')
-      setTtsModel(ttsConfig.model || 'speech-02-turbo')
-      setTtsSpeed(ttsConfig.speed || 1)
-      setTtsEnabled(ttsConfig.enabled || false)
-      setTtsRegion(ttsConfig.region || 'cn')
-      setCustomVoices(ttsConfig.customVoices || [])
-      setTtsInitialized(true)
-    } else if (!ttsInitialized) {
-      // 第一次加载，等一下看看有没有数据
-      const timer = setTimeout(() => setTtsInitialized(true), 500)
-      return () => clearTimeout(timer)
-    }
-  }, [ttsConfig, ttsInitialized])
+  // TTS 配置状态
+  const [ttsApiKey, setTtsApiKey] = useState(ttsConfig.apiKey)
+  const [ttsVoiceId, setTtsVoiceId] = useState(ttsConfig.voiceId)
+  const [ttsModel, setTtsModel] = useState(ttsConfig.model)
+  const [ttsSpeed, setTtsSpeed] = useState(ttsConfig.speed)
+  const [ttsEnabled, setTtsEnabled] = useState(ttsConfig.enabled)
+  const [ttsRegion, setTtsRegion] = useState<TTSRegion>(ttsConfig.region || 'cn')
+  const [customVoices, setCustomVoices] = useState<TTSVoice[]>(ttsConfig.customVoices || [])
   const [ttsSaved, setTtsSaved] = useState(false)
   const [ttsTestLoading, setTtsTestLoading] = useState(false)
   const [ttsTestError, setTtsTestError] = useState('')
@@ -85,16 +66,6 @@ export default function ApiConfigScreen() {
   const [cloneError, setCloneError] = useState('')
   const [cloneSuccess, setCloneSuccess] = useState('')
   const [cloneVoiceName, setCloneVoiceName] = useState('')
-  const [cloneMode, setCloneMode] = useState<'file' | 'record' | 'url'>('record') // 默认录音模式
-  const [audioUrl, setAudioUrl] = useState('') // URL 输入
-  
-  // 录音状态
-  const [isRecording, setIsRecording] = useState(false)
-  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
-  const [recordingTime, setRecordingTime] = useState(0)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
   
   // 获取音色列表状态
   const [fetchVoicesLoading, setFetchVoicesLoading] = useState(false)
@@ -111,144 +82,6 @@ export default function ApiConfigScreen() {
     const timestamp = Date.now().toString(36)
     const random = Math.random().toString(36).substring(2, 6)
     return `Voice${timestamp}${random}`
-  }
-  
-  // 开始录音
-  const startRecording = async () => {
-    try {
-      setCloneError('')
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      
-      // 尝试使用 MiniMax 支持的格式，优先 mp4/m4a，其次 webm
-      let mimeType = 'audio/webm'
-      let fileExt = 'webm'
-      
-      // iOS Safari 支持 mp4
-      if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4'
-        fileExt = 'm4a'
-      } else if (MediaRecorder.isTypeSupported('audio/mpeg')) {
-        mimeType = 'audio/mpeg'
-        fileExt = 'mp3'
-      } else if (MediaRecorder.isTypeSupported('audio/wav')) {
-        mimeType = 'audio/wav'
-        fileExt = 'wav'
-      } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-        mimeType = 'audio/ogg'
-        fileExt = 'ogg'
-      }
-      
-      console.log('Recording with mimeType:', mimeType)
-      
-      const mediaRecorder = new MediaRecorder(stream, { mimeType })
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
-      
-      // 保存文件扩展名供后续使用
-      ;(mediaRecorder as any)._fileExt = fileExt
-      ;(mediaRecorder as any)._mimeType = mimeType
-      
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data)
-        }
-      }
-      
-      mediaRecorder.onstop = () => {
-        const ext = (mediaRecorder as any)._fileExt || 'webm'
-        const mime = (mediaRecorder as any)._mimeType || 'audio/webm'
-        const blob = new Blob(audioChunksRef.current, { type: mime })
-        // 附加扩展名信息
-        ;(blob as any)._fileExt = ext
-        setRecordedBlob(blob)
-        stream.getTracks().forEach(track => track.stop())
-      }
-      
-      mediaRecorder.start()
-      setIsRecording(true)
-      setRecordingTime(0)
-      setRecordedBlob(null)
-      
-      // 计时器
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1)
-      }, 1000)
-      
-    } catch (err: any) {
-      console.error('Recording error:', err)
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setCloneError('麦克风权限被拒绝。请点击浏览器地址栏左侧的锁图标，允许麦克风权限后刷新页面重试。')
-      } else if (err.name === 'NotFoundError') {
-        setCloneError('未检测到麦克风设备')
-      } else if (err.name === 'NotSupportedError' || err.name === 'TypeError') {
-        setCloneError('当前浏览器不支持录音，请使用 Chrome 或 Safari')
-      } else {
-        setCloneError(`录音失败: ${err.message || '未知错误'}`)
-      }
-    }
-  }
-  
-  // 停止录音
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
-      setIsRecording(false)
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current)
-        recordingTimerRef.current = null
-      }
-    }
-  }
-  
-  // 从 URL 下载音频并克隆
-  const handleCloneFromUrl = async () => {
-    if (!audioUrl.trim()) {
-      setCloneError('请输入音频文件的网络链接')
-      return
-    }
-    
-    setCloneLoading(true)
-    setCloneError('')
-    
-    try {
-      // 下载音频
-      const response = await fetch(audioUrl.trim())
-      if (!response.ok) throw new Error('无法下载音频文件')
-      
-      const blob = await response.blob()
-      const file = new File([blob], 'audio.mp3', { type: blob.type || 'audio/mpeg' })
-      
-      await handleCloneVoice(file)
-    } catch (err) {
-      console.error('URL clone error:', err)
-      setCloneError('下载失败，请检查链接是否正确且可访问')
-    } finally {
-      setCloneLoading(false)
-    }
-  }
-  
-  // 从录音克隆
-  const handleCloneFromRecording = async () => {
-    if (!recordedBlob) {
-      setCloneError('请先录制一段声音')
-      return
-    }
-    
-    // 获取录音时保存的文件扩展名
-    const fileExt = (recordedBlob as any)._fileExt || 'webm'
-    const mimeType = recordedBlob.type || 'audio/webm'
-    
-    console.log('Uploading recording:', { fileExt, mimeType, size: recordedBlob.size })
-    
-    // MiniMax 支持的格式：mp3, wav, m4a, flac 等
-    // webm/ogg 可能不被支持
-    if (fileExt === 'webm' || fileExt === 'ogg') {
-      setCloneError('抱歉，当前浏览器录音格式(webm)不被 MiniMax 支持。\n\n请使用以下方式：\n1. 用手机录音 App 录制后，通过「链接」方式上传\n2. 在电脑端用「文件」方式上传 mp3/wav/m4a 格式的音频\n3. 使用 iOS Safari 浏览器（支持 m4a 格式录音）')
-      return
-    }
-    
-    const file = new File([recordedBlob], `recording.${fileExt}`, { type: mimeType })
-    await handleCloneVoice(file)
   }
 
   const fetchModels = async () => {
@@ -280,27 +113,6 @@ export default function ApiConfigScreen() {
     })
     setTtsSaved(true); setTimeout(() => setTtsSaved(false), 2000)
   }
-  
-  // 自动保存 TTS 配置（当关键设置变化时，且初始化完成后）
-  const isFirstRender = useRef(true)
-  useEffect(() => {
-    // 跳过首次渲染和未初始化时
-    if (isFirstRender.current || !ttsInitialized) {
-      isFirstRender.current = false
-      return
-    }
-    // 自动保存
-    console.log('Auto-saving TTS config:', { apiKey: ttsApiKey ? '***' : 'empty', enabled: ttsEnabled })
-    setTTSConfig({ 
-      apiKey: ttsApiKey, 
-      voiceId: ttsVoiceId, 
-      model: ttsModel, 
-      speed: ttsSpeed, 
-      enabled: ttsEnabled,
-      region: ttsRegion,
-      customVoices: customVoices,
-    })
-  }, [ttsApiKey, ttsVoiceId, ttsModel, ttsSpeed, ttsEnabled, ttsRegion, customVoices, ttsInitialized, setTTSConfig])
   
   const handleTestTTS = async () => {
     if (!ttsApiKey) {
@@ -401,21 +213,15 @@ export default function ApiConfigScreen() {
       return
     }
     
-    if (!file || file.size === 0) {
-      setCloneError('文件无效，请重新选择')
-      return
-    }
-    
     // 自动生成音色ID
     const voiceId = generateVoiceId()
-    const voiceName = cloneVoiceName.trim() || file.name?.replace(/\.[^.]+$/, '') || voiceId
+    const voiceName = cloneVoiceName.trim() || file.name.replace(/\.[^.]+$/, '') || voiceId
     
     setCloneLoading(true)
     setCloneError('')
     setCloneSuccess('')
     
     try {
-      console.log('Starting voice clone:', { fileName: file.name, fileSize: file.size, fileType: file.type })
       const baseUrl = getBaseUrl(ttsRegion)
       
       // 1. 上传音频文件
@@ -496,48 +302,18 @@ export default function ApiConfigScreen() {
       setTimeout(() => setCloneSuccess(''), 5000)
       
     } catch (err) {
-      console.error('Voice clone failed:', err)
-      const errMsg = (err as Error).message || '克隆失败，请重试'
-      setCloneError(errMsg)
+      setCloneError((err as Error).message)
     } finally {
       setCloneLoading(false)
     }
   }
   
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const file = e.target.files?.[0]
-      if (!file) {
-        e.target.value = ''
-        return
-      }
-      
-      // 检查文件大小（限制 20MB）
-      const maxSize = 20 * 1024 * 1024
-      if (file.size > maxSize) {
-        setCloneError('文件太大，请选择 20MB 以内的音频文件')
-        e.target.value = ''
-        return
-      }
-      
-      // 检查文件类型
-      const allowedTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/ogg', 'audio/webm', '']
-      if (file.type && !allowedTypes.includes(file.type) && !file.name.match(/\.(mp3|wav|m4a|aac|ogg|webm)$/i)) {
-        setCloneError('不支持的文件格式，请选择 MP3/WAV/M4A 等音频文件')
-        e.target.value = ''
-        return
-      }
-      
+    const file = e.target.files?.[0]
+    if (file) {
       handleCloneVoice(file)
-    } catch (err) {
-      console.error('File select error:', err)
-      setCloneError('文件选择失败，请重试')
-    } finally {
-      // 延迟清空，避免某些手机浏览器问题
-      setTimeout(() => {
-        if (e.target) e.target.value = ''
-      }, 100)
     }
+    e.target.value = ''
   }
 
   return (
@@ -578,50 +354,50 @@ export default function ApiConfigScreen() {
             {/* 折叠内容 */}
             {showLLMSection && (
               <div className="p-3 sm:p-4 pt-0 space-y-3 border-t border-white/10">
-          <div className="space-y-2">
-            <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
-            <input
-              type="url"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.openai.com/v1"
-              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-              style={{ color: fontColor.value }}
-            />
-          </div>
+                <div className="space-y-2">
+                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
+                  <input
+                    type="url"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://api.openai.com/v1"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+                    style={{ color: fontColor.value }}
+                  />
+                </div>
 
-          <div className="space-y-2">
-            <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-xxxxxxxx"
-              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-              style={{ color: fontColor.value }}
-            />
-          </div>
+                <div className="space-y-2">
+                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Key</label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-xxxxxxxx"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+                    style={{ color: fontColor.value }}
+                  />
+                </div>
 
-          <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
-            {loading ? '获取中...' : '获取模型列表'}
-          </button>
+                <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
+                  {loading ? '获取中...' : '获取模型列表'}
+                </button>
 
-          {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">{error}</div>}
+                {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">{error}</div>}
 
-          {models.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
-              <div className="relative">
-                <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base" style={{ color: fontColor.value }}>
-                  <option value="" disabled>请选择模型</option>
-                  {models.map((model) => <option key={model} value={model}>{model}</option>)}
-                </select>
-                <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-              </div>
-            </div>
-          )}
+                {models.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
+                    <div className="relative">
+                      <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base" style={{ color: fontColor.value }}>
+                        <option value="" disabled>请选择模型</option>
+                        {models.map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select>
+                      <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                  </div>
+                )}
 
-          <button onClick={handleSave} className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect ${saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'}`}>
+                <button onClick={handleSave} className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect ${saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'}`}>
                   {saved ? '✓ 已保存' : '保存 AI 配置'}
                 </button>
               </div>
@@ -886,37 +662,18 @@ export default function ApiConfigScreen() {
                         🎭 克隆新音色
                       </h4>
                       
-                      <div className="text-xs opacity-60 space-y-1" style={{ color: fontColor.value }}>
-                        <p>录制或上传一段音频（10秒-5分钟），系统会学习这个声音。</p>
-                        <p className="text-orange-600">⚠️ 需要在 MiniMax 完成个人认证才能使用</p>
+                      {/* 注意事项 */}
+                      <div className="text-xs space-y-1.5 bg-yellow-50/50 p-2.5 rounded-lg border border-yellow-200/50">
+                        <p className="font-medium text-yellow-700">📋 克隆前须知：</p>
+                        <ul className="text-yellow-600 space-y-1 pl-3">
+                          <li>• 需要先在 MiniMax 官网完成<span className="font-medium">个人实名认证</span></li>
+                          <li>• 音频要求：10秒-5分钟，清晰人声，无背景音乐</li>
+                          <li>• 支持格式：MP3、WAV、M4A（不支持微信语音）</li>
+                          <li>• 手机录音 App 录制的效果最好</li>
+                        </ul>
                       </div>
                       
-                      {/* 模式切换 */}
-                      <div className="flex gap-1 p-1 bg-white/30 rounded-xl">
-                        <button
-                          onClick={() => setCloneMode('record')}
-                          className={`flex-1 py-1.5 text-xs rounded-lg transition-all ${cloneMode === 'record' ? 'bg-white shadow text-orange-600 font-medium' : 'opacity-60'}`}
-                          style={{ color: cloneMode === 'record' ? undefined : fontColor.value }}
-                        >
-                          🎤 录音
-                        </button>
-                        <button
-                          onClick={() => setCloneMode('url')}
-                          className={`flex-1 py-1.5 text-xs rounded-lg transition-all ${cloneMode === 'url' ? 'bg-white shadow text-orange-600 font-medium' : 'opacity-60'}`}
-                          style={{ color: cloneMode === 'url' ? undefined : fontColor.value }}
-                        >
-                          🔗 链接
-                        </button>
-                        <button
-                          onClick={() => setCloneMode('file')}
-                          className={`flex-1 py-1.5 text-xs rounded-lg transition-all ${cloneMode === 'file' ? 'bg-white shadow text-orange-600 font-medium' : 'opacity-60'}`}
-                          style={{ color: cloneMode === 'file' ? undefined : fontColor.value }}
-                        >
-                          📁 文件
-                        </button>
-                      </div>
-                      
-                      {/* 音色名称输入 */}
+                      {/* 音色名称 */}
                       <div className="space-y-2">
                         <label className="text-xs font-medium opacity-60" style={{ color: fontColor.value }}>
                           给音色起个名字（可选）
@@ -931,116 +688,9 @@ export default function ApiConfigScreen() {
                         />
                       </div>
                       
-                      {/* 录音模式 */}
-                      {cloneMode === 'record' && (
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-center gap-4 py-4">
-                            {!isRecording ? (
-                              <button
-                                onClick={startRecording}
-                                disabled={cloneLoading || !ttsApiKey}
-                                className="w-20 h-20 rounded-full bg-gradient-to-r from-red-400 to-pink-500 text-white flex items-center justify-center shadow-lg disabled:opacity-50 press-effect"
-                              >
-                                <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
-                                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-                                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-                                </svg>
-                              </button>
-                            ) : (
-                              <button
-                                onClick={stopRecording}
-                                className="w-20 h-20 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg animate-pulse press-effect"
-                              >
-                                <div className="w-8 h-8 bg-white rounded-sm" />
-                              </button>
-                            )}
-                          </div>
-                          
-                          {isRecording && (
-                            <div className="text-center text-sm text-red-500 font-medium">
-                              录音中... {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
-                            </div>
-                          )}
-                          
-                          {recordedBlob && !isRecording && (
-                            <div className="space-y-2">
-                              <div className="text-center text-xs text-green-600">
-                                ✓ 已录制 {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
-                              </div>
-                              <button
-                                onClick={handleCloneFromRecording}
-                                disabled={cloneLoading || !ttsApiKey}
-                                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-pink-500 text-white font-medium text-sm disabled:opacity-50 press-effect"
-                              >
-                                {cloneLoading ? '正在克隆...' : '🎭 使用这段录音克隆'}
-                              </button>
-                            </div>
-                          )}
-                          
-                          {!isRecording && !recordedBlob && (
-                            <div className="text-center text-xs opacity-50" style={{ color: fontColor.value }}>
-                              点击麦克风开始录音（建议 10-60 秒）
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      
-                      {/* URL 模式 */}
-                      {cloneMode === 'url' && (
-                        <div className="space-y-3">
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium opacity-60" style={{ color: fontColor.value }}>
-                              音频文件链接
-                            </label>
-                            <input
-                              type="url"
-                              value={audioUrl}
-                              onChange={(e) => setAudioUrl(e.target.value)}
-                              placeholder="https://example.com/voice.mp3"
-                              className="w-full px-3 py-2 rounded-xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs"
-                              style={{ color: fontColor.value }}
-                            />
-                          </div>
-                          <div className="text-xs opacity-50" style={{ color: fontColor.value }}>
-                            提示：可以把音频上传到网盘/OSS，获取直链后粘贴到这里
-                          </div>
-                          <button
-                            onClick={handleCloneFromUrl}
-                            disabled={cloneLoading || !ttsApiKey || !audioUrl.trim()}
-                            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-pink-500 text-white font-medium text-sm disabled:opacity-50 press-effect"
-                          >
-                            {cloneLoading ? '正在克隆...' : '🔗 从链接克隆'}
-                          </button>
-                        </div>
-                      )}
-                      
-                      {/* 文件模式（保留给电脑端） */}
-                      {cloneMode === 'file' && (
-                        <div className="space-y-3">
-                          <div className="text-xs opacity-50" style={{ color: fontColor.value }}>
-                            ⚠️ 如果手机端选择文件闪退，请使用「录音」或「链接」方式
-                          </div>
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg"
-                            capture={undefined}
-                            className="hidden"
-                            onChange={handleFileSelect}
-                          />
-                          <button
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={cloneLoading || !ttsApiKey}
-                            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-pink-500 text-white font-medium text-sm disabled:opacity-50 press-effect"
-                          >
-                            {cloneLoading ? '正在克隆...' : '📁 选择文件并克隆'}
-          </button>
-                        </div>
-                      )}
-                      
                       {/* 错误/成功提示 */}
                       {cloneError && (
-                        <div className="text-xs text-red-500 bg-red-50/50 px-3 py-2 rounded-xl border border-red-200">
+                        <div className="text-xs text-red-500 bg-red-50/50 px-3 py-2 rounded-xl border border-red-200 whitespace-pre-wrap">
                           {cloneError}
                         </div>
                       )}
@@ -1050,6 +700,46 @@ export default function ApiConfigScreen() {
                           {cloneSuccess}
                         </div>
                       )}
+                      
+                      {/* 上传文件按钮 */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="audio/*,.mp3,.wav,.m4a,.aac"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                      />
+                      
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={cloneLoading || !ttsApiKey}
+                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-pink-500 text-white font-medium text-sm disabled:opacity-50 press-effect"
+                      >
+                        {cloneLoading ? '正在克隆...' : '📤 选择音频文件并克隆'}
+                      </button>
+                      
+                      <div className="text-xs text-center opacity-50" style={{ color: fontColor.value }}>
+                        手机端推荐：先用录音App录好，再点上面按钮选择
+                      </div>
+                      
+                      {/* 官网备用方案 */}
+                      <div className="border-t border-orange-200/30 pt-3 mt-2">
+                        <p className="text-xs opacity-60 mb-2" style={{ color: fontColor.value }}>
+                          如果上传失败，可以去 MiniMax 官网克隆：
+                        </p>
+                        <a
+                          href="https://platform.minimaxi.com/user-center/basic-information/voice-clone"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block w-full py-2 rounded-xl bg-white/50 border border-orange-200 text-center text-xs font-medium press-effect"
+                          style={{ color: fontColor.value }}
+                        >
+                          🔗 打开 MiniMax 官网克隆页面
+                        </a>
+                        <p className="text-xs opacity-40 mt-2 text-center" style={{ color: fontColor.value }}>
+                          在官网克隆后，点击上方「刷新我的音色」同步到这里
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}
