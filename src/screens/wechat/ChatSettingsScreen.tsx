@@ -84,6 +84,7 @@ export default function ChatSettingsScreen() {
     lang: 'zh',
   })
   const [langPickerOpen, setLangPickerOpen] = useState(false)
+  const [promptExpanded, setPromptExpanded] = useState(false)
 
   const languageLabel = (id: 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de') => {
     if (id === 'zh') return '中文'
@@ -2191,16 +2192,36 @@ ${history}`
               />
             </div>
 
-            {/* 人设 */}
-            <div>
-              <label className="text-sm text-gray-600 block mb-1">角色人设</label>
-              <textarea
-                value={editPrompt}
-                onChange={(e) => setEditPrompt(e.target.value)}
-                placeholder="描述角色的性格、背景、说话方式等..."
-                rows={6}
-                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 outline-none resize-none"
-              />
+            {/* 人设 - 可折叠 */}
+            <div className="bg-gray-50 rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setPromptExpanded(!promptExpanded)}
+                className="w-full flex items-center justify-between px-3 py-3"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">角色人设</span>
+                  {editPrompt && <span className="text-xs text-green-500 bg-green-50 px-1.5 py-0.5 rounded">已填写</span>}
+                </div>
+                <svg 
+                  className={`w-4 h-4 text-gray-400 transition-transform ${promptExpanded ? 'rotate-90' : ''}`} 
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              {promptExpanded && (
+                <div className="px-3 pb-3">
+                  <textarea
+                    value={editPrompt}
+                    onChange={(e) => setEditPrompt(e.target.value)}
+                    placeholder="描述角色的性格、背景、说话方式等..."
+                    rows={8}
+                    className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-800 outline-none resize-none text-sm"
+                  />
+                  <p className="text-xs text-gray-400 mt-2">好的人设让角色更生动：性格、语气、口头禅、背景故事...</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
