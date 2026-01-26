@@ -148,7 +148,8 @@ export type WeChatMessage = {
   locationRequestStatus?: 'pending' | 'shared' | 'declined' // 索要位置的状态
   
   // 语音消息相关
-  voiceText?: string // 语音对应的文字（用于显示"转文字"）
+  voiceText?: string // 语音对应的文字（用于显示"转文字"，翻译模式下为中文）
+  voiceOriginalText?: string // 语音原文（用于TTS朗读，非中文语言时存储原文）
   voiceDuration?: number // 语音时长（秒）
   voiceUrl?: string // 语音文件URL（用于播放）
 }

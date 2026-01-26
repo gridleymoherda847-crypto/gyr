@@ -20,7 +20,7 @@ export const GRID_APPS: AppMeta[] = [
 export const DOCK_APPS: AppMeta[] = [
   { id: 'settings', name: '设置', route: '/apps/settings', icon: '/icons/settings.png', gradient: 'from-pink-100 to-pink-200' },
   { id: 'mibi', name: '米币', route: '/apps/mibi', icon: '/icons/mibi.png', gradient: 'from-pink-100 to-pink-200' },
-  { id: 'preset', name: '破限', route: '/apps/preset', icon: '/icons/sms.png', gradient: 'from-purple-400 to-pink-400' },
+  { id: 'preset', name: '创作工坊', route: '/apps/preset', icon: '/icons/sms.png', gradient: 'from-blue-400 to-cyan-400' },
 ]
 
 export const ALL_APPS: AppMeta[] = [...GRID_APPS, ...DOCK_APPS]

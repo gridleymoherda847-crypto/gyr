@@ -4,7 +4,7 @@ import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
 import WeChatLayout from './WeChatLayout'
 import WeChatDialog from './components/WeChatDialog'
-import { getGlobalPresets } from '../PresetScreen'
+import { getGlobalPresets, getLorebookEntriesForCharacter } from '../PresetScreen'
 import { xEnsureUser, xLoad, xNewPost, xSave } from '../../storage/x'
 
 export default function ChatScreen() {
@@ -635,8 +635,11 @@ export default function ChatScreen() {
         const maxRounds = Math.max(1, Math.min(1000, character.memoryRounds || 100))
         const chatHistory = buildChatHistory(workingMessages, maxRounds, 24000)
         
-        // 获取全局预设
+        // 获取全局预设和世界书
         const globalPresets = getGlobalPresets()
+        // 获取世界书条目（基于角色和最近上下文触发）
+        const recentContext = workingMessages.slice(-10).map(m => m.content).join(' ')
+        const lorebookEntries = getLorebookEntriesForCharacter(character.id, recentContext)
         
         // 听歌邀请逻辑已改为“卡片→确认进入一起听界面”，这里禁止把歌单塞进 prompt（会导致模型在生产环境疯狂报歌名）
         
@@ -737,7 +740,7 @@ export default function ChatScreen() {
           }
         })()
 
-        let systemPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}【角色信息】
+        let systemPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lorebookEntries ? lorebookEntries + '\n\n' : ''}【角色信息】
 你的名字：${character.name}
 你的性别：${character.gender === 'male' ? '男性' : character.gender === 'female' ? '女性' : '其他'}
 你的人设：${character.prompt || '（未设置）'}
@@ -1287,17 +1290,24 @@ ${recentTimeline || '（无）'}
               if (sendAsVoice) {
                 // 发送语音消息（先创建消息，再异步生成语音URL）
                 const voiceDuration = Math.max(2, Math.min(60, Math.ceil(textContent.length / 5)))
+                
+                // 语音转文字：如果是非中文角色且开启了翻译，显示中文翻译而不是原文
+                // voiceText 存原文（用于TTS朗读），voiceTextDisplay 存显示文本（可能是翻译）
+                const voiceDisplayText = dual ? dual.zh : textContent
+                
                 const voiceMsg = addMessage({
                   characterId: character.id,
                   content: '[语音消息]',
                   isUser: false,
                   type: 'voice',
-                  voiceText: textContent,
+                  voiceText: voiceDisplayText, // 显示的文字（翻译模式下显示中文）
+                  voiceOriginalText: textContent, // 原文（用于TTS朗读）
                   voiceDuration: voiceDuration,
                   voiceUrl: '', // 先为空，异步填充
+                  messageLanguage: characterLanguage,
                 })
                 
-                // 异步生成语音URL
+                // 异步生成语音URL（用原文生成语音）
                 ;(async () => {
                   const url = await generateVoiceUrl(textContent)
                   if (url) {
