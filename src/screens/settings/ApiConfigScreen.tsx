@@ -42,14 +42,33 @@ export default function ApiConfigScreen() {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   
-  // TTS 配置状态
-  const [ttsApiKey, setTtsApiKey] = useState(ttsConfig.apiKey)
-  const [ttsVoiceId, setTtsVoiceId] = useState(ttsConfig.voiceId)
-  const [ttsModel, setTtsModel] = useState(ttsConfig.model)
-  const [ttsSpeed, setTtsSpeed] = useState(ttsConfig.speed)
-  const [ttsEnabled, setTtsEnabled] = useState(ttsConfig.enabled)
-  const [ttsRegion, setTtsRegion] = useState<TTSRegion>(ttsConfig.region || 'cn')
-  const [customVoices, setCustomVoices] = useState<TTSVoice[]>(ttsConfig.customVoices || [])
+  // TTS 配置状态（初始化为空，等待 hydration）
+  const [ttsApiKey, setTtsApiKey] = useState('')
+  const [ttsVoiceId, setTtsVoiceId] = useState('')
+  const [ttsModel, setTtsModel] = useState('speech-02-turbo')
+  const [ttsSpeed, setTtsSpeed] = useState(1)
+  const [ttsEnabled, setTtsEnabled] = useState(false)
+  const [ttsRegion, setTtsRegion] = useState<TTSRegion>('cn')
+  const [customVoices, setCustomVoices] = useState<TTSVoice[]>([])
+  const [ttsInitialized, setTtsInitialized] = useState(false)
+  
+  // 当全局 ttsConfig 变化时（hydration 完成后），同步到本地状态
+  useEffect(() => {
+    if (ttsConfig.apiKey || ttsConfig.voiceId || ttsConfig.enabled) {
+      setTtsApiKey(ttsConfig.apiKey || '')
+      setTtsVoiceId(ttsConfig.voiceId || '')
+      setTtsModel(ttsConfig.model || 'speech-02-turbo')
+      setTtsSpeed(ttsConfig.speed || 1)
+      setTtsEnabled(ttsConfig.enabled || false)
+      setTtsRegion(ttsConfig.region || 'cn')
+      setCustomVoices(ttsConfig.customVoices || [])
+      setTtsInitialized(true)
+    } else if (!ttsInitialized) {
+      // 第一次加载，等一下看看有没有数据
+      const timer = setTimeout(() => setTtsInitialized(true), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [ttsConfig, ttsInitialized])
   const [ttsSaved, setTtsSaved] = useState(false)
   const [ttsTestLoading, setTtsTestLoading] = useState(false)
   const [ttsTestError, setTtsTestError] = useState('')
@@ -262,15 +281,16 @@ export default function ApiConfigScreen() {
     setTtsSaved(true); setTimeout(() => setTtsSaved(false), 2000)
   }
   
-  // 自动保存 TTS 配置（当关键设置变化时）
+  // 自动保存 TTS 配置（当关键设置变化时，且初始化完成后）
   const isFirstRender = useRef(true)
   useEffect(() => {
-    // 跳过首次渲染
-    if (isFirstRender.current) {
+    // 跳过首次渲染和未初始化时
+    if (isFirstRender.current || !ttsInitialized) {
       isFirstRender.current = false
       return
     }
     // 自动保存
+    console.log('Auto-saving TTS config:', { apiKey: ttsApiKey ? '***' : 'empty', enabled: ttsEnabled })
     setTTSConfig({ 
       apiKey: ttsApiKey, 
       voiceId: ttsVoiceId, 
@@ -280,7 +300,7 @@ export default function ApiConfigScreen() {
       region: ttsRegion,
       customVoices: customVoices,
     })
-  }, [ttsApiKey, ttsVoiceId, ttsModel, ttsSpeed, ttsEnabled, ttsRegion, customVoices, setTTSConfig])
+  }, [ttsApiKey, ttsVoiceId, ttsModel, ttsSpeed, ttsEnabled, ttsRegion, customVoices, ttsInitialized, setTTSConfig])
   
   const handleTestTTS = async () => {
     if (!ttsApiKey) {
@@ -558,50 +578,50 @@ export default function ApiConfigScreen() {
             {/* 折叠内容 */}
             {showLLMSection && (
               <div className="p-3 sm:p-4 pt-0 space-y-3 border-t border-white/10">
-                <div className="space-y-2">
-                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
-                  <input
-                    type="url"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder="https://api.openai.com/v1"
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-                    style={{ color: fontColor.value }}
-                  />
-                </div>
+          <div className="space-y-2">
+            <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
+            <input
+              type="url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.openai.com/v1"
+              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+              style={{ color: fontColor.value }}
+            />
+          </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Key</label>
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="sk-xxxxxxxx"
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-                    style={{ color: fontColor.value }}
-                  />
-                </div>
+          <div className="space-y-2">
+            <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Key</label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-xxxxxxxx"
+              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+              style={{ color: fontColor.value }}
+            />
+          </div>
 
-                <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
-                  {loading ? '获取中...' : '获取模型列表'}
-                </button>
+          <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
+            {loading ? '获取中...' : '获取模型列表'}
+          </button>
 
-                {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">{error}</div>}
+          {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">{error}</div>}
 
-                {models.length > 0 && (
-                  <div className="space-y-2">
-                    <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
-                    <div className="relative">
-                      <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base" style={{ color: fontColor.value }}>
-                        <option value="" disabled>请选择模型</option>
-                        {models.map((model) => <option key={model} value={model}>{model}</option>)}
-                      </select>
-                      <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                    </div>
-                  </div>
-                )}
+          {models.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
+              <div className="relative">
+                <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base" style={{ color: fontColor.value }}>
+                  <option value="" disabled>请选择模型</option>
+                  {models.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+                <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </div>
+            </div>
+          )}
 
-                <button onClick={handleSave} className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect ${saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'}`}>
+          <button onClick={handleSave} className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect ${saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'}`}>
                   {saved ? '✓ 已保存' : '保存 AI 配置'}
                 </button>
               </div>
@@ -1014,7 +1034,7 @@ export default function ApiConfigScreen() {
                             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-pink-500 text-white font-medium text-sm disabled:opacity-50 press-effect"
                           >
                             {cloneLoading ? '正在克隆...' : '📁 选择文件并克隆'}
-                          </button>
+          </button>
                         </div>
                       )}
                       
