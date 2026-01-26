@@ -86,7 +86,7 @@ export default function PresetScreen() {
   const { characters } = useWeChat()
   
   // Tab 状态
-  const [activeTab, setActiveTab] = useState<'narrative' | 'lorebook' | 'advanced'>('narrative')
+  const [activeTab, setActiveTab] = useState<'narrative' | 'lorebook'>('narrative')
   
   // 配置状态
   const [config, setConfig] = useState<WorkshopConfig>(() => {
@@ -129,13 +129,6 @@ export default function PresetScreen() {
     }))
   }
   
-  // 更新高级配置
-  const updateAdvanced = (updates: Partial<AdvancedConfig>) => {
-    setConfig(prev => ({
-      ...prev,
-      advanced: { ...prev.advanced, ...updates }
-    }))
-  }
   
   // 添加/更新世界书
   const saveLorebook = (lorebook: Lorebook) => {
@@ -184,7 +177,6 @@ export default function PresetScreen() {
   const tabs = [
     { id: 'narrative' as const, label: '叙事设置', icon: '📝' },
     { id: 'lorebook' as const, label: '世界书', icon: '📚' },
-    { id: 'advanced' as const, label: '高级参数', icon: '⚙️' },
   ]
 
   return (
@@ -458,165 +450,6 @@ export default function PresetScreen() {
             </div>
           )}
           
-          {/* ========== 高级参数 Tab ========== */}
-          {activeTab === 'advanced' && (
-            <div className="mt-4 space-y-4">
-              
-              {/* 参数说明 */}
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-100">
-                <div className="text-sm text-amber-800">
-                  <strong>⚙️ 高级参数</strong>会影响 AI 的输出行为。如果不确定，保持默认即可。
-                </div>
-              </div>
-              
-              <div className="p-4 rounded-2xl bg-white shadow-sm border border-gray-100 space-y-6">
-                
-                {/* 温度 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-gray-800">温度 (Temperature)</div>
-                      <div className="text-xs text-gray-500">
-                        越高越随机创意，越低越稳定保守
-                      </div>
-                    </div>
-                    <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">
-                      {config.advanced.temperature.toFixed(2)}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.05"
-                    value={config.advanced.temperature}
-                    onChange={(e) => updateAdvanced({ temperature: parseFloat(e.target.value) })}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>稳定 0</span>
-                    <span>平衡 1</span>
-                    <span>创意 2</span>
-                  </div>
-                </div>
-                
-                {/* Top P */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-gray-800">Top P</div>
-                      <div className="text-xs text-gray-500">
-                        核采样概率，影响输出多样性
-                      </div>
-                    </div>
-                    <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">
-                      {config.advanced.topP.toFixed(2)}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={config.advanced.topP}
-                    onChange={(e) => updateAdvanced({ topP: parseFloat(e.target.value) })}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>精确 0</span>
-                    <span>推荐 0.95</span>
-                    <span>多样 1</span>
-                  </div>
-                </div>
-                
-                {/* 最大回复长度 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-gray-800">最大回复长度</div>
-                      <div className="text-xs text-gray-500">
-                        限制 AI 单次回复的最大 token 数
-                      </div>
-                    </div>
-                    <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">
-                      {config.advanced.maxTokens}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="100"
-                    max="4000"
-                    step="100"
-                    value={config.advanced.maxTokens}
-                    onChange={(e) => updateAdvanced({ maxTokens: parseInt(e.target.value) })}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>简短 100</span>
-                    <span>适中 1000</span>
-                    <span>详细 4000</span>
-                  </div>
-                </div>
-                
-                {/* 频率惩罚 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-gray-800">频率惩罚</div>
-                      <div className="text-xs text-gray-500">
-                        减少重复词汇的出现
-                      </div>
-                    </div>
-                    <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">
-                      {config.advanced.frequencyPenalty.toFixed(2)}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={config.advanced.frequencyPenalty}
-                    onChange={(e) => updateAdvanced({ frequencyPenalty: parseFloat(e.target.value) })}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-                
-                {/* 存在惩罚 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-gray-800">存在惩罚</div>
-                      <div className="text-xs text-gray-500">
-                        鼓励谈论新话题
-                      </div>
-                    </div>
-                    <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">
-                      {config.advanced.presencePenalty.toFixed(2)}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={config.advanced.presencePenalty}
-                    onChange={(e) => updateAdvanced({ presencePenalty: parseFloat(e.target.value) })}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-              </div>
-              
-              {/* 重置按钮 */}
-              <button
-                type="button"
-                onClick={() => setConfig(prev => ({ ...prev, advanced: DEFAULT_ADVANCED }))}
-                className="w-full py-3 rounded-xl bg-gray-100 text-gray-600 text-sm hover:bg-gray-200 transition-colors"
-              >
-                重置为默认参数
-              </button>
-            </div>
-          )}
         </div>
         
         {/* ========== 世界书编辑弹窗 ========== */}

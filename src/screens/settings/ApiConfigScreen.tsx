@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useOS, type TTSRegion, type TTSVoice } from '../../context/OSContext'
 import AppHeader from '../../components/AppHeader'
 import PageContainer from '../../components/PageContainer'
+import { getAdvancedConfig } from '../PresetScreen'
 
 // MiniMax 系统预设音色列表
 const SYSTEM_VOICE_OPTIONS: TTSVoice[] = [
@@ -68,6 +69,14 @@ export default function ApiConfigScreen() {
   
   // 获取音色列表状态
   const [fetchVoicesLoading, setFetchVoicesLoading] = useState(false)
+  
+  // 高级参数状态
+  const advancedConfig = getAdvancedConfig()
+  const [temperature, setTemperature] = useState(advancedConfig.temperature)
+  const [topP, setTopP] = useState(advancedConfig.topP)
+  const [maxTokens, setMaxTokens] = useState(advancedConfig.maxTokens)
+  const [frequencyPenalty, setFrequencyPenalty] = useState(advancedConfig.frequencyPenalty)
+  const [presencePenalty, setPresencePenalty] = useState(advancedConfig.presencePenalty)
 
   // 获取 API 基础 URL
   const getBaseUrl = (region: TTSRegion) => {
@@ -97,7 +106,19 @@ export default function ApiConfigScreen() {
 
   const handleSave = () => {
     setLLMConfig({ apiBaseUrl: baseUrl, apiKey, selectedModel, availableModels: models })
+    // 同时保存高级参数到 localStorage（供 PresetScreen 读取）
+    saveAdvancedConfig({ temperature, topP, maxTokens, frequencyPenalty, presencePenalty })
     setSaved(true); setTimeout(() => setSaved(false), 2000)
+  }
+  
+  // 保存高级参数到 localStorage
+  const saveAdvancedConfig = (params: { temperature: number; topP: number; maxTokens: number; frequencyPenalty: number; presencePenalty: number }) => {
+    try {
+      const saved = localStorage.getItem('littlephone_workshop_config')
+      const config = saved ? JSON.parse(saved) : { narrative: {}, lorebooks: [], advanced: {} }
+      config.advanced = params
+      localStorage.setItem('littlephone_workshop_config', JSON.stringify(config))
+    } catch {}
   }
   
   const handleSaveTTS = () => {
@@ -401,6 +422,141 @@ export default function ApiConfigScreen() {
                 <button onClick={handleSave} className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect ${saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'}`}>
                   {saved ? '✓ 已保存' : '保存 AI 配置'}
                 </button>
+                
+                {/* 高级参数设置 */}
+                <div className="mt-4 pt-4 border-t border-white/20 space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">⚙️</span>
+                    <span className="font-medium text-sm" style={{ color: fontColor.value }}>高级参数</span>
+                    <span className="text-xs opacity-50" style={{ color: fontColor.value }}>（不确定就保持默认）</span>
+                  </div>
+                  
+                  {/* 温度 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm" style={{ color: fontColor.value }}>温度 (Temperature)</div>
+                      <span className="text-xs font-mono bg-white/30 px-2 py-1 rounded" style={{ color: fontColor.value }}>
+                        {temperature.toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="0.05"
+                      value={temperature}
+                      onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between text-xs opacity-40" style={{ color: fontColor.value }}>
+                      <span>稳定 0</span>
+                      <span>平衡 1</span>
+                      <span>创意 2</span>
+                    </div>
+                  </div>
+                  
+                  {/* Top P */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm" style={{ color: fontColor.value }}>Top P</div>
+                      <span className="text-xs font-mono bg-white/30 px-2 py-1 rounded" style={{ color: fontColor.value }}>
+                        {topP.toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={topP}
+                      onChange={(e) => setTopP(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between text-xs opacity-40" style={{ color: fontColor.value }}>
+                      <span>精确 0</span>
+                      <span>推荐 0.95</span>
+                      <span>多样 1</span>
+                    </div>
+                  </div>
+                  
+                  {/* 最大回复长度 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm" style={{ color: fontColor.value }}>最大回复长度</div>
+                      <span className="text-xs font-mono bg-white/30 px-2 py-1 rounded" style={{ color: fontColor.value }}>
+                        {maxTokens}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="100"
+                      max="4000"
+                      step="100"
+                      value={maxTokens}
+                      onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                      className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between text-xs opacity-40" style={{ color: fontColor.value }}>
+                      <span>简短 100</span>
+                      <span>适中 1000</span>
+                      <span>详细 4000</span>
+                    </div>
+                  </div>
+                  
+                  {/* 频率惩罚 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm" style={{ color: fontColor.value }}>频率惩罚（减少重复）</div>
+                      <span className="text-xs font-mono bg-white/30 px-2 py-1 rounded" style={{ color: fontColor.value }}>
+                        {frequencyPenalty.toFixed(1)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={frequencyPenalty}
+                      onChange={(e) => setFrequencyPenalty(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                  
+                  {/* 存在惩罚 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm" style={{ color: fontColor.value }}>存在惩罚（鼓励新话题）</div>
+                      <span className="text-xs font-mono bg-white/30 px-2 py-1 rounded" style={{ color: fontColor.value }}>
+                        {presencePenalty.toFixed(1)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={presencePenalty}
+                      onChange={(e) => setPresencePenalty(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                  
+                  {/* 重置默认 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemperature(0.8)
+                      setTopP(0.95)
+                      setMaxTokens(1000)
+                      setFrequencyPenalty(0)
+                      setPresencePenalty(0)
+                    }}
+                    className="w-full py-2 rounded-xl bg-white/30 text-sm hover:bg-white/40 transition-colors"
+                    style={{ color: fontColor.value }}
+                  >
+                    重置为默认参数
+                  </button>
+                </div>
               </div>
             )}
           </div>
