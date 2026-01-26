@@ -198,24 +198,32 @@ export default function MusicScreen() {
               </svg>
             </button>
             {showImportMenu && (
-              <div className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50 min-w-[140px]">
+              <div 
+                className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50 min-w-[140px]"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <button
                   type="button"
-                  onClick={() => {
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
                     setShowImportMenu(false)
-                    fileInputRef.current?.click()
+                    // 延迟触发文件选择，确保菜单关闭后再打开
+                    setTimeout(() => fileInputRef.current?.click(), 50)
                   }}
-                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 active:bg-gray-100"
                 >
                   <span>📁</span> 本地文件
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
                     setShowImportMenu(false)
                     setShowUrlInput(true)
                   }}
-                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 active:bg-gray-100"
                 >
                   <span>🔗</span> 链接导入
                 </button>
@@ -652,10 +660,10 @@ export default function MusicScreen() {
         </div>
       )}
       
-      {/* 点击其他地方关闭菜单 */}
+      {/* 点击其他地方关闭菜单 - 放在菜单下层 */}
       {showImportMenu && (
         <div 
-          className="fixed inset-0 z-40" 
+          className="fixed inset-0 z-30" 
           onClick={() => setShowImportMenu(false)}
         />
       )}
