@@ -78,6 +78,10 @@ export type WeChatCharacter = {
   // 角色钱包（虚拟财富，防止通货膨胀）
   walletBalance?: number // 角色钱包余额
   walletInitialized?: boolean // 是否已根据人设初始化钱包
+  // 语音配置
+  voiceEnabled?: boolean // 是否启用语音（该角色）
+  voiceId?: string // 使用的音色ID
+  voiceFrequency?: 'always' | 'often' | 'sometimes' | 'rarely' // 发语音频率
 }
 
 // 聊天消息

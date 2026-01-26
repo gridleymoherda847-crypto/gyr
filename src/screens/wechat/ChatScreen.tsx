@@ -9,7 +9,7 @@ import { xEnsureUser, xLoad, xNewPost, xSave } from '../../storage/x'
 
 export default function ChatScreen() {
   const navigate = useNavigate()
-  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong } = useOS()
+  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, ttsConfig, textToSpeech } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
     getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds,
@@ -355,6 +355,83 @@ export default function ChatScreen() {
 
   // 检查是否配置了API
   const hasApiConfig = llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel
+  
+  // 语音播放辅助函数：根据角色设置和频率决定是否播放语音
+  const shouldPlayVoice = useCallback(() => {
+    if (!ttsConfig.enabled || !character?.voiceEnabled) return false
+    const freq = character.voiceFrequency || 'sometimes'
+    const rand = Math.random()
+    if (freq === 'always') return true
+    if (freq === 'often') return rand < 0.5
+    if (freq === 'sometimes') return rand < 0.2
+    if (freq === 'rarely') return rand < 0.05
+    return false
+  }, [ttsConfig.enabled, character?.voiceEnabled, character?.voiceFrequency])
+  
+  const playVoiceForMessage = useCallback(async (text: string) => {
+    if (!shouldPlayVoice()) return
+    // 使用角色指定的音色，或默认全局音色
+    const voiceId = character?.voiceId || ttsConfig.voiceId
+    if (!voiceId) return
+    
+    try {
+      // 临时切换音色（如果角色有指定）
+      const originalVoiceId = ttsConfig.voiceId
+      if (character?.voiceId && character.voiceId !== originalVoiceId) {
+        // 直接调用 API 而不是通过 textToSpeech，以便使用指定音色
+        const baseUrl = ttsConfig.region === 'global' 
+          ? 'https://api.minimax.chat' 
+          : 'https://api.minimaxi.com'
+        const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${ttsConfig.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: ttsConfig.model || 'speech-02-turbo',
+            text: text.slice(0, 500),
+            stream: false,
+            voice_setting: {
+              voice_id: voiceId,
+              speed: ttsConfig.speed || 1,
+              vol: 1,
+              pitch: 0,
+            },
+            audio_setting: {
+              sample_rate: 24000,
+              bitrate: 128000,
+              format: 'mp3',
+              channel: 1,
+            },
+            output_format: 'url',
+          }),
+        })
+        if (response.ok) {
+          const data = await response.json()
+          if (data.base_resp?.status_code === 0 && data.data?.audio) {
+            let audioUrl = data.data.audio
+            if (!audioUrl.startsWith('http')) {
+              const bytes = new Uint8Array(audioUrl.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || [])
+              const blob = new Blob([bytes], { type: 'audio/mp3' })
+              audioUrl = URL.createObjectURL(blob)
+            }
+            const audio = new Audio(audioUrl)
+            audio.play().catch(() => {})
+          }
+        }
+      } else {
+        // 使用默认音色
+        const audioUrl = await textToSpeech(text)
+        if (audioUrl) {
+          const audio = new Audio(audioUrl)
+          audio.play().catch(() => {})
+        }
+      }
+    } catch (err) {
+      console.error('Voice playback failed:', err)
+    }
+  }, [shouldPlayVoice, character?.voiceId, ttsConfig, textToSpeech])
 
   // 根据性格/情绪/经期生成1-15条回复，每条间隔1-8秒（按字数）
   const pendingCountRef = useRef(pendingCount)
@@ -1187,6 +1264,10 @@ ${recentTimeline || '（无）'}
                 chatTranslationEnabledAtSend: translationMode,
                 translationStatus: translationMode ? 'pending' : undefined,
               })
+              
+              // 语音播放：根据频率设置决定是否播放
+              playVoiceForMessage(dual ? dual.orig : trimmedContent)
+              
               // 翻译策略：
               // - 优先使用模型自带的 `外语 ||| 中文翻译`（更快/更稳定）
               // - 若模型没按格式输出（dual=null）：再补一次“翻译请求”，避免一直卡在“翻译中…”

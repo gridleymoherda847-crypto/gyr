@@ -562,6 +562,39 @@ export default function ApiConfigScreen() {
                   {fetchVoicesLoading ? '获取中...' : '🔄 刷新我已克隆的音色'}
                 </button>
                 
+                {/* 已克隆音色管理 */}
+                {customVoices.length > 0 && (
+                  <div className="bg-purple-50/30 rounded-xl p-3 space-y-2">
+                    <h4 className="text-sm font-medium" style={{ color: fontColor.value }}>
+                      🎭 我的克隆音色
+                    </h4>
+                    <div className="space-y-2">
+                      {customVoices.map((voice) => (
+                        <div key={voice.id} className="flex items-center justify-between bg-white/50 rounded-lg px-3 py-2">
+                          <div>
+                            <div className="text-sm font-medium" style={{ color: fontColor.value }}>{voice.name}</div>
+                            <div className="text-xs opacity-50" style={{ color: fontColor.value }}>{voice.id}</div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setCustomVoices(prev => prev.filter(v => v.id !== voice.id))
+                              if (ttsVoiceId === voice.id) {
+                                setTtsVoiceId('female-shaonv')
+                              }
+                            }}
+                            className="text-red-500 hover:text-red-600 text-xs px-2 py-1 rounded-lg hover:bg-red-50"
+                          >
+                            删除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-xs opacity-50" style={{ color: fontColor.value }}>
+                      注：这里删除只是从本地列表移除，不会删除 MiniMax 服务器上的音色
+                    </div>
+                  </div>
+                )}
+                
                 {/* 音色克隆区域 */}
                 <div className="bg-orange-50/30 rounded-xl p-3 space-y-3">
                   <h4 className="text-sm font-medium" style={{ color: fontColor.value }}>
