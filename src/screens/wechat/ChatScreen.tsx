@@ -546,6 +546,9 @@ export default function ChatScreen() {
     }
   }, [])
   
+  // 通话历史（只在通话期间保存）
+  const callHistoryRef = useRef<{ role: 'user' | 'assistant'; content: string }[]>([])
+  
   // 处理语音输入 - 直接用语音回复，不写入聊天记录
   const handleVoiceInput = useCallback(async (text: string) => {
     if (!text || !character) return
@@ -553,19 +556,58 @@ export default function ChatScreen() {
     setCallState('thinking')
     setCallReplyText('')
     
+    // 记录用户说的话
+    callHistoryRef.current.push({ role: 'user', content: text })
+    // 只保留最近6轮对话
+    if (callHistoryRef.current.length > 12) {
+      callHistoryRef.current = callHistoryRef.current.slice(-12)
+    }
+    
     try {
-      // prompt：像真人打电话，多说几句
-      const systemPrompt = `你是${character.name}，正和用户打电话。人设：${character.prompt || '无'}。关系：${character.relationship || '无'}。
-像真人聊天，自然回应2-3句话，可以反问、关心、调侃，有情绪起伏。50字左右，口语化。不要格式符号。`
+      // 获取聊天记录上下文（最近几条）
+      const recentChat = (messagesRef.current || [])
+        .filter(m => m.type === 'text' && m.content)
+        .slice(-6)
+        .map(m => `${m.isUser ? '用户' : character.name}: ${m.content}`)
+        .join('\n')
       
-      const response = await callLLM([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: text },
-      ], undefined, { maxTokens: 120, temperature: 0.9 })
+      // 更自然的 prompt
+      const systemPrompt = `你是${character.name}，正在和用户打电话聊天。
+
+【你的人设】
+${character.prompt || '（无特定人设）'}
+
+【你们的关系】
+${character.relationship || '普通朋友'}
+
+【你叫用户】
+${character.callMeName || '你'}
+
+【最近聊天记录】
+${recentChat || '（暂无）'}
+
+【通话要求】
+- 像真人打电话一样自然聊天，有来有往
+- 回复2-4句话，50-80字左右
+- 可以反问、分享感受、表达情绪
+- 用口语，可以有"嗯"、"啊"、"哈哈"等语气词
+- 根据人设和关系来说话，要有个性
+- 不要用任何特殊格式`
+      
+      // 构建消息，包含通话历史
+      const llmMessages = [
+        { role: 'system' as const, content: systemPrompt },
+        ...callHistoryRef.current,
+      ]
+      
+      const response = await callLLM(llmMessages, undefined, { maxTokens: 150, temperature: 0.85 })
       
       const replyText = (response || '').trim().replace(/\n/g, '，') || '嗯？怎么了？'
       console.log('Voice call - LLM reply:', replyText)
       setCallReplyText(replyText) // 显示在通话界面
+      
+      // 记录AI回复到通话历史
+      callHistoryRef.current.push({ role: 'assistant', content: replyText })
       
       // 直接生成语音并播放
       setCallState('speaking')
@@ -639,9 +681,11 @@ export default function ChatScreen() {
     
     setCallState('idle')
     setCallTranscript('')
+    setCallReplyText('')
     setCallConnected(false)
     setCallStartTime(null)
     setShowCallScreen(false)
+    callHistoryRef.current = [] // 清空通话历史
   }, [callConnected, callStartTime, character, addMessage])
 
   // 根据性格/情绪/经期生成1-15条回复，每条间隔1-8秒（按字数）
@@ -3918,7 +3962,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               /* 通话中 */
               <div className="flex flex-col items-center">
                 <div className="flex items-center justify-center gap-8">
-                  {/* 说话按钮 - 点击切换模式 */}
+                  {/* 说话按钮 - 点击切换 */}
                   {speechSupported && (
                     <button
                       type="button"
@@ -3940,11 +3984,9 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     >
                       {callState === 'listening' ? (
                         /* 录音中显示停止图标 */
-                        <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                          <rect x="6" y="6" width="12" height="12" rx="2" />
-                        </svg>
+                        <div className="w-8 h-8 bg-white rounded-sm" />
                       ) : (
-                        /* 空闲时显示麦克风 */
+                        /* 待机显示麦克风图标 */
                         <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
                           <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
                           <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
@@ -3966,14 +4008,12 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                 </div>
                 
                 {/* 提示文字 */}
-                {speechSupported && callState === 'idle' && (
+                {speechSupported && (
                   <div className="text-center mt-4 text-white/50 text-sm">
-                    点击开始说话
-                  </div>
-                )}
-                {speechSupported && callState === 'listening' && (
-                  <div className="text-center mt-4 text-red-300 text-sm animate-pulse">
-                    正在录音... 点击结束
+                    {callState === 'idle' && '点击开始说话'}
+                    {callState === 'listening' && '点击结束说话'}
+                    {callState === 'thinking' && '思考中...'}
+                    {callState === 'speaking' && '正在说话...'}
                   </div>
                 )}
               </div>
