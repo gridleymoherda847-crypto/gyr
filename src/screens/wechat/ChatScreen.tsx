@@ -106,6 +106,8 @@ export default function ChatScreen() {
   const [callState, setCallState] = useState<'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking'>('idle')
   const [callTranscript, setCallTranscript] = useState('') // 当前识别的文字
   const [speechSupported, setSpeechSupported] = useState(true)
+  const [callConnected, setCallConnected] = useState(false) // 是否已接通
+  const [callStartTime, setCallStartTime] = useState<number | null>(null) // 通话开始时间
   const recognitionRef = useRef<any>(null)
   const callAudioRef = useRef<HTMLAudioElement | null>(null)
   
@@ -379,7 +381,10 @@ export default function ChatScreen() {
   // 生成语音URL（不自动播放，返回URL供语音消息使用）
   const generateVoiceUrl = useCallback(async (text: string): Promise<string | null> => {
     const voiceId = character?.voiceId || ttsConfig.voiceId
-    if (!voiceId || !ttsConfig.apiKey) return null
+    if (!voiceId || !ttsConfig.apiKey) {
+      console.log('TTS not configured: voiceId=', voiceId, 'apiKey=', ttsConfig.apiKey ? '***' : 'empty')
+      return null
+    }
     
     try {
       const baseUrl = ttsConfig.region === 'global' 
@@ -638,10 +643,28 @@ export default function ChatScreen() {
       callAudioRef.current.pause()
       callAudioRef.current = null
     }
+    
+    // 如果已接通，添加通话结束消息
+    if (callConnected && callStartTime && character) {
+      const duration = Math.floor((Date.now() - callStartTime) / 1000)
+      const minutes = Math.floor(duration / 60)
+      const seconds = duration % 60
+      const durationText = minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`
+      
+      addMessage({
+        characterId: character.id,
+        content: `通话已结束，时长 ${durationText}`,
+        isUser: false,
+        type: 'system',
+      })
+    }
+    
     setCallState('idle')
     setCallTranscript('')
+    setCallConnected(false)
+    setCallStartTime(null)
     setShowCallScreen(false)
-  }, [])
+  }, [callConnected, callStartTime, character, addMessage])
 
   // 根据性格/情绪/经期生成1-15条回复，每条间隔1-8秒（按字数）
   const pendingCountRef = useRef(pendingCount)
@@ -3802,20 +3825,32 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
           {/* 顶部状态 */}
           <div className="flex-shrink-0 pt-12 pb-4 text-center">
             <div className="text-white/60 text-sm">
-              {callState === 'idle' && '准备通话'}
-              {callState === 'connecting' && '连接中...'}
-              {callState === 'listening' && '正在听你说...'}
-              {callState === 'thinking' && `${character.name} 正在思考...`}
-              {callState === 'speaking' && `${character.name} 正在说话...`}
+              {!callConnected && '正在呼叫...'}
+              {callConnected && callState === 'idle' && '通话中 - 请说话'}
+              {callConnected && callState === 'listening' && '正在听你说...'}
+              {callConnected && callState === 'thinking' && `${character.name} 正在思考...`}
+              {callConnected && callState === 'speaking' && `${character.name} 正在说话...`}
             </div>
+            {/* 接通提示 */}
+            {callConnected && (
+              <div className="text-green-400 text-xs mt-1">✓ 对方已接听</div>
+            )}
           </div>
           
           {/* 头像区域 */}
           <div className="flex-1 flex flex-col items-center justify-center px-8">
             {/* 头像 + 动画 */}
             <div className="relative">
+              {/* 呼叫中动画 */}
+              {!callConnected && (
+                <>
+                  <div className="absolute inset-0 rounded-full border-2 border-white/30 animate-ping opacity-30" style={{ transform: 'scale(1.3)' }} />
+                  <div className="absolute inset-0 rounded-full border-2 border-white/20 animate-ping opacity-20" style={{ transform: 'scale(1.6)', animationDelay: '0.5s' }} />
+                </>
+              )}
+              
               {/* 语音波纹动画 */}
-              {(callState === 'listening' || callState === 'speaking') && (
+              {callConnected && (callState === 'listening' || callState === 'speaking') && (
                 <>
                   <div className={`absolute inset-0 rounded-full border-2 ${callState === 'listening' ? 'border-green-400' : 'border-blue-400'} animate-ping opacity-30`} style={{ transform: 'scale(1.3)' }} />
                   <div className={`absolute inset-0 rounded-full border-2 ${callState === 'listening' ? 'border-green-400' : 'border-blue-400'} animate-ping opacity-20`} style={{ transform: 'scale(1.6)', animationDelay: '0.3s' }} />
@@ -3823,9 +3858,10 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               )}
               
               <div className={`w-32 h-32 rounded-full overflow-hidden border-4 ${
+                !callConnected ? 'border-white/30' :
                 callState === 'listening' ? 'border-green-400' : 
                 callState === 'speaking' ? 'border-blue-400' : 
-                'border-white/30'
+                'border-green-500/50'
               } transition-colors`}>
                 {character.avatar ? (
                   <img src={character.avatar} alt="" className="w-full h-full object-cover" />
@@ -3841,7 +3877,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             <div className="mt-6 text-white text-xl font-medium">{character.name}</div>
             
             {/* 识别文字显示 */}
-            {callTranscript && (
+            {callConnected && callTranscript && (
               <div className="mt-6 px-6 py-3 bg-white/10 rounded-2xl max-w-[280px]">
                 <div className="text-white/60 text-xs mb-1">你说：</div>
                 <div className="text-white text-sm">{callTranscript}</div>
@@ -3849,7 +3885,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             )}
             
             {/* 浏览器不支持提示 */}
-            {!speechSupported && (
+            {callConnected && !speechSupported && (
               <div className="mt-6 px-6 py-4 bg-yellow-500/20 rounded-2xl max-w-[300px] text-center">
                 <div className="text-yellow-300 text-sm font-medium mb-2">⚠️ 浏览器不支持语音识别</div>
                 <div className="text-yellow-200/70 text-xs">
@@ -3862,48 +3898,67 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
           
           {/* 底部按钮区 */}
           <div className="flex-shrink-0 pb-12 px-8">
-            <div className="flex items-center justify-center gap-8">
-              {/* 说话按钮 */}
-              {speechSupported && (
+            {!callConnected ? (
+              /* 呼叫中 - 只显示挂断按钮 */
+              <div className="flex flex-col items-center">
+                <div className="text-white/50 text-sm mb-6">等待对方接听...</div>
                 <button
                   type="button"
-                  onMouseDown={startListening}
-                  onMouseUp={stopListening}
-                  onMouseLeave={stopListening}
-                  onTouchStart={startListening}
-                  onTouchEnd={stopListening}
-                  disabled={callState === 'thinking' || callState === 'speaking'}
-                  className={`w-20 h-20 rounded-full flex items-center justify-center transition-all active:scale-95 ${
-                    callState === 'listening' 
-                      ? 'bg-green-500 scale-110' 
-                      : callState === 'thinking' || callState === 'speaking'
-                        ? 'bg-gray-600 opacity-50'
-                        : 'bg-green-600 hover:bg-green-500'
-                  }`}
+                  onClick={hangUp}
+                  className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center transition-all active:scale-95"
                 >
-                  <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                  <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.28 3H5z" />
                   </svg>
                 </button>
-              )}
-              
-              {/* 挂断按钮 */}
-              <button
-                type="button"
-                onClick={hangUp}
-                className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center transition-all active:scale-95"
-              >
-                <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.28 3H5z" />
-                </svg>
-              </button>
-            </div>
-            
-            {/* 提示文字 */}
-            {speechSupported && callState === 'idle' && (
-              <div className="text-center mt-4 text-white/50 text-sm">
-                按住绿色按钮说话
+              </div>
+            ) : (
+              /* 通话中 */
+              <div className="flex flex-col items-center">
+                <div className="flex items-center justify-center gap-8">
+                  {/* 说话按钮 */}
+                  {speechSupported && (
+                    <button
+                      type="button"
+                      onMouseDown={startListening}
+                      onMouseUp={stopListening}
+                      onMouseLeave={stopListening}
+                      onTouchStart={startListening}
+                      onTouchEnd={stopListening}
+                      disabled={callState === 'thinking' || callState === 'speaking'}
+                      className={`w-20 h-20 rounded-full flex items-center justify-center transition-all active:scale-95 ${
+                        callState === 'listening' 
+                          ? 'bg-green-500 scale-110' 
+                          : callState === 'thinking' || callState === 'speaking'
+                            ? 'bg-gray-600 opacity-50'
+                            : 'bg-green-600 hover:bg-green-500'
+                      }`}
+                    >
+                      <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                      </svg>
+                    </button>
+                  )}
+                  
+                  {/* 挂断按钮 */}
+                  <button
+                    type="button"
+                    onClick={hangUp}
+                    className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center transition-all active:scale-95"
+                  >
+                    <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.28 3H5z" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* 提示文字 */}
+                {speechSupported && callState === 'idle' && (
+                  <div className="text-center mt-4 text-white/50 text-sm">
+                    按住绿色按钮说话
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -4120,6 +4175,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             <div className="mt-3 pb-2">
               {!activePanel ? (
                 <div className="grid grid-cols-4 gap-4">
+                  {/* 第一排：实用功能 */}
+                  {/* 相册 */}
                   <button type="button" onClick={() => imageInputRef.current?.click()} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -4130,34 +4187,42 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                   </button>
                   <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleSendImage} />
                   
-                  <button type="button" onClick={() => { setShowPlusMenu(false); setShowTransferModal(true) }} className="flex flex-col items-center gap-1">
+                  {/* 电话 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlusMenu(false)
+                      setActivePanel(null)
+                      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+                      if (!SpeechRecognition) {
+                        setSpeechSupported(false)
+                      }
+                      setCallConnected(false)
+                      setShowCallScreen(true)
+                      
+                      // 模拟接通（1-2秒后）
+                      setTimeout(() => {
+                        setCallConnected(true)
+                        setCallStartTime(Date.now())
+                        // 接通后自动开始录音（如果支持）
+                        if (SpeechRecognition) {
+                          setTimeout(() => {
+                            startListening()
+                          }, 500)
+                        }
+                      }, 1000 + Math.random() * 1000)
+                    }}
+                    className="flex flex-col items-center gap-1"
+                  >
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">转账</span>
+                    <span className="text-xs text-gray-600">电话</span>
                   </button>
                   
-                  <button type="button" onClick={() => setActivePanel('music')} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5l-10.5 3v7.803a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66A2.25 2.25 0 009 12.553z" />
-                      </svg>
-                    </div>
-                    <span className="text-xs text-gray-600">音乐</span>
-                  </button>
-                  
-                  <button type="button" onClick={() => setActivePanel('period')} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
-                      </svg>
-                    </div>
-                    <span className="text-xs text-gray-600">经期</span>
-                  </button>
-                  
-                  {/* 位置分享 */}
+                  {/* 位置 */}
                   <button type="button" onClick={() => setActivePanel('location')} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -4168,48 +4233,17 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     <span className="text-xs text-gray-600">位置</span>
                   </button>
                   
-                  {/* 语音通话 */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowPlusMenu(false)
-                      setActivePanel(null)
-                      // 检测浏览器是否支持语音识别
-                      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-                      if (!SpeechRecognition) {
-                        setSpeechSupported(false)
-                      }
-                      setShowCallScreen(true)
-                    }}
-                    className="flex flex-col items-center gap-1"
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-green-500/80 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
-                      </svg>
-                    </div>
-                    <span className="text-xs text-gray-600">电话</span>
-                  </button>
-
-                  {/* 日记（偷看） */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowPlusMenu(false)
-                      setActivePanel(null)
-                      setDiaryConfirmOpen(true)
-                    }}
-                    className="flex flex-col items-center gap-1"
-                  >
+                  {/* 转账 */}
+                  <button type="button" onClick={() => { setShowPlusMenu(false); setShowTransferModal(true) }} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h10.5A1.5 1.5 0 0118 6v14.25a.75.75 0 01-1.2.6l-2.1-1.575a1.5 1.5 0 00-1.8 0l-2.1 1.575a1.5 1.5 0 01-1.8 0l-2.1-1.575a.75.75 0 00-1.2.6V6A1.5 1.5 0 016 4.5z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 8h8M8 11h8M8 14h6" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">日记</span>
+                    <span className="text-xs text-gray-600">转账</span>
                   </button>
-
+                  
+                  {/* 第二排：关系/个人功能 */}
                   {/* 情侣空间 */}
                   <button
                     type="button"
@@ -4233,7 +4267,36 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     <span className="text-xs text-gray-600">情侣</span>
                   </button>
                   
-                  {/* 编辑（删除） */}
+                  {/* 经期 */}
+                  <button type="button" onClick={() => setActivePanel('period')} className="flex flex-col items-center gap-1">
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">经期</span>
+                  </button>
+                  
+                  {/* 日记 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlusMenu(false)
+                      setActivePanel(null)
+                      setDiaryConfirmOpen(true)
+                    }}
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h10.5A1.5 1.5 0 0118 6v14.25a.75.75 0 01-1.2.6l-2.1-1.575a1.5 1.5 0 00-1.8 0l-2.1 1.575a1.5 1.5 0 01-1.8 0l-2.1-1.575a.75.75 0 00-1.2.6V6A1.5 1.5 0 016 4.5z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 8h8M8 11h8M8 14h6" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">日记</span>
+                  </button>
+                  
+                  {/* 编辑 */}
                   <button type="button" onClick={() => { setShowPlusMenu(false); setEditMode(true) }} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -4241,6 +4304,17 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                       </svg>
                     </div>
                     <span className="text-xs text-gray-600">编辑</span>
+                  </button>
+                  
+                  {/* 第三排：娱乐功能 */}
+                  {/* 音乐 */}
+                  <button type="button" onClick={() => setActivePanel('music')} className="flex flex-col items-center gap-1">
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5l-10.5 3v7.803a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66A2.25 2.25 0 009 12.553z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">音乐</span>
                   </button>
                   
                   {/* 斗地主 */}
