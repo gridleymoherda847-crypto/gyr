@@ -554,16 +554,16 @@ export default function ChatScreen() {
     setCallReplyText('')
     
     try {
-      // 精简 prompt，加快 LLM 响应
-      const systemPrompt = `你是${character.name}。人设：${character.prompt || '无'}。关系：${character.relationship || '无'}。
-语音通话中，用一句话简短回复，20字以内，口语化，可用语气词。不要用任何格式符号。`
+      // prompt：像真人打电话，多说几句
+      const systemPrompt = `你是${character.name}，正和用户打电话。人设：${character.prompt || '无'}。关系：${character.relationship || '无'}。
+像真人聊天，自然回应2-3句话，可以反问、关心、调侃，有情绪起伏。50字左右，口语化。不要格式符号。`
       
       const response = await callLLM([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: text },
-      ], undefined, { maxTokens: 80, temperature: 0.8 })
+      ], undefined, { maxTokens: 120, temperature: 0.9 })
       
-      const replyText = (response || '').trim().replace(/\n/g, ' ') || '嗯？'
+      const replyText = (response || '').trim().replace(/\n/g, '，') || '嗯？怎么了？'
       console.log('Voice call - LLM reply:', replyText)
       setCallReplyText(replyText) // 显示在通话界面
       
@@ -3918,28 +3918,38 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               /* 通话中 */
               <div className="flex flex-col items-center">
                 <div className="flex items-center justify-center gap-8">
-                  {/* 说话按钮 */}
+                  {/* 说话按钮 - 点击切换模式 */}
                   {speechSupported && (
                     <button
                       type="button"
-                      onMouseDown={startListening}
-                      onMouseUp={stopListening}
-                      onMouseLeave={stopListening}
-                      onTouchStart={startListening}
-                      onTouchEnd={stopListening}
+                      onClick={() => {
+                        if (callState === 'listening') {
+                          stopListening()
+                        } else if (callState === 'idle') {
+                          startListening()
+                        }
+                      }}
                       disabled={callState === 'thinking' || callState === 'speaking'}
                       className={`w-20 h-20 rounded-full flex items-center justify-center transition-all active:scale-95 ${
                         callState === 'listening' 
-                          ? 'bg-green-500 scale-110' 
+                          ? 'bg-red-500 scale-110 animate-pulse' 
                           : callState === 'thinking' || callState === 'speaking'
                             ? 'bg-gray-600 opacity-50'
                             : 'bg-green-600 hover:bg-green-500'
                       }`}
                     >
-                      <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-                      </svg>
+                      {callState === 'listening' ? (
+                        /* 录音中显示停止图标 */
+                        <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                          <rect x="6" y="6" width="12" height="12" rx="2" />
+                        </svg>
+                      ) : (
+                        /* 空闲时显示麦克风 */
+                        <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+                          <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                        </svg>
+                      )}
                     </button>
                   )}
                   
@@ -3958,7 +3968,12 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                 {/* 提示文字 */}
                 {speechSupported && callState === 'idle' && (
                   <div className="text-center mt-4 text-white/50 text-sm">
-                    按住绿色按钮说话
+                    点击开始说话
+                  </div>
+                )}
+                {speechSupported && callState === 'listening' && (
+                  <div className="text-center mt-4 text-red-300 text-sm animate-pulse">
+                    正在录音... 点击结束
                   </div>
                 )}
               </div>
