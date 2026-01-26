@@ -199,34 +199,36 @@ export default function MusicScreen() {
             </button>
             {showImportMenu && (
               <div 
-                className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50 min-w-[140px]"
-                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-[100] min-w-[160px]"
               >
-                <button
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
                     setShowImportMenu(false)
-                    // 延迟触发文件选择，确保菜单关闭后再打开
-                    setTimeout(() => fileInputRef.current?.click(), 50)
+                    setTimeout(() => {
+                      if (fileInputRef.current) {
+                        fileInputRef.current.click()
+                      }
+                    }, 100)
                   }}
-                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 active:bg-gray-100"
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 cursor-pointer active:bg-gray-100"
                 >
-                  <span>📁</span> 本地文件
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
+                  <span className="text-lg">📁</span> 
+                  <span>本地文件</span>
+                </div>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
                     setShowImportMenu(false)
                     setShowUrlInput(true)
                   }}
-                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 active:bg-gray-100"
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 cursor-pointer active:bg-gray-100"
                 >
-                  <span>🔗</span> 链接导入
-                </button>
+                  <span className="text-lg">🔗</span> 
+                  <span>链接导入</span>
+                </div>
               </div>
             )}
           </div>
@@ -660,10 +662,10 @@ export default function MusicScreen() {
         </div>
       )}
       
-      {/* 点击其他地方关闭菜单 - 放在菜单下层 */}
+      {/* 点击其他地方关闭菜单 */}
       {showImportMenu && (
         <div 
-          className="fixed inset-0 z-30" 
+          className="fixed inset-0 z-[99]" 
           onClick={() => setShowImportMenu(false)}
         />
       )}
