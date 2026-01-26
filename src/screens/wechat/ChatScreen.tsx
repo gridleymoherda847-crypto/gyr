@@ -537,37 +537,63 @@ export default function ChatScreen() {
         type: 'text',
       })
       
-      // 调用 LLM 获取回复
+      // 调用 LLM 获取回复（生成多条消息，但只调用一次）
       const systemPrompt = `你是${character.name}，正在和用户进行语音通话。
 你的人设：${character.prompt || '（无）'}
 你们的关系：${character.relationship || '（无）'}
 你叫用户：${character.callMeName || '（未设置）'}
 
 【通话规则】
-- 这是实时语音通话，回复要简短自然，像真人打电话一样
-- 每次回复控制在1-2句话，不要太长
-- 用口语化的表达，可以有语气词（嗯、啊、哦）
+- 这是实时语音通话，回复要自然，像真人打电话一样
+- 可以回复1-4条消息，每条用换行分隔
+- 用口语化的表达，可以有语气词（嗯、啊、哦、嘿）
 - 根据你的性格和人设来回应
-- 不要使用任何指令格式如[转账:]、[位置:]等`
+- 总字数控制在100字以内
+- 不要使用任何指令格式如[转账:]、[位置:]等
+- 不要使用编号或序号`
       
       const response = await callLLM([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: text },
-      ], undefined, { maxTokens: 150, temperature: 0.9 })
+      ], undefined, { maxTokens: 200, temperature: 0.9 })
       
-      const replyText = (response || '').trim().slice(0, 200) || '嗯...'
+      // 分割成多条消息
+      const rawText = (response || '').trim() || '嗯...'
+      const splitMessages = (raw: string) => {
+        const lines = raw.split('\n').map(s => s.trim()).filter(Boolean)
+        if (lines.length === 0) return ['嗯...']
+        // 合并太短的片段
+        const merged: string[] = []
+        for (const line of lines) {
+          if (merged.length === 0) { merged.push(line); continue }
+          const last = merged[merged.length - 1]
+          if (last.length < 6 || line.length < 6) {
+            merged[merged.length - 1] = `${last}${line}`
+          } else {
+            merged.push(line)
+          }
+        }
+        return merged.slice(0, 5) // 最多5条
+      }
       
-      // 添加 AI 回复到聊天记录
-      addMessage({
-        characterId: character.id,
-        content: replyText,
-        isUser: false,
-        type: 'text',
-      })
+      const messages = splitMessages(rawText)
+      const fullText = messages.join('') // 合并成一段用于TTS
       
-      // 生成语音并播放
+      // 添加多条 AI 回复到聊天记录（间隔显示）
+      for (let i = 0; i < messages.length; i++) {
+        setTimeout(() => {
+          addMessage({
+            characterId: character.id,
+            content: messages[i],
+            isUser: false,
+            type: 'text',
+          })
+        }, i * 300) // 每条间隔300ms显示
+      }
+      
+      // 生成语音并播放（只调用一次TTS，播放完整内容）
       setCallState('speaking')
-      const voiceUrl = await generateVoiceUrl(replyText)
+      const voiceUrl = await generateVoiceUrl(fullText.slice(0, 500))
       
       if (voiceUrl) {
         // 停止之前的播放
@@ -589,8 +615,10 @@ export default function ChatScreen() {
         
         await audio.play()
       } else {
-        // TTS 不可用，直接回到空闲状态
-        setCallState('idle')
+        // TTS 不可用，等消息显示完再回到空闲状态
+        setTimeout(() => {
+          setCallState('idle')
+        }, messages.length * 300 + 500)
       }
     } catch (err) {
       console.error('Voice call error:', err)
