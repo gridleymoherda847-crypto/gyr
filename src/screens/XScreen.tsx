@@ -1588,6 +1588,8 @@ export default function XScreen() {
     <button
       key={p.id}
       type="button"
+      // 性能优化：长列表在移动端减少离屏渲染
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 220px' }}
       className="w-full text-left px-3 py-3 border-b border-black/5 bg-white active:bg-gray-50"
       onClick={() => {
         setView('post')
@@ -1864,6 +1866,8 @@ export default function XScreen() {
                     key={t.id}
                     type="button"
                     onClick={() => openDMThread(t.id)}
+                    // 性能优化：私信列表长时减少离屏渲染
+                    style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 110px' }}
                     className="w-full text-left px-3 py-3 border-b border-black/5 active:bg-gray-50"
                   >
                     <div className="flex items-center gap-3">
