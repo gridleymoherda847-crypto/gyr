@@ -423,18 +423,34 @@ export default function ChatScreen() {
         console.log('TTS response:', data)
         if (data.base_resp?.status_code === 0 && data.data?.audio) {
           let audioUrl = data.data.audio
-          if (!audioUrl.startsWith('http')) {
-            const bytes = new Uint8Array(audioUrl.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || [])
+          
+          // 如果返回的是 URL，直接使用
+          if (audioUrl.startsWith('http')) {
+            console.log('TTS audio URL (direct):', audioUrl)
+            return audioUrl
+          }
+          
+          // 如果返回的是 hex 编码的音频数据，转换为 blob URL
+          // 这种方式在手机端更兼容
+          try {
+            const hexString = audioUrl
+            const bytes = new Uint8Array(hexString.length / 2)
+            for (let i = 0; i < hexString.length; i += 2) {
+              bytes[i / 2] = parseInt(hexString.substring(i, i + 2), 16)
+            }
             const blob = new Blob([bytes], { type: 'audio/mp3' })
             audioUrl = URL.createObjectURL(blob)
+            console.log('TTS audio URL (blob):', audioUrl, 'size:', blob.size)
+            return audioUrl
+          } catch (hexErr) {
+            console.error('Failed to parse hex audio:', hexErr)
           }
-          console.log('TTS audio URL:', audioUrl)
-          return audioUrl
         } else {
           console.error('TTS error:', data.base_resp)
         }
       } else {
-        console.error('TTS request failed:', response.status, await response.text())
+        const errText = await response.text()
+        console.error('TTS request failed:', response.status, errText)
       }
       return null
     } catch (err) {
@@ -618,9 +634,14 @@ ${recentChat || '（暂无）'}
       if (voiceUrl) {
         if (callAudioRef.current) {
           callAudioRef.current.pause()
+          callAudioRef.current = null
         }
         
-        const audio = new Audio(voiceUrl)
+        const audio = new Audio()
+        // 手机端兼容性设置
+        audio.preload = 'auto'
+        audio.crossOrigin = 'anonymous'
+        
         callAudioRef.current = audio
         
         audio.onended = () => {
@@ -629,14 +650,29 @@ ${recentChat || '（暂无）'}
           callAudioRef.current = null
         }
         audio.onerror = (e) => {
-          console.error('Audio play error:', e)
+          console.error('Audio play error:', e, audio.error)
           setCallState('idle')
           callAudioRef.current = null
         }
         
+        // 先设置 src 再播放（手机端兼容）
+        audio.src = voiceUrl
+        
         console.log('Voice call - playing audio...')
-        await audio.play()
-        console.log('Voice call - audio playing')
+        try {
+          // 手机端可能需要 load
+          audio.load()
+          await audio.play()
+          console.log('Voice call - audio playing')
+        } catch (playErr: any) {
+          console.error('Audio play failed:', playErr)
+          // 手机端如果自动播放失败，尝试用用户交互触发
+          if (playErr.name === 'NotAllowedError') {
+            console.log('Auto-play blocked, will retry on next user interaction')
+          }
+          setCallState('idle')
+          callAudioRef.current = null
+        }
       } else {
         // TTS 未配置，提示用户
         console.log('TTS not available - check: voiceId and apiKey in settings')

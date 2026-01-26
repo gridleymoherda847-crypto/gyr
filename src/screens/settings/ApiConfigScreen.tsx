@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS, type TTSRegion, type TTSVoice } from '../../context/OSContext'
 import AppHeader from '../../components/AppHeader'
@@ -125,9 +125,17 @@ export default function ApiConfigScreen() {
         setRecordingTime(prev => prev + 1)
       }, 1000)
       
-    } catch (err) {
+    } catch (err: any) {
       console.error('Recording error:', err)
-      setCloneError('无法访问麦克风，请检查权限设置')
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setCloneError('麦克风权限被拒绝。请点击浏览器地址栏左侧的锁图标，允许麦克风权限后刷新页面重试。')
+      } else if (err.name === 'NotFoundError') {
+        setCloneError('未检测到麦克风设备')
+      } else if (err.name === 'NotSupportedError' || err.name === 'TypeError') {
+        setCloneError('当前浏览器不支持录音，请使用 Chrome 或 Safari')
+      } else {
+        setCloneError(`录音失败: ${err.message || '未知错误'}`)
+      }
     }
   }
   
@@ -211,6 +219,26 @@ export default function ApiConfigScreen() {
     })
     setTtsSaved(true); setTimeout(() => setTtsSaved(false), 2000)
   }
+  
+  // 自动保存 TTS 配置（当关键设置变化时）
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    // 跳过首次渲染
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    // 自动保存
+    setTTSConfig({ 
+      apiKey: ttsApiKey, 
+      voiceId: ttsVoiceId, 
+      model: ttsModel, 
+      speed: ttsSpeed, 
+      enabled: ttsEnabled,
+      region: ttsRegion,
+      customVoices: customVoices,
+    })
+  }, [ttsApiKey, ttsVoiceId, ttsModel, ttsSpeed, ttsEnabled, ttsRegion, customVoices, setTTSConfig])
   
   const handleTestTTS = async () => {
     if (!ttsApiKey) {
