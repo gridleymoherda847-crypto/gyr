@@ -1289,18 +1289,15 @@ ${recentTimeline || '（无）'}
               
               if (sendAsVoice) {
                 // 发送语音消息（先创建消息，再异步生成语音URL）
+                // 注意：已移除语音转文字功能，优先保证语音输出速度
                 const voiceDuration = Math.max(2, Math.min(60, Math.ceil(textContent.length / 5)))
-                
-                // 语音转文字：如果是非中文角色且开启了翻译，显示中文翻译而不是原文
-                // voiceText 存原文（用于TTS朗读），voiceTextDisplay 存显示文本（可能是翻译）
-                const voiceDisplayText = dual ? dual.zh : textContent
                 
                 const voiceMsg = addMessage({
                   characterId: character.id,
                   content: '[语音消息]',
                   isUser: false,
                   type: 'voice',
-                  voiceText: voiceDisplayText, // 显示的文字（翻译模式下显示中文）
+                  voiceText: '', // 不再显示文字（提升速度）
                   voiceOriginalText: textContent, // 原文（用于TTS朗读）
                   voiceDuration: voiceDuration,
                   voiceUrl: '', // 先为空，异步填充

@@ -34,6 +34,37 @@ export default function ApiConfigScreen() {
   const { llmConfig, setLLMConfig, ttsConfig, setTTSConfig, textToSpeech, fontColor, fetchAvailableModels } = useOS()
   const fileInputRef = useRef<HTMLInputElement>(null)
   
+  // API 配置条目类型
+  type ApiConfigItem = {
+    id: string
+    name: string // 备注名
+    baseUrl: string
+    apiKey: string
+    selectedModel: string
+    models: string[]
+  }
+  
+  // 从 localStorage 加载保存的 API 配置列表
+  const loadSavedConfigs = (): ApiConfigItem[] => {
+    try {
+      const saved = localStorage.getItem('mina_api_configs')
+      return saved ? JSON.parse(saved) : []
+    } catch { return [] }
+  }
+  
+  // 保存 API 配置列表到 localStorage
+  const saveSavedConfigs = (configs: ApiConfigItem[]) => {
+    try {
+      localStorage.setItem('mina_api_configs', JSON.stringify(configs))
+    } catch {}
+  }
+  
+  // API 配置条目列表
+  const [savedConfigs, setSavedConfigs] = useState<ApiConfigItem[]>(loadSavedConfigs)
+  const [showSavedConfigs, setShowSavedConfigs] = useState(false)
+  const [showAddConfig, setShowAddConfig] = useState(false)
+  const [newConfigName, setNewConfigName] = useState('')
+  
   // LLM 配置状态
   const [baseUrl, setBaseUrl] = useState(llmConfig.apiBaseUrl)
   const [apiKey, setApiKey] = useState(llmConfig.apiKey)
@@ -42,6 +73,11 @@ export default function ApiConfigScreen() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [currentConfigId, setCurrentConfigId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('mina_current_api_config_id') || null
+    } catch { return null }
+  })
   
   // TTS 配置状态
   const [ttsApiKey, setTtsApiKey] = useState(ttsConfig.apiKey)
@@ -115,6 +151,55 @@ export default function ApiConfigScreen() {
     saveAdvancedConfig({ temperature, topP, maxTokens, frequencyPenalty, presencePenalty })
     setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
+  
+  // 保存当前配置为新条目
+  const handleSaveAsConfig = () => {
+    if (!newConfigName.trim()) return
+    const newConfig: ApiConfigItem = {
+      id: `config_${Date.now()}`,
+      name: newConfigName.trim(),
+      baseUrl,
+      apiKey,
+      selectedModel,
+      models,
+    }
+    const updated = [...savedConfigs, newConfig]
+    setSavedConfigs(updated)
+    saveSavedConfigs(updated)
+    setCurrentConfigId(newConfig.id)
+    localStorage.setItem('mina_current_api_config_id', newConfig.id)
+    setShowAddConfig(false)
+    setNewConfigName('')
+  }
+  
+  // 加载已保存的配置
+  const loadConfig = (config: ApiConfigItem) => {
+    setBaseUrl(config.baseUrl)
+    setApiKey(config.apiKey)
+    setSelectedModel(config.selectedModel)
+    setModels(config.models)
+    setCurrentConfigId(config.id)
+    localStorage.setItem('mina_current_api_config_id', config.id)
+    // 同时更新到全局配置
+    setLLMConfig({ 
+      apiBaseUrl: config.baseUrl, 
+      apiKey: config.apiKey, 
+      selectedModel: config.selectedModel, 
+      availableModels: config.models 
+    })
+  }
+  
+  // 删除已保存的配置
+  const deleteConfig = (id: string) => {
+    const updated = savedConfigs.filter(c => c.id !== id)
+    setSavedConfigs(updated)
+    saveSavedConfigs(updated)
+    if (currentConfigId === id) {
+      setCurrentConfigId(null)
+      localStorage.removeItem('mina_current_api_config_id')
+    }
+  }
+  
   
   // 保存高级参数到 localStorage
   const saveAdvancedConfig = (params: { temperature: number; topP: number; maxTokens: number; frequencyPenalty: number; presencePenalty: number }) => {
@@ -381,52 +466,151 @@ export default function ApiConfigScreen() {
             {/* 折叠内容 */}
             {showLLMSection && (
               <div className="p-3 sm:p-4 pt-0 space-y-3 border-t border-white/10">
-                <div className="space-y-2">
-                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
-                  <input
-                    type="url"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder="https://api.openai.com/v1"
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-                    style={{ color: fontColor.value }}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Key</label>
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="sk-xxxxxxxx"
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-                    style={{ color: fontColor.value }}
-                  />
-                </div>
-
-                <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
-                  {loading ? '获取中...' : '获取模型列表'}
+          
+          {/* 已保存的 API 配置列表 */}
+          {savedConfigs.length > 0 && (
+            <div className="space-y-2 mb-4">
+              <div className="flex items-center justify-between">
+                <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
+                  我的 API 配置 ({savedConfigs.length})
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowSavedConfigs(!showSavedConfigs)}
+                  className="text-xs text-blue-500"
+                >
+                  {showSavedConfigs ? '收起' : '展开'}
                 </button>
-
-                {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">{error}</div>}
-
-                {models.length > 0 && (
-                  <div className="space-y-2">
-                    <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
-                    <div className="relative">
-                      <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base" style={{ color: fontColor.value }}>
-                        <option value="" disabled>请选择模型</option>
-                        {models.map((model) => <option key={model} value={model}>{model}</option>)}
-                      </select>
-                      <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </div>
+              
+              {showSavedConfigs && (
+                <div className="space-y-2">
+                  {savedConfigs.map(config => (
+                    <div 
+                      key={config.id}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all ${
+                        currentConfigId === config.id 
+                          ? 'bg-green-50/80 border-green-300' 
+                          : 'bg-white/50 border-white/30 hover:bg-white/70'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => loadConfig(config)}
+                        className="flex-1 text-left"
+                      >
+                        <div className="flex items-center gap-2">
+                          {currentConfigId === config.id && (
+                            <span className="text-green-500 text-xs">✓ 使用中</span>
+                          )}
+                          <span className="text-sm font-medium" style={{ color: fontColor.value }}>
+                            {config.name}
+                          </span>
+                        </div>
+                        <div className="text-xs opacity-50 truncate" style={{ color: fontColor.value }}>
+                          {config.selectedModel || config.baseUrl}
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteConfig(config.id)}
+                        className="text-red-400 text-xs px-2 py-1 hover:text-red-600"
+                      >
+                        删除
+                      </button>
                     </div>
-                  </div>
-                )}
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
+          <div className="space-y-2">
+            <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
+            <input
+              type="url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.openai.com/v1"
+              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+              style={{ color: fontColor.value }}
+            />
+          </div>
 
-                <button onClick={handleSave} className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect ${saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'}`}>
-                  {saved ? '✓ 已保存' : '保存 AI 配置'}
+          <div className="space-y-2">
+            <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Key</label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-xxxxxxxx"
+              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+              style={{ color: fontColor.value }}
+            />
+          </div>
+
+          <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
+            {loading ? '获取中...' : '获取模型列表'}
+          </button>
+
+          {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">{error}</div>}
+
+          {models.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
+              <div className="relative">
+                <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base" style={{ color: fontColor.value }}>
+                  <option value="" disabled>请选择模型</option>
+                  {models.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+                <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={handleSave} className={`flex-1 py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect ${saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'}`}>
+              {saved ? '✓ 已保存' : '保存并使用'}
+            </button>
+            <button 
+              onClick={() => setShowAddConfig(true)} 
+              className="px-4 py-3 sm:py-3.5 rounded-2xl font-semibold text-blue-500 bg-blue-50 hover:bg-blue-100 transition-all press-effect border border-blue-200"
+              title="另存为新配置"
+            >
+              + 存
+            </button>
+          </div>
+          
+          {/* 另存为新配置弹窗 */}
+          {showAddConfig && (
+            <div className="mt-3 p-3 rounded-xl bg-blue-50/80 border border-blue-200 space-y-2">
+              <div className="text-sm font-medium" style={{ color: fontColor.value }}>给这个配置起个名字</div>
+              <input
+                type="text"
+                value={newConfigName}
+                onChange={(e) => setNewConfigName(e.target.value)}
+                placeholder="例如：Gemini Pro、Claude 3.5"
+                className="w-full px-3 py-2 rounded-lg bg-white border border-blue-200 text-sm outline-none focus:border-blue-400"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddConfig(false); setNewConfigName('') }}
+                  className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm"
+                >
+                  取消
                 </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAsConfig}
+                  disabled={!newConfigName.trim()}
+                  className="flex-1 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium disabled:opacity-50"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          )}
                 
                 {/* 高级参数设置 */}
                 <div className="mt-4 pt-4 border-t border-white/20 space-y-4">
@@ -947,7 +1131,7 @@ export default function ApiConfigScreen() {
                         className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-pink-500 text-white font-medium text-sm disabled:opacity-50 press-effect"
                       >
                         {cloneLoading ? '正在克隆...' : '📤 选择音频文件并克隆'}
-                      </button>
+          </button>
                       
                       <div className="text-xs text-center opacity-50" style={{ color: fontColor.value }}>
                         手机端推荐：先用录音App录好，再点上面按钮选择
