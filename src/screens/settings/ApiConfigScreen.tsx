@@ -439,13 +439,20 @@ export default function ApiConfigScreen() {
         <AppHeader title="API 配置" onBack={() => navigate('/apps/settings')} />
         
         <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 space-y-4 sm:space-y-5">
-          {/* AI 对话配置区域 - 不折叠 */}
-          <div className="bg-white/30 rounded-2xl overflow-hidden p-3 sm:p-4 space-y-4">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-xl">🤖</span>
-              <h3 className="text-sm font-semibold" style={{ color: fontColor.value }}>
-                AI 对话配置
-              </h3>
+          {/* AI 对话配置区域 */}
+          <div className="bg-white/40 rounded-2xl overflow-hidden p-4 space-y-4 border border-white/50 shadow-sm">
+            <div className="flex items-center gap-3 pb-3 border-b border-white/30">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-cyan-500 flex items-center justify-center shadow-sm">
+                <span className="text-xl">🤖</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold" style={{ color: fontColor.value }}>
+                  AI 对话配置
+                </h3>
+                <p className="text-xs opacity-50" style={{ color: fontColor.value }}>
+                  配置 LLM API 让角色能对话
+                </p>
+              </div>
             </div>
             
             {/* 我的 API 配置列表 */}
@@ -715,16 +722,18 @@ export default function ApiConfigScreen() {
           </div>
           
           {/* TTS 语音配置区域 - 可折叠 */}
-          <div className="bg-white/30 rounded-2xl overflow-hidden">
+          <div className="bg-white/40 rounded-2xl overflow-hidden border border-white/50 shadow-sm">
             {/* 折叠头部 */}
             <button
               onClick={() => setShowTTSSection(!showTTSSection)}
-              className="w-full flex items-center justify-between p-3 sm:p-4 hover:bg-white/10 transition-colors"
+              className="w-full flex items-center justify-between p-4 hover:bg-white/10 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">🎙️</span>
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center shadow-sm">
+                  <span className="text-xl">🎙️</span>
+                </div>
                 <div className="text-left">
-                  <h3 className="text-sm font-semibold" style={{ color: fontColor.value }}>
+                  <h3 className="text-sm font-bold" style={{ color: fontColor.value }}>
                     语音配置
                   </h3>
                   <p className="text-xs opacity-50" style={{ color: fontColor.value }}>
