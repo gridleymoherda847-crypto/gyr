@@ -19,9 +19,12 @@ export default function MusicScreen() {
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importSongName, setImportSongName] = useState('')
   const [importSongArtist, setImportSongArtist] = useState('本地音乐')
-  const [importSongData, setImportSongData] = useState<{ base64: string; duration: number } | null>(null)
+  const [importSongData, setImportSongData] = useState<{ url: string; duration: number; isUrl?: boolean } | null>(null)
   const [importLoading, setImportLoading] = useState(false)
   const [importSuccess, setImportSuccess] = useState(false)
+  const [showImportMenu, setShowImportMenu] = useState(false)
+  const [showUrlInput, setShowUrlInput] = useState(false)
+  const [importUrl, setImportUrl] = useState('')
 
   // 搜索过滤
   const filteredSongs = musicPlaylist.filter(song => {
@@ -42,11 +45,6 @@ export default function MusicScreen() {
 
   const currentTime = currentSong ? (musicProgress / 100) * currentSong.duration : 0
 
-  // 导入音乐
-  const handleImportMusic = () => {
-    fileInputRef.current?.click()
-  }
-
   // 文件转 base64
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -63,12 +61,14 @@ export default function MusicScreen() {
 
     const file = files[0]
     if (!file.type.startsWith('audio/')) {
+      alert('请选择音频文件')
+      e.target.value = ''
       return
     }
 
-    // 检查文件大小（限制 15MB）
-    if (file.size > 15 * 1024 * 1024) {
-      alert('音频文件太大，最大支持 15MB')
+    // 检查文件大小（限制 10MB，减少内存压力）
+    if (file.size > 10 * 1024 * 1024) {
+      alert('音频文件太大，最大支持 10MB\n\n建议使用链接导入大文件')
       e.target.value = ''
       return
     }
@@ -76,21 +76,30 @@ export default function MusicScreen() {
     setImportLoading(true)
     
     try {
-      const fileName = file.name.replace(/\.[^/.]+$/, '') // 去掉扩展名
+      const fileName = file.name.replace(/\.[^/.]+$/, '')
       const base64 = await fileToBase64(file)
       
-      // 创建音频元素获取时长
-      const audio = new Audio(base64)
-      await new Promise<void>((resolve) => {
-        audio.addEventListener('loadedmetadata', () => resolve())
-        audio.addEventListener('error', () => resolve())
-      })
-      
-      const duration = Math.floor(audio.duration) || 180
+      // 获取时长，加超时保护
+      let duration = 180
+      try {
+        const audio = new Audio(base64)
+        duration = await new Promise<number>((resolve) => {
+          const timeout = setTimeout(() => resolve(180), 3000) // 3秒超时
+          audio.addEventListener('loadedmetadata', () => {
+            clearTimeout(timeout)
+            resolve(Math.floor(audio.duration) || 180)
+          })
+          audio.addEventListener('error', () => {
+            clearTimeout(timeout)
+            resolve(180)
+          })
+          audio.load()
+        })
+      } catch { /* ignore */ }
       
       setImportSongName(fileName)
       setImportSongArtist('本地音乐')
-      setImportSongData({ base64, duration })
+      setImportSongData({ url: base64, duration })
       setShowImportDialog(true)
     } catch (err) {
       alert('导入失败，请重试')
@@ -98,6 +107,29 @@ export default function MusicScreen() {
       setImportLoading(false)
       e.target.value = ''
     }
+  }
+
+  // 从链接导入音乐
+  const handleUrlImport = () => {
+    const url = importUrl.trim()
+    if (!url) return
+    
+    // 简单验证URL
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      alert('请输入有效的音乐链接（http/https开头）')
+      return
+    }
+    
+    // 从URL提取文件名
+    const urlParts = url.split('/').pop() || ''
+    const fileName = urlParts.split('?')[0].replace(/\.[^/.]+$/, '') || '网络音乐'
+    
+    setImportSongName(decodeURIComponent(fileName))
+    setImportSongArtist('网络音乐')
+    setImportSongData({ url, duration: 180, isUrl: true })
+    setShowUrlInput(false)
+    setImportUrl('')
+    setShowImportDialog(true)
   }
 
   const confirmImport = () => {
@@ -108,7 +140,7 @@ export default function MusicScreen() {
       title: importSongName.trim() || '未命名',
       artist: importSongArtist.trim() || '本地音乐',
       cover: '/icons/music-cover.png',
-      url: importSongData.base64,
+      url: importSongData.url,
       duration: importSongData.duration,
     })
     
@@ -155,20 +187,45 @@ export default function MusicScreen() {
             </div>
           </div>
           
-          <button
-            type="button"
-            onClick={handleImportMusic}
-            className="w-8 h-8 rounded-full bg-[#31c27c] flex items-center justify-center"
-          >
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowImportMenu(!showImportMenu)}
+              className="w-8 h-8 rounded-full bg-[#31c27c] flex items-center justify-center"
+            >
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            {showImportMenu && (
+              <div className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50 min-w-[140px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowImportMenu(false)
+                    fileInputRef.current?.click()
+                  }}
+                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <span>📁</span> 本地文件
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowImportMenu(false)
+                    setShowUrlInput(true)
+                  }}
+                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <span>🔗</span> 链接导入
+                </button>
+              </div>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"
             accept="audio/*"
-            multiple
             className="hidden"
             onChange={handleFileChange}
           />
@@ -548,6 +605,59 @@ export default function MusicScreen() {
           <span className="text-xl">✓</span>
           <span className="font-medium">导入成功！</span>
         </div>
+      )}
+      
+      {/* 链接导入对话框 */}
+      {showUrlInput && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center px-6 bg-black/50">
+          <div className="w-full max-w-[300px] rounded-2xl bg-white p-4 shadow-xl">
+            <div className="text-center mb-4">
+              <div className="text-lg font-semibold text-gray-800">🔗 链接导入</div>
+              <div className="text-xs text-gray-500 mt-1">输入音乐文件的直链地址</div>
+            </div>
+            
+            <input
+              type="text"
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 text-sm outline-none mb-3"
+              placeholder="https://example.com/music.mp3"
+            />
+            
+            <div className="text-xs text-gray-400 mb-3">
+              提示：链接必须是可直接播放的音频文件地址（.mp3/.m4a等）
+            </div>
+            
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUrlInput(false)
+                  setImportUrl('')
+                }}
+                className="flex-1 py-2 rounded-full border border-gray-300 text-gray-600 text-sm"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleUrlImport}
+                disabled={!importUrl.trim()}
+                className="flex-1 py-2 rounded-full bg-[#31c27c] text-white text-sm font-medium disabled:opacity-50"
+              >
+                下一步
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 点击其他地方关闭菜单 */}
+      {showImportMenu && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => setShowImportMenu(false)}
+        />
       )}
     </PageContainer>
   )

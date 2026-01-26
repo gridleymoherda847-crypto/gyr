@@ -13,7 +13,7 @@ export default function MeTab({ onBack }: Props) {
   const { fontColor } = useOS()
   const { 
     userSettings, updateUserSettings,
-    userPersonas, addUserPersona, deleteUserPersona, getUserPersona,
+    userPersonas, addUserPersona, updateUserPersona, deleteUserPersona, getUserPersona,
     walletBalance
   } = useWeChat()
 
@@ -30,6 +30,10 @@ export default function MeTab({ onBack }: Props) {
   const personaAvatarRef = useRef<HTMLInputElement>(null)
   const [tipOpen, setTipOpen] = useState(false)
   const [deletePersonaId, setDeletePersonaId] = useState<string | null>(null)
+  // 编辑人设状态
+  const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null)
+  const [editPersona, setEditPersona] = useState({ name: '', avatar: '', description: '' })
+  const editPersonaAvatarRef = useRef<HTMLInputElement>(null)
 
   const currentPersona = userSettings.currentPersonaId 
     ? getUserPersona(userSettings.currentPersonaId) 
@@ -212,6 +216,21 @@ export default function MeTab({ onBack }: Props) {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
+                        setEditPersona({
+                          name: persona.name,
+                          avatar: persona.avatar || '',
+                          description: persona.description || ''
+                        })
+                        setEditingPersonaId(persona.id)
+                      }}
+                      className="text-blue-500 text-xs"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
                         setDeletePersonaId(persona.id)
                       }}
                       className="text-red-500 text-xs"
@@ -283,6 +302,86 @@ export default function MeTab({ onBack }: Props) {
                 placeholder="描述一下这个人设的性格特点..."
                 value={newPersona.description}
                 onChange={(e) => setNewPersona(prev => ({ ...prev, description: e.target.value }))}
+                className="w-full mt-1 px-4 py-3 rounded-xl bg-gray-50 outline-none text-[#000] h-32 resize-none"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 编辑人设弹窗 */}
+      {editingPersonaId && (
+        <div className="absolute inset-0 bg-white z-[60] flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b">
+            <button type="button" onClick={() => setEditingPersonaId(null)} className="text-gray-500">
+              取消
+            </button>
+            <span className="font-semibold text-[#000]">编辑人设</span>
+            <button 
+              type="button" 
+              onClick={() => {
+                if (!editPersona.name.trim()) {
+                  setTipOpen(true)
+                  return
+                }
+                updateUserPersona(editingPersonaId, editPersona)
+                setEditingPersonaId(null)
+              }}
+              className="text-[#07C160] font-medium text-sm"
+            >
+              保存
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4">
+            {/* 头像 */}
+            <div 
+              className="w-20 h-20 mx-auto rounded-xl overflow-hidden bg-gray-200 cursor-pointer"
+              onClick={() => editPersonaAvatarRef.current?.click()}
+            >
+              {editPersona.avatar ? (
+                <img src={editPersona.avatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400 text-2xl">+</div>
+              )}
+            </div>
+            <input
+              ref={editPersonaAvatarRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  const reader = new FileReader()
+                  reader.onload = (event) => {
+                    setEditPersona(prev => ({ ...prev, avatar: event.target?.result as string }))
+                  }
+                  reader.readAsDataURL(file)
+                }
+              }}
+            />
+            <div className="text-center text-xs text-gray-400 mt-2">点击更换头像</div>
+
+            {/* 名称 */}
+            <div className="mt-6">
+              <label className="text-sm text-gray-600">人设名称</label>
+              <input
+                type="text"
+                placeholder="例如：温柔小姐姐"
+                value={editPersona.name}
+                onChange={(e) => setEditPersona(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full mt-1 px-4 py-3 rounded-xl bg-gray-50 outline-none text-[#000]"
+              />
+            </div>
+
+            {/* 描述 */}
+            <div className="mt-4">
+              <label className="text-sm text-gray-600">人设描述</label>
+              <textarea
+                placeholder="描述一下这个人设的性格特点..."
+                value={editPersona.description}
+                onChange={(e) => setEditPersona(prev => ({ ...prev, description: e.target.value }))}
                 className="w-full mt-1 px-4 py-3 rounded-xl bg-gray-50 outline-none text-[#000] h-32 resize-none"
               />
             </div>
