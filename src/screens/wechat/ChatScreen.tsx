@@ -3126,12 +3126,12 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       const duration = msg.voiceDuration || 3
       const isPlaying = playingVoiceId === msg.id
       const hasUrl = !!msg.voiceUrl
-      // 语音条宽度根据时长变化（最小80px，最大200px）
-      const barWidth = Math.min(200, Math.max(80, 60 + duration * 4))
+      // 语音条宽度根据时长变化（最小140px，最大280px）- 加宽了
+      const barWidth = Math.min(280, Math.max(140, 100 + duration * 6))
       
       return (
-        <div className="min-w-[100px] max-w-[250px]">
-          {/* 语音条 */}
+        <div className="min-w-[140px] max-w-[300px]">
+          {/* 语音条 - 加宽加高 */}
           <button
             type="button"
             onClick={() => {
@@ -3140,57 +3140,65 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               }
             }}
             disabled={!hasUrl}
-            className={`flex items-center gap-2 px-3 py-2 rounded-2xl transition-all active:scale-[0.98] ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all active:scale-[0.98] ${
               msg.isUser 
                 ? 'bg-green-500 text-white' 
-                : 'bg-white/90 text-gray-800 border border-gray-100'
+                : 'bg-white text-gray-800 shadow-sm border border-gray-100'
             } ${!hasUrl ? 'opacity-60' : ''}`}
             style={{ width: barWidth }}
           >
-            {/* 播放/加载图标 */}
+            {/* 播放/加载图标 - 播放按钮改为白色圆形 */}
             {!hasUrl ? (
-              <div className="w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0" />
+              <div className="w-8 h-8 rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0" />
             ) : isPlaying ? (
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                <div className={`w-1 h-3 rounded-full ${msg.isUser ? 'bg-white' : 'bg-green-500'} animate-pulse`} />
-                <div className={`w-1 h-4 rounded-full ${msg.isUser ? 'bg-white' : 'bg-green-500'} animate-pulse`} style={{ animationDelay: '0.1s' }} />
-                <div className={`w-1 h-3 rounded-full ${msg.isUser ? 'bg-white' : 'bg-green-500'} animate-pulse`} style={{ animationDelay: '0.2s' }} />
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                msg.isUser ? 'bg-white/20' : 'bg-gray-100'
+              }`}>
+                <div className="flex items-center gap-0.5">
+                  <div className={`w-1 h-3 rounded-full ${msg.isUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} />
+                  <div className={`w-1 h-4 rounded-full ${msg.isUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ animationDelay: '0.1s' }} />
+                  <div className={`w-1 h-3 rounded-full ${msg.isUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ animationDelay: '0.2s' }} />
+                </div>
               </div>
             ) : (
-              <svg className={`w-5 h-5 flex-shrink-0 ${msg.isUser ? 'text-white' : 'text-green-500'}`} fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                msg.isUser ? 'bg-white/20' : 'bg-gray-100'
+              }`}>
+                <svg className={`w-4 h-4 ${msg.isUser ? 'text-white' : 'text-gray-600'}`} fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
             )}
             
-            {/* 声波动画 */}
-            <div className="flex-1 flex items-center justify-end gap-0.5">
-              {[...Array(Math.min(8, Math.max(3, Math.floor(duration / 2))))].map((_, i) => (
+            {/* 声波动画 - 更多条更高 */}
+            <div className="flex-1 flex items-center justify-center gap-1">
+              {[...Array(Math.min(12, Math.max(5, Math.floor(duration / 1.5))))].map((_, i) => (
                 <div
                   key={i}
-                  className={`w-0.5 rounded-full transition-all ${
-                    msg.isUser ? 'bg-white/70' : 'bg-gray-400'
+                  className={`w-1 rounded-full transition-all ${
+                    msg.isUser ? 'bg-white/70' : 'bg-gray-300'
                   } ${isPlaying ? 'animate-pulse' : ''}`}
                   style={{ 
-                    height: `${8 + Math.random() * 8}px`,
-                    animationDelay: `${i * 0.1}s`
+                    height: `${10 + Math.random() * 12}px`,
+                    animationDelay: `${i * 0.08}s`
                   }}
                 />
               ))}
             </div>
             
             {/* 时长 */}
-            <span className={`text-xs flex-shrink-0 ${msg.isUser ? 'text-white/80' : 'text-gray-500'}`}>
+            <span className={`text-sm font-medium flex-shrink-0 ${msg.isUser ? 'text-white/90' : 'text-gray-500'}`}>
               {duration}"
             </span>
           </button>
           
           {/* 语音转文字（展开） */}
           {msg.voiceText && (
-            <div className={`mt-1.5 px-2 py-1.5 rounded-lg text-xs ${
+            <div className={`mt-2 px-3 py-2 rounded-xl text-sm ${
               msg.isUser ? 'bg-green-600/20 text-green-100' : 'bg-gray-50 text-gray-600 border border-gray-100'
             }`}>
-              <div className={`text-[10px] mb-0.5 ${msg.isUser ? 'text-green-200' : 'text-gray-400'}`}>转文字</div>
-              <div className="whitespace-pre-wrap break-words">{msg.voiceText}</div>
+              <div className={`text-xs mb-1 ${msg.isUser ? 'text-green-200' : 'text-gray-400'}`}>转文字</div>
+              <div className="whitespace-pre-wrap break-words leading-relaxed">{msg.voiceText}</div>
             </div>
           )}
         </div>
