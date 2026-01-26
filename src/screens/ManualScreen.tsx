@@ -473,6 +473,77 @@ export default function ManualScreen() {
         </div>
       ),
     },
+    {
+      id: 'disclaimer',
+      title: '免责声明',
+      icon: '⚖️',
+      content: (
+        <div className="space-y-4">
+          <div className="p-4 bg-red-50 rounded-2xl border border-red-200">
+            <h4 className="font-bold text-red-700 mb-3">📜 用户须知</h4>
+            <div className="text-sm text-red-600 space-y-3">
+              <p>使用本应用前，请仔细阅读以下声明：</p>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">1. 遵守法律法规</h4>
+            <p className="text-sm text-gray-600">
+              用户在使用本应用时，必须遵守中华人民共和国相关法律法规及当地法律法规。禁止利用本应用从事任何违法违规活动，包括但不限于：
+              <br />• 制作、传播违法信息
+              <br />• 侵犯他人合法权益
+              <br />• 危害国家安全和社会稳定
+              <br />• 传播淫秽、暴力、恐怖等有害内容
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">2. 内容责任</h4>
+            <p className="text-sm text-gray-600">
+              本应用为用户提供 AI 对话工具，AI 生成的内容由第三方大语言模型提供。用户对其创建的角色设定、对话内容等承担全部责任。开发者不对 AI 生成的任何内容负责。
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">3. API 服务</h4>
+            <p className="text-sm text-gray-600">
+              本应用需要用户自行配置第三方 API 服务（如 OpenAI、MiniMax 等）。用户应遵守相关服务商的使用条款和政策。API 产生的费用由用户自行承担。
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">4. 隐私保护</h4>
+            <p className="text-sm text-gray-600">
+              本应用的数据存储在用户本地浏览器中，不会上传至开发者服务器。但使用第三方 API 时，对话内容会发送至相应服务商。请注意保护个人隐私信息。
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">5. 未成年人保护</h4>
+            <p className="text-sm text-gray-600">
+              本应用仅供成年人使用。未满 18 周岁的用户请在监护人指导下使用，并确保使用内容健康向上。
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">6. 免责条款</h4>
+            <p className="text-sm text-gray-600">
+              开发者不对因使用本应用而产生的任何直接或间接损失承担责任，包括但不限于：
+              <br />• 数据丢失
+              <br />• API 费用损失
+              <br />• 设备故障
+              <br />• 因违规使用导致的法律责任
+            </p>
+          </div>
+          
+          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200">
+            <p className="text-sm text-amber-700 font-medium">
+              ⚠️ 继续使用本应用即表示您已阅读并同意以上所有条款。如不同意，请立即停止使用。
+            </p>
+          </div>
+        </div>
+      ),
+    },
   ]
   
   return (
@@ -481,7 +552,7 @@ export default function ManualScreen() {
         {/* 头部 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate('/')}
             className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
           >
             <svg className="w-6 h-6" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
