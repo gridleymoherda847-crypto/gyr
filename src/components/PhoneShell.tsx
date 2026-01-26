@@ -69,6 +69,9 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundColor: '#fef7f0',
+          // 用户自定义边距
+          paddingTop: 'var(--screen-padding-top)',
+          paddingBottom: 'var(--screen-padding-bottom)',
         }}
       >
         {/* 已移除“摄像头/灵动岛”模拟层：使用真机系统状态栏 */}

@@ -17,6 +17,7 @@ export default function CreateCharacterScreen() {
     open: false,
     lang: 'zh',
   })
+  const [promptExpanded, setPromptExpanded] = useState(false)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -133,26 +134,26 @@ export default function CreateCharacterScreen() {
 
           {/* 基本信息 */}
         <div className="bg-transparent mt-2">
-            <div className="flex items-center px-4 py-3 border-b border-gray-100">
-              <span className="text-[#000] w-20">名字</span>
+            <div className="flex flex-row flex-nowrap items-center px-4 py-3 border-b border-gray-100">
+              <span className="text-[#000] w-20 flex-shrink-0">名字</span>
               <input
                 type="text"
                 placeholder="请输入角色名字"
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="flex-1 text-right outline-none text-[#000] bg-transparent"
+                className="flex-1 min-w-0 text-right outline-none text-[#000] bg-transparent"
               />
             </div>
 
-            <div className="flex items-center px-4 py-3 border-b border-gray-100">
-              <span className="text-[#000] w-20">性别</span>
-              <div className="flex-1 flex justify-end gap-3">
+            <div className="flex flex-row flex-nowrap items-center px-4 py-3 border-b border-gray-100">
+              <span className="text-[#000] w-20 flex-shrink-0">性别</span>
+              <div className="flex-1 flex flex-row flex-nowrap justify-end gap-2">
                 {(['male', 'female', 'other'] as const).map(g => (
                   <button
                     key={g}
                     type="button"
                     onClick={() => setFormData(prev => ({ ...prev, gender: g }))}
-                    className={`px-3 py-1 rounded-full text-sm ${formData.gender === g ? 'bg-[#07C160] text-white' : 'bg-gray-100 text-gray-600'}`}
+                    className={`px-3 py-1 rounded-full text-sm flex-shrink-0 ${formData.gender === g ? 'bg-[#07C160] text-white' : 'bg-gray-100 text-gray-600'}`}
                   >
                     {g === 'male' ? '男' : g === 'female' ? '女' : '其他'}
                   </button>
@@ -160,78 +161,96 @@ export default function CreateCharacterScreen() {
               </div>
             </div>
 
-            <div className="flex items-center px-4 py-3 border-b border-gray-100">
-              <span className="text-[#000] w-20">语言</span>
+            <div className="flex flex-row flex-nowrap items-center px-4 py-3 border-b border-gray-100">
+              <span className="text-[#000] w-20 flex-shrink-0">语言</span>
               <button
                 type="button"
-                className="flex-1 text-right text-[#000] bg-transparent"
+                className="flex-1 min-w-0 text-right text-[#000] bg-transparent"
                 onClick={() => setLangPickerOpen(true)}
               >
                 {languageLabel(formData.language)}
               </button>
-              <svg className="w-5 h-5 text-gray-400 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-5 h-5 text-gray-400 ml-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </div>
 
-            <div className="flex items-center px-4 py-3 border-b border-gray-100">
-              <span className="text-[#000] w-20">国家/地区</span>
+            <div className="flex flex-row flex-nowrap items-center px-4 py-3 border-b border-gray-100">
+              <span className="text-[#000] w-16 flex-shrink-0 text-sm">国家/地区</span>
               <input
                 type="text"
-                placeholder="例如：日本 / 中国 / 法国"
+                placeholder="例如：日本"
                 value={formData.country}
                 onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
-                className="flex-1 text-right outline-none text-[#000] bg-transparent"
+                className="flex-1 min-w-0 text-right outline-none text-[#000] bg-transparent"
               />
             </div>
 
-            <div className="flex items-center px-4 py-3">
-              <span className="text-[#000] w-20">生日</span>
+            <div className="flex flex-row flex-nowrap items-center px-4 py-3">
+              <span className="text-[#000] w-20 flex-shrink-0">生日</span>
               <input
                 type="date"
                 value={formData.birthday}
                 onChange={(e) => setFormData(prev => ({ ...prev, birthday: e.target.value }))}
-                className="flex-1 text-right outline-none text-[#000] bg-transparent"
+                className="flex-1 min-w-0 text-right outline-none text-[#000] bg-transparent"
               />
             </div>
           </div>
 
           {/* 关系设定 */}
         <div className="bg-transparent mt-2">
-            <div className="flex items-center px-4 py-3 border-b border-gray-100">
-              <span className="text-[#000] w-24">TA叫我</span>
+            <div className="flex flex-row flex-nowrap items-center px-4 py-3 border-b border-gray-100">
+              <span className="text-[#000] w-20 flex-shrink-0">TA叫我</span>
               <input
                 type="text"
                 placeholder="例如：亲爱的、宝贝"
                 value={formData.callMeName}
                 onChange={(e) => setFormData(prev => ({ ...prev, callMeName: e.target.value }))}
-                className="flex-1 text-right outline-none text-[#000] bg-transparent"
+                className="flex-1 min-w-0 text-right outline-none text-[#000] bg-transparent"
               />
             </div>
 
-            <div className="flex items-center px-4 py-3">
-              <span className="text-[#000] w-24">和我的关系</span>
+            <div className="flex flex-row flex-nowrap items-center px-4 py-3">
+              <span className="text-[#000] w-20 flex-shrink-0 text-sm">和我的关系</span>
               <input
                 type="text"
-                placeholder="例如：恋人、好友、家人"
+                placeholder="例如：恋人、好友"
                 value={formData.relationship}
                 onChange={(e) => setFormData(prev => ({ ...prev, relationship: e.target.value }))}
-                className="flex-1 text-right outline-none text-[#000] bg-transparent"
+                className="flex-1 min-w-0 text-right outline-none text-[#000] bg-transparent"
               />
             </div>
           </div>
 
-          {/* 人设 */}
+          {/* 人设 - 可折叠 */}
         <div className="bg-transparent mt-2">
-            <div className="px-4 py-3">
-              <div className="text-[#000] mb-2">人设提示词</div>
-              <textarea
-                placeholder="描述这个角色的性格、说话方式、背景故事等..."
-                value={formData.prompt}
-                onChange={(e) => setFormData(prev => ({ ...prev, prompt: e.target.value }))}
-                className="w-full h-28 p-3 bg-gray-50 rounded-lg outline-none resize-none text-[#000] text-sm"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => setPromptExpanded(!promptExpanded)}
+              className="w-full flex flex-row flex-nowrap items-center justify-between px-4 py-3"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-[#000]">人设提示词</span>
+                {formData.prompt && <span className="text-xs text-green-500">已填写</span>}
+              </div>
+              <svg 
+                className={`w-5 h-5 text-gray-400 transition-transform ${promptExpanded ? 'rotate-90' : ''}`} 
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            {promptExpanded && (
+              <div className="px-4 pb-3">
+                <textarea
+                  placeholder="描述这个角色的性格、说话方式、背景故事等..."
+                  value={formData.prompt}
+                  onChange={(e) => setFormData(prev => ({ ...prev, prompt: e.target.value }))}
+                  className="w-full h-32 p-3 bg-gray-50 rounded-lg outline-none resize-none text-[#000] text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-2">好的人设让角色更生动：性格、语气、口头禅、背景故事...</p>
+              </div>
+            )}
           </div>
 
           <div className="p-4 text-center text-xs text-gray-400">

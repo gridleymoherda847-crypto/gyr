@@ -9,6 +9,10 @@
   /* 默认使用可爱圆体 */
   --app-font: 'ZCOOL KuaiLe', 'Baloo 2', cursive;
   
+  /* 屏幕边距（用户可调整） */
+  --screen-padding-top: 0px;
+  --screen-padding-bottom: 0px;
+  
   color: #1f2937;
   background-color: #0b0c10;
   text-rendering: optimizeLegibility;
@@ -31,8 +35,29 @@ html, body {
   overflow: hidden;
   overscroll-behavior: none; /* 禁止弹跳 */
   overscroll-behavior-x: none;
+  overscroll-behavior-y: none;
   -webkit-overflow-scrolling: touch;
   touch-action: manipulation;
+  /* iOS Safari 安全区域 */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* iOS Safari 特殊修复 */
+@supports (-webkit-touch-callout: none) {
+  html, body {
+    /* 禁用 iOS 弹性滚动 */
+    position: fixed;
+    overflow: hidden;
+  }
+  
+  /* 修复 iOS Safari 100vh 问题 */
+  body {
+    height: -webkit-fill-available;
+    min-height: -webkit-fill-available;
+  }
 }
 
 body {
@@ -270,4 +295,51 @@ input:focus, textarea:focus {
 
 .chat-input-area {
   flex-shrink: 0;
+}
+
+/* iOS 表单布局修复 - 强制横向排列 */
+.ios-flex-row {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+}
+
+/* iOS 输入框修复 - 防止缩放 */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    font-size: 16px !important; /* 防止 iOS 自动缩放 */
+  }
+  
+  /* 禁用 iOS 输入框默认样式 */
+  input, textarea {
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0;
+  }
+}
+
+/* 安全区域辅助类 */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-all {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* 滚动容器修复 - 防止 iOS 弹性滚动传递到父级 */
+.scroll-container {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
 }

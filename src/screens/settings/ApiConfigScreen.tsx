@@ -70,6 +70,11 @@ export default function ApiConfigScreen() {
   // 获取音色列表状态
   const [fetchVoicesLoading, setFetchVoicesLoading] = useState(false)
   
+  // 导入已有音色状态
+  const [showImportVoice, setShowImportVoice] = useState(false)
+  const [importVoiceId, setImportVoiceId] = useState('')
+  const [importVoiceName, setImportVoiceName] = useState('')
+  
   // 高级参数状态
   const advancedConfig = getAdvancedConfig()
   const [temperature, setTemperature] = useState(advancedConfig.temperature)
@@ -770,11 +775,82 @@ export default function ApiConfigScreen() {
                     </button>
                     
                     {/* 已克隆音色管理 */}
-                    {customVoices.length > 0 && (
-                      <div className="bg-purple-50/30 rounded-xl p-3 space-y-2">
+                    <div className="bg-purple-50/30 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between">
                         <h4 className="text-sm font-medium" style={{ color: fontColor.value }}>
                           🎭 我的克隆音色
                         </h4>
+                        <button
+                          onClick={() => setShowImportVoice(!showImportVoice)}
+                          className="text-xs px-2 py-1 rounded-lg bg-blue-500 text-white hover:bg-blue-600"
+                        >
+                          + 导入已有
+                        </button>
+                      </div>
+                      
+                      {/* 导入已有音色表单 */}
+                      {showImportVoice && (
+                        <div className="bg-blue-50/50 rounded-lg p-3 space-y-2 border border-blue-200/50">
+                          <p className="text-xs text-blue-700">
+                            如果你已在 MiniMax 官网克隆过音色，可以直接输入 Voice ID 导入使用。
+                          </p>
+                          <input
+                            type="text"
+                            value={importVoiceId}
+                            onChange={(e) => setImportVoiceId(e.target.value)}
+                            placeholder="Voice ID（在 MiniMax 控制台复制）"
+                            className="w-full px-3 py-2 rounded-lg bg-white border border-blue-200 text-xs"
+                            style={{ color: fontColor.value }}
+                          />
+                          <input
+                            type="text"
+                            value={importVoiceName}
+                            onChange={(e) => setImportVoiceName(e.target.value)}
+                            placeholder="给音色起个名字"
+                            className="w-full px-3 py-2 rounded-lg bg-white border border-blue-200 text-xs"
+                            style={{ color: fontColor.value }}
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                if (importVoiceId.trim()) {
+                                  const newVoice = {
+                                    id: importVoiceId.trim(),
+                                    name: importVoiceName.trim() || '导入的音色',
+                                    desc: '从 MiniMax 导入',
+                                    isCloned: true,
+                                    createdAt: Date.now(),
+                                  }
+                                  setCustomVoices(prev => [...prev, newVoice])
+                                  setImportVoiceId('')
+                                  setImportVoiceName('')
+                                  setShowImportVoice(false)
+                                }
+                              }}
+                              disabled={!importVoiceId.trim()}
+                              className="flex-1 py-2 rounded-lg bg-blue-500 text-white text-xs font-medium disabled:opacity-50"
+                            >
+                              导入
+                            </button>
+                            <button
+                              onClick={() => setShowImportVoice(false)}
+                              className="px-3 py-2 rounded-lg bg-gray-200 text-gray-600 text-xs"
+                            >
+                              取消
+                            </button>
+                          </div>
+                          <a 
+                            href="https://platform.minimaxi.com/user-center/basic-information/interface-key" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-500 underline block"
+                          >
+                            去 MiniMax 控制台查看我的音色 →
+                          </a>
+                        </div>
+                      )}
+                      
+                      {customVoices.length > 0 ? (
                         <div className="space-y-2">
                           {customVoices.map((voice) => (
                             <div key={voice.id} className="flex items-center justify-between bg-white/50 rounded-lg px-3 py-2">
@@ -782,7 +858,7 @@ export default function ApiConfigScreen() {
                                 <div className="text-sm font-medium truncate" style={{ color: fontColor.value }}>{voice.name}</div>
                                 <div className="text-xs opacity-50" style={{ color: fontColor.value }}>
                                   {voice.createdAt 
-                                    ? `克隆于 ${new Date(voice.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                                    ? `添加于 ${new Date(voice.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
                                     : voice.id
                                   }
                                 </div>
@@ -801,11 +877,15 @@ export default function ApiConfigScreen() {
                             </div>
                           ))}
                         </div>
-                        <div className="text-xs opacity-50" style={{ color: fontColor.value }}>
-                          注：这里删除只是从本地列表移除，不会删除 MiniMax 服务器上的音色
-                        </div>
+                      ) : (
+                        <p className="text-xs opacity-50 text-center py-2" style={{ color: fontColor.value }}>
+                          暂无克隆音色，点击上方"导入已有"或下方"克隆新音色"添加
+                        </p>
+                      )}
+                      <div className="text-xs opacity-50" style={{ color: fontColor.value }}>
+                        注：删除只是从本地列表移除，不会删除 MiniMax 服务器上的音色
                       </div>
-                    )}
+                    </div>
                     
                     {/* 音色克隆区域 */}
                     <div className="bg-orange-50/30 rounded-xl p-3 space-y-3">

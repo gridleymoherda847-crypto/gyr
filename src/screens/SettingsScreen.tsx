@@ -25,6 +25,13 @@ export default function SettingsScreen() {
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showScreenFit, setShowScreenFit] = useState(false)
+  const [screenPaddingTop, setScreenPaddingTop] = useState(() => {
+    return parseInt(localStorage.getItem('mina_screen_padding_top') || '0')
+  })
+  const [screenPaddingBottom, setScreenPaddingBottom] = useState(() => {
+    return parseInt(localStorage.getItem('mina_screen_padding_bottom') || '0')
+  })
 
   // 监听全屏状态变化
   useEffect(() => {
@@ -155,6 +162,12 @@ export default function SettingsScreen() {
               label="全屏模式"
               value={isFullscreen ? '已开启' : '已关闭'}
               onClick={toggleFullscreen}
+              showArrow={false}
+            />
+            <SettingsItem
+              label="屏幕适配"
+              value="调整边距"
+              onClick={() => setShowScreenFit(true)}
               showArrow={false}
             />
           </SettingsGroup>
@@ -501,6 +514,93 @@ export default function SettingsScreen() {
                   style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
                 >
                   重启
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* 屏幕适配对话框 */}
+        {showScreenFit && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
+            <div
+              className="absolute inset-0 bg-black/35"
+              onClick={() => setShowScreenFit(false)}
+              role="presentation"
+            />
+            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/90 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
+              <div className="text-center mb-4">
+                <div className="text-[15px] font-semibold text-[#111]">📱 屏幕适配</div>
+                <div className="mt-1 text-[12px] text-[#666]">
+                  如果按钮被遮挡，可以调整边距
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                {/* 顶部边距 */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#333]">顶部边距</span>
+                    <span className="text-[#666] font-mono">{screenPaddingTop}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="60"
+                    value={screenPaddingTop}
+                    onChange={(e) => setScreenPaddingTop(parseInt(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+                
+                {/* 底部边距 */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#333]">底部边距</span>
+                    <span className="text-[#666] font-mono">{screenPaddingBottom}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="60"
+                    value={screenPaddingBottom}
+                    onChange={(e) => setScreenPaddingBottom(parseInt(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+                
+                <div className="text-xs text-[#999] text-center">
+                  iPhone 刘海屏建议：顶部 44px，底部 34px
+                </div>
+              </div>
+              
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreenPaddingTop(0)
+                    setScreenPaddingBottom(0)
+                  }}
+                  className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+                >
+                  重置
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.setItem('mina_screen_padding_top', String(screenPaddingTop))
+                    localStorage.setItem('mina_screen_padding_bottom', String(screenPaddingBottom))
+                    // 应用到 CSS 变量
+                    document.documentElement.style.setProperty('--screen-padding-top', `${screenPaddingTop}px`)
+                    document.documentElement.style.setProperty('--screen-padding-bottom', `${screenPaddingBottom}px`)
+                    setShowScreenFit(false)
+                    // 刷新页面应用变更
+                    window.location.reload()
+                  }}
+                  className="flex-1 rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
+                >
+                  保存
                 </button>
               </div>
             </div>

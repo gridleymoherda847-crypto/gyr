@@ -8,7 +8,7 @@
  */
 
 // 配置：要生成多少个兑换码
-const COUNT = 50
+const COUNT = 14
 
 // 生成随机字符串
 function randomString(length) {
