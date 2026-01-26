@@ -241,6 +241,8 @@ export default function ChatsTab({ onBack }: Props) {
                     e.preventDefault()
                     handleSwipe(character.id)
                   }}
+                  // 性能优化：聊天列表长时减少离屏渲染/重排
+                  style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 84px' }}
                   className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 active:bg-gray-50 cursor-pointer transition-transform duration-200 ${
                     isSwiped ? '-translate-x-32' : 'translate-x-0'
                   } ${character.isPinned ? 'bg-gray-50/50' : ''}`}

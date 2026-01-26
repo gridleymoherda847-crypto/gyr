@@ -118,6 +118,7 @@ export default function ChatSettingsScreen() {
   // X 账号绑定（草稿）
   const [xHandleDraft, setXHandleDraft] = useState(character?.xHandle || '')
   const [xAliasesDraft, setXAliasesDraft] = useState((character?.xAliases || []).join('，'))
+  const [xBindingOpen, setXBindingOpen] = useState(false)
 
   useEffect(() => {
     setXHandleDraft(character?.xHandle || '')
@@ -596,56 +597,72 @@ export default function ChatSettingsScreen() {
 
           {/* X 账号绑定 */}
           <div className="bg-transparent mt-2 mx-3 rounded-xl p-4">
-            <div className="text-[13px] font-semibold text-[#000] mb-2">X 账号绑定</div>
-            <div className="text-[11px] text-gray-400 mb-3">用于在推特中稳定关联，避免同名混淆。</div>
-            <div className="space-y-2">
-              <div>
-                <label className="text-[12px] text-gray-500 block mb-1">推特账号（@handle）</label>
-                <input
-                  type="text"
-                  value={xHandleDraft}
-                  onChange={(e) => setXHandleDraft(e.target.value)}
-                  placeholder={`例如：@${character.name}`}
-                  className="w-full px-3 py-2 rounded-lg bg-white border border-black/10 text-[#000] text-sm"
-                />
+            <button
+              type="button"
+              onClick={() => setXBindingOpen((v) => !v)}
+              className="w-full flex items-center justify-between"
+            >
+              <div className="text-[13px] font-semibold text-[#000]">X 账号绑定</div>
+              <div className="flex items-center gap-2 text-[11px] text-gray-400">
+                <span>{xBindingOpen ? '收起' : '展开'}</span>
+                <svg className={`w-4 h-4 transition-transform ${xBindingOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
               </div>
-              <div>
-                <label className="text-[12px] text-gray-500 block mb-1">别名/关键词（可选）</label>
-                <input
-                  type="text"
-                  value={xAliasesDraft}
-                  onChange={(e) => setXAliasesDraft(e.target.value)}
-                  placeholder="例如：小名、圈内称呼、昵称（用逗号分隔）"
-                  className="w-full px-3 py-2 rounded-lg bg-white border border-black/10 text-[#000] text-sm"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 mt-3">
-              <button
-                type="button"
-                onClick={() => {
-                  updateCharacter(character.id, {
-                    xHandle: normalizeHandle(xHandleDraft),
-                    xAliases: parseAliases(xAliasesDraft),
-                  })
-                  setDialog({ open: true, title: '已保存', message: 'X 账号绑定已更新。', confirmText: '知道了' })
-                }}
-                className="px-4 py-2 rounded-lg bg-[#07C160] text-white text-sm font-medium"
-              >
-                保存绑定
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const handle = normalizeHandle(`@${character.name}`)
-                  setXHandleDraft(handle)
-                  setXAliasesDraft(character.name)
-                }}
-                className="px-4 py-2 rounded-lg bg-white border border-black/10 text-[#333] text-sm"
-              >
-                一键使用名字
-              </button>
-            </div>
+            </button>
+            {xBindingOpen && (
+              <>
+                <div className="text-[11px] text-gray-400 mt-2 mb-3">用于在推特中稳定关联，避免同名混淆。</div>
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-[12px] text-gray-500 block mb-1">推特账号（@handle）</label>
+                    <input
+                      type="text"
+                      value={xHandleDraft}
+                      onChange={(e) => setXHandleDraft(e.target.value)}
+                      placeholder={`例如：@${character.name}`}
+                      className="w-full px-3 py-2 rounded-lg bg-white border border-black/10 text-[#000] text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[12px] text-gray-500 block mb-1">别名/关键词（可选）</label>
+                    <input
+                      type="text"
+                      value={xAliasesDraft}
+                      onChange={(e) => setXAliasesDraft(e.target.value)}
+                      placeholder="例如：小名、圈内称呼、昵称（用逗号分隔）"
+                      className="w-full px-3 py-2 rounded-lg bg-white border border-black/10 text-[#000] text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateCharacter(character.id, {
+                        xHandle: normalizeHandle(xHandleDraft),
+                        xAliases: parseAliases(xAliasesDraft),
+                      })
+                      setDialog({ open: true, title: '已保存', message: 'X 账号绑定已更新。', confirmText: '知道了' })
+                    }}
+                    className="px-4 py-2 rounded-lg bg-[#07C160] text-white text-sm font-medium"
+                  >
+                    保存绑定
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const handle = normalizeHandle(`@${character.name}`)
+                      setXHandleDraft(handle)
+                      setXAliasesDraft(character.name)
+                    }}
+                    className="px-4 py-2 rounded-lg bg-white border border-black/10 text-[#333] text-sm"
+                  >
+                    一键使用名字
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           {/* 功能列表 */}
