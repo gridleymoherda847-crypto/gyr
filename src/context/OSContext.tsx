@@ -253,6 +253,11 @@ const STORAGE_KEYS = {
   miCoinBalance: 'os_micoin_balance',
   currentFontId: 'os_current_font_id',
   fontColorId: 'os_font_color_id',
+  wallpaper: 'os_wallpaper',
+  lockWallpaper: 'os_lock_wallpaper',
+  customAppIcons: 'os_custom_app_icons',
+  decorImage: 'os_decor_image',
+  userProfile: 'os_user_profile',
 } as const
 
 function normalizeApiBaseUrl(input: string): string {
@@ -363,6 +368,11 @@ export function OSProvider({ children }: PropsWithChildren) {
         nextLocation,
         nextWeather,
         savedVersion,
+        nextWallpaper,
+        nextLockWallpaper,
+        nextCustomAppIcons,
+        nextDecorImage,
+        nextUserProfile,
       ] = await Promise.all([
         kvGetJSONDeep<boolean>(LOCK_STORAGE_KEY, true),
         kvGetJSONDeep<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig),
@@ -376,6 +386,11 @@ export function OSProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings),
         kvGetJSONDeep<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather),
         kvGetJSONDeep<string>(MUSIC_VERSION_KEY, ''),
+        kvGetJSONDeep<string>(STORAGE_KEYS.wallpaper, DEFAULT_WALLPAPER),
+        kvGetJSONDeep<string>(STORAGE_KEYS.lockWallpaper, DEFAULT_WALLPAPER),
+        kvGetJSONDeep<Record<string, string>>(STORAGE_KEYS.customAppIcons, {}),
+        kvGetJSONDeep<string>(STORAGE_KEYS.decorImage, ''),
+        kvGetJSONDeep<UserProfile>(STORAGE_KEYS.userProfile, defaultUserProfile),
       ])
 
       // 音乐：版本控制
@@ -415,6 +430,12 @@ export function OSProvider({ children }: PropsWithChildren) {
       setLocationSettingsState(nextLocation)
       setWeather(nextWeather)
       setMusicPlaylist(nextPlaylist)
+      // 加载自定义壁纸、图标等
+      if (nextWallpaper) setWallpaper(nextWallpaper)
+      if (nextLockWallpaper) setLockWallpaper(nextLockWallpaper)
+      if (nextCustomAppIcons) setCustomAppIcons(nextCustomAppIcons)
+      if (nextDecorImage) setDecorImage(nextDecorImage)
+      if (nextUserProfile) setUserProfileState(nextUserProfile)
       setIsHydrated(true)
     }
     void hydrate()
@@ -431,6 +452,12 @@ export function OSProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.miCoinBalance, miCoinBalance) }, [miCoinBalance, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id, isHydrated])
+  // 壁纸、自定义图标等持久化
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.wallpaper, wallpaper) }, [wallpaper, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.lockWallpaper, lockWallpaper) }, [lockWallpaper, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.customAppIcons, customAppIcons) }, [customAppIcons, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.decorImage, decorImage) }, [decorImage, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.userProfile, userProfile) }, [userProfile, isHydrated])
 
   const setCurrentFont = (font: FontOption) => setCurrentFontState(font)
   const setFontColor = (color: ColorOption) => setFontColorState(color)
