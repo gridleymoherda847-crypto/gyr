@@ -101,6 +101,14 @@ export default function ChatScreen() {
   const [showPlusMenu, setShowPlusMenu] = useState(false)
   const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | 'location' | null>(null)
   
+  // 语音通话状态
+  const [showCallScreen, setShowCallScreen] = useState(false)
+  const [callState, setCallState] = useState<'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking'>('idle')
+  const [callTranscript, setCallTranscript] = useState('') // 当前识别的文字
+  const [speechSupported, setSpeechSupported] = useState(true)
+  const recognitionRef = useRef<any>(null)
+  const callAudioRef = useRef<HTMLAudioElement | null>(null)
+  
   // 位置分享状态
   const [locationName, setLocationName] = useState('')
   const [locationAddress, setLocationAddress] = useState('')
@@ -456,6 +464,156 @@ export default function ChatScreen() {
       audioRef.current = null
     })
   }, [playingVoiceId])
+  
+  // ==================== 语音通话功能 ====================
+  
+  // 开始语音识别
+  const startListening = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setSpeechSupported(false)
+      return
+    }
+    
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'zh-CN'
+    recognition.interimResults = true
+    recognition.continuous = false
+    
+    recognition.onstart = () => {
+      setCallState('listening')
+      setCallTranscript('')
+    }
+    
+    recognition.onresult = (event: any) => {
+      let transcript = ''
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript
+      }
+      setCallTranscript(transcript)
+    }
+    
+    recognition.onend = () => {
+      // 识别结束，处理结果
+      if (callTranscript.trim()) {
+        handleVoiceInput(callTranscript.trim())
+      } else {
+        setCallState('idle')
+      }
+    }
+    
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error)
+      setCallState('idle')
+      if (event.error === 'not-allowed') {
+        alert('请允许麦克风权限')
+      }
+    }
+    
+    recognitionRef.current = recognition
+    recognition.start()
+  }, [callTranscript])
+  
+  // 停止语音识别
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      recognitionRef.current = null
+    }
+  }, [])
+  
+  // 处理语音输入 - 发送给 LLM 并播放回复
+  const handleVoiceInput = useCallback(async (text: string) => {
+    if (!text || !character) return
+    
+    setCallState('thinking')
+    
+    try {
+      // 添加用户消息到聊天记录
+      addMessage({
+        characterId: character.id,
+        content: text,
+        isUser: true,
+        type: 'text',
+      })
+      
+      // 调用 LLM 获取回复
+      const systemPrompt = `你是${character.name}，正在和用户进行语音通话。
+你的人设：${character.prompt || '（无）'}
+你们的关系：${character.relationship || '（无）'}
+你叫用户：${character.callMeName || '（未设置）'}
+
+【通话规则】
+- 这是实时语音通话，回复要简短自然，像真人打电话一样
+- 每次回复控制在1-2句话，不要太长
+- 用口语化的表达，可以有语气词（嗯、啊、哦）
+- 根据你的性格和人设来回应
+- 不要使用任何指令格式如[转账:]、[位置:]等`
+      
+      const response = await callLLM([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text },
+      ], undefined, { maxTokens: 150, temperature: 0.9 })
+      
+      const replyText = (response || '').trim().slice(0, 200) || '嗯...'
+      
+      // 添加 AI 回复到聊天记录
+      addMessage({
+        characterId: character.id,
+        content: replyText,
+        isUser: false,
+        type: 'text',
+      })
+      
+      // 生成语音并播放
+      setCallState('speaking')
+      const voiceUrl = await generateVoiceUrl(replyText)
+      
+      if (voiceUrl) {
+        // 停止之前的播放
+        if (callAudioRef.current) {
+          callAudioRef.current.pause()
+        }
+        
+        const audio = new Audio(voiceUrl)
+        callAudioRef.current = audio
+        
+        audio.onended = () => {
+          setCallState('idle')
+          callAudioRef.current = null
+        }
+        audio.onerror = () => {
+          setCallState('idle')
+          callAudioRef.current = null
+        }
+        
+        await audio.play()
+      } else {
+        // TTS 不可用，直接回到空闲状态
+        setCallState('idle')
+      }
+    } catch (err) {
+      console.error('Voice call error:', err)
+      setCallState('idle')
+    }
+  }, [character, addMessage, callLLM, generateVoiceUrl])
+  
+  // 挂断电话
+  const hangUp = useCallback(() => {
+    // 停止识别
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      recognitionRef.current = null
+    }
+    // 停止播放
+    if (callAudioRef.current) {
+      callAudioRef.current.pause()
+      callAudioRef.current = null
+    }
+    setCallState('idle')
+    setCallTranscript('')
+    setShowCallScreen(false)
+  }, [])
 
   // 根据性格/情绪/经期生成1-15条回复，每条间隔1-8秒（按字数）
   const pendingCountRef = useRef(pendingCount)
@@ -3610,6 +3768,120 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 
   return (
     <WeChatLayout>
+      {/* 语音通话全屏界面 */}
+      {showCallScreen && (
+        <div className="fixed inset-0 z-[100] bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 flex flex-col">
+          {/* 顶部状态 */}
+          <div className="flex-shrink-0 pt-12 pb-4 text-center">
+            <div className="text-white/60 text-sm">
+              {callState === 'idle' && '准备通话'}
+              {callState === 'connecting' && '连接中...'}
+              {callState === 'listening' && '正在听你说...'}
+              {callState === 'thinking' && `${character.name} 正在思考...`}
+              {callState === 'speaking' && `${character.name} 正在说话...`}
+            </div>
+          </div>
+          
+          {/* 头像区域 */}
+          <div className="flex-1 flex flex-col items-center justify-center px-8">
+            {/* 头像 + 动画 */}
+            <div className="relative">
+              {/* 语音波纹动画 */}
+              {(callState === 'listening' || callState === 'speaking') && (
+                <>
+                  <div className={`absolute inset-0 rounded-full border-2 ${callState === 'listening' ? 'border-green-400' : 'border-blue-400'} animate-ping opacity-30`} style={{ transform: 'scale(1.3)' }} />
+                  <div className={`absolute inset-0 rounded-full border-2 ${callState === 'listening' ? 'border-green-400' : 'border-blue-400'} animate-ping opacity-20`} style={{ transform: 'scale(1.6)', animationDelay: '0.3s' }} />
+                </>
+              )}
+              
+              <div className={`w-32 h-32 rounded-full overflow-hidden border-4 ${
+                callState === 'listening' ? 'border-green-400' : 
+                callState === 'speaking' ? 'border-blue-400' : 
+                'border-white/30'
+              } transition-colors`}>
+                {character.avatar ? (
+                  <img src={character.avatar} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-gray-600 flex items-center justify-center text-4xl text-white">
+                    {character.name?.[0] || '?'}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* 名字 */}
+            <div className="mt-6 text-white text-xl font-medium">{character.name}</div>
+            
+            {/* 识别文字显示 */}
+            {callTranscript && (
+              <div className="mt-6 px-6 py-3 bg-white/10 rounded-2xl max-w-[280px]">
+                <div className="text-white/60 text-xs mb-1">你说：</div>
+                <div className="text-white text-sm">{callTranscript}</div>
+              </div>
+            )}
+            
+            {/* 浏览器不支持提示 */}
+            {!speechSupported && (
+              <div className="mt-6 px-6 py-4 bg-yellow-500/20 rounded-2xl max-w-[300px] text-center">
+                <div className="text-yellow-300 text-sm font-medium mb-2">⚠️ 浏览器不支持语音识别</div>
+                <div className="text-yellow-200/70 text-xs">
+                  请使用 Chrome 或 Edge 浏览器<br />
+                  或者回到聊天页面用文字交流
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* 底部按钮区 */}
+          <div className="flex-shrink-0 pb-12 px-8">
+            <div className="flex items-center justify-center gap-8">
+              {/* 说话按钮 */}
+              {speechSupported && (
+                <button
+                  type="button"
+                  onMouseDown={startListening}
+                  onMouseUp={stopListening}
+                  onMouseLeave={stopListening}
+                  onTouchStart={startListening}
+                  onTouchEnd={stopListening}
+                  disabled={callState === 'thinking' || callState === 'speaking'}
+                  className={`w-20 h-20 rounded-full flex items-center justify-center transition-all active:scale-95 ${
+                    callState === 'listening' 
+                      ? 'bg-green-500 scale-110' 
+                      : callState === 'thinking' || callState === 'speaking'
+                        ? 'bg-gray-600 opacity-50'
+                        : 'bg-green-600 hover:bg-green-500'
+                  }`}
+                >
+                  <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                  </svg>
+                </button>
+              )}
+              
+              {/* 挂断按钮 */}
+              <button
+                type="button"
+                onClick={hangUp}
+                className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center transition-all active:scale-95"
+              >
+                <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.28 3H5z" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* 提示文字 */}
+            {speechSupported && callState === 'idle' && (
+              <div className="text-center mt-4 text-white/50 text-sm">
+                按住绿色按钮说话
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
       {/* 背景必须与内容分层，否则部分设备会把整页合成导致文字发糊 */}
       <div className="relative isolate flex flex-col h-full overflow-hidden">
         {character.chatBackground && (
@@ -3866,6 +4138,29 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                       </svg>
                     </div>
                     <span className="text-xs text-gray-600">位置</span>
+                  </button>
+                  
+                  {/* 语音通话 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlusMenu(false)
+                      setActivePanel(null)
+                      // 检测浏览器是否支持语音识别
+                      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+                      if (!SpeechRecognition) {
+                        setSpeechSupported(false)
+                      }
+                      setShowCallScreen(true)
+                    }}
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-green-500/80 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">电话</span>
                   </button>
 
                   {/* 日记（偷看） */}
