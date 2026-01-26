@@ -165,6 +165,7 @@ export default function XScreen() {
   // Search
   const [query, setQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('')
+  const [searchTab, setSearchTab] = useState<'hot' | 'latest' | 'user'>('hot')
 
   // Compose
   const [composeOpen, setComposeOpen] = useState(false)
@@ -358,10 +359,11 @@ export default function XScreen() {
     const key = (activeQuery || '').trim()
     if (!key) return []
     const cached = data.searchCache?.[key]
-    if (!cached?.postIds?.length) return []
-    const set = new Set(cached.postIds)
+    const ids = searchTab === 'hot' ? (cached?.hot || []) : searchTab === 'latest' ? (cached?.latest || []) : (cached?.user || [])
+    if (!ids.length) return []
+    const set = new Set(ids)
     return posts.filter((p) => set.has(p.id) && !mutedSet.has(p.authorId) && !blockedSet.has(p.authorId)).slice(0, 60)
-  }, [activeQuery, data, posts, mutedSet, blockedSet])
+  }, [activeQuery, data, posts, mutedSet, blockedSet, searchTab])
 
   const sysPrefix = () => {
     const globalPresets = getGlobalPresets()
@@ -477,7 +479,7 @@ export default function XScreen() {
     const matchedCharacter = findCharacterByQuery(key)
 
     const cached = data.searchCache?.[key]
-    if (!force && cached?.postIds?.length) {
+    if (!force && cached?.hot?.length) {
       const nextHistory = [key, ...(data.searchHistory || []).filter((x) => x !== key)].slice(0, 10)
       if ((data.searchHistory || []).join('|') !== nextHistory.join('|')) {
         const next: XDataV1 = { ...data, searchHistory: nextHistory }
@@ -600,7 +602,7 @@ export default function XScreen() {
         })(),
         searchCache: {
           ...(next.searchCache || {}),
-          [key]: { postIds: ids, updatedAt: Date.now() },
+          [key]: { hot: ids, latest: [], user: [], updatedAt: Date.now() },
         },
         searchHistory: [key, ...(next.searchHistory || []).filter((x) => x !== key)].slice(0, 10),
       }
@@ -1827,6 +1829,31 @@ export default function XScreen() {
             <div className="py-14 text-center text-[13px] text-gray-500">暂无结果，点右上角刷新生成。</div>
           ) : (
             <div>
+              <div className="sticky top-[52px] z-[9] bg-white/95 border-b border-black/5 px-3 py-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSearchTab('hot')}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-semibold ${searchTab === 'hot' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
+                >
+                  热门
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchTab('latest')}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-semibold ${searchTab === 'latest' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
+                >
+                  最新
+                </button>
+                {data.searchCache?.[activeQuery]?.user && data.searchCache[activeQuery].user.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTab('user')}
+                    className={`px-3 py-1.5 rounded-full text-[12px] font-semibold ${searchTab === 'user' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
+                  >
+                    用户
+                  </button>
+                )}
+              </div>
               <div className="px-3 py-2 text-[12px] text-gray-500">结果：{activeQuery}</div>
               {searchPosts.map(renderPostCard)}
             </div>
@@ -2171,9 +2198,9 @@ export default function XScreen() {
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(meta.handle || '')
-                      setDialog({ open: true, title: '已复制', message: `已复制推特号：${meta.handle}`, confirmText: '知道了' })
+                      setTipDialog({ open: true, title: '已复制', message: `已复制推特号：${meta.handle}` })
                     } catch {
-                      setDialog({ open: true, title: '复制失败', message: '无法访问剪贴板', confirmText: '知道了' })
+                      setTipDialog({ open: true, title: '复制失败', message: '无法访问剪贴板' })
                     }
                   }}
                   className="w-6 h-6 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center active:scale-[0.98]"

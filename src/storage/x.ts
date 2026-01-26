@@ -95,7 +95,7 @@ export type XDataV1 = {
   notifications: XNotification[]
   dms: XDMThread[]
   // 缓存：避免重复生成导致卡/耗 API
-  searchCache: Record<string, { postIds: string[]; updatedAt: number }>
+  searchCache: Record<string, { hot: string[]; latest: string[]; user: string[]; updatedAt: number }>
   searchHistory: string[]
   lastRefreshAt?: Record<string, number> // per-page throttling
 }

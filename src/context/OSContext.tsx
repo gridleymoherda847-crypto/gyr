@@ -193,7 +193,7 @@ type OSContextValue = {
   // API相关（手动配置）
   fetchAvailableModels: (override?: { apiBaseUrl?: string; apiKey?: string }) => Promise<string[]>
   callLLM: (
-    messages: { role: string; content: string }[],
+    messages: { role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }[],
     model?: string,
     options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ) => Promise<string>
@@ -724,7 +724,7 @@ export function OSProvider({ children }: PropsWithChildren) {
 
   // 调用LLM API（使用用户自己配置的API，不消耗米币）
   const callLLM = async (
-    messages: { role: string; content: string }[],
+    messages: { role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }[],
     model?: string,
     options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ): Promise<string> => {

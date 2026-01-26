@@ -13,7 +13,7 @@ export default function ChatScreen() {
   const { characterId } = useParams<{ characterId: string }>()
   const { 
     getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds,
-    getStickersByCharacter, deleteCharacter, clearMessages,
+    getStickersByCharacter,clearMessages,
     addTransfer, getPeriodRecords, addPeriodRecord,
     updatePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether,
     setCurrentChatId, toggleBlocked, setCharacterTyping, updateCharacter,
@@ -405,7 +405,7 @@ export default function ChatScreen() {
         const buildChatHistory = (all: typeof messages, maxRounds: number, maxChars: number) => {
           let used = 0
           let rounds = 0
-          const out: { role: string; content: string }[] = []
+          const out: { role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }[] = []
           for (let i = all.length - 1; i >= 0; i--) {
             const m = all[i]
             if (m.type === 'system') continue
@@ -414,29 +414,47 @@ export default function ChatScreen() {
             if (m.isUser) rounds += 1
             if (rounds > maxRounds) break
 
-            let content = m.content || ''
-            // 用内部标记压缩多媒体/结构化消息，避免把 base64/URL 塞进 prompt
-            if (m.type === 'image') content = '<IMAGE />'
-            if (m.type === 'sticker') content = '<STICKER />'
-            if (m.type === 'transfer') {
+            let content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> = m.content || ''
+            // 图片：如果是用户发送的图片，传递给支持vision的API
+            if (m.type === 'image') {
+              if (m.isUser && m.content) {
+                // 多模态格式：图片+文本（OpenAI vision API格式）
+                content = [
+                  { type: 'text', text: '[用户发送了一张图片]' },
+                  { type: 'image_url', image_url: { url: m.content } }
+                ]
+                used += 50 // 图片占用估算
+              } else {
+                content = '[发送了图片]'
+                used += 10
+              }
+            }
+            else if (m.type === 'sticker') {
+              content = '<STICKER />'
+              used += 10
+            }
+            else if (m.type === 'transfer') {
               const amt = (m.transferAmount ?? 0).toFixed(2)
               const note = (m.transferNote || '转账').replace(/\s+/g, ' ').slice(0, 30)
               const st = m.transferStatus || 'pending'
               const stText = st === 'received' ? '已领取' : st === 'refunded' ? '已退还' : '待处理'
               content = `[发送了转账：¥${amt}，备注"${note}"，${stText}]`
+              used += content.length
             }
-            if (m.type === 'music') {
+            else if (m.type === 'music') {
               const title = (m.musicTitle || '未知歌曲').replace(/\s+/g, ' ').slice(0, 60)
               const artist = (m.musicArtist || '').replace(/\s+/g, ' ').slice(0, 60)
               const st = m.musicStatus || 'pending'
               const stText = st === 'accepted' ? '已接受' : st === 'rejected' ? '已拒绝' : '待回应'
               content = `[发送了一起听歌邀请：${title}${artist ? ` - ${artist}` : ''}，${stText}]`
+              used += content.length
             }
-            if (m.type === 'period') {
+            else if (m.type === 'period') {
               const body = (m.periodContent || '').trim().slice(0, 1500)
               content = `<PERIOD_SHARED>\n${body || '（无）'}\n</PERIOD_SHARED>`
+              used += content.length
             }
-            if (m.type === 'diary') {
+            else if (m.type === 'diary') {
               const authorId = (m.diaryAuthorId || '').slice(0, 80)
               const author = (m.diaryAuthorName || '（未知）').replace(/\s+/g, ' ').slice(0, 40)
               const at = m.diaryAt ? String(m.diaryAt) : ''
@@ -448,8 +466,9 @@ export default function ChatScreen() {
               content = `<DIARY title="${title}" author="${author}" authorId="${authorId}" diaryAt="${at}" note="${note}">` +
                 `${ownership}\n${body}` +
                 `</DIARY>`
+              used += content.length
             }
-            if (m.type === 'tweet_share') {
+            else if (m.type === 'tweet_share') {
               const author = (m.tweetAuthorName || '（未知）').replace(/\s+/g, ' ').slice(0, 40)
               const at = m.tweetAt ? String(m.tweetAt) : ''
               const stats = (m.tweetStats || '').replace(/\s+/g, ' ').slice(0, 60)
@@ -458,14 +477,16 @@ export default function ChatScreen() {
                 `<TWEET_SHARED author="${author}" tweetAt="${at}" stats="${stats}">` +
                 `${body || '（无内容）'}` +
                 `</TWEET_SHARED>`
+              used += content.length
             }
-            if (m.type === 'x_profile_share') {
+            else if (m.type === 'x_profile_share') {
               const name = (m.xUserName || '（未知）').replace(/\s+/g, ' ').slice(0, 40)
               const handle = (m.xUserHandle || '').replace(/\s+/g, ' ').slice(0, 40)
               content = `<X_PROFILE name="${name}" handle="${handle}">推特主页分享</X_PROFILE>`
+              used += content.length
             }
             // 斗地主战绩分享 - 让AI知道自己是否参与了游戏
-            if (m.type === 'doudizhu_share') {
+            else if (m.type === 'doudizhu_share') {
               try {
                 const data = JSON.parse(m.content)
                 const opponents = data.opponents || ['人机A', '人机B']
@@ -483,15 +504,22 @@ export default function ChatScreen() {
                 content = `<DOUDIZHU_RESULT result="${isWin}" role="${role}" coinChange="${coinChange}" opponents="${opponents.join('、')}" bombInfo="${bombDesc}">` +
                   `${participation}` +
                   `</DOUDIZHU_RESULT>`
+                used += content.length
               } catch {
                 content = '<DOUDIZHU_RESULT />'
+                used += 20
               }
             }
-            if (!content.trim()) continue
+            else {
+              // 普通文本消息
+              content = m.content || ''
+              used += (typeof content === 'string' ? content.length : 50)
+            }
+            
+            if (typeof content === 'string' && !content.trim()) continue
 
-            const extra = content.length + 12
+            const extra = 12
             if (used + extra > maxChars) break
-            used += extra
             out.push({ role: m.isUser ? 'user' : 'assistant', content })
           }
           return out.reverse()
@@ -2465,7 +2493,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     }
     
     if (msg.type === 'image') {
-      return <img src={msg.content} alt="图片" className="max-w-[50%] rounded-lg" />
+      return <img src={msg.content} alt="图片" className="max-w-[40%] rounded-xl" />
     }
 
     if (msg.type === 'sticker') {
