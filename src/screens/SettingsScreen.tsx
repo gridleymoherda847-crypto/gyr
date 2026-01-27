@@ -23,6 +23,7 @@ export default function SettingsScreen() {
   const [importError, setImportError] = useState<string | null>(null)
   const [importSummary, setImportSummary] = useState<{ written: number; skipped: number } | null>(null)
   const [importing, setImporting] = useState(false)
+  const [showThemeTip, setShowThemeTip] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const discImageInputRef = useRef<HTMLInputElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -159,26 +160,32 @@ export default function SettingsScreen() {
           <SettingsGroup title="主题">
             <div className="rounded-2xl border border-white/35 bg-white/70 overflow-hidden">
               <div className="px-4 py-3">
-                <div className="text-sm font-medium text-gray-800 mb-3">主题模式</div>
+                <div className="text-sm font-medium text-gray-800 mb-3">图标风格</div>
                 <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => setIconTheme('custom')}
+                    onClick={() => {
+                      setIconTheme('custom')
+                      setShowThemeTip(true)
+                    }}
                     className={`flex-1 rounded-xl p-3 border-2 transition-all ${
                       iconTheme === 'custom' 
-                        ? 'border-gray-800 bg-gray-50' 
+                        ? 'border-pink-400 bg-pink-50' 
                         : 'border-gray-200 bg-white/50'
                     }`}
                   >
                     <div className="text-center">
                       <div className="text-2xl mb-1">🎀</div>
-                      <div className="text-xs font-medium text-gray-700">默认</div>
-                      <div className="text-[10px] text-gray-400">使用上传的图标</div>
+                      <div className="text-xs font-medium text-gray-700">美化图标</div>
+                      <div className="text-[10px] text-gray-400">使用作者的精美图标</div>
                     </div>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIconTheme('minimal')}
+                    onClick={() => {
+                      setIconTheme('minimal')
+                      setShowThemeTip(true)
+                    }}
                     className={`flex-1 rounded-xl p-3 border-2 transition-all ${
                       iconTheme === 'minimal' 
                         ? 'border-gray-800 bg-gray-50' 
@@ -187,8 +194,8 @@ export default function SettingsScreen() {
                   >
                     <div className="text-center">
                       <div className="text-2xl mb-1">◯</div>
-                      <div className="text-xs font-medium text-gray-700">自定义</div>
-                      <div className="text-[10px] text-gray-400">简约线条（方便装修）</div>
+                      <div className="text-xs font-medium text-gray-700">简约图标</div>
+                      <div className="text-[10px] text-gray-400">线条风格，自定义百搭</div>
                     </div>
                   </button>
                 </div>
@@ -564,6 +571,48 @@ export default function SettingsScreen() {
                   style={{ background: 'linear-gradient(135deg, #fb7185 0%, #ef4444 100%)' }}
                 >
                   知道了
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 主题切换提示 */}
+        {showThemeTip && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
+            <div
+              className="absolute inset-0 bg-black/35"
+              onClick={() => setShowThemeTip(false)}
+              role="presentation"
+            />
+            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/85 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
+              <div className="text-center">
+                <div className="text-4xl mb-2">✨</div>
+                <div className="text-[15px] font-semibold text-[#111]">图标风格已切换</div>
+                <div className="mt-2 text-[13px] text-[#333] leading-relaxed">
+                  快回到主页看看新图标吧~
+                  <br />
+                  <span className="text-pink-500">搭配好看的壁纸效果更佳哦！</span>
+                </div>
+              </div>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowThemeTip(false)
+                    navigate('/', { replace: true })
+                  }}
+                  className="w-full rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #fb7185 0%, #ec4899 100%)' }}
+                >
+                  去看看
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowThemeTip(false)}
+                  className="w-full mt-2 text-[13px] text-gray-500"
+                >
+                  稍后再看
                 </button>
               </div>
             </div>
