@@ -40,28 +40,59 @@ export default function SettingsScreen() {
   const [iosSafeArea, setIosSafeArea] = useState(() => {
     return localStorage.getItem('mina_ios_safe_area') === 'true'
   })
+  const [fullscreenUnsupported, setFullscreenUnsupported] = useState(false)
+
+  // 检测是否支持全屏 API
+  const getFullscreenElement = () => {
+    return document.fullscreenElement || (document as any).webkitFullscreenElement
+  }
+  
+  const requestFullscreen = async (el: HTMLElement) => {
+    if (el.requestFullscreen) {
+      return el.requestFullscreen()
+    } else if ((el as any).webkitRequestFullscreen) {
+      return (el as any).webkitRequestFullscreen()
+    }
+    throw new Error('Fullscreen API not supported')
+  }
+  
+  const exitFullscreen = async () => {
+    if (document.exitFullscreen) {
+      return document.exitFullscreen()
+    } else if ((document as any).webkitExitFullscreen) {
+      return (document as any).webkitExitFullscreen()
+    }
+    throw new Error('Fullscreen API not supported')
+  }
 
   // 监听全屏状态变化
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
+      setIsFullscreen(!!getFullscreenElement())
     }
     document.addEventListener('fullscreenchange', handleFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
   }, [])
 
   // 切换全屏模式
   const toggleFullscreen = async () => {
     try {
-      if (!document.fullscreenElement) {
+      if (!getFullscreenElement()) {
         // 进入全屏
-        await document.documentElement.requestFullscreen()
+        await requestFullscreen(document.documentElement)
       } else {
         // 退出全屏
-        await document.exitFullscreen()
+        await exitFullscreen()
       }
     } catch (error) {
       console.error('全屏切换失败:', error)
+      // iOS Safari 不支持全屏 API，显示提示
+      setFullscreenUnsupported(true)
+      setTimeout(() => setFullscreenUnsupported(false), 3000)
     }
   }
 
@@ -266,7 +297,7 @@ export default function SettingsScreen() {
           <SettingsGroup title="显示">
             <SettingsItem
               label="全屏模式"
-              value={isFullscreen ? '已开启' : '已关闭'}
+              value={isFullscreen ? '已开启' : '点击开启'}
               onClick={toggleFullscreen}
               showArrow={false}
             />
@@ -277,6 +308,14 @@ export default function SettingsScreen() {
               showArrow={false}
             />
           </SettingsGroup>
+          
+          {/* 全屏不支持提示 */}
+          {fullscreenUnsupported && (
+            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/80 text-white px-6 py-4 rounded-2xl text-center z-50 max-w-[280px]">
+              <div className="text-base font-medium mb-2">iOS 不支持网页全屏</div>
+              <div className="text-sm text-gray-300">请使用「添加到主屏幕」功能，以 PWA 方式打开获得全屏体验</div>
+            </div>
+          )}
 
           <SettingsGroup title="数据管理">
             <SettingsItem
