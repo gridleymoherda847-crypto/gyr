@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS, type Song } from '../context/OSContext'
 import PageContainer from '../components/PageContainer'
@@ -13,20 +13,19 @@ export default function MusicScreen() {
   const [activeTab, setActiveTab] = useState<'recommend' | 'playlist' | 'favorites'>('recommend')
   const [searchQuery, setSearchQuery] = useState('')
   const [showPlayer, setShowPlayer] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   
   // 导入音乐状态
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importSongName, setImportSongName] = useState('')
-  const [importSongArtist, setImportSongArtist] = useState('本地音乐')
+  const [importSongArtist, setImportSongArtist] = useState('网络音乐')
   const [importSongData, setImportSongData] = useState<{ url: string; duration: number; isUrl?: boolean } | null>(null)
-  const [importLoading, setImportLoading] = useState(false)
   const [importSuccess, setImportSuccess] = useState(false)
   const [showUrlInput, setShowUrlInput] = useState(false)
   const [importUrl, setImportUrl] = useState('')
 
-  // 搜索过滤
-  const filteredSongs = musicPlaylist.filter(song => {
+  // 搜索过滤（添加安全检查防止 undefined）
+  const playlist = musicPlaylist || []
+  const filteredSongs = playlist.filter(song => {
     const query = searchQuery.toLowerCase()
     return song.title.toLowerCase().includes(query) || 
            song.artist.toLowerCase().includes(query)
@@ -43,79 +42,6 @@ export default function MusicScreen() {
   }
 
   const currentTime = currentSong ? (musicProgress / 100) * currentSong.duration : 0
-
-  // 文件转 base64
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    const file = files[0]
-    if (!file.type.startsWith('audio/')) {
-      alert('请选择音频文件')
-      e.target.value = ''
-      return
-    }
-
-    // 移动端检测
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-    
-    // 移动端限制更严格（2MB），电脑端可以大一点（5MB）
-    const maxSize = isMobile ? 2 * 1024 * 1024 : 5 * 1024 * 1024
-    const maxSizeMB = isMobile ? '2MB' : '5MB'
-    
-    if (file.size > maxSize) {
-      alert(`音频文件太大，最大支持 ${maxSizeMB}\n\n手机端建议使用「链接导入」功能：\n1. 把音频上传到网盘或文件托管\n2. 获取直链后用「链接」按钮导入`)
-      e.target.value = ''
-      return
-    }
-
-    setImportLoading(true)
-    
-    try {
-      const fileName = file.name.replace(/\.[^/.]+$/, '')
-      const base64 = await fileToBase64(file)
-      
-      console.log('[Music] File size:', (file.size / 1024 / 1024).toFixed(2), 'MB, base64 length:', base64.length)
-      
-      // 获取时长，加超时保护
-      let duration = 180
-      try {
-        const audio = new Audio(base64)
-        duration = await new Promise<number>((resolve) => {
-          const timeout = setTimeout(() => resolve(180), 3000)
-          audio.addEventListener('loadedmetadata', () => {
-            clearTimeout(timeout)
-            resolve(Math.floor(audio.duration) || 180)
-          })
-          audio.addEventListener('error', () => {
-            clearTimeout(timeout)
-            resolve(180)
-          })
-          audio.load()
-        })
-      } catch { /* ignore */ }
-      
-      setImportSongName(fileName)
-      setImportSongArtist('本地音乐')
-      setImportSongData({ url: base64, duration })
-      setShowImportDialog(true)
-    } catch (err) {
-      console.error('[Music] Import failed:', err)
-      alert('导入失败，请重试\n\n如果在手机上，建议使用「链接导入」')
-    } finally {
-      setImportLoading(false)
-      e.target.value = ''
-    }
-  }
 
   // 从链接导入音乐
   const handleUrlImport = () => {
@@ -166,11 +92,11 @@ export default function MusicScreen() {
     addSong({
       id: songId,
       title: songTitle,
-      artist: importSongArtist.trim() || '本地音乐',
+      artist: importSongArtist.trim() || '网络音乐',
       cover: '/icons/music-cover.png',
       url: importSongData.url,
       duration: importSongData.duration,
-      source: importSongData.isUrl ? 'url' : (importSongData.url.startsWith('data:') ? 'data' : 'builtin'),
+      source: 'url',
     })
     
     setShowImportDialog(false)
@@ -258,26 +184,14 @@ export default function MusicScreen() {
             </button>
           </div>
           
-          {/* 导入按钮 - 直接显示，不用下拉菜单 */}
-          <div className="flex items-center gap-2">
-            <label className="px-3 py-1.5 rounded-full bg-[#31c27c] text-white text-xs font-medium cursor-pointer active:opacity-80">
-              📁 导入
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="audio/*"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => setShowUrlInput(true)}
-              className="px-3 py-1.5 rounded-full bg-white/20 text-white text-xs font-medium active:opacity-80"
-            >
-              🔗 链接
-            </button>
-          </div>
+          {/* 导入按钮 - 只支持链接导入 */}
+          <button
+            type="button"
+            onClick={() => setShowUrlInput(true)}
+            className="px-3 py-1.5 rounded-full bg-[#31c27c] text-white text-xs font-medium active:opacity-80"
+          >
+            🔗 导入链接
+          </button>
         </div>
 
         {/* 主内容区 */}
@@ -291,7 +205,7 @@ export default function MusicScreen() {
                   <span className="text-white/50 text-xs">更多 &gt;</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  {musicPlaylist.slice(0, 3).map((song, idx) => (
+                  {playlist.slice(0, 3).map((song, idx) => (
                     <div 
                       key={song.id}
                       onClick={() => playSong(song)}
@@ -597,16 +511,6 @@ export default function MusicScreen() {
                 确认导入
               </button>
             </div>
-          </div>
-        </div>
-      )}
-      
-      {/* 导入加载中 */}
-      {importLoading && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-2xl px-6 py-4 flex items-center gap-3">
-            <div className="w-5 h-5 border-2 border-[#31c27c] border-t-transparent rounded-full animate-spin" />
-            <span className="text-gray-700">正在导入...</span>
           </div>
         </div>
       )}

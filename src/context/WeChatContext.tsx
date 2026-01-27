@@ -82,6 +82,9 @@ export type WeChatCharacter = {
   voiceEnabled?: boolean // 是否启用语音（该角色）
   voiceId?: string // 使用的音色ID
   voiceFrequency?: 'always' | 'often' | 'sometimes' | 'rarely' // 发语音频率
+  // 拍一拍功能
+  patMeText?: string // 对方拍我时显示的内容（如"拍了拍我的小脑袋"）
+  patThemText?: string // 我拍对方时显示的内容（如"拍了拍TA的肩膀"）
 }
 
 // 聊天消息
@@ -91,7 +94,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice' | 'pat'
   // 转账相关
   transferAmount?: number
   transferNote?: string
@@ -152,6 +155,16 @@ export type WeChatMessage = {
   voiceOriginalText?: string // 语音原文（用于TTS朗读，非中文语言时存储原文）
   voiceDuration?: number // 语音时长（秒）
   voiceUrl?: string // 语音文件URL（用于播放）
+  
+  // 消息引用相关
+  replyTo?: {
+    messageId: string // 被引用的消息ID
+    content: string // 被引用的消息内容快照（防止原消息被编辑后引用失效）
+    senderName: string // 被引用消息的发送者名称
+  }
+  
+  // 拍一拍相关
+  patText?: string // 拍一拍显示的文字（如"拍了拍我的小脑袋"）
 }
 
 // 转账记录
@@ -556,6 +569,8 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         : (c.coupleSpaceEnabled ? (typeof c.createdAt === 'number' ? c.createdAt : Date.now()) : null),
       xHandle: typeof (c as any).xHandle === 'string' ? (c as any).xHandle : '',
       xAliases: Array.isArray((c as any).xAliases) ? (c as any).xAliases.filter((x: any) => typeof x === 'string') : [],
+      patMeText: typeof (c as any).patMeText === 'string' ? (c as any).patMeText : '拍了拍我的小脑袋',
+      patThemText: typeof (c as any).patThemText === 'string' ? (c as any).patThemText : '拍了拍TA的肩膀',
       userBubbleStyle: (() => {
         const s = (c as any).userBubbleStyle
         if (!s) return s
@@ -773,6 +788,8 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       coupleStartedAt: character.coupleSpaceEnabled ? Date.now() : null,
       xHandle: character.xHandle ?? '',
       xAliases: Array.isArray(character.xAliases) ? character.xAliases : [],
+      patMeText: character.patMeText ?? '拍了拍我的小脑袋',
+      patThemText: character.patThemText ?? '拍了拍TA的肩膀',
     }
     setCharacters(prev => [...prev, newCharacter])
     return newCharacter

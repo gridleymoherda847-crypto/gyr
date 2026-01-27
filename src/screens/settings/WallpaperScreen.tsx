@@ -25,14 +25,10 @@ const fileToBase64 = (file: File): Promise<string> => {
 
 export default function WallpaperScreen() {
   const navigate = useNavigate()
-  const { wallpaper, lockWallpaper, setWallpaper, setLockWallpaper, fontColor } = useOS()
-  const [activeTab, setActiveTab] = useState<'home' | 'lock'>('home')
+  const { wallpaper, setWallpaper, fontColor } = useOS()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(false)
-
-  const currentWallpaper = activeTab === 'home' ? wallpaper : lockWallpaper
-  const setCurrentWallpaper = activeTab === 'home' ? setWallpaper : setLockWallpaper
 
   const handleFileSelect = () => fileInputRef.current?.click()
   
@@ -51,7 +47,7 @@ export default function WallpaperScreen() {
     try {
       // 转换为 base64 格式，这样可以持久化保存
       const base64 = await fileToBase64(file)
-      setCurrentWallpaper(base64)
+      setWallpaper(base64)
       setSaved(true)
       setTimeout(() => setSaved(false), 1500)
     } catch (err) {
@@ -62,10 +58,10 @@ export default function WallpaperScreen() {
     }
   }
   
-  const handlePresetSelect = (gradient: string) => { setCurrentWallpaper(gradient); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  const handlePresetSelect = (gradient: string) => { setWallpaper(gradient); setSaved(true); setTimeout(() => setSaved(false), 1500) }
 
   // 判断是否为图片（包括 base64、http URL、blob URL、本地路径）
-  const isImageUrl = currentWallpaper.startsWith('data:') || currentWallpaper.startsWith('http') || currentWallpaper.startsWith('blob') || currentWallpaper.startsWith('/')
+  const isImageUrl = wallpaper.startsWith('data:') || wallpaper.startsWith('http') || wallpaper.startsWith('blob') || wallpaper.startsWith('/')
 
   return (
     <PageContainer>
@@ -73,16 +69,10 @@ export default function WallpaperScreen() {
         <AppHeader title="壁纸设置" onBack={() => navigate('/apps/settings')} />
         
         <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 space-y-4 sm:space-y-5">
-          {/* 切换标签 */}
-          <div className="flex gap-2 p-1 bg-white/50 rounded-2xl border border-white/30">
-            <button onClick={() => setActiveTab('home')} className={`flex-1 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all ${activeTab === 'home' ? 'bg-white/70' : 'opacity-60 hover:opacity-80'}`} style={{ color: fontColor.value }}>🏠 桌面壁纸</button>
-            <button onClick={() => setActiveTab('lock')} className={`flex-1 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all ${activeTab === 'lock' ? 'bg-white/70' : 'opacity-60 hover:opacity-80'}`} style={{ color: fontColor.value }}>🔒 锁屏壁纸</button>
-          </div>
-
           {/* 预览 */}
           <div className="flex justify-center">
-            <div className="w-28 sm:w-36 aspect-[9/19] rounded-[20px] sm:rounded-[28px] border-[3px] sm:border-4 border-gray-800 shadow-lg overflow-hidden" style={{ background: isImageUrl ? undefined : currentWallpaper, backgroundImage: isImageUrl ? `url(${currentWallpaper})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}>
-              <div className="w-full h-full flex items-center justify-center"><span className="text-xs sm:text-sm bg-black/30 px-2 sm:px-3 py-1 rounded-full text-white">{activeTab === 'home' ? '桌面' : '锁屏'}</span></div>
+            <div className="w-28 sm:w-36 aspect-[9/19] rounded-[20px] sm:rounded-[28px] border-[3px] sm:border-4 border-gray-800 shadow-lg overflow-hidden" style={{ background: isImageUrl ? undefined : wallpaper, backgroundImage: isImageUrl ? `url(${wallpaper})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+              <div className="w-full h-full flex items-center justify-center"><span className="text-xs sm:text-sm bg-black/30 px-2 sm:px-3 py-1 rounded-full text-white">桌面</span></div>
             </div>
           </div>
 

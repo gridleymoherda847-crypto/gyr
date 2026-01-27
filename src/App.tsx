@@ -4,7 +4,6 @@ import { OSProvider, useOS } from './context/OSContext'
 import { WeChatProvider, useWeChat } from './context/WeChatContext'
 import PhoneShell from './components/PhoneShell'
 import ErrorBoundary from './components/ErrorBoundary'
-import LockScreen from './components/LockScreen'
 import ActivationScreen from './components/ActivationScreen'
 import { checkDeviceActivation, getLocalActivationStatus } from './services/redemption'
 
@@ -31,6 +30,8 @@ const PresetScreen = lazy(() => import('./screens/PresetScreen'))
 const DoudizhuScreen = lazy(() => import('./screens/DoudizhuScreen'))
 const XScreen = lazy(() => import('./screens/XScreen'))
 const ManualScreen = lazy(() => import('./screens/ManualScreen'))
+const AnniversaryScreen = lazy(() => import('./screens/AnniversaryScreen'))
+const MemoScreen = lazy(() => import('./screens/MemoScreen'))
 
 // WeChat
 const WeChatScreen = lazy(() => import('./screens/wechat/WeChatScreen'))
@@ -73,7 +74,7 @@ export default function App() {
 }
 
 function InnerApp() {
-  const { isLocked, isHydrated: osHydrated } = useOS()
+  const { isHydrated: osHydrated } = useOS()
   const { isHydrated: wechatHydrated } = useWeChat()
   const hydrated = osHydrated && wechatHydrated
   
@@ -130,40 +131,38 @@ function InnerApp() {
   return (
     <ErrorBoundary>
       <PhoneShell>
-        {isLocked ? (
-          <LockScreen />
-        ) : (
-          <Suspense fallback={<PhoneSkeleton />}>
-            <Routes>
-              <Route path="/" element={<HomeScreen />} />
-              <Route path="/apps/settings" element={<SettingsScreen />} />
-              <Route path="/apps/settings/profile" element={<ProfileScreen />} />
-              <Route path="/apps/settings/api" element={<ApiConfigScreen />} />
-              <Route path="/apps/settings/wallpaper" element={<WallpaperScreen />} />
-              <Route path="/apps/settings/font" element={<FontScreen />} />
-              <Route path="/apps/settings/color" element={<ColorScreen />} />
-              <Route path="/apps/settings/stickers" element={<StickerManagerScreen />} />
-              <Route path="/apps/settings/location" element={<LocationScreen />} />
-              <Route path="/apps/diary-vault" element={<DiaryVaultScreen />} />
-              <Route path="/apps/mibi" element={<MibiScreen />} />
-              <Route path="/apps/sms" element={<SmsScreen />} />
-              <Route path="/apps/music" element={<MusicScreen />} />
-              <Route path="/apps/preset" element={<PresetScreen />} />
-              <Route path="/apps/doudizhu" element={<DoudizhuScreen />} />
-              <Route path="/apps/x" element={<XScreen />} />
-              <Route path="/apps/manual" element={<ManualScreen />} />
-              {/* WeChat Routes */}
-              <Route path="/apps/wechat" element={<WeChatScreen />} />
-              <Route path="/apps/wechat/create-character" element={<CreateCharacterScreen />} />
-              <Route path="/apps/wechat/chat/:characterId" element={<ChatScreen />} />
-              <Route path="/apps/wechat/chat/:characterId/settings" element={<ChatSettingsScreen />} />
-              <Route path="/apps/wechat/couple-space/:characterId" element={<CoupleSpaceScreen />} />
-              <Route path="/apps/wechat/wallet" element={<WeChatWalletRoute />} />
-              <Route path="/apps/:appId" element={<AppScreen />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
-        )}
+        <Suspense fallback={<PhoneSkeleton />}>
+          <Routes>
+            <Route path="/" element={<HomeScreen />} />
+            <Route path="/apps/settings" element={<SettingsScreen />} />
+            <Route path="/apps/settings/profile" element={<ProfileScreen />} />
+            <Route path="/apps/settings/api" element={<ApiConfigScreen />} />
+            <Route path="/apps/settings/wallpaper" element={<WallpaperScreen />} />
+            <Route path="/apps/settings/font" element={<FontScreen />} />
+            <Route path="/apps/settings/color" element={<ColorScreen />} />
+            <Route path="/apps/settings/stickers" element={<StickerManagerScreen />} />
+            <Route path="/apps/settings/location" element={<LocationScreen />} />
+            <Route path="/apps/diary-vault" element={<DiaryVaultScreen />} />
+            <Route path="/apps/mibi" element={<MibiScreen />} />
+            <Route path="/apps/sms" element={<SmsScreen />} />
+            <Route path="/apps/music" element={<MusicScreen />} />
+            <Route path="/apps/preset" element={<PresetScreen />} />
+            <Route path="/apps/doudizhu" element={<DoudizhuScreen />} />
+            <Route path="/apps/x" element={<XScreen />} />
+            <Route path="/apps/manual" element={<ManualScreen />} />
+            <Route path="/apps/anniversary" element={<AnniversaryScreen />} />
+            <Route path="/apps/memo" element={<MemoScreen />} />
+            {/* WeChat Routes */}
+            <Route path="/apps/wechat" element={<WeChatScreen />} />
+            <Route path="/apps/wechat/create-character" element={<CreateCharacterScreen />} />
+            <Route path="/apps/wechat/chat/:characterId" element={<ChatScreen />} />
+            <Route path="/apps/wechat/chat/:characterId/settings" element={<ChatSettingsScreen />} />
+            <Route path="/apps/wechat/couple-space/:characterId" element={<CoupleSpaceScreen />} />
+            <Route path="/apps/wechat/wallet" element={<WeChatWalletRoute />} />
+            <Route path="/apps/:appId" element={<AppScreen />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </PhoneShell>
     </ErrorBoundary>
   )

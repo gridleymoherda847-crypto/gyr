@@ -1,4 +1,4 @@
-import { useOS } from '../context/OSContext'
+import { useOS, MINIMAL_ICONS } from '../context/OSContext'
 
 type Props = {
   appId: string
@@ -9,9 +9,19 @@ type Props = {
 }
 
 export default function AppIcon({ appId, label, icon, gradient, size = 'normal' }: Props) {
-  const { customAppIcons, fontColor } = useOS()
+  const { customAppIcons, fontColor, iconTheme } = useOS()
   
-  const iconSrc = customAppIcons[appId] || icon
+  // 根据主题选择图标
+  // 优先级：自定义图标 > 主题图标 > 默认图标
+  const getIconSrc = () => {
+    if (customAppIcons[appId]) return customAppIcons[appId]
+    if (iconTheme === 'minimal' && MINIMAL_ICONS[appId]) return MINIMAL_ICONS[appId]
+    return icon
+  }
+  const iconSrc = getIconSrc()
+  
+  // 简洁主题使用白色背景
+  const isMinimal = iconTheme === 'minimal' && !customAppIcons[appId]
   
   const sizeClasses = size === 'dock' 
     ? 'w-14 h-14 sm:w-16 sm:h-16 rounded-[15px] sm:rounded-[17px]' 
@@ -19,15 +29,15 @@ export default function AppIcon({ appId, label, icon, gradient, size = 'normal' 
 
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-1.5 press-effect">
-      <div className={`relative ${sizeClasses} bg-gradient-to-br ${gradient} shadow-[0_3px_12px_rgba(0,0,0,0.12)] flex items-center justify-center overflow-hidden`}>
-        {/* 光泽效果 */}
-        <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-black/5" />
+      <div className={`relative ${sizeClasses} ${isMinimal ? 'bg-white/90' : `bg-gradient-to-br ${gradient}`} shadow-[0_3px_12px_rgba(0,0,0,0.12)] flex items-center justify-center overflow-hidden`}>
+        {/* 光泽效果 - 简洁主题用更轻的效果 */}
+        <div className={`absolute inset-0 ${isMinimal ? 'bg-gradient-to-b from-white/20 via-transparent to-black/3' : 'bg-gradient-to-b from-white/30 via-transparent to-black/5'}`} />
         
-        {/* 图标：只显示图片 */}
+        {/* 图标 */}
         <img 
           src={iconSrc} 
           alt={label} 
-          className="w-full h-full object-cover relative z-10"
+          className={`relative z-10 ${isMinimal ? 'w-10 h-10 sm:w-12 sm:h-12 object-contain' : 'w-full h-full object-cover'}`}
         />
       </div>
       

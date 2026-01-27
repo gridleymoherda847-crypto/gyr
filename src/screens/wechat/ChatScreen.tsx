@@ -213,6 +213,10 @@ export default function ChatScreen() {
   
   // 编辑模式：可勾选双方消息、批量删除
   const [editMode, setEditMode] = useState(false)
+  // 单条消息编辑和引用
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [editingContent, setEditingContent] = useState('')
+  const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(null)
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set())
   
   // X（推特）关注状态
@@ -732,9 +736,19 @@ export default function ChatScreen() {
                 used += 20
               }
             }
+            else if (m.type === 'pat') {
+              // 拍一拍消息
+              content = `[拍一拍：${m.patText || '拍了拍'}]`
+              used += content.length
+            }
             else {
-              // 普通文本消息
-              content = m.content || ''
+              // 普通文本消息（包含引用）
+              let textContent = m.content || ''
+              if (m.replyTo) {
+                // 引用消息：在内容前加上引用标记
+                textContent = `[引用：${m.replyTo.senderName}说"${m.replyTo.content}"] ${textContent}`
+              }
+              content = textContent
               used += (typeof content === 'string' ? content.length : 50)
             }
             
@@ -1547,6 +1561,24 @@ ${recentTimeline || '（无）'}
                 safeSetTyping(false)
                 safeSetPending(0)
               }
+              
+              // 随机拍一拍：根据上下文内容有概率触发（约10%概率）
+              // 触发条件：回复内容包含友好/亲密/撒娇等关键词，或者随机触发
+              const friendlyKeywords = /好|嗯|啊|呀|呢|啦|哦|嘿嘿|哈哈|嘻嘻|么么|爱你|想你|抱抱|摸摸|亲亲|撒娇|可爱|温柔|贴心/
+              const shouldPat = Math.random() < 0.1 || (friendlyKeywords.test(response || ''))
+              if (shouldPat && character?.patMeText) {
+                const patDelay = totalDelay + 500 + Math.random() * 1000
+                safeTimeoutEx(() => {
+                  const patText = character.patMeText || '拍了拍我的小脑袋'
+                  addMessage({
+                    characterId: character.id,
+                    content: `${character.name}${patText}`,
+                    isUser: false,
+                    type: 'pat',
+                    patText: patText,
+                  })
+                }, patDelay, { background: true })
+              }
               // 无论是否离开页面，都要关闭“正在输入中”
               setCharacterTyping(character.id, false)
             }
@@ -1821,16 +1853,29 @@ ${recentTimeline || '（无）'}
     forceScrollRef.current = true
     nearBottomRef.current = true
 
+    // 获取引用消息内容
+    const replyTo = replyingToMessageId ? (() => {
+      const replyMsg = messages.find(m => m.id === replyingToMessageId)
+      if (!replyMsg) return undefined
+      return {
+        messageId: replyMsg.id,
+        content: replyMsg.content,
+        senderName: replyMsg.isUser ? (selectedPersona?.name || '我') : character.name,
+      }
+    })() : undefined
+
     const newMsg = addMessage({
       characterId: character.id,
       content: inputText,
       isUser: true,
       type: 'text',
+      replyTo: replyTo,
     })
     // 立即同步 ref，避免用户立刻点箭头时还拿到旧 messages
     messagesRef.current = [...messagesRef.current, newMsg]
 
     setInputText('')
+    setReplyingToMessageId(null) // 清除引用
     // 统一手动：累计待回复数量（点击箭头触发）
     setPendingCount(prev => prev + 1)
   }
@@ -3606,8 +3651,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
   const renderedMessageItems = useMemo(() => {
     if (!character?.id) return null
     return visibleMessages.map((msg) => {
-      // 系统消息特殊渲染
-      if (msg.type === 'system') {
+      // 系统消息和拍一拍消息特殊渲染
+      if (msg.type === 'system' || msg.type === 'pat') {
         return (
           <div
             key={msg.id}
@@ -3670,7 +3715,33 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               </button>
             )}
 
-            <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
+            <div 
+              className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm cursor-pointer active:opacity-70 transition-opacity"
+              onClick={() => {
+                if (editMode) return // 编辑模式下不触发拍一拍
+                if (msg.isUser) {
+                  // 点击自己的头像，拍对方
+                  const patText = character?.patThemText || '拍了拍TA的肩膀'
+                  addMessage({
+                    characterId: character.id,
+                    content: `${selectedPersona?.name || '我'}${patText}`,
+                    isUser: false,
+                    type: 'pat',
+                    patText: patText,
+                  })
+                } else {
+                  // 点击对方的头像，拍对方
+                  const patText = character?.patThemText || '拍了拍TA的肩膀'
+                  addMessage({
+                    characterId: character.id,
+                    content: `你${patText}`,
+                    isUser: true,
+                    type: 'pat',
+                    patText: patText,
+                  })
+                }
+              }}
+            >
               {msg.isUser ? (
                 selectedPersona?.avatar ? (
                   <img src={selectedPersona.avatar} alt="" className="w-full h-full object-cover" />
@@ -3689,6 +3760,14 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             </div>
 
             <div className={`flex flex-col max-w-[70%] ${msg.isUser ? 'items-end' : 'items-start'}`}>
+              {/* 引用消息显示 */}
+              {msg.replyTo && (
+                <div className={`mb-1 px-2 py-1 rounded-lg bg-gray-100 border-l-2 border-gray-400 text-xs text-gray-600 max-w-full ${msg.isUser ? 'text-right' : 'text-left'}`}>
+                  <div className="font-medium">{msg.replyTo.senderName}</div>
+                  <div className="truncate">{msg.replyTo.content}</div>
+                </div>
+              )}
+              
               <div
                 className={`w-fit text-[15px] ${
                   msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice'
@@ -3720,11 +3799,36 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                   </div>
                 )}
 
-              {/* 每条消息显示时间（小号字体） */}
-              <div className="mt-2">
+              {/* 每条消息显示时间（小号字体）和操作按钮 */}
+              <div className="mt-2 flex items-center gap-2">
                 <span className="inline-block px-2 py-[2px] rounded-md bg-white/85 md:bg-white/70 md:backdrop-blur border border-white/60 text-[10px] text-gray-600">
                   {formatTime(msg.timestamp)}
                 </span>
+                
+                {/* 消息操作按钮（仅对方消息且非系统消息） */}
+                {!msg.isUser && (msg.type === 'text' || msg.type === 'voice') && !editMode && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingMessageId(msg.id)
+                        setEditingContent(msg.content)
+                      }}
+                      className="px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:bg-gray-100 active:opacity-70"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplyingToMessageId(msg.id)
+                      }}
+                      className="px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:bg-gray-100 active:opacity-70"
+                    >
+                      引用
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -3907,6 +4011,29 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
           <div ref={messagesEndRef} />
         </div>
 
+        {/* 引用显示 */}
+        {replyingToMessageId && (() => {
+          const replyMsg = visibleMessages.find(m => m.id === replyingToMessageId)
+          if (!replyMsg) return null
+          return (
+            <div className="px-3 py-2 bg-gray-50 border-t border-gray-200 flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-gray-500 mb-1">引用 {replyMsg.isUser ? (selectedPersona?.name || '我') : character.name}</div>
+                <div className="text-sm text-gray-700 truncate">{replyMsg.content}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReplyingToMessageId(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )
+        })()}
+        
         {/* 输入框 */}
         {/* 移动端禁用 blur（滚动+输入会非常卡），桌面端保留 */}
         <div className="px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40">
@@ -4087,16 +4214,6 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                   </button>
                   
                   {/* === 第三行：管理功能 === */}
-                  {/* 编辑 */}
-                  <button type="button" onClick={() => { setShowPlusMenu(false); setEditMode(true) }} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
-                      </svg>
-                    </div>
-                    <span className="text-xs text-gray-600">编辑</span>
-                  </button>
-                  
                   {/* 清空 */}
                   <button type="button" onClick={() => { setShowPlusMenu(false); setShowClearConfirm(true) }} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
@@ -5028,6 +5145,51 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         onCancel={() => setShowClearConfirm(false)}
         onConfirm={handleClearAll}
       />
+
+      {/* 编辑消息对话框 */}
+      {editingMessageId && (() => {
+        const editMsg = messages.find(m => m.id === editingMessageId)
+        if (!editMsg) return null
+        return (
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-6 bg-black/50">
+            <div className="w-full max-w-[400px] rounded-2xl bg-white p-4 shadow-xl">
+              <div className="text-lg font-semibold text-gray-800 mb-4">编辑消息</div>
+              <textarea
+                value={editingContent}
+                onChange={(e) => setEditingContent(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 text-sm outline-none resize-none"
+                rows={4}
+                placeholder="输入消息内容"
+              />
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingMessageId(null)
+                    setEditingContent('')
+                  }}
+                  className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editingContent.trim()) {
+                      updateMessage(editingMessageId, { content: editingContent.trim() })
+                    }
+                    setEditingMessageId(null)
+                    setEditingContent('')
+                  }}
+                  className="flex-1 py-2 rounded-lg bg-[#07C160] text-white text-sm font-medium"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* API超时弹窗 */}
       <WeChatDialog

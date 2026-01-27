@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#333" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M32 14v40"/>
+  <path d="M32 14c-4-4-12-6-20-4v40c8-2 16 0 20 4"/>
+  <path d="M32 14c4-4 12-6 20-4v40c-8-2-16 0-20 4"/>
+  <line x1="18" y1="22" x2="26" y2="22"/>
+  <line x1="18" y1="30" x2="26" y2="30"/>
+  <line x1="18" y1="38" x2="24" y2="38"/>
+  <line x1="38" y1="22" x2="46" y2="22"/>
+  <line x1="38" y1="30" x2="46" y2="30"/>
+  <line x1="40" y1="38" x2="46" y2="38"/>
+</svg>

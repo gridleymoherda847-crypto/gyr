@@ -10,7 +10,7 @@ import { kvClear } from '../storage/kv'
 
 export default function SettingsScreen() {
   const navigate = useNavigate()
-  const { llmConfig, currentFont, fontColor, setLocked } = useOS()
+  const { llmConfig, currentFont, fontColor, iconTheme, setIconTheme, decorImage, setDecorImage } = useOS()
   const { characters, setCharacterTyping } = useWeChat()
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [showClearedTip, setShowClearedTip] = useState(false)
@@ -24,6 +24,7 @@ export default function SettingsScreen() {
   const [importSummary, setImportSummary] = useState<{ written: number; skipped: number } | null>(null)
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const discImageInputRef = useRef<HTMLInputElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showScreenFit, setShowScreenFit] = useState(false)
   const [screenPaddingTop, setScreenPaddingTop] = useState(() => {
@@ -58,11 +59,6 @@ export default function SettingsScreen() {
     } catch (error) {
       console.error('全屏切换失败:', error)
     }
-  }
-
-  const handleShutdown = () => {
-    setLocked(true)
-    navigate('/', { replace: true })
   }
 
   const handleClearData = () => {
@@ -159,6 +155,103 @@ export default function SettingsScreen() {
             <SettingsItem label="表情包管理" to="/apps/settings/stickers" />
             <SettingsItem label="位置与天气" to="/apps/settings/location" />
           </SettingsGroup>
+          
+          <SettingsGroup title="主题">
+            <div className="rounded-2xl border border-white/35 bg-white/70 overflow-hidden">
+              <div className="px-4 py-3">
+                <div className="text-sm font-medium text-gray-800 mb-3">主题模式</div>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIconTheme('custom')}
+                    className={`flex-1 rounded-xl p-3 border-2 transition-all ${
+                      iconTheme === 'custom' 
+                        ? 'border-gray-800 bg-gray-50' 
+                        : 'border-gray-200 bg-white/50'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-1">🎀</div>
+                      <div className="text-xs font-medium text-gray-700">默认</div>
+                      <div className="text-[10px] text-gray-400">使用上传的图标</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIconTheme('minimal')}
+                    className={`flex-1 rounded-xl p-3 border-2 transition-all ${
+                      iconTheme === 'minimal' 
+                        ? 'border-gray-800 bg-gray-50' 
+                        : 'border-gray-200 bg-white/50'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-1">◯</div>
+                      <div className="text-xs font-medium text-gray-700">自定义</div>
+                      <div className="text-[10px] text-gray-400">简约线条（方便装修）</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+              
+              {/* 唱片封面设置 - 仅在自定义模式下显示 */}
+              {iconTheme === 'minimal' && (
+                <div className="border-t border-white/30 px-4 py-3">
+                  <div className="text-sm font-medium text-gray-800 mb-3">唱片封面</div>
+                  <div className="flex items-center gap-3">
+                    {/* 预览 */}
+                    <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100 border border-gray-200 flex-shrink-0">
+                      {decorImage ? (
+                        <img src={decorImage} alt="唱片封面" className="w-full h-full object-cover" />
+                      ) : (
+                        <svg viewBox="0 0 100 100" className="w-full h-full">
+                          <circle cx="50" cy="50" r="48" fill="white" stroke="#333" strokeWidth="1.5"/>
+                          <circle cx="50" cy="50" r="38" fill="none" stroke="#333" strokeWidth="0.5" strokeDasharray="3 3"/>
+                          <circle cx="50" cy="50" r="18" fill="none" stroke="#333" strokeWidth="1"/>
+                          <circle cx="50" cy="50" r="8" fill="#333"/>
+                        </svg>
+                      )}
+                    </div>
+                    <div className="flex-1 flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => discImageInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs text-gray-700 hover:bg-gray-200 transition-colors"
+                      >
+                        上传封面
+                      </button>
+                      {decorImage && (
+                        <button
+                          type="button"
+                          onClick={() => setDecorImage('')}
+                          className="px-3 py-1.5 rounded-lg bg-red-50 text-xs text-red-500 hover:bg-red-100 transition-colors"
+                        >
+                          恢复默认
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <input
+                    ref={discImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      const reader = new FileReader()
+                      reader.onload = () => {
+                        const result = reader.result as string
+                        setDecorImage(result)
+                      }
+                      reader.readAsDataURL(file)
+                      if (discImageInputRef.current) discImageInputRef.current.value = ''
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </SettingsGroup>
 
           <SettingsGroup title="显示">
             <SettingsItem
@@ -199,7 +292,6 @@ export default function SettingsScreen() {
               onClick={handleClearData}
               showArrow={false}
             />
-            <SettingsItem label="关机" onClick={handleShutdown} showArrow={false} />
           </SettingsGroup>
           
           {/* 隐藏的文件输入 */}

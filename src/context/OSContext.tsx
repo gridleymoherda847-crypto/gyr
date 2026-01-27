@@ -37,6 +37,29 @@ export type ChatMessage = { id: string; senderId: string; senderName: string; te
 export type FontOption = { id: string; name: string; fontFamily: string; preview: string }
 export type ColorOption = { id: string; name: string; value: string }
 
+// 纪念日类型
+export type Anniversary = {
+  id: string
+  name: string
+  date: string  // YYYY-MM-DD 格式
+  icon: string  // emoji
+  type: 'countdown' | 'countup'  // 倒计时（还有X天）或正计时（已经X天）
+}
+
+// 待办事项
+export type TodoItem = {
+  id: string
+  text: string
+  done: boolean
+}
+
+// 备忘录类型
+export type Memo = {
+  content: string
+  image: string  // base64 或 URL
+  todos: TodoItem[]  // 待办事项列表
+}
+
 // 位置和天气相关类型
 export type LocationMode = 'auto' | 'manual'
 export type WeatherData = {
@@ -168,11 +191,11 @@ const DEFAULT_SONGS: Song[] = [
 
 type OSContextValue = {
   isHydrated: boolean
-  time: string; isLocked: boolean; wallpaper: string; lockWallpaper: string
+  time: string; wallpaper: string
   currentFont: FontOption; fontColor: ColorOption; userProfile: UserProfile
   llmConfig: LLMConfig; ttsConfig: TTSConfig; miCoinBalance: number; notifications: Notification[]
   characters: VirtualCharacter[]; chatLog: ChatMessage[]
-  customAppIcons: Record<string, string>; decorImage: string
+  customAppIcons: Record<string, string>; decorImage: string; homeAvatar: string
   // 位置和天气
   locationSettings: LocationSettings
   weather: WeatherData
@@ -185,9 +208,7 @@ type OSContextValue = {
   musicPlaylist: Song[]
   musicFavorites: string[]
   audioRef: React.RefObject<HTMLAudioElement | null>
-  setLocked: (locked: boolean) => void
   setWallpaper: (wallpaper: string) => void
-  setLockWallpaper: (wallpaper: string) => void
   setCurrentFont: (font: FontOption) => void
   setFontColor: (color: ColorOption) => void
   setUserProfile: (profile: Partial<UserProfile>) => void
@@ -202,6 +223,13 @@ type OSContextValue = {
   updateIntimacy: (characterId: string, delta: number) => void
   setCustomAppIcon: (appId: string, iconUrl: string) => void
   setDecorImage: (url: string) => void
+  setHomeAvatar: (url: string) => void
+  // 签名
+  signature: string
+  setSignature: (text: string) => void
+  // 喝水计数
+  waterCount: number
+  addWater: () => void
   wallpaperError: boolean
   setWallpaperError: (error: boolean) => void
   // 音乐控制
@@ -218,6 +246,17 @@ type OSContextValue = {
   removeSong: (songId: string) => void
   setMusicPlaying: (playing: boolean) => void
   setCurrentSong: (song: Song | null) => void
+  // 图标主题
+  iconTheme: IconTheme
+  setIconTheme: (theme: IconTheme) => void
+  // 纪念日
+  anniversaries: Anniversary[]
+  addAnniversary: (anniversary: Omit<Anniversary, 'id'>) => void
+  updateAnniversary: (id: string, anniversary: Partial<Anniversary>) => void
+  removeAnniversary: (id: string) => void
+  // 备忘录
+  memo: Memo
+  setMemo: (memo: Partial<Memo>) => void
   // API相关（手动配置）
   fetchAvailableModels: (override?: { apiBaseUrl?: string; apiKey?: string }) => Promise<string[]>
   callLLM: (
@@ -261,11 +300,32 @@ const STORAGE_KEYS = {
   currentFontId: 'os_current_font_id',
   fontColorId: 'os_font_color_id',
   wallpaper: 'os_wallpaper',
-  lockWallpaper: 'os_lock_wallpaper',
   customAppIcons: 'os_custom_app_icons',
   decorImage: 'os_decor_image',
   userProfile: 'os_user_profile',
+  iconTheme: 'os_icon_theme',
+  anniversaries: 'os_anniversaries',
+  memo: 'os_memo',
+  homeAvatar: 'os_home_avatar',
+  waterCount: 'os_water_count',
+  waterDate: 'os_water_date',
+  signature: 'os_signature',
 } as const
+
+// 图标主题定义
+export type IconTheme = 'custom' | 'minimal'
+
+// 简洁主题图标映射
+export const MINIMAL_ICONS: Record<string, string> = {
+  wechat: '/icons/minimal/wechat.svg',
+  doudizhu: '/icons/minimal/doudizhu.svg',
+  diaryVault: '/icons/minimal/diary.svg',
+  x: '/icons/minimal/x.svg',
+  music: '/icons/minimal/music.svg',
+  settings: '/icons/minimal/settings.svg',
+  manual: '/icons/minimal/manual.svg',
+  preset: '/icons/minimal/preset.svg',
+}
 
 function normalizeApiBaseUrl(input: string): string {
   const trimmed = (input || '').trim().replace(/\/+$/, '')
@@ -281,23 +341,10 @@ const seedChat: ChatMessage[] = [
   { id: 'chat-01', senderId: 'char-01', senderName: '青禾', text: '欢迎来到 LittlePhone~', timestamp: Date.now() - 1000 * 60 * 45, app: '系统' },
 ]
 
-// 锁屏状态存储键
-const LOCK_STORAGE_KEY = 'littlephone_is_locked'
-
 export function OSProvider({ children }: PropsWithChildren) {
   const [isHydrated, setIsHydrated] = useState(false)
   const [time, setTime] = useState(formatTime)
-  // 从localStorage读取锁屏状态，默认为true
-  const [isLocked, setLockedState] = useState(true)
-  
-  // 包装setLocked以同时保存到 IndexedDB（kv）
-  const setLocked = (locked: boolean) => {
-    setLockedState(locked)
-    void kvSetJSON(LOCK_STORAGE_KEY, locked)
-  }
-  
   const [wallpaper, setWallpaper] = useState(DEFAULT_WALLPAPER)
-  const [lockWallpaper, setLockWallpaper] = useState(DEFAULT_WALLPAPER)
   const [wallpaperError, setWallpaperError] = useState(false)
   const [currentFont, setCurrentFontState] = useState<FontOption>(() => {
     // 默认字体：优雅衬线（但如果用户保存过选择，则完全尊重用户保存）
@@ -316,6 +363,12 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [chatLog, setChatLog] = useState<ChatMessage[]>(seedChat)
   const [customAppIcons, setCustomAppIcons] = useState<Record<string, string>>({})
   const [decorImage, setDecorImage] = useState('')
+  const [homeAvatar, setHomeAvatar] = useState('')
+  const [signature, setSignature] = useState('今天也要开心鸭~')
+  
+  // 喝水计数
+  const [waterCount, setWaterCount] = useState(0)
+  const [waterDate, setWaterDate] = useState('')
 
   // 位置和天气状态
   const [locationSettings, setLocationSettingsState] = useState<LocationSettings>(defaultLocationSettings)
@@ -328,6 +381,16 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [musicPlaylist, setMusicPlaylist] = useState<Song[]>(() => [...DEFAULT_SONGS])
   const [musicFavorites, setMusicFavorites] = useState<string[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  
+  // 图标主题
+  const [iconTheme, setIconThemeState] = useState<IconTheme>('custom')
+  
+  // 纪念日
+  const [anniversaries, setAnniversaries] = useState<Anniversary[]>([])
+  
+  // 备忘录
+  const defaultMemo: Memo = { content: '', image: '', todos: [] }
+  const [memo, setMemoState] = useState<Memo>(defaultMemo)
   // 兼容：hydration 完成前导入音乐，后续 hydrate 会 setMusicPlaylist 覆盖，导致“导入后刷新就没了”
   const pendingAddedSongsRef = useRef<Song[]>([])
 
@@ -348,7 +411,6 @@ export function OSProvider({ children }: PropsWithChildren) {
           STORAGE_KEYS.miCoinBalance,
           STORAGE_KEYS.currentFontId,
           STORAGE_KEYS.fontColorId,
-          LOCK_STORAGE_KEY,
           MUSIC_STORAGE_KEY,
           MUSIC_VERSION_KEY,
           LOCATION_STORAGE_KEY,
@@ -368,7 +430,6 @@ export function OSProvider({ children }: PropsWithChildren) {
 
       // 并行读取：减少启动等待
       const [
-        nextLocked,
         nextLLM,
         nextTTS,
         nextMi,
@@ -378,12 +439,17 @@ export function OSProvider({ children }: PropsWithChildren) {
         nextWeather,
         _savedVersion, // 不再用于强制重置，但保留读取以备将来使用
         nextWallpaper,
-        nextLockWallpaper,
         nextCustomAppIcons,
         nextDecorImage,
+        nextHomeAvatar,
+        nextSignature,
+        nextWaterCount,
+        nextWaterDate,
         nextUserProfile,
+        nextIconTheme,
+        nextAnniversaries,
+        nextMemo,
       ] = await Promise.all([
-        kvGetJSONDeep<boolean>(LOCK_STORAGE_KEY, true),
         kvGetJSONDeep<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig),
         kvGetJSONDeep<TTSConfig>(STORAGE_KEYS.ttsConfig, defaultTTSConfig),
         kvGetJSONDeep<number>(STORAGE_KEYS.miCoinBalance, 100),
@@ -396,10 +462,16 @@ export function OSProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather),
         kvGetJSONDeep<string>(MUSIC_VERSION_KEY, ''),
         kvGetJSONDeep<string>(STORAGE_KEYS.wallpaper, DEFAULT_WALLPAPER),
-        kvGetJSONDeep<string>(STORAGE_KEYS.lockWallpaper, DEFAULT_WALLPAPER),
         kvGetJSONDeep<Record<string, string>>(STORAGE_KEYS.customAppIcons, {}),
         kvGetJSONDeep<string>(STORAGE_KEYS.decorImage, ''),
+        kvGetJSONDeep<string>(STORAGE_KEYS.homeAvatar, ''),
+        kvGetJSONDeep<string>(STORAGE_KEYS.signature, '今天也要开心鸭~'),
+        kvGetJSONDeep<number>(STORAGE_KEYS.waterCount, 0),
+        kvGetJSONDeep<string>(STORAGE_KEYS.waterDate, ''),
         kvGetJSONDeep<UserProfile>(STORAGE_KEYS.userProfile, defaultUserProfile),
+        kvGetJSONDeep<IconTheme>(STORAGE_KEYS.iconTheme, 'custom'),
+        kvGetJSONDeep<Anniversary[]>(STORAGE_KEYS.anniversaries, []),
+        kvGetJSONDeep<Memo>(STORAGE_KEYS.memo, { content: '', image: '', todos: [] }),
       ])
 
       // 音乐：读取已保存的列表
@@ -479,7 +551,6 @@ export function OSProvider({ children }: PropsWithChildren) {
       }
 
       if (cancelled) return
-      setLockedState(nextLocked)
       setLLMConfigState(nextLLM)
       setTTSConfigState(nextTTS)
       setMiCoinBalance(nextMi)
@@ -490,10 +561,24 @@ export function OSProvider({ children }: PropsWithChildren) {
       setMusicPlaylist(nextPlaylist)
       // 加载自定义壁纸、图标等
       if (nextWallpaper) setWallpaper(nextWallpaper)
-      if (nextLockWallpaper) setLockWallpaper(nextLockWallpaper)
       if (nextCustomAppIcons) setCustomAppIcons(nextCustomAppIcons)
       if (nextDecorImage) setDecorImage(nextDecorImage)
+      if (nextHomeAvatar) setHomeAvatar(nextHomeAvatar)
+      if (nextSignature) setSignature(nextSignature)
+      // 喝水计数 - 检查是否新的一天
+      const today = new Date().toISOString().slice(0, 10)
+      if (nextWaterDate === today) {
+        setWaterCount(nextWaterCount || 0)
+        setWaterDate(today)
+      } else {
+        // 新的一天，重置计数
+        setWaterCount(0)
+        setWaterDate(today)
+      }
       if (nextUserProfile) setUserProfileState(nextUserProfile)
+      if (nextIconTheme) setIconThemeState(nextIconTheme)
+      if (Array.isArray(nextAnniversaries)) setAnniversaries(nextAnniversaries)
+      if (nextMemo) setMemoState({ ...defaultMemo, ...nextMemo, todos: nextMemo.todos || [] })
       setIsHydrated(true)
     }
     void hydrate()
@@ -512,12 +597,48 @@ export function OSProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id, isHydrated])
   // 壁纸、自定义图标等持久化
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.wallpaper, wallpaper) }, [wallpaper, isHydrated])
-  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.lockWallpaper, lockWallpaper) }, [lockWallpaper, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.customAppIcons, customAppIcons) }, [customAppIcons, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.decorImage, decorImage) }, [decorImage, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.homeAvatar, homeAvatar) }, [homeAvatar, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.signature, signature) }, [signature, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.waterCount, waterCount) }, [waterCount, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.waterDate, waterDate) }, [waterDate, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.userProfile, userProfile) }, [userProfile, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.iconTheme, iconTheme) }, [iconTheme, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.anniversaries, anniversaries) }, [anniversaries, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.memo, memo) }, [memo, isHydrated])
 
   const setCurrentFont = (font: FontOption) => setCurrentFontState(font)
+  const setIconTheme = (theme: IconTheme) => setIconThemeState(theme)
+  
+  // 喝水计数
+  const addWater = () => {
+    const today = new Date().toISOString().slice(0, 10)
+    if (waterDate !== today) {
+      // 新的一天，重置
+      setWaterCount(1)
+      setWaterDate(today)
+    } else {
+      setWaterCount(prev => prev + 1)
+    }
+  }
+  
+  // 纪念日操作
+  const addAnniversary = (anniversary: Omit<Anniversary, 'id'>) => {
+    const newAnniversary: Anniversary = { ...anniversary, id: `ann-${Date.now()}` }
+    setAnniversaries(prev => [...prev, newAnniversary])
+  }
+  const updateAnniversary = (id: string, updates: Partial<Anniversary>) => {
+    setAnniversaries(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a))
+  }
+  const removeAnniversary = (id: string) => {
+    setAnniversaries(prev => prev.filter(a => a.id !== id))
+  }
+  
+  // 备忘录操作
+  const setMemo = (updates: Partial<Memo>) => {
+    setMemoState(prev => ({ ...prev, ...updates }))
+  }
   const setFontColor = (color: ColorOption) => setFontColorState(color)
   
   // 持久化：音乐列表（IndexedDB）
@@ -534,7 +655,6 @@ export function OSProvider({ children }: PropsWithChildren) {
     img.onerror = () => {
       setWallpaperError(true)
       setWallpaper(FALLBACK_WALLPAPER)
-      setLockWallpaper(FALLBACK_WALLPAPER)
     }
     img.src = DEFAULT_WALLPAPER
   }, [])
@@ -1072,18 +1192,21 @@ export function OSProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<OSContextValue>(() => ({
     isHydrated,
-    time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance,
-    notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
+    time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance,
+    notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, wallpaperError,
     locationSettings, weather, setLocationSettings, refreshWeather,
     musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, audioRef,
-    setLocked, setWallpaper, setLockWallpaper, setCurrentFont, setFontColor, setUserProfile, setLLMConfig, setTTSConfig, textToSpeech,
+    setWallpaper, setCurrentFont, setFontColor, setUserProfile, setLLMConfig, setTTSConfig, textToSpeech,
     setMiCoinBalance, addMiCoins, addNotification, markNotificationRead, addChatMessage, updateIntimacy,
-    setCustomAppIcon, setDecorImage, setWallpaperError,
+    setCustomAppIcon, setDecorImage, setHomeAvatar, setSignature, waterCount, addWater, setWallpaperError,
     playSong, pauseMusic, resumeMusic, toggleMusic, nextSong, prevSong, seekMusic, toggleFavorite, isFavorite, addSong, removeSong,
     setMusicPlaying, setCurrentSong,
+    iconTheme, setIconTheme,
+    anniversaries, addAnniversary, updateAnniversary, removeAnniversary,
+    memo, setMemo,
     fetchAvailableModels, callLLM,
-  }), [time, isLocked, wallpaper, lockWallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, 
-      notifications, characters, chatLog, customAppIcons, decorImage, wallpaperError,
+  }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, 
+      notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo,
       locationSettings, weather,
       musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, isHydrated])
 

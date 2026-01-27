@@ -43,6 +43,7 @@ export default function ChatSettingsScreen() {
   const [showMemorySettings, setShowMemorySettings] = useState(false)
   const [showTimeSyncSettings, setShowTimeSyncSettings] = useState(false)
   const [showVoiceSettings, setShowVoiceSettings] = useState(false)
+  const [showPatSettings, setShowPatSettings] = useState(false)
 
   // 添加好友后提示“记忆已导入”
   const [postAddTipOpen, setPostAddTipOpen] = useState(false)
@@ -111,6 +112,10 @@ export default function ChatSettingsScreen() {
   const [voiceEnabledDraft, setVoiceEnabledDraft] = useState<boolean>(character?.voiceEnabled ?? false)
   const [voiceIdDraft, setVoiceIdDraft] = useState<string>(character?.voiceId || '')
   const [voiceFrequencyDraft, setVoiceFrequencyDraft] = useState<'always' | 'often' | 'sometimes' | 'rarely'>(character?.voiceFrequency || 'sometimes')
+  
+  // 拍一拍设置状态（草稿）
+  const [patMeTextDraft, setPatMeTextDraft] = useState<string>(character?.patMeText || '拍了拍我的小脑袋')
+  const [patThemTextDraft, setPatThemTextDraft] = useState<string>(character?.patThemText || '拍了拍TA的肩膀')
   
   // 气泡设置状态
   const defaultBubble = { bgColor: '#fce7f3', bgOpacity: 100, borderColor: '#f9a8d4', borderOpacity: 0, textColor: '#111827' }
@@ -789,6 +794,24 @@ export default function ChatSettingsScreen() {
               </div>
             </div>
 
+            {/* 拍一拍设置 */}
+            <div
+              className="flex items-center justify-between px-4 py-4 border-t border-gray-100 cursor-pointer active:bg-gray-50"
+              onClick={() => {
+                setPatMeTextDraft(character?.patMeText || '拍了拍我的小脑袋')
+                setPatThemTextDraft(character?.patThemText || '拍了拍TA的肩膀')
+                setShowPatSettings(true)
+              }}
+            >
+              <div className="flex flex-col">
+                <span className="text-[#000]">拍一拍设置</span>
+                <span className="text-xs text-gray-400 mt-0.5">自定义拍一拍内容</span>
+              </div>
+              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+            
             {/* 语音设置 */}
             <div
               className="flex items-center justify-between px-4 py-4 border-t border-gray-100 cursor-pointer active:bg-gray-50"
@@ -2022,6 +2045,58 @@ ${history}`
                 </div>
               )
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* 拍一拍设置弹窗 */}
+      {showPatSettings && (
+        <div className="absolute inset-0 z-50 flex flex-col bg-white">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <button type="button" onClick={() => setShowPatSettings(false)} className="text-gray-500">取消</button>
+            <span className="font-medium text-[#000]">拍一拍设置</span>
+            <button
+              type="button"
+              onClick={() => {
+                updateCharacter(character.id, {
+                  patMeText: patMeTextDraft.trim() || '拍了拍我的小脑袋',
+                  patThemText: patThemTextDraft.trim() || '拍了拍TA的肩膀',
+                })
+                setShowPatSettings(false)
+              }}
+              className="text-[#07C160] font-medium"
+            >
+              保存
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* 拍一拍我 */}
+            <div>
+              <label className="text-sm text-gray-600 block mb-1">拍一拍我</label>
+              <div className="text-xs text-gray-400 mb-2">对方拍你时显示的内容</div>
+              <input
+                type="text"
+                value={patMeTextDraft}
+                onChange={(e) => setPatMeTextDraft(e.target.value)}
+                placeholder="拍了拍我的小脑袋"
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 outline-none"
+              />
+              <div className="text-xs text-gray-400 mt-1">示例：拍了拍我的小脑袋、拍了拍我的肩膀</div>
+            </div>
+
+            {/* 拍一拍TA */}
+            <div>
+              <label className="text-sm text-gray-600 block mb-1">拍一拍TA</label>
+              <div className="text-xs text-gray-400 mb-2">你拍对方时显示的内容</div>
+              <input
+                type="text"
+                value={patThemTextDraft}
+                onChange={(e) => setPatThemTextDraft(e.target.value)}
+                placeholder="拍了拍TA的肩膀"
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 outline-none"
+              />
+              <div className="text-xs text-gray-400 mt-1">示例：拍了拍TA的肩膀、拍了拍TA的小脑袋</div>
+            </div>
           </div>
         </div>
       )}

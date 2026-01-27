@@ -1,12 +1,9 @@
 import { type PropsWithChildren, useEffect, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
 import { useOS } from '../context/OSContext'
-import BottomHomeBar from './BottomHomeBar'
 import VirtualStatusBar from './VirtualStatusBar'
 
 export default function PhoneShell({ children }: PropsWithChildren) {
-  const { wallpaper, currentFont, fontColor, isLocked, lockWallpaper, notifications, markNotificationRead } = useOS()
-  const location = useLocation()
+  const { wallpaper, currentFont, fontColor, notifications, markNotificationRead } = useOS()
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [hideStatusBar, setHideStatusBar] = useState(() => {
     return localStorage.getItem('mina_hide_status_bar') === 'true'
@@ -21,9 +18,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
     return () => window.removeEventListener('storage', checkHideStatusBar)
   }, [])
   
-  const currentWallpaper = isLocked ? lockWallpaper : wallpaper
   const timerRef = useRef<Record<string, number>>({})
-  const isFullScreenApp = !isLocked && (location.pathname === '/apps/doudizhu')
 
   // 监听全屏状态
   useEffect(() => {
@@ -74,10 +69,9 @@ export default function PhoneShell({ children }: PropsWithChildren) {
         className="md:hidden fixed inset-0 select-none overflow-hidden"
         style={{
           fontFamily: currentFont.fontFamily,
-          // 整机字体略微变大（锁屏不动）
-          fontSize: isLocked ? undefined : '17px',
+          fontSize: '17px',
           color: fontColor.value,
-          backgroundImage: `url(${currentWallpaper})`,
+          backgroundImage: `url(${wallpaper})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundColor: '#fef7f0',
@@ -86,21 +80,14 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           paddingBottom: 'var(--screen-padding-bottom)',
         }}
       >
-        {/* 已移除“摄像头/灵动岛”模拟层：使用真机系统状态栏 */}
-
-        {isLocked ? (
-          <div className="relative z-10 h-full w-full">{children}</div>
-        ) : (
-          <div className="relative z-10 flex h-full flex-col">
-            {/* 虚拟状态栏（可隐藏） */}
-            {!hideStatusBar && <VirtualStatusBar />}
-            <div className="flex-1 overflow-hidden">{children}</div>
-            {!isFullScreenApp && <BottomHomeBar />}
-          </div>
-        )}
+        <div className="relative z-10 flex h-full flex-col">
+          {/* 虚拟状态栏（可隐藏） */}
+          {!hideStatusBar && <VirtualStatusBar />}
+          <div className="flex-1 overflow-hidden">{children}</div>
+        </div>
 
         {/* 顶部通知浮窗 */}
-        {!isLocked && unreadNotifications.length > 0 && (
+        {unreadNotifications.length > 0 && (
           <div className="absolute top-10 left-3 right-3 z-40 space-y-2 pointer-events-none">
             {unreadNotifications.map((n) => (
               <div key={n.id} className="flex items-center gap-2 rounded-2xl bg-white/80 backdrop-blur px-3 py-2 shadow-sm">
@@ -129,8 +116,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           className="relative rounded-[50px] bg-[#1a1a1a] p-[3px] shadow-[0_25px_60px_rgba(0,0,0,0.4)]"
           style={{ 
             fontFamily: currentFont.fontFamily,
-            // 整机字体略微变大（锁屏不动）
-            fontSize: isLocked ? undefined : '17px',
+            fontSize: '17px',
             color: fontColor.value,
             width: '390px',
             height: '844px',
@@ -141,27 +127,20 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           <div 
             className="relative w-full h-full rounded-[47px] overflow-hidden"
             style={{
-              backgroundImage: `url(${currentWallpaper})`,
+              backgroundImage: `url(${wallpaper})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
               backgroundColor: '#fef7f0',
             }}
           >
-            {/* 已移除“摄像头/灵动岛”模拟层 */}
-
-            {isLocked ? (
-              <div className="relative z-10 h-full w-full">{children}</div>
-            ) : (
-              <div className="relative z-10 flex h-full flex-col">
-                {/* 虚拟状态栏（可隐藏） */}
-                {!hideStatusBar && <VirtualStatusBar />}
-                <div className="flex-1 overflow-hidden">{children}</div>
-                {!isFullScreenApp && <BottomHomeBar />}
-              </div>
-            )}
+            <div className="relative z-10 flex h-full flex-col">
+              {/* 虚拟状态栏（可隐藏） */}
+              {!hideStatusBar && <VirtualStatusBar />}
+              <div className="flex-1 overflow-hidden">{children}</div>
+            </div>
 
             {/* 顶部通知浮窗 */}
-            {!isLocked && unreadNotifications.length > 0 && (
+            {unreadNotifications.length > 0 && (
               <div className="absolute top-12 left-4 right-4 z-40 space-y-2 pointer-events-none">
                 {unreadNotifications.map((n) => (
                   <div key={n.id} className="flex items-center gap-2 rounded-2xl bg-white/80 backdrop-blur px-3 py-2 shadow-sm">
