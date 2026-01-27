@@ -180,6 +180,8 @@ export default function XScreen() {
   const [bannerEditTargetId, setBannerEditTargetId] = useState<string | null>(null)
   const [otherProfileTipOpen, setOtherProfileTipOpen] = useState(false)
   const [otherProfileTipDontShow, setOtherProfileTipDontShow] = useState(false)
+  const [otherBioEditOpen, setOtherBioEditOpen] = useState(false)
+  const [otherBioDraft, setOtherBioDraft] = useState('')
   const [profileEditOpen, setProfileEditOpen] = useState(false)
   const [profileDraftName, setProfileDraftName] = useState('')
   const [profileDraftBio, setProfileDraftBio] = useState('')
@@ -2517,7 +2519,7 @@ export default function XScreen() {
             <div className="relative w-full max-w-[320px] rounded-2xl bg-white/95 border border-white/30 shadow-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-black/5 text-center text-sm font-semibold">编辑 TA 的主页</div>
               <div className="p-4 space-y-3">
-                <div className="text-[12px] text-gray-600">你可以更换 TA 的头像和背景。</div>
+                <div className="text-[12px] text-gray-600">你可以更换 TA 的头像、背景和签名。</div>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -2540,6 +2542,16 @@ export default function XScreen() {
                     更换背景
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOtherBioDraft(meta.bio || '')
+                    setOtherBioEditOpen(true)
+                  }}
+                  className="w-full py-2 rounded-xl bg-gray-100 text-sm text-gray-800"
+                >
+                  修改签名
+                </button>
                 <label className="flex items-center gap-2 text-[12px] text-gray-600">
                   <input
                     type="checkbox"
@@ -2563,6 +2575,55 @@ export default function XScreen() {
                   className="w-full py-2 rounded-xl bg-black text-sm text-white"
                 >
                   知道了
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 路人签名编辑弹窗 */}
+        {!isMe && otherBioEditOpen && (
+          <div className="absolute inset-0 z-[65] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/35"
+              onClick={() => setOtherBioEditOpen(false)}
+              role="presentation"
+            />
+            <div className="relative w-full max-w-[320px] rounded-2xl bg-white/95 border border-white/30 shadow-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-black/5 text-center text-sm font-semibold">修改签名</div>
+              <div className="p-4 space-y-3">
+                <textarea
+                  value={otherBioDraft}
+                  onChange={(e) => setOtherBioDraft(e.target.value)}
+                  placeholder="输入签名..."
+                  className="w-full h-24 px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none resize-none"
+                  maxLength={200}
+                />
+                <div className="text-[11px] text-gray-400 text-right">{otherBioDraft.length}/200</div>
+              </div>
+              <div className="p-3 border-t border-black/5 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOtherBioEditOpen(false)}
+                  className="flex-1 py-2 rounded-xl bg-gray-100 text-sm text-gray-800"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setData((prev) => {
+                      if (!prev) return prev
+                      const users = (prev.users || []).map((u) => (u.id === uid ? { ...u, bio: otherBioDraft } : u))
+                      const next = { ...prev, users }
+                      void xSave(next)
+                      return next
+                    })
+                    setOtherBioEditOpen(false)
+                  }}
+                  className="flex-1 py-2 rounded-xl bg-black text-sm text-white"
+                >
+                  保存
                 </button>
               </div>
             </div>
