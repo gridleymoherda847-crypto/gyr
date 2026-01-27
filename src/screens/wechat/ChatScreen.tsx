@@ -1942,6 +1942,56 @@ ${recentTimeline || '（无）'}
     forceScrollRef.current = true
     nearBottomRef.current = true
 
+    // 检查是否是转账格式：[转账:金额:备注] 或 【转账：金额：备注】
+    const transferMatch = inputText.trim().match(/[【\[]\s*转账\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*([^】\]]*)\s*[】\]]/)
+    if (transferMatch) {
+      const amount = parseFloat(transferMatch[1])
+      const note = (transferMatch[2] || '转账').trim() || '转账'
+      
+      if (amount > 0) {
+        // 检查余额
+        if (walletBalance < amount) {
+          setInfoDialog({
+            open: true,
+            title: '余额不足',
+            message: `钱包余额不足，无法转账 ¥${amount.toFixed(2)}。请先在"我-钱包"里获取初始资金或收款。`,
+          })
+          return
+        }
+        
+        // 发送转账消息
+        const transferMsg = addMessage({
+          characterId: character.id,
+          content: `转账 ¥${amount.toFixed(2)}`,
+          isUser: true,
+          type: 'transfer',
+          transferAmount: amount,
+          transferNote: note,
+          transferStatus: 'pending',
+        })
+        messagesRef.current = [...messagesRef.current, transferMsg]
+        
+        // 扣款
+        updateWalletBalance(-amount)
+        addWalletBill({
+          type: 'transfer_out',
+          amount,
+          description: `转账给 ${character.name}（备注：${note}）`,
+          relatedCharacterId: character.id,
+        })
+        addTransfer({
+          characterId: character.id,
+          amount,
+          note,
+          isIncome: false,
+        })
+        
+        setInputText('')
+        setPendingCount(prev => prev + 1)
+        return
+      }
+    }
+
     // 获取引用消息内容
     const replyTo = replyingToMessageId ? (() => {
       const replyMsg = messages.find(m => m.id === replyingToMessageId)
