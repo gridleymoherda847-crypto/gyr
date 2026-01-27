@@ -639,8 +639,9 @@ export default function MusicScreen() {
             <div className="text-xs text-gray-500 mb-3 space-y-1">
               <div className="font-medium text-gray-600">💡 如何获取音乐链接：</div>
               <div>1. 上传音频到 <span className="text-blue-500">catbox.moe</span> 或网盘</div>
-              <div>2. 复制直链（以 .mp3 .m4a 结尾）</div>
+              <div>2. 复制直链（以 .mp3 结尾最佳）</div>
               <div>3. 粘贴到上方输入框</div>
+              <div className="text-orange-500 mt-1">⚠️ 手机端请用 .mp3 格式，不支持 .m4a</div>
             </div>
             
             <div className="flex gap-2">
