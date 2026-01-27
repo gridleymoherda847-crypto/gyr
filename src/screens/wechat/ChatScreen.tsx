@@ -1308,7 +1308,8 @@ ${recentTimeline || '（无）'}
                     content: '推特主页',
                     isUser: false,
                     type: 'x_profile_share',
-                    xUserId: ensured.userId,
+                    // 强绑定：推特账号 id 必须等于 chat 角色 id（否则关注/私信无法稳定同步）
+                    xUserId: character.id,
                     xUserName: u?.name || character.name,
                     xUserHandle: u?.handle || '',
                     xUserAvatar: u?.avatarUrl || character.avatar || '',
@@ -2826,7 +2827,9 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         <button
           type="button"
           onClick={() => {
-            if (msg.xUserId) navigate(`/apps/x?userId=${encodeURIComponent(msg.xUserId)}`)
+            // 来自对方（AI 角色）的主页卡片：强制按当前聊天角色 id 打开（保证关注/私信能同步到“我的关注”里）
+            const uid = msg.isUser ? (msg.xUserId || '') : character.id
+            if (uid) navigate(`/apps/x?userId=${encodeURIComponent(uid)}`)
           }}
           className="min-w-[180px] max-w-[240px] rounded-xl bg-white/85 border border-black/10 overflow-hidden text-left active:scale-[0.99] transition"
         >
