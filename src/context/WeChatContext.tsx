@@ -99,6 +99,7 @@ export type WeChatMessage = {
   // 群聊相关
   groupId?: string // 群ID（有值=群消息，无值=私聊）
   groupSenderId?: string // 群消息发送者（角色ID）
+  replyToMessageId?: string // 引用的消息ID
   // 转账相关
   transferAmount?: number
   transferNote?: string

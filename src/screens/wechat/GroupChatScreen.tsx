@@ -26,7 +26,7 @@ export default function GroupChatScreen() {
   }, [group, characters])
   
   const selectedPersona = getCurrentPersona()
-  const currentPeriod = getCurrentPeriod()
+  getCurrentPeriod() // 调用以保持依赖
   
   // 获取所有表情包（全局 + 群成员的）
   const allStickersWithInfo = useMemo(() => {
@@ -34,16 +34,16 @@ export default function GroupChatScreen() {
     // 先获取全局表情包（任意角色都可以，因为 getStickersByCharacter 会包含 characterId='all' 的）
     const globalStickers = getStickersByCharacter('')
     globalStickers.forEach(s => {
-      if (!stickers.find(st => st.url === s.url)) {
-        stickers.push({ id: s.id, url: s.url, category: s.category || '未分类', keyword: s.keyword })
+      if (!stickers.find(st => st.url === s.imageUrl)) {
+        stickers.push({ id: s.id, url: s.imageUrl, category: s.category || '未分类', keyword: s.keyword })
       }
     })
     // 再获取群成员的表情包
     members.forEach(m => {
       const memberStickers = getStickersByCharacter(m.id)
       memberStickers.forEach(s => {
-        if (!stickers.find(st => st.url === s.url)) {
-          stickers.push({ id: s.id, url: s.url, category: s.category || '未分类', keyword: s.keyword })
+        if (!stickers.find(st => st.url === s.imageUrl)) {
+          stickers.push({ id: s.id, url: s.imageUrl, category: s.category || '未分类', keyword: s.keyword })
         }
       })
     })
@@ -141,7 +141,8 @@ export default function GroupChatScreen() {
   const [customTimeDraft, setCustomTimeDraft] = useState('')
   
   // 气泡设置弹窗
-  const [showBubbleModal, setShowBubbleModal] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [showBubbleModal, _setShowBubbleModal] = useState(false)
   const [bubbleEditingMember, setBubbleEditingMember] = useState<string>('user')
   const [bubbleBgColor, setBubbleBgColor] = useState('#95EC69')
   const [bubbleBgOpacity, setBubbleBgOpacity] = useState(100)
@@ -1320,7 +1321,7 @@ ${history}`
                             if (!target) return
                             const daily = target.daily || []
                             const idx = daily.findIndex((e: any) => e?.date === selectedPeriodDate)
-                            const entry = { date: selectedPeriodDate, pain: periodPainDraft, flow: periodFlowDraft, note: periodNoteDraft }
+                            const entry = { date: selectedPeriodDate, pain: periodPainDraft, flow: periodFlowDraft, note: periodNoteDraft, updatedAt: Date.now() }
                             if (idx >= 0) daily[idx] = entry; else daily.push(entry)
                             updatePeriodRecord(target.id, { daily })
                             setInfoDialog({ open: true, title: '已保存', message: `${selectedPeriodDate} 状态已记录` })
