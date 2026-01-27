@@ -2627,7 +2627,17 @@ export default function XScreen() {
                   onClick={() => {
                     setData((prev) => {
                       if (!prev) return prev
-                      const users = (prev.users || []).map((u) => (u.id === uid ? { ...u, bio: otherBioDraft } : u))
+                      // 检查用户是否已存在于 users 数组
+                      const existingUser = (prev.users || []).find((u) => u.id === uid)
+                      let users
+                      if (existingUser) {
+                        // 用户存在，更新 bio
+                        users = (prev.users || []).map((u) => (u.id === uid ? { ...u, bio: otherBioDraft } : u))
+                      } else {
+                        // 用户不存在（可能是角色），先确保用户存在再更新
+                        const { data: ensured } = xEnsureUser(prev, { id: uid, name: meta.name, handle: meta.handle, bio: otherBioDraft })
+                        users = ensured.users
+                      }
                       const next = { ...prev, users }
                       void xSave(next)
                       return next
