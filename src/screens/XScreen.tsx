@@ -1209,12 +1209,15 @@ export default function XScreen() {
     const c = characters.find((ch) => ch.id === characterId)
     if (!c) return { data: next, userId: characterId }
     const identity = getCharacterIdentity(c, true)
+    // 检查用户是否已存在，如果存在则不覆盖 bio（保留用户手动编辑的签名）
+    const existingUser = next.users.find((u) => u.id === c.id)
     const { data: d2, userId } = xEnsureUser(next, {
       id: c.id,
       name: c.name,
       handle: identity.handle,
       avatarUrl: c.avatar || undefined,
-      bio: (c.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined,
+      // 只在用户首次创建时使用角色 prompt 作为默认 bio，之后保留用户手动编辑的
+      bio: existingUser ? undefined : ((c.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined),
     })
     return { data: d2, userId }
   }
@@ -2229,9 +2232,41 @@ export default function XScreen() {
     const mine = posts.filter((p) => p.authorId === uid).slice(0, 60)
     const myReplies = isMe ? (replies || []).filter((r) => r.authorId === 'me').slice(-120).reverse() : []
     const followed = !isMe && (data.follows || []).includes(uid)
-    const followerCount = isMe
-      ? Math.max(0, data?.meFollowerCount || 0)
-      : Math.floor((Math.abs((meta.handle || '').length * 193) + 860) % 52000)
+    // 根据角色人设智能计算粉丝数
+    const getFollowerCountForCharacter = () => {
+      if (isMe) return Math.max(0, data?.meFollowerCount || 0)
+      // 查找角色
+      const character = characters.find((c) => c.id === uid)
+      const prompt = (character?.prompt || '').toLowerCase()
+      const name = (character?.name || meta.name || '').toLowerCase()
+      
+      // 根据人设关键词判断粉丝量级
+      // 明星/艺人/偶像/网红 -> 百万级
+      const isCelebrity = /明星|艺人|偶像|歌手|演员|idol|singer|actor|actress|celebrity|网红|博主|influencer|kol|主播|streamer|rapper|导演|director/.test(prompt + name)
+      // 公众人物/企业家/作家 -> 十万级
+      const isPublicFigure = /企业家|ceo|创始人|founder|作家|writer|author|教授|professor|医生|doctor|律师|lawyer|记者|journalist|运动员|athlete|设计师|designer/.test(prompt + name)
+      // 普通职业/学生 -> 几百到几千
+      const isOrdinary = /学生|student|高中|大学|college|university|上班族|员工|worker|普通|平凡/.test(prompt + name)
+      
+      // 用 handle 生成稳定的随机种子
+      const seed = (meta.handle || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
+      const rand = (min: number, max: number) => min + Math.floor((seed * 9301 + 49297) % 233280 / 233280 * (max - min))
+      
+      if (isCelebrity) {
+        // 明星：50万 ~ 500万
+        return rand(500000, 5000000)
+      } else if (isPublicFigure) {
+        // 公众人物：5万 ~ 50万
+        return rand(50000, 500000)
+      } else if (isOrdinary) {
+        // 普通人：50 ~ 2000
+        return rand(50, 2000)
+      } else {
+        // 默认：根据 handle 长度给一个中等范围
+        return rand(500, 30000)
+      }
+    }
+    const followerCount = getFollowerCountForCharacter()
 
     return (
       <div className="flex h-full flex-col bg-white">
