@@ -62,6 +62,15 @@ export default function ApiConfigScreen() {
   // API 配置条目列表
   const [savedConfigs, setSavedConfigs] = useState<ApiConfigItem[]>(loadSavedConfigs)
   const [newConfigName, setNewConfigName] = useState('')
+  // 编辑已保存配置
+  const [editingConfigId, setEditingConfigId] = useState<string | null>(null)
+  const [editConfigName, setEditConfigName] = useState('')
+  const [editBaseUrl, setEditBaseUrl] = useState('')
+  const [editApiKey, setEditApiKey] = useState('')
+  const [editSelectedModel, setEditSelectedModel] = useState('')
+  const [editModels, setEditModels] = useState<string[]>([])
+  const [editLoading, setEditLoading] = useState(false)
+  const [editError, setEditError] = useState('')
   
   // LLM 配置状态
   const [baseUrl, setBaseUrl] = useState(llmConfig.apiBaseUrl)
@@ -140,6 +149,61 @@ export default function ApiConfigScreen() {
       setError('获取模型失败（请检查网络或服务状态），已加载默认列表')
       setModels(['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'claude-3-opus', 'claude-3-sonnet'])
     } finally { setLoading(false) }
+  }
+
+  const openEditConfig = (config: ApiConfigItem) => {
+    setEditingConfigId(config.id)
+    setEditConfigName(config.name || '')
+    setEditBaseUrl(config.baseUrl || '')
+    setEditApiKey(config.apiKey || '')
+    setEditSelectedModel(config.selectedModel || '')
+    setEditModels(Array.isArray(config.models) ? config.models : [])
+    setEditError('')
+  }
+
+  const fetchModelsForEdit = async () => {
+    if (!editBaseUrl || !editApiKey) {
+      setEditError('请先填写 API Base URL 和 API Key')
+      return
+    }
+    setEditLoading(true)
+    setEditError('')
+    try {
+      const modelList = await fetchAvailableModels({ apiBaseUrl: editBaseUrl, apiKey: editApiKey })
+      setEditModels(modelList)
+      // 如果当前选中的模型不在列表里，先清空，避免保存无效模型
+      if (editSelectedModel && !modelList.includes(editSelectedModel)) {
+        setEditSelectedModel('')
+      }
+    } catch {
+      setEditError('获取模型失败（请检查网络或服务状态）')
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  const saveEditedConfig = () => {
+    if (!editingConfigId) return
+    if (!editConfigName.trim() || !editBaseUrl.trim() || !editApiKey.trim()) {
+      setEditError('请填写：配置名称 / Base URL / API Key')
+      return
+    }
+    const updatedItem: ApiConfigItem = {
+      id: editingConfigId,
+      name: editConfigName.trim(),
+      baseUrl: editBaseUrl.trim(),
+      apiKey: editApiKey.trim(),
+      selectedModel: editSelectedModel,
+      models: editModels,
+    }
+    const updated = savedConfigs.map(c => (c.id === editingConfigId ? updatedItem : c))
+    setSavedConfigs(updated)
+    saveSavedConfigs(updated)
+    // 如果正在使用的是这个配置：立即同步到全局配置
+    if (currentConfigId === editingConfigId) {
+      loadConfig(updatedItem)
+    }
+    setEditingConfigId(null)
   }
 
   // 保存当前配置为新条目
@@ -491,6 +555,13 @@ export default function ApiConfigScreen() {
                         <div className="text-xs opacity-50 truncate ml-6" style={{ color: fontColor.value }}>
                           {config.selectedModel || config.baseUrl}
                         </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditConfig(config)}
+                        className="text-blue-500 text-xs px-2 py-1 hover:text-blue-700"
+                      >
+                        编辑
                       </button>
                       <button
                         type="button"
@@ -1139,6 +1210,107 @@ export default function ApiConfigScreen() {
           <div className="h-4" />
         </div>
       </div>
+
+      {/* 编辑已保存的 API 配置 */}
+      {editingConfigId && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/35"
+            onClick={() => setEditingConfigId(null)}
+            role="presentation"
+          />
+          <div className="relative w-full max-w-[420px] rounded-2xl bg-white/95 border border-white/30 shadow-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-black/10 text-center text-sm font-semibold" style={{ color: fontColor.value }}>
+              编辑 API 配置
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs opacity-60" style={{ color: fontColor.value }}>配置名称</label>
+                <input
+                  value={editConfigName}
+                  onChange={(e) => setEditConfigName(e.target.value)}
+                  placeholder="例如：Gemini / Claude / GPT"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-black/10 text-[13px] outline-none"
+                  style={{ color: fontColor.value }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
+                <input
+                  value={editBaseUrl}
+                  onChange={(e) => setEditBaseUrl(e.target.value)}
+                  placeholder="https://xxx/v1"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-black/10 text-[13px] outline-none"
+                  style={{ color: fontColor.value }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs opacity-60" style={{ color: fontColor.value }}>API Key</label>
+                <input
+                  type="password"
+                  value={editApiKey}
+                  onChange={(e) => setEditApiKey(e.target.value)}
+                  placeholder="sk-xxxx"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-black/10 text-[13px] outline-none"
+                  style={{ color: fontColor.value }}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={fetchModelsForEdit}
+                disabled={editLoading}
+                className="w-full py-2.5 rounded-xl bg-white hover:bg-gray-50 border border-black/10 text-[13px] font-medium disabled:opacity-50"
+                style={{ color: fontColor.value }}
+              >
+                {editLoading ? '获取中...' : '获取模型列表'}
+              </button>
+
+              {editModels.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs opacity-60" style={{ color: fontColor.value }}>选择模型</label>
+                  <select
+                    value={editSelectedModel}
+                    onChange={(e) => setEditSelectedModel(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-white border border-black/10 text-[13px] outline-none"
+                    style={{ color: fontColor.value }}
+                  >
+                    <option value="">请选择模型</option>
+                    {editModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {!!editError && (
+                <div className="text-xs text-red-600 bg-red-50/70 border border-red-200 rounded-xl px-3 py-2">
+                  {editError}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingConfigId(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-[13px] font-semibold text-gray-700 active:scale-[0.99]"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={saveEditedConfig}
+                  className="flex-1 py-2.5 rounded-xl bg-[#07C160] text-[13px] font-semibold text-white active:scale-[0.99]"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </PageContainer>
   )
 }

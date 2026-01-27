@@ -633,7 +633,9 @@ export default function ChatScreen() {
           return out.reverse()
         }
         const maxRounds = Math.max(1, Math.min(1000, character.memoryRounds || 100))
-        const chatHistory = buildChatHistory(workingMessages, maxRounds, 24000)
+        // 性能：上下文过大时会显著变慢（网络+模型推理都会慢）
+        // 这里保留“回合数”策略，但把字符上限收敛一些，默认仍足够支撑连贯聊天
+        const chatHistory = buildChatHistory(workingMessages, maxRounds, 14000)
         
         // 获取全局预设和世界书
         const globalPresets = getGlobalPresets()
@@ -1152,7 +1154,7 @@ ${recentTimeline || '（无）'}
         }
 
         replies.forEach((content, index) => {
-          // 第一条消息立即发送（50-100ms），后面的消息根据字数有1-5秒的间隔
+          // 依次发送回复（首条更快；后续保持“真人感”1~5秒间隔）
           let charDelay: number
           if (index === 0) {
             // 第一条消息：几乎立即发送

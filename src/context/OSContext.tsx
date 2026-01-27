@@ -61,6 +61,8 @@ export type Song = {
   cover: string
   url: string
   duration: number // 秒
+  // 标记来源，便于兼容/迁移（可选）
+  source?: 'builtin' | 'data' | 'url'
 }
 
 export const FONT_OPTIONS: FontOption[] = [
@@ -121,7 +123,8 @@ const DEFAULT_SONGS: Song[] = [
     artist: 'H',
     cover: DEFAULT_COVER,
     url: '/music/diary.ogg',
-    duration: 200
+    duration: 200,
+    source: 'builtin',
   },
   {
     id: 'default-2',
@@ -129,7 +132,8 @@ const DEFAULT_SONGS: Song[] = [
     artist: '周深 / INTO1-米卡',
     cover: DEFAULT_COVER,
     url: '/music/City of Stars.Live.-周深.INTO1-米卡.mp3',
-    duration: 240
+    duration: 240,
+    source: 'builtin',
   },
   {
     id: 'default-3',
@@ -137,7 +141,8 @@ const DEFAULT_SONGS: Song[] = [
     artist: '丁可',
     cover: DEFAULT_COVER,
     url: '/music/If-丁可.mp3',
-    duration: 210
+    duration: 210,
+    source: 'builtin',
   },
   {
     id: 'default-4',
@@ -145,7 +150,8 @@ const DEFAULT_SONGS: Song[] = [
     artist: 'Lauv',
     cover: DEFAULT_COVER,
     url: '/music/Paris in the Rain-Lauv.mp3',
-    duration: 195
+    duration: 195,
+    source: 'builtin',
   },
   {
     id: 'default-5',
@@ -153,7 +159,8 @@ const DEFAULT_SONGS: Song[] = [
     artist: 'MJ Apanay / Aren Park',
     cover: DEFAULT_COVER,
     url: '/music/time machine .feat. aren park.-mj apanay.aren park.mp3',
-    duration: 220
+    duration: 220,
+    source: 'builtin',
   }
 ]
 
@@ -321,6 +328,8 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [musicPlaylist, setMusicPlaylist] = useState<Song[]>(() => [...DEFAULT_SONGS])
   const [musicFavorites, setMusicFavorites] = useState<string[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  // 兼容：hydration 完成前导入音乐，后续 hydrate 会 setMusicPlaylist 覆盖，导致“导入后刷新就没了”
+  const pendingAddedSongsRef = useRef<Song[]>([])
 
   useEffect(() => {
     const tick = setInterval(() => setTime(formatTime()), 1000)
@@ -402,6 +411,26 @@ export function OSProvider({ children }: PropsWithChildren) {
       } else {
         nextPlaylist = await kvGetJSONDeep<Song[]>(MUSIC_STORAGE_KEY, [...DEFAULT_SONGS])
       }
+      // 合并 hydration 前新增歌曲（避免覆盖）
+      try {
+        const pending = pendingAddedSongsRef.current || []
+        if (pending.length > 0) {
+          const seen = new Set<string>()
+          const merged: Song[] = []
+          const push = (s: Song) => {
+            const k = `${s.id}::${s.url}`
+            if (seen.has(k)) return
+            seen.add(k)
+            merged.push(s)
+          }
+          for (const s of nextPlaylist || []) push(s)
+          for (const s of pending) push(s)
+          nextPlaylist = merged
+          pendingAddedSongsRef.current = []
+        }
+      } catch {
+        // ignore
+      }
       // 兼容：blob URL 不能跨刷新持久化；ogg 在部分浏览器（尤其 iOS）不可播放
       try {
         const probe = document.createElement('audio')
@@ -410,7 +439,8 @@ export function OSProvider({ children }: PropsWithChildren) {
           if (!s?.url) return false
           if (typeof s.url !== 'string') return false
           if (s.url.startsWith('blob:')) return false
-          if (!canOgg && s.url.toLowerCase().endsWith('.ogg')) return false
+          // 仅过滤内置 ogg；自定义/外链让用户自己尝试
+          if (!canOgg && (s.source === 'builtin' || !s.source) && s.url.toLowerCase().endsWith('.ogg')) return false
           return true
         })
         if (nextPlaylist.length === 0) {
@@ -705,7 +735,14 @@ export function OSProvider({ children }: PropsWithChildren) {
   const isFavorite = (songId: string) => musicFavorites.includes(songId)
 
   const addSong = (song: Song) => {
-    setMusicPlaylist(prev => [...prev, song])
+    const normalized: Song = {
+      ...song,
+      source: song.source || (song.url?.startsWith('data:') ? 'data' : song.url?.startsWith('http') ? 'url' : 'builtin'),
+    }
+    if (!isHydrated) {
+      pendingAddedSongsRef.current = [...(pendingAddedSongsRef.current || []), normalized]
+    }
+    setMusicPlaylist(prev => [...prev, normalized])
   }
 
   const removeSong = (songId: string) => {
@@ -925,7 +962,11 @@ export function OSProvider({ children }: PropsWithChildren) {
 
       const finalText = typeof content === 'string' ? content.trim() : ''
       if (!finalText) {
-        throw new Error('模型返回空内容（可能是接口返回格式不兼容/被代理改写/上下文过大）')
+        throw new Error(
+          '模型返回空内容（常见原因：接口返回格式不兼容）。' +
+            '当前这里走的是 OpenAI 兼容接口：需要支持 GET /models 与 POST /chat/completions，并返回 choices[0].message.content。' +
+            '如果你用的是 Gemini/Claude 官方原生接口，需要使用“OpenAI兼容中转”，或者后续我再给你加“接口类型”切换适配。'
+        )
       }
       return finalText
     } catch (error: any) {

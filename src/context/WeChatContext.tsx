@@ -786,6 +786,18 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     setCharacters(prev => prev.filter(c => c.id !== id))
     setMessages(prev => prev.filter(m => m.characterId !== id))
     setStickers(prev => prev.filter(s => s.characterId !== id && s.characterId !== 'all'))
+    // 同步清理朋友圈数据：
+    // - 删除该角色发布的动态
+    // - 清理他在他人动态里的点赞/评论（含回复）
+    setMoments(prev =>
+      prev
+        .filter(p => p.authorId !== id)
+        .map(p => ({
+          ...p,
+          likes: p.likes.filter(uid => uid !== id),
+          comments: p.comments.filter(c => c.authorId !== id),
+        }))
+    )
   }
 
   const getCharacter = (id: string) => characters.find(c => c.id === id)

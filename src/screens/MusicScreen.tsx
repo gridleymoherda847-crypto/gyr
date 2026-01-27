@@ -118,6 +118,21 @@ export default function MusicScreen() {
       alert('请输入有效的音乐链接（http/https开头）')
       return
     }
+    // https 页面下，http 资源会被浏览器拦截（混合内容），会导致“导入能看到但播放不了”
+    try {
+      if (window.location.protocol === 'https:' && url.startsWith('http://')) {
+        alert('当前页面是 https，http 链接会被浏览器拦截。\n请换成 https 直链再导入。')
+        return
+      }
+    } catch { /* ignore */ }
+
+    // 没有常见音频后缀时，提醒用户这可能不是“直链”
+    const lower = url.toLowerCase()
+    const looksLikeAudio = /\.(mp3|m4a|aac|wav|ogg)(\?|$)/.test(lower)
+    if (!looksLikeAudio) {
+      const ok = window.confirm('这个链接看起来不像音频直链（建议用 .mp3/.m4a 等直链）。\n仍然要导入吗？')
+      if (!ok) return
+    }
     
     // 从URL提取文件名
     const urlParts = url.split('/').pop() || ''
@@ -141,6 +156,7 @@ export default function MusicScreen() {
       cover: '/icons/music-cover.png',
       url: importSongData.url,
       duration: importSongData.duration,
+      source: importSongData.isUrl ? 'url' : (importSongData.url.startsWith('data:') ? 'data' : 'builtin'),
     })
     
     setShowImportDialog(false)

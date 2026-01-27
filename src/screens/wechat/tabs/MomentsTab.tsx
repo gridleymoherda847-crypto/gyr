@@ -2,7 +2,7 @@ import { useMemo, useState, useRef } from 'react'
 import { useWeChat } from '../../../context/WeChatContext'
 import { useOS } from '../../../context/OSContext'
 import WeChatDialog from '../components/WeChatDialog'
-import { getGlobalPresets } from '../../PresetScreen'
+import { getGlobalPresets, getLorebookEntriesForCharacter } from '../../PresetScreen'
 
 type Props = {
   onBack: () => void
@@ -101,7 +101,11 @@ export default function MomentsTab({ onBack }: Props) {
         const lang = (friend as any).language || 'zh'
         const langName =
           lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
-        const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈“评论/回复”的方式发言。
+        const lore = getLorebookEntriesForCharacter(
+          friend.id,
+          `${recentChat || ''}\n${target.content || ''}\n${replyTo ? replyTo.content : ''}`
+        )
+        const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈“评论/回复”的方式发言。
 你是：${friend.name}
 你的人设：${friend.prompt || '（未设置）'}
 你的国家/地区：${(friend as any).country || '（未设置）'}
@@ -140,7 +144,8 @@ ${replyTo ? `你要回复的评论：@${replyTo.authorName}：${replyTo.content}
         const lang = (friend as any).language || 'zh'
         const langName =
           lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
-        const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈“发布动态”的方式发言。
+        const lore = getLorebookEntriesForCharacter(friend.id, `${recentChat || ''}`)
+        const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈“发布动态”的方式发言。
 你是：${friend.name}
 你的人设：${friend.prompt || '（未设置）'}
 你的国家/地区：${(friend as any).country || '（未设置）'}
@@ -202,9 +207,10 @@ ${recentChat || '（暂无）'}
           
           const globalPresets = getGlobalPresets()
           const recentChat = getMessagesByCharacter(friend.id).slice(-8).map(m => `${m.isUser ? '我' : friend.name}：${m.content}`).join('\n')
+          const lore = getLorebookEntriesForCharacter(friend.id, `${recentChat || ''}\n${newMomentContent || ''}`)
           
           try {
-            const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈"评论"的方式发言。
+            const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈"评论"的方式发言。
 你是：${friend.name}
 你的人设：${friend.prompt || '（未设置）'}
 最近聊天片段：

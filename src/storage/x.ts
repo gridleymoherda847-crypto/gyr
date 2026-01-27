@@ -334,8 +334,29 @@ export function xEnsureUser(
 ): { data: XDataV1; userId: string } {
   const name = (user.name || '').trim() || 'User'
   const handle = (user.handle || '').trim()
+  // 关键：如果明确传了 id（例如“Chat 好友=推特账号”的绑定），就必须优先按 id 绑定
+  // 不要因为“同名用户”而复用别人的 id，否则会导致：
+  // - 关注不生效/不持久（关注的是另一个 userId）
+  // - 私信无法关联到 chat 角色人设（peerId 不一致）
+  if (user.id) {
+    const byId = data.users.find((u) => u.id === user.id)
+    if (byId) {
+      const nextUsers = data.users.map((u) => {
+        if (u.id !== byId.id) return u
+        return {
+          ...u,
+          name: user.name || u.name,
+          handle: handle || u.handle,
+          avatarUrl: user.avatarUrl || u.avatarUrl,
+          bannerUrl: user.bannerUrl || u.bannerUrl,
+          bio: user.bio || u.bio || xMakeBio(u.handle + '::bio'),
+        }
+      })
+      return { data: { ...data, users: nextUsers }, userId: byId.id }
+    }
+  }
+
   const exists =
-    (user.id ? data.users.find((u) => u.id === user.id) : undefined) ||
     (handle ? data.users.find((u) => u.handle === handle) : undefined) ||
     data.users.find((u) => u.name === name)
   if (exists) {

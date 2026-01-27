@@ -180,7 +180,6 @@ export default function XScreen() {
   const [bannerEditTargetId, setBannerEditTargetId] = useState<string | null>(null)
   const [otherProfileTipOpen, setOtherProfileTipOpen] = useState(false)
   const [otherProfileTipDontShow, setOtherProfileTipDontShow] = useState(false)
-  const lastProfileTipIdRef = useRef<string | null>(null)
   const [profileEditOpen, setProfileEditOpen] = useState(false)
   const [profileDraftName, setProfileDraftName] = useState('')
   const [profileDraftBio, setProfileDraftBio] = useState('')
@@ -318,14 +317,8 @@ export default function XScreen() {
     setTab('home')
   }, [data, searchParams])
 
-  useEffect(() => {
-    if (!data || !openProfileUserId || openProfileUserId === 'me') return
-    if (data.suppressOtherProfileEditTip) return
-    if (lastProfileTipIdRef.current === openProfileUserId) return
-    lastProfileTipIdRef.current = openProfileUserId
-    setOtherProfileTipDontShow(false)
-    setOtherProfileTipOpen(true)
-  }, [data, openProfileUserId])
+  // 之前这里会“自动弹窗提示可编辑TA主页”，会遮挡关注/私信按钮，导致用户以为点不上。
+  // 改为：不再自动弹出；需要时由用户手动点“编辑”按钮打开。
 
   const posts = useMemo(() => (data?.posts || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [data?.posts])
   const replies = useMemo(() => data?.replies || [], [data?.replies])
@@ -706,6 +699,85 @@ export default function XScreen() {
     let next: XDataV1 = { ...data, posts: [mePost, ...data.posts], meFollowerCount: follower.nextVal }
     setData(next)
     await xSave(next)
+    // 我发帖后：让 chat 好友来评论（1次调用生成多条评论，省钱也快）
+    void (async () => {
+      try {
+        if (!characters || characters.length === 0) return
+        // 选 1~3 个好友（最多 3 个，避免太费 API）
+        const pool = characters.slice(0, 60)
+        const count = Math.min(3, Math.max(1, Math.random() < 0.7 ? 1 : Math.random() < 0.9 ? 2 : 3), pool.length)
+        const picked = [...pool].sort(() => Math.random() - 0.5).slice(0, count)
+        if (picked.length === 0) return
+
+        const friendList = picked
+          .map((c) => `- id:${c.id}\n  名字:${c.name}\n  人设:${(c.prompt || '').replace(/\s+/g, ' ').slice(0, 140) || '（未设置）'}`)
+          .join('\n')
+
+        const sys =
+          sysPrefix() +
+          `【X（推特风格）/好友评论】\n` +
+          `用户（我）刚发布了一条推文。\n` +
+          `推文内容：${text}\n` +
+          `\n` +
+          `现在你要让以下“Chat 好友”分别评论这条推文，每人 1 条：\n` +
+          `${friendList}\n` +
+          `\n` +
+          `要求：\n` +
+          `- 口语化，像真的刷到动态随口评论\n` +
+          `- 每条 <= 50 字\n` +
+          `- 不要动作描写/旁白\n` +
+          `- 不要说“我们一起玩/我们聊天”这种强绑定微信的句子，像 X 评论区即可\n` +
+          `- 允许一点情绪/吐槽，但禁止辱女/性羞辱\n` +
+          `- 只输出 JSON，不要解释\n` +
+          `JSON：{ "comments": [ { "characterId": "...", "text": "..." } ] }\n`
+
+        const parsed = await callJson(sys, '现在生成 comments。', 260)
+        const raw = Array.isArray((parsed as any)?.comments) ? (parsed as any).comments : []
+        if (raw.length === 0) return
+
+        let next2 = next
+        const newReplies: XReply[] = []
+        for (const it of raw.slice(0, picked.length)) {
+          const cid = String(it?.characterId || '').trim()
+          const commentText = String(it?.text || '').trim()
+          if (!cid || !commentText) continue
+          const c = picked.find((x) => x.id === cid) || characters.find((x) => x.id === cid)
+          if (!c) continue
+          const identity = getCharacterIdentity(c, true)
+          const ensured = (() => {
+            const { data: d2, userId } = xEnsureUser(next2, {
+              id: c.id,
+              name: c.name,
+              handle: identity.handle,
+              avatarUrl: c.avatar || undefined,
+            })
+            next2 = d2
+            return { id: userId, name: c.name }
+          })()
+          newReplies.push(xNewReply(mePost.id, ensured.id, ensured.name, commentText))
+        }
+        if (newReplies.length === 0) return
+
+        // 更新 replyCount + 留存每帖最多 50 条评论
+        const updatedPosts = next2.posts.map((p) =>
+          p.id === mePost.id ? { ...p, replyCount: Math.max(0, (p.replyCount || 0) + newReplies.length) } : p
+        )
+        const combined = [...next2.replies, ...newReplies]
+        const grouped: Record<string, XReply[]> = {}
+        for (const r of combined) (grouped[r.postId] ||= []).push(r)
+        const pruned: XReply[] = []
+        for (const [, arr] of Object.entries(grouped)) {
+          arr.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+          pruned.push(...arr.slice(-50))
+        }
+        pruned.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+        next2 = { ...next2, posts: updatedPosts, replies: pruned }
+        setData(next2)
+        await xSave(next2)
+      } catch {
+        // 静默失败：不影响发帖
+      }
+    })()
     setComposeText('')
     setComposeOpen(false)
     setHomeMode('forYou')
@@ -2271,6 +2343,19 @@ export default function XScreen() {
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16v12H7l-3 3V6Z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOtherProfileTipDontShow(false)
+                    setOtherProfileTipOpen(true)
+                  }}
+                  className="w-10 h-10 rounded-full bg-gray-100 text-gray-900 flex items-center justify-center active:scale-[0.98]"
+                  title="编辑TA主页（头像/背景）"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 4h2m-1 0v2m0-2H9m4 0h2M5 20h14a1 1 0 0 0 1-1v-7m-1 9-7-7m0 0 4-4a2 2 0 0 1 3 3l-4 4m-3-3L8 8a2 2 0 0 0-3 3l4 4" />
                   </svg>
                 </button>
                 <button

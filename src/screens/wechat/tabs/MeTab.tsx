@@ -108,7 +108,7 @@ export default function MeTab({ onBack }: Props) {
                 {currentPersona?.name || '未设置人设'}
               </div>
               <div className="text-sm text-gray-500 mt-1">
-                {currentPersona?.description || '点击管理我的人设'}
+                点击管理我的人设
               </div>
             </div>
             
@@ -187,7 +187,7 @@ export default function MeTab({ onBack }: Props) {
                 {userPersonas.map(persona => (
                   <div 
                     key={persona.id}
-                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer ${
+                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer min-w-0 ${
                       userSettings.currentPersonaId === persona.id 
                         ? 'bg-[#07C160]/10 border border-[#07C160]' 
                         : 'bg-gray-50'
@@ -203,40 +203,41 @@ export default function MeTab({ onBack }: Props) {
                         </div>
                       )}
                     </div>
-                    <div className="flex-1">
-                      <div className="font-medium text-[#000]">{persona.name}</div>
-                      {persona.description && (
-                        <div className="text-xs text-gray-500 truncate">{persona.description}</div>
-                      )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="font-medium text-[#000] truncate">{persona.name}</div>
+                        {userSettings.currentPersonaId === persona.id && (
+                          <span className="text-[#07C160] text-xs flex-shrink-0">使用中</span>
+                        )}
+                      </div>
                     </div>
-                    {userSettings.currentPersonaId === persona.id && (
-                      <span className="text-[#07C160] text-sm">使用中</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setEditPersona({
-                          name: persona.name,
-                          avatar: persona.avatar || '',
-                          description: persona.description || ''
-                        })
-                        setEditingPersonaId(persona.id)
-                      }}
-                      className="text-blue-500 text-xs"
-                    >
-                      编辑
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setDeletePersonaId(persona.id)
-                      }}
-                      className="text-red-500 text-xs"
-                    >
-                      删除
-                    </button>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setEditPersona({
+                            name: persona.name,
+                            avatar: persona.avatar || '',
+                            description: persona.description || '',
+                          })
+                          setEditingPersonaId(persona.id)
+                        }}
+                        className="text-blue-500 text-xs"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeletePersonaId(persona.id)
+                        }}
+                        className="text-red-500 text-xs"
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
