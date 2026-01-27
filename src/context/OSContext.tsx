@@ -812,9 +812,10 @@ export function OSProvider({ children }: PropsWithChildren) {
     }
     setMusicPlaylist(prev => {
       const next = [...prev, normalized]
-      // 立即持久化，避免刷新丢失
-      // 同时保存到 IndexedDB 和 localStorage（双保险）
+      
+      // 立即持久化
       void (async () => {
+        // 保存到 IndexedDB
         try {
           await kvSetJSON(MUSIC_STORAGE_KEY, next)
           await kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
@@ -822,12 +823,15 @@ export function OSProvider({ children }: PropsWithChildren) {
         } catch (e) {
           console.error('[Music] IndexedDB save failed:', e)
         }
-        // 备份到 localStorage（移动端 IndexedDB 可能不可靠）
+        
+        // 备份到 localStorage（只保存 URL 类型的歌曲，不保存 base64 以避免超限）
         try {
-          localStorage.setItem(MUSIC_STORAGE_KEY + '_backup', JSON.stringify(next))
-          console.log('[Music] Backup to localStorage:', next.length, 'songs')
+          const urlOnlySongs = next.filter(s => s.source === 'url' || s.source === 'builtin' || !s.url?.startsWith('data:'))
+          localStorage.setItem(MUSIC_STORAGE_KEY + '_backup', JSON.stringify(urlOnlySongs))
+          console.log('[Music] Backup to localStorage:', urlOnlySongs.length, 'URL songs')
         } catch (e) {
-          console.error('[Music] localStorage backup failed:', e)
+          // localStorage 可能已满，忽略
+          console.warn('[Music] localStorage backup skipped (may be full)')
         }
       })()
       return next

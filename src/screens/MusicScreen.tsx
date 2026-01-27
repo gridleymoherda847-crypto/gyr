@@ -65,9 +65,15 @@ export default function MusicScreen() {
       return
     }
 
-    // 检查文件大小（限制 10MB，减少内存压力）
-    if (file.size > 10 * 1024 * 1024) {
-      alert('音频文件太大，最大支持 10MB\n\n建议使用链接导入大文件')
+    // 移动端检测
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    
+    // 移动端限制更严格（2MB），电脑端可以大一点（5MB）
+    const maxSize = isMobile ? 2 * 1024 * 1024 : 5 * 1024 * 1024
+    const maxSizeMB = isMobile ? '2MB' : '5MB'
+    
+    if (file.size > maxSize) {
+      alert(`音频文件太大，最大支持 ${maxSizeMB}\n\n手机端建议使用「链接导入」功能：\n1. 把音频上传到网盘或文件托管\n2. 获取直链后用「链接」按钮导入`)
       e.target.value = ''
       return
     }
@@ -78,12 +84,14 @@ export default function MusicScreen() {
       const fileName = file.name.replace(/\.[^/.]+$/, '')
       const base64 = await fileToBase64(file)
       
+      console.log('[Music] File size:', (file.size / 1024 / 1024).toFixed(2), 'MB, base64 length:', base64.length)
+      
       // 获取时长，加超时保护
       let duration = 180
       try {
         const audio = new Audio(base64)
         duration = await new Promise<number>((resolve) => {
-          const timeout = setTimeout(() => resolve(180), 3000) // 3秒超时
+          const timeout = setTimeout(() => resolve(180), 3000)
           audio.addEventListener('loadedmetadata', () => {
             clearTimeout(timeout)
             resolve(Math.floor(audio.duration) || 180)
@@ -101,7 +109,8 @@ export default function MusicScreen() {
       setImportSongData({ url: base64, duration })
       setShowImportDialog(true)
     } catch (err) {
-      alert('导入失败，请重试')
+      console.error('[Music] Import failed:', err)
+      alert('导入失败，请重试\n\n如果在手机上，建议使用「链接导入」')
     } finally {
       setImportLoading(false)
       e.target.value = ''
@@ -613,10 +622,10 @@ export default function MusicScreen() {
       {/* 链接导入对话框 */}
       {showUrlInput && (
         <div className="absolute inset-0 z-50 flex items-center justify-center px-6 bg-black/50">
-          <div className="w-full max-w-[300px] rounded-2xl bg-white p-4 shadow-xl">
+          <div className="w-full max-w-[320px] rounded-2xl bg-white p-4 shadow-xl max-h-[85vh] overflow-y-auto">
             <div className="text-center mb-4">
               <div className="text-lg font-semibold text-gray-800">🔗 链接导入</div>
-              <div className="text-xs text-gray-500 mt-1">输入音乐文件的直链地址</div>
+              <div className="text-xs text-gray-500 mt-1">推荐方式，手机/电脑都能用</div>
             </div>
             
             <input
@@ -627,8 +636,11 @@ export default function MusicScreen() {
               placeholder="https://example.com/music.mp3"
             />
             
-            <div className="text-xs text-gray-400 mb-3">
-              提示：链接必须是可直接播放的音频文件地址（.mp3/.m4a等）
+            <div className="text-xs text-gray-500 mb-3 space-y-1">
+              <div className="font-medium text-gray-600">💡 如何获取音乐链接：</div>
+              <div>1. 上传音频到 <span className="text-blue-500">catbox.moe</span> 或网盘</div>
+              <div>2. 复制直链（以 .mp3 .m4a 结尾）</div>
+              <div>3. 粘贴到上方输入框</div>
             </div>
             
             <div className="flex gap-2">
