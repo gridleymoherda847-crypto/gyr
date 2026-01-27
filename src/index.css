@@ -12,6 +12,8 @@
   /* 屏幕边距（用户可调整） */
   --screen-padding-top: 0px;
   --screen-padding-bottom: 0px;
+  --screen-padding-left: 0px;
+  --screen-padding-right: 0px;
   
   color: #1f2937;
   background-color: #0b0c10;

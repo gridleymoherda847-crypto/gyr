@@ -34,6 +34,12 @@ export default function SettingsScreen() {
   const [screenPaddingBottom, setScreenPaddingBottom] = useState(() => {
     return parseInt(localStorage.getItem('mina_screen_padding_bottom') || '0')
   })
+  const [screenPaddingLeft, setScreenPaddingLeft] = useState(() => {
+    return parseInt(localStorage.getItem('mina_screen_padding_left') || '0')
+  })
+  const [screenPaddingRight, setScreenPaddingRight] = useState(() => {
+    return parseInt(localStorage.getItem('mina_screen_padding_right') || '0')
+  })
   const [hideStatusBar, setHideStatusBar] = useState(() => {
     return localStorage.getItem('mina_hide_status_bar') === 'true'
   })
@@ -793,8 +799,48 @@ export default function SettingsScreen() {
                   </div>
                 </div>
                 
+                {/* 左侧边距 */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#333]">左侧边距</span>
+                    <span className="text-[#666] font-mono">{screenPaddingLeft > 0 ? '+' : ''}{screenPaddingLeft}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-20"
+                    max="40"
+                    value={screenPaddingLeft}
+                    onChange={(e) => setScreenPaddingLeft(parseInt(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-[#999]">
+                    <span>左移</span>
+                    <span>右移</span>
+                  </div>
+                </div>
+                
+                {/* 右侧边距 */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#333]">右侧边距</span>
+                    <span className="text-[#666] font-mono">{screenPaddingRight > 0 ? '+' : ''}{screenPaddingRight}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-20"
+                    max="40"
+                    value={screenPaddingRight}
+                    onChange={(e) => setScreenPaddingRight(parseInt(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-[#999]">
+                    <span>右移</span>
+                    <span>左移</span>
+                  </div>
+                </div>
+                
                 <div className="text-xs text-[#999] text-center bg-gray-50 rounded-lg p-2">
-                  iPhone 刘海屏建议：顶部 +44px，底部 +34px
+                  提示：如果按钮/内容被截断，可调整对应边距
                 </div>
               </div>
               
@@ -804,6 +850,8 @@ export default function SettingsScreen() {
                   onClick={() => {
                     setScreenPaddingTop(0)
                     setScreenPaddingBottom(0)
+                    setScreenPaddingLeft(0)
+                    setScreenPaddingRight(0)
                     setHideStatusBar(false)
                     setIosSafeArea(false)
                   }}
@@ -816,11 +864,15 @@ export default function SettingsScreen() {
                   onClick={() => {
                     localStorage.setItem('mina_screen_padding_top', String(screenPaddingTop))
                     localStorage.setItem('mina_screen_padding_bottom', String(screenPaddingBottom))
+                    localStorage.setItem('mina_screen_padding_left', String(screenPaddingLeft))
+                    localStorage.setItem('mina_screen_padding_right', String(screenPaddingRight))
                     localStorage.setItem('mina_hide_status_bar', String(hideStatusBar))
                     localStorage.setItem('mina_ios_safe_area', String(iosSafeArea))
                     // 应用到 CSS 变量
                     document.documentElement.style.setProperty('--screen-padding-top', `${screenPaddingTop}px`)
                     document.documentElement.style.setProperty('--screen-padding-bottom', `${screenPaddingBottom}px`)
+                    document.documentElement.style.setProperty('--screen-padding-left', `${screenPaddingLeft}px`)
+                    document.documentElement.style.setProperty('--screen-padding-right', `${screenPaddingRight}px`)
                     setShowScreenFit(false)
                     // 刷新页面应用变更
                     window.location.reload()

@@ -75,9 +75,11 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundColor: '#fef7f0',
-          // 用户自定义边距
+          // 用户自定义边距（上下左右）
           paddingTop: 'var(--screen-padding-top)',
           paddingBottom: 'var(--screen-padding-bottom)',
+          paddingLeft: 'var(--screen-padding-left)',
+          paddingRight: 'var(--screen-padding-right)',
         }}
       >
         <div className="relative z-10 flex h-full flex-col">
