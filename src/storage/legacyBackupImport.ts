@@ -67,9 +67,10 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'littlephone_location',
   'littlephone_weather',
 
-  // Presets
-  'littlephone_preset_config',
-  'littlephone_presets_content',
+  // 创作工坊
+  'littlephone_workshop_config', // 工坊配置（叙事设置+世界书）
+  'littlephone_preset_config', // 旧版兼容
+  'littlephone_presets_content', // 生成的预设内容
 
   // Game
   'doudizhu_stats',
