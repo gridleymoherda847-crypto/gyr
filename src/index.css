@@ -38,11 +38,18 @@ html, body {
   overscroll-behavior-y: none;
   -webkit-overflow-scrolling: touch;
   touch-action: manipulation;
-  /* iOS Safari 安全区域 */
-  padding-top: env(safe-area-inset-top);
+  /* iOS Safari 安全区域 - 默认不添加padding */
+}
+
+/* iOS 安全区域适配模式 */
+html.ios-safe-area, html.ios-safe-area body {
+  /* 让背景延伸到安全区域 */
+  background-color: #0b0c10;
+}
+
+html.ios-safe-area #root {
+  /* 内容区域添加安全区域padding */
   padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
 }
 
 /* iOS Safari 特殊修复 */

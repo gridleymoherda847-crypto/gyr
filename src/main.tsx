@@ -6,11 +6,17 @@ import './index.css'
 // 应用用户保存的屏幕边距设置
 const savedPaddingTop = localStorage.getItem('mina_screen_padding_top')
 const savedPaddingBottom = localStorage.getItem('mina_screen_padding_bottom')
+const savedIosSafeArea = localStorage.getItem('mina_ios_safe_area')
+
 if (savedPaddingTop) {
   document.documentElement.style.setProperty('--screen-padding-top', `${savedPaddingTop}px`)
 }
 if (savedPaddingBottom) {
   document.documentElement.style.setProperty('--screen-padding-bottom', `${savedPaddingBottom}px`)
+}
+// iOS 安全区域适配
+if (savedIosSafeArea === 'true') {
+  document.documentElement.classList.add('ios-safe-area')
 }
 
 const rootElement = document.getElementById('root')
