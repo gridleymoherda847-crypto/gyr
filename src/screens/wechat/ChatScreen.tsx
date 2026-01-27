@@ -230,7 +230,6 @@ export default function ChatScreen() {
       characterName: string
       characterAvatar: string
       remark: string  // 备注
-      isFileTransfer?: boolean  // 是否是文件传输助手
       messages: Array<{ isUser: boolean; content: string; timestamp: number }>
     }>
     bills: Array<{ type: string; amount: number; description: string; timestamp: number }>
@@ -2157,12 +2156,8 @@ ${recentTimeline || '（无）'}
       const recentContext = messages.slice(-10).map(m => m.content).join(' ')
       const lorebookText = getLorebookEntriesForCharacter(character.id, recentContext)
       
-      // 判断角色是否孤僻（根据人设关键词）
-      const isIntrovert = /孤僻|内向|社恐|不爱社交|独来独往|独处|孤独|冷淡|疏离/.test(character.prompt || '')
-      
-      // 决定聊天人数：孤僻角色只有文件传输助手，否则2-6人
-      const maxChatCount = isIntrovert ? 1 : Math.min(6, Math.max(2, otherCharacters.length + 2))
-      const targetChatCount = isIntrovert ? 1 : Math.max(2, Math.min(maxChatCount, 2 + Math.floor(Math.random() * 3)))
+      // 随机2-8人的聊天记录，展示角色的社交圈
+      const targetChatCount = 2 + Math.floor(Math.random() * 7) // 2-8人
       
       // 获取更多上下文：最近50条消息的摘要
       const fullContext = messages.slice(-50).map(m => {
@@ -2199,16 +2194,20 @@ ${fullContext}
    - 如果人设是上班族，账单可以是通勤、午餐、咖啡等
    - 备忘录可以是人设中提到的待办事项、愿望清单等
 
-【对话生成】
-1. 生成${targetChatCount}个对话，每个对话包含最近15-30条消息
-${isIntrovert ? `2. 由于角色性格孤僻/内向，只有一个对话对象是"文件传输助手"（系统账号，不会回复，角色只是用来记事或发文件给自己）
-3. 文件传输助手的消息全部是角色（${character.name}）发送的，内容可以是随手记录、对聊天的感想、备忘等` : `2. 必须生成至少2个对话对象，最多${targetChatCount}个
-3. 【重要】对话对象优先从人设/世界书中提取，没有的话再自由设定（朋友、闺蜜、兄弟、同事、家人等）
-4. 每个对话对象要有合适的备注名（比如"兄弟"、"闺蜜小美"、"老妈"、"同事小王"等）
-5. 不同的聊天对象，聊的内容应该不同，体现角色的多面性`}
-6. 聊天内容要符合${character.name}的人设和说话风格
-7. 聊天要自然、真实，符合微信聊天风格
-8. 时间要合理分布（最近几天内）
+【对话生成 - 展示社交圈】
+1. 生成${targetChatCount}个不同的聊天对象，每个对话包含15-30条消息
+2. 【重要】对话对象要多样化，展示角色的社交圈：
+   - 优先从人设/世界书中提取已有的人物关系
+   - 没有的话自由设定：闺蜜、兄弟、同事、前任、暧昧对象、家人、网友、群聊等
+3. 每个对话对象要有合适的备注名（比如"死党阿杰"、"闺蜜小美"、"老妈"、"前男友"、"暧昧对象？"、"同事群"等）
+4. 不同的聊天对象，聊的内容应该完全不同，体现角色的多面性：
+   - 和闺蜜/兄弟：可以吐槽、八卦、分享秘密
+   - 和家人：日常问候、关心、偶尔撒娇
+   - 和暧昧对象：暧昧、试探、小心翼翼
+   - 和同事：工作相关、偶尔吐槽
+5. 聊天内容要符合${character.name}的人设和说话风格
+6. 聊天要自然、真实，符合微信聊天风格
+7. 时间要合理分布（最近几天内）
 
 【账单要求】生成8-15条消费记录：
 - type: "收入" 或 "支出"
@@ -2236,8 +2235,7 @@ ${isIntrovert ? `2. 由于角色性格孤僻/内向，只有一个对话对象�
   "chats": [
     {
       "characterName": "对方名字",
-      "remark": "备注名",
-      "isFileTransfer": false,
+      "remark": "备注名（如：闺蜜小美、死党阿杰、老妈、暧昧对象等）",
       "messages": [
         {"isUser": true, "content": "角色(${character.name})发的消息", "timestamp": 时间戳毫秒},
         {"isUser": false, "content": "对方发的消息", "timestamp": 时间戳毫秒}
@@ -2271,7 +2269,6 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}` : ''}
           // 处理聊天记录：确保有头像URL，补充缺失字段
           const processedChats = (parsed.chats || []).map((chat: any) => {
             const otherChar = otherCharacters.find(c => c.name === chat.characterName)
-            const isFileTransfer = chat.isFileTransfer || chat.characterName === '文件传输助手'
             
             // 生成合理的时间戳：最近3天内，按时间顺序排列
             const now = Date.now()
@@ -2281,9 +2278,8 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}` : ''}
             return {
               characterId: otherChar?.id || '',
               characterName: chat.characterName || '未知',
-              characterAvatar: isFileTransfer ? '' : (otherChar?.avatar || ''),
+              characterAvatar: otherChar?.avatar || '',
               remark: chat.remark || chat.characterName || '未知',
-              isFileTransfer,
               messages: (chat.messages || []).map((msg: any, idx: number) => {
                 // 检查时间戳是否合理（在过去30天内且不超过当前时间）
                 let ts = msg.timestamp
@@ -2296,7 +2292,7 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}` : ''}
                   ts += Math.random() * 5 * 60 * 1000
                 }
                 return {
-                  isUser: isFileTransfer ? true : (msg.isUser !== false),
+                  isUser: msg.isUser !== false,
                   content: msg.content || '',
                   timestamp: ts,
                 }
@@ -5928,13 +5924,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                             className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 active:bg-gray-100"
                           >
                             <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
-                              {chat.isFileTransfer ? (
-                                <div className="w-full h-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                                  <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                  </svg>
-                                </div>
-                              ) : chat.characterAvatar ? (
+                              {chat.characterAvatar ? (
                                 <img src={chat.characterAvatar} alt="" className="w-full h-full object-cover" />
                               ) : (
                                 <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-lg font-medium">
