@@ -794,23 +794,40 @@ export default function ChatSettingsScreen() {
               </div>
             </div>
 
-            {/* 拍一拍设置 */}
-            <div
-              className="flex items-center justify-between px-4 py-4 border-t border-gray-100 cursor-pointer active:bg-gray-50"
-              onClick={() => {
-                setPatMeTextDraft(character?.patMeText || '拍了拍我的小脑袋')
-                setPatThemTextDraft(character?.patThemText || '拍了拍TA的肩膀')
-                setShowPatSettings(true)
-              }}
-            >
+            {/* 拍一拍开关 */}
+            <div className="flex items-center justify-between px-4 py-4 border-t border-gray-100">
               <div className="flex flex-col">
-                <span className="text-[#000]">拍一拍设置</span>
-                <span className="text-xs text-gray-400 mt-0.5">自定义拍一拍内容</span>
+                <span className="text-[#000]">拍一拍</span>
+                <span className="text-xs text-gray-400 mt-0.5">点击头像触发拍一拍效果</span>
               </div>
-              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
+              <button
+                type="button"
+                onClick={() => updateCharacter(character.id, { patEnabled: !(character?.patEnabled ?? true) })}
+                className={`w-12 h-7 rounded-full transition-colors relative ${(character?.patEnabled ?? true) ? 'bg-[#07C160]' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${(character?.patEnabled ?? true) ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
             </div>
+
+            {/* 拍一拍设置（仅开启时显示） */}
+            {(character?.patEnabled ?? true) && (
+              <div
+                className="flex items-center justify-between px-4 py-4 border-t border-gray-100 cursor-pointer active:bg-gray-50"
+                onClick={() => {
+                  setPatMeTextDraft(character?.patMeText || '拍了拍我的小脑袋')
+                  setPatThemTextDraft(character?.patThemText || '拍了拍TA的肩膀')
+                  setShowPatSettings(true)
+                }}
+              >
+                <div className="flex flex-col">
+                  <span className="text-[#000]">拍一拍设置</span>
+                  <span className="text-xs text-gray-400 mt-0.5">自定义拍一拍内容</span>
+                </div>
+                <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            )}
             
             {/* 语音设置 */}
             <div

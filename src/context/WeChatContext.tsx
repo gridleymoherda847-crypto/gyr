@@ -83,6 +83,7 @@ export type WeChatCharacter = {
   voiceId?: string // 使用的音色ID
   voiceFrequency?: 'always' | 'often' | 'sometimes' | 'rarely' // 发语音频率
   // 拍一拍功能
+  patEnabled?: boolean // 是否启用拍一拍（默认true）
   patMeText?: string // 对方拍我时显示的内容（如"拍了拍我的小脑袋"）
   patThemText?: string // 我拍对方时显示的内容（如"拍了拍TA的肩膀"）
 }
