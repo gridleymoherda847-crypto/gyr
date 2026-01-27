@@ -95,7 +95,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice' | 'pat'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice' | 'pat' | 'fund_share'
   // 转账相关
   transferAmount?: number
   transferNote?: string
@@ -221,12 +221,52 @@ export type ListenTogetherState = {
 // 钱包账单记录
 export type WalletBill = {
   id: string
-  type: 'transfer_in' | 'transfer_out' | 'shopping' | 'dice_init' // 转入/转出/购物/骰子初始化
+  type: 'transfer_in' | 'transfer_out' | 'shopping' | 'dice_init' | 'fund_buy' | 'fund_sell' // 转入/转出/购物/骰子初始化/基金买入/基金卖出
   amount: number
   description: string
   relatedCharacterId?: string // 相关角色ID（转账时）
   timestamp: number
 }
+
+// ==================== 基金系统 ====================
+
+// 基金定义
+export type Fund = {
+  id: string
+  name: string              // 基金名称
+  code: string              // 基金代码
+  type: 'stock' | 'bond' | 'hybrid' | 'index' | 'qdii' | 'money'  // 类型
+  riskLevel: 1 | 2 | 3 | 4 | 5   // 风险等级
+  currentPrice: number      // 当前净值
+  previousPrice: number     // 上次净值
+  historyPrices: number[]   // 历史净值（最近7次）
+  lastUpdate: number        // 上次更新时间戳
+  consecutiveDrops: number  // 连续下跌次数（用于假反弹）
+}
+
+// 用户基金持仓
+export type FundHolding = {
+  fundId: string
+  shares: number            // 持有份额
+  costPrice: number         // 成本净值（买入均价）
+  totalCost: number         // 总投入成本（含手续费）
+  buyTime: number           // 首次买入时间
+}
+
+// 预设基金列表
+export const PRESET_FUNDS: Omit<Fund, 'currentPrice' | 'previousPrice' | 'historyPrices' | 'lastUpdate' | 'consecutiveDrops'>[] = [
+  { id: 'fund_001', name: '稳健收益A', code: '001111', type: 'bond', riskLevel: 1 },
+  { id: 'fund_002', name: '货币宝', code: '002222', type: 'money', riskLevel: 1 },
+  { id: 'fund_003', name: '沪深300指数', code: '003333', type: 'index', riskLevel: 3 },
+  { id: 'fund_004', name: '科技创新混合', code: '004444', type: 'hybrid', riskLevel: 3 },
+  { id: 'fund_005', name: '新能源先锋', code: '005555', type: 'stock', riskLevel: 4 },
+  { id: 'fund_006', name: '医药健康精选', code: '006666', type: 'stock', riskLevel: 4 },
+  { id: 'fund_007', name: '消费升级主题', code: '007777', type: 'stock', riskLevel: 4 },
+  { id: 'fund_008', name: '纳斯达克100', code: '008888', type: 'qdii', riskLevel: 5 },
+]
+
+// 基金手续费率
+export const FUND_FEE_RATE = 0.015 // 1.5%
 
 // 表情包配置
 export type StickerConfig = {
@@ -454,6 +494,16 @@ type WeChatContextValue = {
   addWalletBill: (bill: Omit<WalletBill, 'id' | 'timestamp'>) => void
   updateWalletBalance: (amount: number) => void // 正数增加，负数减少
   
+  // 基金操作
+  funds: Fund[]
+  fundHoldings: FundHolding[]
+  refreshFunds: () => boolean // 刷新基金价格，返回是否成功（10分钟内不能刷新）
+  getNextRefreshTime: () => number // 获取下次可刷新时间
+  buyFund: (fundId: string, amount: number) => { success: boolean; message: string; shares?: number }
+  sellFund: (fundId: string, shares: number) => { success: boolean; message: string; amount?: number }
+  getFundHolding: (fundId: string) => FundHolding | undefined
+  getTotalFundValue: () => number // 获取基金总市值
+  
 }
 
 const WeChatContext = createContext<WeChatContextValue | undefined>(undefined)
@@ -476,7 +526,66 @@ const STORAGE_KEYS = {
   walletBalance: 'wechat_wallet_balance',
   walletInitialized: 'wechat_wallet_initialized',
   walletBills: 'wechat_wallet_bills',
-  bubbleOpacityMode: 'wechat_bubble_opacity_mode', // 一次性迁移：旧存档 bgOpacity/borderOpacity 为“不透明度”
+  bubbleOpacityMode: 'wechat_bubble_opacity_mode',
+  funds: 'wechat_funds',
+  fundHoldings: 'wechat_fund_holdings', // 一次性迁移：旧存档 bgOpacity/borderOpacity 为“不透明度”
+}
+
+// 初始化基金列表（带随机初始价格）
+function initializeFunds(): Fund[] {
+  return PRESET_FUNDS.map(preset => {
+    // 初始净值在0.8-1.5之间随机
+    const initialPrice = 0.8 + Math.random() * 0.7
+    return {
+      ...preset,
+      currentPrice: Number(initialPrice.toFixed(4)),
+      previousPrice: Number(initialPrice.toFixed(4)),
+      historyPrices: Array(7).fill(0).map(() => Number((initialPrice * (0.95 + Math.random() * 0.1)).toFixed(4))),
+      lastUpdate: Date.now(),
+      consecutiveDrops: 0,
+    }
+  })
+}
+
+// 刷新单只基金价格
+function refreshFundPrice(fund: Fund): Fund {
+  const riskVolatility: Record<number, [number, number, number, number]> = {
+    // [涨幅下限, 涨幅上限, 跌幅下限, 跌幅上限]
+    1: [0.001, 0.005, 0.001, 0.008],   // 低风险：涨0.1%-0.5%，跌0.1%-0.8%
+    2: [0.002, 0.012, 0.003, 0.018],   // 中低风险
+    3: [0.005, 0.025, 0.008, 0.035],   // 中风险：涨0.5%-2.5%，跌0.8%-3.5%
+    4: [0.008, 0.04, 0.015, 0.055],    // 中高风险：涨0.8%-4%，跌1.5%-5.5%
+    5: [0.01, 0.06, 0.02, 0.08],       // 高风险：涨1%-6%，跌2%-8%
+  }
+
+  const [upMin, upMax, downMin, downMax] = riskVolatility[fund.riskLevel]
+  
+  // 基础概率：35%涨，65%跌
+  let upChance = 0.35
+  
+  // 连续下跌后给个假反弹（诱多）
+  if (fund.consecutiveDrops >= 4) {
+    upChance = 0.75 // 连跌4次后，75%概率反弹
+  } else if (fund.consecutiveDrops >= 2) {
+    // 跌后更容易继续跌
+    upChance = 0.25
+  }
+  
+  const isUp = Math.random() < upChance
+  const changeRate = isUp
+    ? upMin + Math.random() * (upMax - upMin)
+    : -(downMin + Math.random() * (downMax - downMin))
+  
+  const newPrice = Math.max(0.1, fund.currentPrice * (1 + changeRate))
+  
+  return {
+    ...fund,
+    previousPrice: fund.currentPrice,
+    currentPrice: Number(newPrice.toFixed(4)),
+    historyPrices: [...fund.historyPrices.slice(-6), fund.currentPrice],
+    lastUpdate: Date.now(),
+    consecutiveDrops: isUp ? 0 : fund.consecutiveDrops + 1,
+  }
 }
 
 // 默认用户设置
@@ -604,6 +713,10 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   const [walletBalance, setWalletBalance] = useState<number>(() => 0)
   const [walletInitialized, setWalletInitialized] = useState<boolean>(() => false)
   const [walletBills, setWalletBills] = useState<WalletBill[]>(() => [])
+  
+  // 基金状态
+  const [funds, setFunds] = useState<Fund[]>(() => [])
+  const [fundHoldings, setFundHoldings] = useState<FundHolding[]>(() => [])
 
   // 异步 Hydration：从 IndexedDB 加载；首次会从 localStorage 迁移（避免丢数据）
   useEffect(() => {
@@ -646,6 +759,8 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         nextWalletBalance,
         nextWalletInitialized,
         nextWalletBills,
+        nextFunds,
+        nextFundHoldings,
       ] = await Promise.all([
         kvGetJSONDeep<WeChatCharacter[]>(STORAGE_KEYS.characters, []),
         kvGetJSONDeep<WeChatMessage[]>(STORAGE_KEYS.messages, []),
@@ -663,6 +778,8 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<number>(STORAGE_KEYS.walletBalance, 0),
         kvGetJSONDeep<boolean>(STORAGE_KEYS.walletInitialized, false),
         kvGetJSONDeep<WalletBill[]>(STORAGE_KEYS.walletBills, []),
+        kvGetJSONDeep<Fund[]>(STORAGE_KEYS.funds, []),
+        kvGetJSONDeep<FundHolding[]>(STORAGE_KEYS.fundHoldings, []),
       ])
 
       if (cancelled) return
@@ -688,6 +805,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       setWalletBalance(nextWalletBalance)
       setWalletInitialized(nextWalletInitialized)
       setWalletBills(nextWalletBills)
+      // 基金：如果没有数据则初始化
+      setFunds(nextFunds.length > 0 ? nextFunds : initializeFunds())
+      setFundHoldings(nextFundHoldings)
       setIsHydrated(true)
     }
     void hydrate()
@@ -716,6 +836,8 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.walletBalance, walletBalance) }, [walletBalance, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.walletInitialized, walletInitialized) }, [walletInitialized, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.walletBills, walletBills) }, [walletBills, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.funds, funds) }, [funds, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fundHoldings, fundHoldings) }, [fundHoldings, isHydrated])
 
   // 清理“卡住的正在输入中”状态（防止重启后一直显示）
   useEffect(() => {
@@ -1251,6 +1373,150 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   const updateWalletBalance = (amount: number) => {
     setWalletBalance(prev => Math.max(0, prev + amount))
   }
+  
+  // ==================== 基金操作 ====================
+  
+  // 刷新所有基金价格（10分钟冷却）
+  const refreshFunds = useCallback(() => {
+    const now = Date.now()
+    const minRefreshInterval = 10 * 60 * 1000 // 10分钟
+    
+    // 检查是否可以刷新（任意一只基金的lastUpdate超过10分钟即可）
+    const canRefresh = funds.some(f => now - f.lastUpdate >= minRefreshInterval) || funds.length === 0
+    if (!canRefresh) return false
+    
+    setFunds(prev => {
+      if (prev.length === 0) return initializeFunds()
+      return prev.map(fund => {
+        if (now - fund.lastUpdate >= minRefreshInterval) {
+          return refreshFundPrice(fund)
+        }
+        return fund
+      })
+    })
+    return true
+  }, [funds])
+  
+  // 获取下次可刷新时间
+  const getNextRefreshTime = useCallback(() => {
+    if (funds.length === 0) return 0
+    const minRefreshInterval = 10 * 60 * 1000
+    const oldestUpdate = Math.min(...funds.map(f => f.lastUpdate))
+    return Math.max(0, oldestUpdate + minRefreshInterval - Date.now())
+  }, [funds])
+  
+  // 买入基金
+  const buyFund = useCallback((fundId: string, amount: number): { success: boolean; message: string; shares?: number } => {
+    const fund = funds.find(f => f.id === fundId)
+    if (!fund) return { success: false, message: '基金不存在' }
+    if (amount <= 0) return { success: false, message: '请输入有效金额' }
+    if (amount > walletBalance) return { success: false, message: '余额不足' }
+    
+    // 扣除手续费后的实际买入金额
+    const actualAmount = amount * (1 - FUND_FEE_RATE)
+    const shares = Number((actualAmount / fund.currentPrice).toFixed(2))
+    
+    if (shares <= 0) return { success: false, message: '买入金额太小' }
+    
+    // 更新钱包余额
+    setWalletBalance(prev => prev - amount)
+    
+    // 添加账单
+    addWalletBill({
+      type: 'fund_buy',
+      amount: amount,
+      description: `买入${fund.name}，${shares}份，手续费${(amount * FUND_FEE_RATE).toFixed(2)}元`,
+    })
+    
+    // 更新持仓
+    setFundHoldings(prev => {
+      const existing = prev.find(h => h.fundId === fundId)
+      if (existing) {
+        // 计算新的平均成本
+        const totalShares = existing.shares + shares
+        const totalCost = existing.totalCost + amount
+        const newCostPrice = (existing.costPrice * existing.shares + fund.currentPrice * shares) / totalShares
+        return prev.map(h => h.fundId === fundId ? {
+          ...h,
+          shares: Number(totalShares.toFixed(2)),
+          costPrice: Number(newCostPrice.toFixed(4)),
+          totalCost: totalCost,
+        } : h)
+      } else {
+        return [...prev, {
+          fundId,
+          shares,
+          costPrice: fund.currentPrice,
+          totalCost: amount,
+          buyTime: Date.now(),
+        }]
+      }
+    })
+    
+    return { success: true, message: `成功买入${shares}份`, shares }
+  }, [funds, walletBalance, addWalletBill])
+  
+  // 卖出基金
+  const sellFund = useCallback((fundId: string, shares: number): { success: boolean; message: string; amount?: number } => {
+    const fund = funds.find(f => f.id === fundId)
+    if (!fund) return { success: false, message: '基金不存在' }
+    
+    const holding = fundHoldings.find(h => h.fundId === fundId)
+    if (!holding || holding.shares <= 0) return { success: false, message: '没有持仓' }
+    if (shares <= 0 || shares > holding.shares) return { success: false, message: '份额无效' }
+    
+    // 卖出金额（扣除手续费）
+    const grossAmount = shares * fund.currentPrice
+    const actualAmount = Number((grossAmount * (1 - FUND_FEE_RATE)).toFixed(2))
+    
+    // 增加钱包余额
+    setWalletBalance(prev => prev + actualAmount)
+    
+    // 计算盈亏
+    const costForShares = holding.costPrice * shares
+    const profitLoss = actualAmount - costForShares
+    const profitText = profitLoss >= 0 ? `盈利${profitLoss.toFixed(2)}` : `亏损${Math.abs(profitLoss).toFixed(2)}`
+    
+    // 添加账单
+    addWalletBill({
+      type: 'fund_sell',
+      amount: actualAmount,
+      description: `卖出${fund.name}，${shares}份，${profitText}，手续费${(grossAmount * FUND_FEE_RATE).toFixed(2)}元`,
+    })
+    
+    // 更新持仓
+    setFundHoldings(prev => {
+      const remaining = holding.shares - shares
+      if (remaining <= 0.01) {
+        // 全部卖出，移除持仓
+        return prev.filter(h => h.fundId !== fundId)
+      } else {
+        // 部分卖出
+        const remainingCost = holding.totalCost * (remaining / holding.shares)
+        return prev.map(h => h.fundId === fundId ? {
+          ...h,
+          shares: Number(remaining.toFixed(2)),
+          totalCost: remainingCost,
+        } : h)
+      }
+    })
+    
+    return { success: true, message: `成功卖出，到账${actualAmount}元`, amount: actualAmount }
+  }, [funds, fundHoldings, addWalletBill])
+  
+  // 获取持仓
+  const getFundHolding = useCallback((fundId: string) => {
+    return fundHoldings.find(h => h.fundId === fundId)
+  }, [fundHoldings])
+  
+  // 获取基金总市值
+  const getTotalFundValue = useCallback(() => {
+    return fundHoldings.reduce((total, holding) => {
+      const fund = funds.find(f => f.id === holding.fundId)
+      if (!fund) return total
+      return total + holding.shares * fund.currentPrice
+    }, 0)
+  }, [funds, fundHoldings])
 
   // ==================== Context Value ====================
 
@@ -1277,7 +1543,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     // 钱包
     walletBalance, walletInitialized, walletBills,
     initializeWallet, addWalletBill, updateWalletBalance,
-  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage])
+    // 基金
+    funds, fundHoldings, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue,
+  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, funds, fundHoldings, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue])
 
   return <WeChatContext.Provider value={value}>{children}</WeChatContext.Provider>
 }

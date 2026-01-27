@@ -770,24 +770,56 @@ export default function ChatScreen() {
               try {
                 const data = JSON.parse(m.content)
                 const opponents = data.opponents || ['人机A', '人机B']
-                const isWin = data.isWin ? '胜利' : '失败'
-                const role = data.role || '未知'
+                const userResult = data.isWin ? '胜利' : '失败'
+                const userRole = data.role || '未知' // 这是用户的角色（地主或农民）
                 const coinChange = data.coinChange || 0
                 const bombDesc = data.bombDescription || (data.bombCount > 0 ? `共${data.bombCount}个炸弹` : '无炸弹')
+                const winnerNames: string[] = data.winnerNames || []
+                
                 // 关键：判断AI角色是否在对战名单中
                 const myNameInOpponents = opponents.some((name: string) => 
                   name === character.name || name.includes(character.name) || character.name.includes(name)
                 )
-                const participation = myNameInOpponents 
-                  ? `（重要：你"${character.name}"是这场斗地主的参与者之一！你刚刚和用户一起玩了这局斗地主，你应该有这段记忆）`
-                  : '（你没有参与这场斗地主，这是用户分享给你的战绩）'
-                content = `<DOUDIZHU_RESULT result="${isWin}" role="${role}" coinChange="${coinChange}" opponents="${opponents.join('、')}" bombInfo="${bombDesc}">` +
+                
+                let participation = ''
+                if (myNameInOpponents) {
+                  // AI参与了游戏，判断AI的角色和胜负
+                  // 用户是地主 → AI是农民；用户是农民 → AI也是农民（和用户同一队）
+                  const aiRole = userRole === '地主' ? '农民' : '农民'
+                  // 判断AI是否在赢家名单中
+                  const aiWon = winnerNames.some((name: string) => 
+                    name === character.name || name.includes(character.name) || character.name.includes(name)
+                  )
+                  const aiResult = aiWon ? '胜利' : '失败'
+                  participation = `（重要：你"${character.name}"参与了这场斗地主！你的身份是【${aiRole}】，你${aiResult}了。用户"${selectedPersona?.name || '我'}"的身份是【${userRole}】，用户${userResult}了。你们刚刚一起玩完这局游戏。）`
+                } else {
+                  participation = `（你没有参与这场斗地主，这是用户分享的战绩。用户身份是${userRole}，结果${userResult}。）`
+                }
+                
+                content = `<DOUDIZHU_RESULT userResult="${userResult}" userRole="${userRole}" coinChange="${coinChange}" opponents="${opponents.join('、')}" bombInfo="${bombDesc}">` +
                   `${participation}` +
                   `</DOUDIZHU_RESULT>`
                 used += content.length
               } catch {
                 content = '<DOUDIZHU_RESULT />'
                 used += 20
+              }
+            }
+            // 基金持仓分享
+            else if (m.type === 'fund_share') {
+              try {
+                const data = JSON.parse(m.content)
+                const profitText = data.profitLoss >= 0 ? `盈利${data.profitLoss?.toFixed(2)}元` : `亏损${Math.abs(data.profitLoss)?.toFixed(2)}元`
+                const profitRateText = `${data.profitRate >= 0 ? '+' : ''}${data.profitRate?.toFixed(2)}%`
+                content = `<FUND_SHARE name="${data.fundName}" code="${data.fundCode}" type="${data.fundType}">` +
+                  `用户持有${data.shares}份，成本${data.costPrice?.toFixed(4)}，当前净值${data.currentPrice?.toFixed(4)}，` +
+                  `${profitText}（${profitRateText}）。走势：${data.trend || '无'}。` +
+                  `${data.profitLoss < 0 ? '用户可能在吐槽基金亏钱。' : '用户可能在炫耀基金赚钱。'}` +
+                  `</FUND_SHARE>`
+                used += content.length
+              } catch {
+                content = '<FUND_SHARE />'
+                used += 15
               }
             }
             else if (m.type === 'pat') {
@@ -3562,6 +3594,57 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                   💣 {data.bombDescription || `共${data.bombCount}个炸弹`}
                 </div>
               )}
+            </div>
+          </div>
+        )
+      } catch {
+        return <span>{msg.content}</span>
+      }
+    }
+
+    // 基金持仓分享卡片
+    if (msg.type === 'fund_share') {
+      try {
+        const data = JSON.parse(msg.content)
+        const isProfit = data.profitLoss >= 0
+        const profitGradient = 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)'
+        const lossGradient = 'linear-gradient(135deg, #27ae60 0%, #2ecc71 100%)'
+        
+        return (
+          <div className="min-w-[160px] max-w-[200px] rounded-xl overflow-hidden shadow-lg">
+            <div 
+              className="p-2.5 text-white"
+              style={{ background: isProfit ? profitGradient : lossGradient }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] opacity-90">📊 基金持仓</span>
+                <span className="text-[10px] bg-white/25 px-1.5 py-0.5 rounded-full">{data.fundType}</span>
+              </div>
+              
+              <div className="text-center py-1">
+                <div className="text-[12px] font-bold truncate">{data.fundName}</div>
+                <div className="text-[10px] opacity-80">{data.fundCode}</div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-1 text-center text-[10px] mt-2 bg-black/20 rounded-lg p-1.5">
+                <div><div className="opacity-70">净值</div><div className="font-bold">{data.currentPrice?.toFixed(4)}</div></div>
+                <div><div className="opacity-70">份额</div><div className="font-bold">{data.shares}</div></div>
+              </div>
+              
+              {data.trend && (
+                <div className="text-[10px] text-center mt-1 opacity-90">
+                  走势：{data.trend}
+                </div>
+              )}
+            </div>
+            
+            <div className={`px-2.5 py-2 text-[12px] font-bold ${isProfit ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+              <div className="flex items-center justify-between">
+                <span>盈亏</span>
+                <span>
+                  {isProfit ? '+' : ''}{data.profitLoss?.toFixed(2)} ({isProfit ? '+' : ''}{data.profitRate?.toFixed(2)}%)
+                </span>
+              </div>
             </div>
           </div>
         )

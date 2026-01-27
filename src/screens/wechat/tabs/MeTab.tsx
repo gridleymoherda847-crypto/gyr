@@ -14,7 +14,7 @@ export default function MeTab({ onBack }: Props) {
   const { 
     userSettings, updateUserSettings,
     userPersonas, addUserPersona, updateUserPersona, deleteUserPersona, getUserPersona,
-    walletBalance
+    walletBalance, getTotalFundValue
   } = useWeChat()
 
   // 安全的返回处理
@@ -144,6 +144,28 @@ export default function MeTab({ onBack }: Props) {
             <div className="flex-1">
               <div className="font-medium text-[#000]">钱包</div>
               <div className="text-xs text-gray-500">余额：¥{walletBalance.toFixed(2)}</div>
+            </div>
+            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+
+          {/* 基金 */}
+          <div 
+            className="flex items-center gap-3 p-3 bg-white/60 rounded-xl cursor-pointer"
+            onClick={() => {
+              try { localStorage.setItem('wechat_active_tab', 'me') } catch {}
+              navigate('/apps/wechat/fund')
+            }}
+          >
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-400 to-pink-500 flex items-center justify-center">
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="font-medium text-[#000]">基金</div>
+              <div className="text-xs text-gray-500">市值：¥{getTotalFundValue().toFixed(2)}</div>
             </div>
             <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
