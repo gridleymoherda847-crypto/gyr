@@ -45,12 +45,12 @@ export default function ChatScreen() {
       const m = nonSystem[i]
       let content = (m.content || '').trim()
       if (!content) continue
-      if (m.type === 'image') content = '<IMAGE />'
-      if (m.type === 'sticker') content = '<STICKER />'
-      if (m.type === 'transfer') content = '<TRANSFER />'
-      if (m.type === 'music') content = '<MUSIC />'
-      if (m.type === 'diary') content = '<DIARY />'
-      if (m.type === 'couple') content = '<COUPLE_SPACE />'
+      if (m.type === 'image') content = '[图片]'
+      if (m.type === 'sticker') content = '[表情包]'
+      if (m.type === 'transfer') content = '[转账]'
+      if (m.type === 'music') content = '[音乐]'
+      if (m.type === 'diary') content = '[日记]'
+      if (m.type === 'couple') content = '[情侣空间]'
 
       const extra = content.length + 10
       if (used + extra > maxChars) break
@@ -1044,7 +1044,8 @@ ${recentTimeline || '（无）'}
 
 【格式强约束】
 - 禁止输出任何“系统标记”（例如 <IMAGE /> / <TRANSFER /> / <MUSIC /> 等），只按真实微信聊天输出
-- 禁止复述方括号描述如"[发送了转账]"或"[发送了一起听歌邀请]"，这些只是上下文
+- 禁止复述方括号描述如"[图片]"、"[表情包]"、"[转账]"等，这些只是上下文描述，不要模仿或询问
+- 【拍一拍】绝对不要输出"[拍了拍xxx]"格式！拍一拍是系统自动触发的。如果用户说"拍拍我"，正常口语回应即可
 - 你可能会在历史里看到 <DIARY ...>：那是“用户转发的一篇日记”，作者信息在 author/authorId。
   - 如果 authorId/author 显示是“你自己”，说明这是你写的日记被用户转发回来，你要对此有反应（羞耻/炸毛/装死/嘴硬/否认/解释等按人设）。
   - 如果作者不是你，就当作别人写的日记来评价/吐槽/震惊/共情（按人设）。

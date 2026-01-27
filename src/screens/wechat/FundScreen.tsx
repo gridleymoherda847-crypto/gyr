@@ -405,19 +405,24 @@ export default function FundScreen({ onBack }: Props) {
 
         {/* 基金市场 */}
         <div className="bg-white">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <span className="font-medium text-gray-800">基金市场</span>
-            <button
-              onClick={handleRefresh}
-              disabled={countdown > 0}
-              className={`text-sm px-3 py-1 rounded-full ${
-                countdown > 0 
-                  ? 'bg-gray-100 text-gray-400' 
-                  : 'bg-green-500 text-white active:bg-green-600'
-              }`}
-            >
-              {formatCountdown(countdown)}
-            </button>
+          <div className="px-4 py-3 border-b border-gray-100">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-gray-800">基金市场</span>
+              <button
+                onClick={handleRefresh}
+                disabled={countdown > 0}
+                className={`text-base px-4 py-1.5 rounded-full font-medium ${
+                  countdown > 0 
+                    ? 'bg-gray-100 text-gray-500' 
+                    : 'bg-green-500 text-white active:bg-green-600'
+                }`}
+              >
+                {formatCountdown(countdown)}
+              </button>
+            </div>
+            <div className="text-xs text-gray-400 mt-1 text-right">
+              {countdown > 0 ? '倒计时结束后可刷新，每10分钟一次' : '点击刷新获取最新行情'}
+            </div>
           </div>
 
           {funds.map(fund => {
