@@ -31,7 +31,8 @@ type Lorebook = {
   id: string
   name: string               // 世界书名称
   description: string        // 描述
-  characterIds: string[]     // 绑定的角色ID列表
+  isGlobal: boolean          // 是否全局生效（true=所有角色，false=仅绑定的角色）
+  characterIds: string[]     // 绑定的角色ID列表（仅isGlobal=false时有效）
   entries: LorebookEntry[]   // 条目列表
   createdAt: number
 }
@@ -388,45 +389,120 @@ export default function PresetScreen() {
               {/* 世界书列表 */}
               {config.lorebooks.length > 0 ? (
                 <div className="space-y-3">
-                  {config.lorebooks.map((lorebook) => (
-                    <div
-                      key={lorebook.id}
-                      className="p-4 rounded-2xl bg-white shadow-sm border border-gray-100"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="font-semibold text-gray-800">{lorebook.name}</div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {lorebook.entries.length} 个条目 · 绑定 {lorebook.characterIds.length} 个角色
-                          </div>
-                          {lorebook.description && (
-                            <div className="text-xs text-gray-400 mt-1 line-clamp-2">
-                              {lorebook.description}
+                  {/* 全局世界书 */}
+                  {config.lorebooks.filter(l => l.isGlobal).length > 0 && (
+                    <div className="mb-2">
+                      <div className="text-xs font-medium text-purple-600 mb-2 flex items-center gap-1">
+                        <span>🌍</span> 全局世界书
+                      </div>
+                      <div className="space-y-2">
+                        {config.lorebooks.filter(l => l.isGlobal).map((lorebook) => (
+                          <div
+                            key={lorebook.id}
+                            className="p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-blue-50 shadow-sm border border-purple-100"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="font-semibold text-gray-800 flex items-center gap-1.5">
+                                  {lorebook.name}
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-100 text-purple-600">全局</span>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {lorebook.entries.length} 个条目 · 所有角色生效
+                                </div>
+                                {lorebook.description && (
+                                  <div className="text-xs text-gray-400 mt-1 line-clamp-2">
+                                    {lorebook.description}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingLorebook(lorebook)
+                                    setShowLorebookForm(true)
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium"
+                                >
+                                  编辑
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteLorebook(lorebook.id)}
+                                  className="px-2.5 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-medium"
+                                >
+                                  删除
+                                </button>
+                              </div>
                             </div>
-                          )}
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingLorebook(lorebook)
-                              setShowLorebookForm(true)
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium"
-                          >
-                            编辑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteLorebook(lorebook.id)}
-                            className="px-2.5 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-medium"
-                          >
-                            删除
-                          </button>
-                        </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
+                  )}
+                  
+                  {/* 局部世界书 */}
+                  {config.lorebooks.filter(l => !l.isGlobal).length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-green-600 mb-2 flex items-center gap-1">
+                        <span>👤</span> 角色专属世界书
+                      </div>
+                      <div className="space-y-2">
+                        {config.lorebooks.filter(l => !l.isGlobal).map((lorebook) => {
+                          const boundCharNames = characters
+                            .filter(c => lorebook.characterIds.includes(c.id))
+                            .map(c => c.name)
+                            .slice(0, 3)
+                          return (
+                            <div
+                              key={lorebook.id}
+                              className="p-4 rounded-2xl bg-white shadow-sm border border-gray-100"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="font-semibold text-gray-800 flex items-center gap-1.5">
+                                    {lorebook.name}
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-green-100 text-green-600">局部</span>
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {lorebook.entries.length} 个条目 · 绑定 {lorebook.characterIds.length} 个角色
+                                    {boundCharNames.length > 0 && (
+                                      <span className="text-gray-400"> ({boundCharNames.join('、')}{lorebook.characterIds.length > 3 ? '...' : ''})</span>
+                                    )}
+                                  </div>
+                                  {lorebook.description && (
+                                    <div className="text-xs text-gray-400 mt-1 line-clamp-2">
+                                      {lorebook.description}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingLorebook(lorebook)
+                                      setShowLorebookForm(true)
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium"
+                                  >
+                                    编辑
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteLorebook(lorebook.id)}
+                                    className="px-2.5 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-medium"
+                                  >
+                                    删除
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-8 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 text-center">
@@ -481,6 +557,7 @@ type LorebookFormModalProps = {
 function LorebookFormModal({ lorebook, characters, onSave, onClose }: LorebookFormModalProps) {
   const [name, setName] = useState(lorebook?.name || '')
   const [description, setDescription] = useState(lorebook?.description || '')
+  const [isGlobal, setIsGlobal] = useState(lorebook?.isGlobal ?? true) // 默认全局
   const [characterIds, setCharacterIds] = useState<string[]>(lorebook?.characterIds || [])
   const [entries, setEntries] = useState<LorebookEntry[]>(lorebook?.entries || [])
   const [editingEntry, setEditingEntry] = useState<LorebookEntry | null>(null)
@@ -493,7 +570,8 @@ function LorebookFormModal({ lorebook, characters, onSave, onClose }: LorebookFo
       id: lorebook?.id || `lorebook_${Date.now()}`,
       name: name.trim(),
       description: description.trim(),
-      characterIds,
+      isGlobal,
+      characterIds: isGlobal ? [] : characterIds, // 全局时清空角色绑定
       entries,
       createdAt: lorebook?.createdAt || Date.now(),
     })
@@ -573,7 +651,45 @@ function LorebookFormModal({ lorebook, characters, onSave, onClose }: LorebookFo
             </div>
           </div>
           
-          {/* 绑定角色 */}
+          {/* 作用范围 */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-2 block">作用范围</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsGlobal(true)}
+                className={`flex-1 py-3 rounded-xl text-sm font-medium transition-all ${
+                  isGlobal 
+                    ? 'bg-purple-500 text-white shadow-md' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="text-lg">🌍</span>
+                  <span>全局</span>
+                  <span className={`text-[10px] ${isGlobal ? 'text-purple-200' : 'text-gray-400'}`}>所有角色生效</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsGlobal(false)}
+                className={`flex-1 py-3 rounded-xl text-sm font-medium transition-all ${
+                  !isGlobal 
+                    ? 'bg-green-500 text-white shadow-md' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="text-lg">👤</span>
+                  <span>局部</span>
+                  <span className={`text-[10px] ${!isGlobal ? 'text-green-200' : 'text-gray-400'}`}>仅指定角色</span>
+                </div>
+              </button>
+            </div>
+          </div>
+          
+          {/* 绑定角色（仅局部时显示） */}
+          {!isGlobal && (
           <div>
             <label className="text-sm font-medium text-gray-700 mb-2 block">
               绑定角色（勾选后该角色会使用此世界书）
@@ -587,7 +703,7 @@ function LorebookFormModal({ lorebook, characters, onSave, onClose }: LorebookFo
                     onClick={() => toggleCharacter(char.id)}
                     className={`px-3 py-1.5 rounded-full text-sm transition-all ${
                       characterIds.includes(char.id)
-                        ? 'bg-blue-500 text-white'
+                        ? 'bg-green-500 text-white'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
@@ -598,10 +714,13 @@ function LorebookFormModal({ lorebook, characters, onSave, onClose }: LorebookFo
             ) : (
               <div className="text-sm text-gray-400">还没有创建角色</div>
             )}
-            <div className="text-xs text-gray-400 mt-1">
-              不选择任何角色 = 对所有角色生效
-            </div>
+            {characterIds.length === 0 && (
+              <div className="text-xs text-orange-500 mt-1">
+                ⚠️ 请至少选择一个角色，否则此世界书不会生效
+              </div>
+            )}
           </div>
+          )}
           
           {/* 条目列表 */}
           <div>
@@ -929,11 +1048,16 @@ export const getLorebookEntriesForCharacter = (characterId: string, context: str
   const entries: LorebookEntry[] = []
   
   for (const lorebook of lorebooks) {
-    // 检查是否绑定到该角色（空数组表示对所有角色生效）
-    if (lorebook.characterIds.length > 0 && !lorebook.characterIds.includes(characterId)) {
-      continue
+    // 检查是否适用于该角色
+    // 1. 全局世界书（isGlobal=true 或旧数据 isGlobal=undefined 且 characterIds 为空）→ 对所有角色生效
+    // 2. 局部世界书（isGlobal=false 或旧数据有 characterIds）→ 必须包含该角色ID
+    const isGlobal = lorebook.isGlobal === true || (lorebook.isGlobal === undefined && lorebook.characterIds.length === 0)
+    
+    if (!isGlobal && !lorebook.characterIds.includes(characterId)) {
+      continue // 局部世界书但没有绑定该角色，跳过
     }
     
+    // 全局世界书或已绑定的局部世界书，处理条目
     for (const entry of lorebook.entries) {
       if (!entry.enabled) continue
       
