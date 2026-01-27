@@ -654,40 +654,41 @@ export function OSProvider({ children }: PropsWithChildren) {
 
   // 音乐控制函数
   const playSong = (song: Song) => {
-    if (audioRef.current) {
-      // 先停止当前播放
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-      
-      // 设置新的音频源 - 根据来源决定是否编码
-      // 外部链接（http/https）不编码，避免破坏已经正确的URL
-      // 本地路径和 data: URL 需要编码（特别是#符号和中文）
-      let audioUrl = song.url
-      if (song.url.startsWith('blob:') || song.url.startsWith('http://') || song.url.startsWith('https://')) {
-        // 外部链接和blob URL保持原样，不做任何编码
-        audioUrl = song.url
-      } else if (song.url.startsWith('data:')) {
-        // data URL 保持原样
-        audioUrl = song.url
-      } else {
-        // 本地路径：编码中文等字符，#替换为%23
-        audioUrl = encodeURI(song.url).replace(/#/g, '%23')
-      }
-      
-      console.log('[Music] Loading audio:', audioUrl.slice(0, 100) + (audioUrl.length > 100 ? '...' : ''))
-      
-      // 对于外部链接，先尝试不设置 crossOrigin（大多数 CDN 不支持 CORS）
-      // catbox.moe 等文件托管服务通常不设置 CORS 头
-      const isExternal = song.url.startsWith('http://') || song.url.startsWith('https://')
-      
-      // 重要：crossOrigin 必须在 src 之前设置
-      // 对于不支持 CORS 的外部链接，不设置 crossOrigin 反而能播放
-      audioRef.current.crossOrigin = null
-      audioRef.current.src = audioUrl
-      audioRef.current.load()
-      
-      // 尝试播放
-      const playPromise = audioRef.current.play()
+    if (!audioRef.current) return
+    
+    const audio = audioRef.current
+    
+    // 先停止当前播放
+    audio.pause()
+    audio.currentTime = 0
+    
+    // 设置新的音频源 - 根据来源决定是否编码
+    let audioUrl = song.url
+    if (song.url.startsWith('blob:') || song.url.startsWith('http://') || song.url.startsWith('https://')) {
+      audioUrl = song.url
+    } else if (song.url.startsWith('data:')) {
+      audioUrl = song.url
+    } else {
+      audioUrl = encodeURI(song.url).replace(/#/g, '%23')
+    }
+    
+    console.log('[Music] Loading:', audioUrl.slice(0, 80))
+    
+    // 移动端兼容：不设置 crossOrigin，让浏览器用默认策略
+    audio.crossOrigin = null
+    audio.src = audioUrl
+    
+    // 移动端需要先 load 再 play
+    audio.load()
+    
+    // 更新状态（先设置，让UI响应）
+    setCurrentSong(song)
+    setMusicPlaying(true)
+    setMusicProgress(0)
+    
+    // 等待 canplay 事件再播放（移动端更可靠）
+    const tryPlay = () => {
+      const playPromise = audio.play()
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
@@ -695,16 +696,26 @@ export function OSProvider({ children }: PropsWithChildren) {
           })
           .catch((error) => {
             console.error('[Music] Play failed:', error.message || error)
-            // 播放失败时给用户提示
-            if (isExternal) {
-              console.warn('[Music] External link may have CORS or format issues:', audioUrl.slice(0, 60))
+            // 移动端常见错误：用户未交互
+            if (error.name === 'NotAllowedError') {
+              console.warn('[Music] 需要用户先点击页面才能播放音频（移动端限制）')
+              // 不要设置 musicPlaying = false，让用户可以手动点播放
             }
           })
       }
-      
-      setCurrentSong(song)
-      setMusicPlaying(true)
-      setMusicProgress(0)
+    }
+    
+    // 如果已经可以播放，直接播放；否则等 canplay 事件
+    if (audio.readyState >= 3) {
+      tryPlay()
+    } else {
+      audio.addEventListener('canplay', tryPlay, { once: true })
+      // 超时处理：5秒后如果还没 canplay，也尝试播放
+      setTimeout(() => {
+        if (audio.src === audioUrl && audio.paused) {
+          tryPlay()
+        }
+      }, 5000)
     }
   }
 
@@ -717,8 +728,18 @@ export function OSProvider({ children }: PropsWithChildren) {
 
   const resumeMusic = () => {
     if (audioRef.current && currentSong) {
-      audioRef.current.play()
-      setMusicPlaying(true)
+      const playPromise = audioRef.current.play()
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setMusicPlaying(true)
+          })
+          .catch((error) => {
+            console.error('[Music] Resume failed:', error.message || error)
+          })
+      } else {
+        setMusicPlaying(true)
+      }
     }
   }
 
