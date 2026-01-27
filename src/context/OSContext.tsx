@@ -376,7 +376,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         nextColorId,
         nextLocation,
         nextWeather,
-        savedVersion,
+        _savedVersion, // 不再用于强制重置，但保留读取以备将来使用
         nextWallpaper,
         nextLockWallpaper,
         nextCustomAppIcons,
