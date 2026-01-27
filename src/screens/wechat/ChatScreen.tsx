@@ -5,7 +5,7 @@ import { useOS } from '../../context/OSContext'
 import WeChatLayout from './WeChatLayout'
 import WeChatDialog from './components/WeChatDialog'
 import { getGlobalPresets, getLorebookEntriesForCharacter } from '../PresetScreen'
-import { xEnsureUser, xLoad, xNewPost, xSave } from '../../storage/x'
+import { xEnsureUser, xLoad, xNewPost, xSave, xAddFollow, xRemoveFollow, xIsFollowing } from '../../storage/x'
 
 export default function ChatScreen() {
   const navigate = useNavigate()
@@ -100,6 +100,18 @@ export default function ChatScreen() {
   // 功能面板状态
   const [showPlusMenu, setShowPlusMenu] = useState(false)
   const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | 'location' | null>(null)
+  
+  // 表情包面板状态
+  const [showStickerPanel, setShowStickerPanel] = useState(false)
+  const [stickerTab, setStickerTab] = useState<string>('recent') // 'recent' 或分类名
+  const [recentStickers, setRecentStickers] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('littlephone_recent_stickers')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
   
   // 位置分享状态
   const [locationName, setLocationName] = useState('')
@@ -202,6 +214,60 @@ export default function ChatScreen() {
   // 编辑模式：可勾选双方消息、批量删除
   const [editMode, setEditMode] = useState(false)
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set())
+  
+  // X（推特）关注状态
+  const [xFollowing, setXFollowing] = useState(false)
+  const [xFollowLoading, setXFollowLoading] = useState(false)
+  
+  // 加载 X 关注状态
+  useEffect(() => {
+    if (!character?.id) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const persona = getCurrentPersona()
+        const xData = await xLoad(persona?.name || '我')
+        if (cancelled) return
+        setXFollowing(xIsFollowing(xData, character.id))
+      } catch {
+        // ignore
+      }
+    })()
+    return () => { cancelled = true }
+  }, [character?.id, getCurrentPersona])
+  
+  // 关注/取关 X
+  const toggleXFollow = async () => {
+    if (!character?.id || xFollowLoading) return
+    setXFollowLoading(true)
+    try {
+      const persona = getCurrentPersona()
+      let xData = await xLoad(persona?.name || '我')
+      
+      // 确保用户存在于 X
+      const { data: ensuredData } = xEnsureUser(xData, {
+        id: character.id,
+        name: character.name,
+        handle: (character as any).xHandle || undefined,
+        avatarUrl: character.avatar || undefined,
+        bio: (character.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined,
+      })
+      xData = ensuredData
+      
+      if (xIsFollowing(xData, character.id)) {
+        xData = xRemoveFollow(xData, character.id)
+        setXFollowing(false)
+      } else {
+        xData = xAddFollow(xData, character.id)
+        setXFollowing(true)
+      }
+      await xSave(xData)
+    } catch {
+      // ignore
+    } finally {
+      setXFollowLoading(false)
+    }
+  }
 
   // 退出编辑模式时清空选择，避免残留导致卡顿/误触
   useEffect(() => {
@@ -213,6 +279,54 @@ export default function ChatScreen() {
   // 清空消息确认
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   
+  // 发送用户表情包
+  const sendUserSticker = (sticker: typeof stickers[0]) => {
+    if (!sticker?.imageUrl) return
+    
+    // 添加到最近使用
+    setRecentStickers(prev => {
+      const next = [sticker.id, ...prev.filter(id => id !== sticker.id)].slice(0, 20)
+      try {
+        localStorage.setItem('littlephone_recent_stickers', JSON.stringify(next))
+      } catch { /* ignore */ }
+      return next
+    })
+    
+    // 发送表情包消息
+    addMessage({
+      characterId: character?.id || '',
+      content: sticker.imageUrl,
+      isUser: true,
+      type: 'sticker',
+    })
+    
+    // 关闭面板
+    setShowStickerPanel(false)
+    
+    // 增加待回复计数
+    setPendingCount(prev => prev + 1)
+  }
+  
+  // 获取表情包分类列表
+  const stickerCategoryList = useMemo(() => {
+    const categories = new Set<string>()
+    for (const s of stickers) {
+      if (s.category) categories.add(s.category)
+    }
+    return Array.from(categories).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  }, [stickers])
+  
+  // 获取当前标签页的表情包
+  const currentTabStickers = useMemo(() => {
+    if (stickerTab === 'recent') {
+      // 返回最近使用的表情包
+      return recentStickers
+        .map(id => stickers.find(s => s.id === id))
+        .filter((s): s is typeof stickers[0] => !!s)
+    }
+    // 返回指定分类的表情包
+    return stickers.filter(s => s.category === stickerTab)
+  }, [stickerTab, stickers, recentStickers])
   
   const imageInputRef = useRef<HTMLInputElement>(null)
   const aliveRef = useRef(true)
@@ -3802,12 +3916,28 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               type="button"
               onClick={() => {
                 setShowPlusMenu(!showPlusMenu)
+                setShowStickerPanel(false)
                 setActivePanel(null)
               }}
               className="w-7 h-7 rounded-full border-2 border-gray-400 flex items-center justify-center transition-transform active:scale-90 flex-shrink-0"
             >
               <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            
+            {/* 表情包按钮 */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowStickerPanel(!showStickerPanel)
+                setShowPlusMenu(false)
+                setActivePanel(null)
+              }}
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90 flex-shrink-0 ${showStickerPanel ? 'bg-pink-100' : ''}`}
+            >
+              <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
               </svg>
             </button>
             
@@ -4276,6 +4406,98 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               ) : null}
             </div>
           )}
+          
+          {/* 表情包面板 */}
+          {showStickerPanel && (
+            <div className="mt-3 pb-2">
+              <div className="bg-white/90 rounded-xl overflow-hidden">
+                {/* 分类标签 */}
+                <div className="flex items-center gap-1 px-2 py-2 border-b border-gray-100 overflow-x-auto hide-scrollbar">
+                  <button
+                    type="button"
+                    onClick={() => setStickerTab('recent')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 transition-colors ${
+                      stickerTab === 'recent'
+                        ? 'bg-pink-500 text-white'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    最近
+                  </button>
+                  {stickerCategoryList.map(cat => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setStickerTab(cat)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 transition-colors ${
+                        stickerTab === cat
+                          ? 'bg-pink-500 text-white'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                  {/* 管理按钮 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowStickerPanel(false)
+                      navigate('/apps/settings/stickers')
+                    }}
+                    className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 bg-gray-100 text-gray-500"
+                  >
+                    管理
+                  </button>
+                </div>
+                
+                {/* 表情包网格 */}
+                <div className="p-2 max-h-48 overflow-y-auto">
+                  {currentTabStickers.length === 0 ? (
+                    <div className="text-center text-gray-400 text-sm py-6">
+                      {stickerTab === 'recent' ? (
+                        <>
+                          <div>暂无最近使用的表情</div>
+                          <div className="text-xs mt-1">发送过的表情会显示在这里</div>
+                        </>
+                      ) : (
+                        <>
+                          <div>该分类暂无表情包</div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowStickerPanel(false)
+                              navigate('/apps/settings/stickers')
+                            }}
+                            className="mt-2 px-3 py-1.5 rounded-full bg-pink-500 text-white text-xs"
+                          >
+                            去添加表情
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-2">
+                      {currentTabStickers.map(sticker => (
+                        <button
+                          key={sticker.id}
+                          type="button"
+                          onClick={() => sendUserSticker(sticker)}
+                          className="aspect-square rounded-xl overflow-hidden bg-gray-50 hover:bg-gray-100 active:scale-95 transition-transform"
+                        >
+                          <img
+                            src={sticker.imageUrl}
+                            alt={sticker.keyword || '表情'}
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -4299,6 +4521,21 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               聊天设置
             </button>
             {/* 已移除：自动/手动回复切换（统一手动回复） */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowMenu(false)
+                void toggleXFollow()
+              }}
+              disabled={xFollowLoading}
+              className={`w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center gap-2 ${xFollowing ? 'text-gray-600' : 'text-blue-500'}`}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              {xFollowLoading ? '处理中…' : xFollowing ? '取消关注 X' : '在 X 上关注'}
+            </button>
             <button
               type="button"
               onClick={(e) => {

@@ -651,17 +651,31 @@ export function OSProvider({ children }: PropsWithChildren) {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
       
-      // 设置新的音频源 - 对URL进行编码处理
-      // blob URL不编码，其他URL需要编码（特别是#符号）
+      // 设置新的音频源 - 根据来源决定是否编码
+      // 外部链接（http/https）不编码，避免破坏已经正确的URL
+      // 本地路径和 data: URL 需要编码（特别是#符号和中文）
       let audioUrl = song.url
-      if (!song.url.startsWith('blob:')) {
-        // 先用encodeURI编码中文等字符，再手动把#替换为%23
+      if (song.url.startsWith('blob:') || song.url.startsWith('http://') || song.url.startsWith('https://')) {
+        // 外部链接和blob URL保持原样，不做任何编码
+        audioUrl = song.url
+      } else if (song.url.startsWith('data:')) {
+        // data URL 保持原样
+        audioUrl = song.url
+      } else {
+        // 本地路径：编码中文等字符，#替换为%23
         audioUrl = encodeURI(song.url).replace(/#/g, '%23')
       }
       
-      console.log('Loading audio:', audioUrl)
+      console.log('Loading audio:', audioUrl.slice(0, 100) + (audioUrl.length > 100 ? '...' : ''))
       audioRef.current.src = audioUrl
       audioRef.current.load() // 强制加载
+      
+      // 设置跨域属性（部分外部链接需要）
+      if (song.url.startsWith('http://') || song.url.startsWith('https://')) {
+        audioRef.current.crossOrigin = 'anonymous'
+      } else {
+        audioRef.current.crossOrigin = null
+      }
       
       // 尝试播放
       const playPromise = audioRef.current.play()
@@ -671,7 +685,16 @@ export function OSProvider({ children }: PropsWithChildren) {
             console.log('Music playing:', song.title)
           })
           .catch((error) => {
-            console.error('Music play failed:', error, 'URL:', audioUrl)
+            console.error('Music play failed:', error, 'URL:', audioUrl.slice(0, 100))
+            // 如果跨域失败，尝试不设置crossOrigin重试一次
+            if (song.url.startsWith('http') && audioRef.current) {
+              audioRef.current.crossOrigin = null
+              audioRef.current.src = audioUrl
+              audioRef.current.load()
+              audioRef.current.play().catch(() => {
+                // 最终失败，静默处理
+              })
+            }
           })
       }
       
@@ -742,7 +765,14 @@ export function OSProvider({ children }: PropsWithChildren) {
     if (!isHydrated) {
       pendingAddedSongsRef.current = [...(pendingAddedSongsRef.current || []), normalized]
     }
-    setMusicPlaylist(prev => [...prev, normalized])
+    setMusicPlaylist(prev => {
+      const next = [...prev, normalized]
+      // 立即持久化，避免刷新丢失
+      if (isHydrated) {
+        void kvSetJSON(MUSIC_STORAGE_KEY, next)
+      }
+      return next
+    })
   }
 
   const removeSong = (songId: string) => {

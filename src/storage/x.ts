@@ -409,3 +409,24 @@ export function xNewDMThread(peerName: string): XDMThread {
   return { id: genId('xdm'), peerId: genId('peer'), peerName: peerName.trim() || '陌生人', updatedAt: now, messages: [] }
 }
 
+// 同步关注：添加用户到关注列表
+export function xAddFollow(data: XDataV1, userId: string): XDataV1 {
+  const set = new Set(data.follows || [])
+  if (set.has(userId)) return data
+  set.add(userId)
+  return { ...data, follows: Array.from(set) }
+}
+
+// 同步关注：从关注列表移除用户
+export function xRemoveFollow(data: XDataV1, userId: string): XDataV1 {
+  const set = new Set(data.follows || [])
+  if (!set.has(userId)) return data
+  set.delete(userId)
+  return { ...data, follows: Array.from(set) }
+}
+
+// 检查是否已关注
+export function xIsFollowing(data: XDataV1, userId: string): boolean {
+  return (data.follows || []).includes(userId)
+}
+
