@@ -26,6 +26,7 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'wechat_stickers',
   'wechat_sticker_categories',
   'wechat_favorite_diaries',
+  'wechat_my_diaries', // 我的日记（之前遗漏）
   'wechat_moments',
   'wechat_user_settings',
   'wechat_user_personas',
@@ -37,12 +38,27 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'wechat_wallet_initialized',
   'wechat_wallet_bills',
   'wechat_bubble_opacity_mode',
+  'wechat_funds', // 基金数据（之前遗漏）
+  'wechat_fund_holdings', // 基金持仓（之前遗漏）
+  'wechat_groups', // 群聊数据（之前遗漏）
 
   // OS
   'os_llm_config',
+  'os_tts_config', // TTS配置（之前遗漏）
   'os_micoin_balance',
   'os_current_font_id',
   'os_font_color_id',
+  'os_wallpaper', // 壁纸（之前遗漏）
+  'os_custom_app_icons', // 自定义app图标（之前遗漏）
+  'os_decor_image', // 装饰图片（之前遗漏）
+  'os_user_profile', // 用户资料（之前遗漏）
+  'os_icon_theme', // 图标主题（之前遗漏）
+  'os_anniversaries', // 纪念日（之前遗漏）
+  'os_memo', // 备忘录（之前遗漏）
+  'os_home_avatar', // 主页头像（之前遗漏）
+  'os_water_count', // 喝水计数（之前遗漏）
+  'os_water_date', // 喝水日期（之前遗漏）
+  'os_signature', // 签名（之前遗漏）
 
   // Music / system
   'littlephone_is_locked',
@@ -57,6 +73,9 @@ const ALLOW_KEYS_EXACT = new Set<string>([
 
   // Game
   'doudizhu_stats',
+
+  // X (推特)
+  'littlephone_x_v1', // X全部数据（用户、推文、私信、关注等）
 ])
 
 const ALLOW_PREFIXES = [
