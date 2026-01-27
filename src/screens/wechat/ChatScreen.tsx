@@ -301,13 +301,15 @@ export default function ChatScreen() {
       const persona = getCurrentPersona()
       let xData = await xLoad(persona?.name || '我')
       
-      // 确保用户存在于 X
+      // 确保用户存在于 X（不传 bio，避免覆盖用户手动编辑的签名）
+      const existingUser = xData.users.find((u) => u.id === character.id)
       const { data: ensuredData } = xEnsureUser(xData, {
         id: character.id,
         name: character.name,
         handle: (character as any).xHandle || undefined,
         avatarUrl: character.avatar || undefined,
-        bio: (character.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined,
+        // 只在用户首次创建时使用角色 prompt 作为默认 bio，之后保留用户手动编辑的
+        bio: existingUser ? undefined : ((character.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined),
       })
       xData = ensuredData
       
@@ -1522,12 +1524,15 @@ ${recentTimeline || '（无）'}
                 try {
                   const meName = selectedPersona?.name || '我'
                   let nextX = await xLoad(meName)
+                  // 检查用户是否已存在，避免覆盖手动编辑的签名
+                  const existingUser = nextX.users.find((u) => u.id === character.id)
                   const ensured = (() => {
                     const { data: d2, userId } = xEnsureUser(nextX, {
                       id: character.id,
                       name: character.name,
                       avatarUrl: character.avatar || undefined,
-                      bio: character.prompt || undefined,
+                      // 只在用户首次创建时使用角色 prompt 作为默认 bio
+                      bio: existingUser ? undefined : ((character.prompt || '').replace(/\s+/g, ' ').slice(0, 80) || undefined),
                     })
                     nextX = d2
                     return { userId }

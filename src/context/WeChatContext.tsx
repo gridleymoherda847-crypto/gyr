@@ -820,8 +820,31 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   // 关键：必须等 hydration 完成后再开始自动保存，否则会把“初始空数组/默认值”写回 KV 覆盖导入数据
   const isImporting = () => !!(window as any).__LP_IMPORTING__
   const canPersist = () => isHydrated && !isImporting()
-  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.characters, characters) }, [characters, isHydrated])
-  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.messages, messages) }, [messages, isHydrated])
+  // 角色和消息额外备份到 localStorage（防止 IndexedDB 被清除导致数据丢失）
+  useEffect(() => {
+    if (!canPersist()) return
+    void kvSetJSON(STORAGE_KEYS.characters, characters)
+    // 备份角色数量和精简数据到 localStorage
+    if (characters.length > 0) {
+      localStorage.setItem('wechat_characters_count_backup', String(characters.length))
+      // 只备份核心字段，避免 localStorage 超限
+      try {
+        const slim = characters.map(c => ({ id: c.id, name: c.name, avatar: c.avatar?.slice(0, 100), prompt: c.prompt?.slice(0, 200) }))
+        localStorage.setItem(STORAGE_KEYS.characters + '_backup', JSON.stringify(slim))
+      } catch { /* ignore quota errors */ }
+    }
+  }, [characters, isHydrated])
+  useEffect(() => {
+    if (!canPersist()) return
+    void kvSetJSON(STORAGE_KEYS.messages, messages)
+    // 备份最近消息到 localStorage（只保留最近 200 条）
+    if (messages.length > 0) {
+      try {
+        const recent = messages.slice(-200).map(m => ({ ...m, content: m.content?.slice(0, 500) }))
+        localStorage.setItem(STORAGE_KEYS.messages + '_backup', JSON.stringify(recent))
+      } catch { /* ignore quota errors */ }
+    }
+  }, [messages, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.stickers, stickers) }, [stickers, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.favoriteDiaries, favoriteDiaries) }, [favoriteDiaries, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.myDiaries, myDiaries) }, [myDiaries, isHydrated])
