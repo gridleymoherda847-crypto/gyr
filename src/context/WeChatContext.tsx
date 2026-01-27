@@ -790,64 +790,70 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let cancelled = false
     const hydrate = async () => {
-      // 检测是否在私密浏览模式（iOS Safari 私密模式下 IndexedDB 数据会丢失）
-      const isPrivateMode = await (async () => {
-        try {
-          const testKey = '__private_test__'
-          await kvSet(testKey, 'test')
-          const result = await kvGet(testKey)
-          await kvRemove(testKey)
-          // 如果无法写入或读取，可能是私密模式
-          return result !== 'test'
-        } catch {
-          return true
-        }
-      })()
-      
-      // 若 KV 中无数据但 localStorage 有旧数据：迁移一次
-      const existing = await kvGet(STORAGE_KEYS.characters)
-      if (!existing) {
-        // 迁移 WeChat 相关 key（只复制我们自己维护的 keys）
-        const toMove = Object.values(STORAGE_KEYS)
-        await Promise.allSettled(
-          toMove.map(async (k) => {
-            try {
-              const raw = localStorage.getItem(k)
-              if (raw != null) {
-                await kvSet(k, raw)
+      try {
+        // 检测是否在私密浏览模式（iOS Safari 私密模式下 IndexedDB 数据会丢失）
+        const isPrivateMode = await (async () => {
+          try {
+            const testKey = '__private_test__'
+            await kvSet(testKey, 'test')
+            const result = await kvGet(testKey)
+            await kvRemove(testKey)
+            // 如果无法写入或读取，可能是私密模式
+            return result !== 'test'
+          } catch {
+            return true
+          }
+        })()
+        
+        // 若 KV 中无数据但 localStorage 有旧数据：迁移一次
+        const existing = await kvGet(STORAGE_KEYS.characters)
+        if (!existing) {
+          // 迁移 WeChat 相关 key（只复制我们自己维护的 keys）
+          const toMove = Object.values(STORAGE_KEYS)
+          await Promise.allSettled(
+            toMove.map(async (k) => {
+              try {
+                const raw = localStorage.getItem(k)
+                if (raw != null) {
+                  await kvSet(k, raw)
+                }
+              } catch {
+                // ignore
               }
-            } catch {
-              // ignore
-            }
-          })
-        )
-      }
-      
-      // 检测数据异常丢失：如果 localStorage 有备份记录但 IndexedDB 是空的
-      const backupCount = localStorage.getItem('wechat_characters_count_backup')
-      const kvCharacters = await kvGet(STORAGE_KEYS.characters)
-      const kvCharactersParsed = kvCharacters ? JSON.parse(kvCharacters) : []
-      
-      if (backupCount && parseInt(backupCount) > 0 && (!kvCharactersParsed || kvCharactersParsed.length === 0)) {
-        // 数据可能丢失了！显示警告
-        console.warn('[LittlePhone] 检测到数据异常：localStorage 有备份但 IndexedDB 为空')
-        console.warn('[LittlePhone] 可能原因：私密浏览模式、浏览器清除数据、iOS 自动清理')
-        console.warn('[LittlePhone] 私密模式检测:', isPrivateMode ? '是' : '否')
-        
-        // 尝试从 localStorage 备份恢复
-        const backupChars = localStorage.getItem(STORAGE_KEYS.characters + '_backup')
-        const backupMsgs = localStorage.getItem(STORAGE_KEYS.messages + '_backup')
-        
-        if (backupChars || backupMsgs) {
-          console.warn('[LittlePhone] 发现 localStorage 备份，但备份数据不完整，无法自动恢复')
-          // 显示用户提示
-          setTimeout(() => {
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-            const privateWarning = isPrivateMode ? '\n\n⚠️ 检测到可能是私密浏览模式，私密模式下数据无法持久保存！' : ''
-            alert(`⚠️ 数据异常提醒\n\n检测到您之前有 ${backupCount} 个角色，但当前数据为空。\n\n可能原因：\n• 使用了私密浏览模式\n• 浏览器清除了网站数据\n• ${isIOS ? 'iOS 自动清理了存储空间' : '存储空间被清理'}\n\n建议：\n• 定期使用「设置→导出数据」备份\n• 避免使用私密浏览模式${privateWarning}`)
-          }, 1000)
+            })
+          )
         }
-      }
+        
+        // 检测数据异常丢失：如果 localStorage 有备份记录但 IndexedDB 是空的
+        const backupCount = localStorage.getItem('wechat_characters_count_backup')
+        const kvCharacters = await kvGet(STORAGE_KEYS.characters)
+        let kvCharactersParsed: any[] = []
+        try {
+          kvCharactersParsed = kvCharacters ? JSON.parse(kvCharacters) : []
+        } catch {
+          console.error('[LittlePhone] 角色数据解析失败，可能已损坏')
+        }
+        
+        if (backupCount && parseInt(backupCount) > 0 && (!kvCharactersParsed || kvCharactersParsed.length === 0)) {
+          // 数据可能丢失了！显示警告
+          console.warn('[LittlePhone] 检测到数据异常：localStorage 有备份但 IndexedDB 为空')
+          console.warn('[LittlePhone] 可能原因：私密浏览模式、浏览器清除数据、存储空间被清理')
+          console.warn('[LittlePhone] 私密模式检测:', isPrivateMode ? '是' : '否')
+          
+          // 尝试从 localStorage 备份恢复
+          const backupChars = localStorage.getItem(STORAGE_KEYS.characters + '_backup')
+          const backupMsgs = localStorage.getItem(STORAGE_KEYS.messages + '_backup')
+          
+          if (backupChars || backupMsgs) {
+            console.warn('[LittlePhone] 发现 localStorage 备份，但备份数据不完整，无法自动恢复')
+            // 显示用户提示
+            setTimeout(() => {
+              const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+              const privateWarning = isPrivateMode ? '\n\n⚠️ 检测到可能是私密浏览模式，私密模式下数据无法持久保存！' : ''
+              alert(`⚠️ 数据异常提醒\n\n检测到您之前有 ${backupCount} 个角色，但当前数据为空。\n\n可能原因：\n• 使用了私密浏览模式\n• 浏览器清除了网站数据\n• ${isIOS ? 'iOS 自动清理了存储空间' : '存储空间被清理'}\n\n建议：\n• 定期使用「设置→导出数据」备份\n• 避免使用私密浏览模式${privateWarning}`)
+            }, 1000)
+          }
+        }
 
       // 并行读取：减少启动等待（尤其消息/朋友圈数据较大时）
       const [
@@ -921,6 +927,16 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       // 群聊
       setGroups(nextGroups)
       setIsHydrated(true)
+      } catch (err) {
+        // IndexedDB 读取失败（可能是数据库损坏）
+        console.error('[LittlePhone] 数据加载失败:', err)
+        // 仍然标记为已加载，避免白屏
+        setIsHydrated(true)
+        // 延迟提示用户
+        setTimeout(() => {
+          alert('⚠️ 数据加载异常\n\n数据库可能已损坏。\n\n建议：\n• 如果有备份文件，请使用「设置→导入数据」恢复\n• 清除浏览器数据后重新开始\n\n如果问题持续，请尝试更换浏览器。')
+        }, 500)
+      }
     }
     void hydrate()
     return () => {

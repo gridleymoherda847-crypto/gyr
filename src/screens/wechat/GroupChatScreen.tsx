@@ -1102,21 +1102,21 @@ ${history}`
           </div>
         )}
         
-        {/* 输入框区域 */}
-        <div className="px-3 py-2 bg-gray-50/95 backdrop-blur-sm border-t border-gray-100" style={{ paddingRight: 'max(12px, env(safe-area-inset-right))' }}>
+        {/* 输入框区域 - 参考私聊布局 */}
+        <div className="px-3 py-2 bg-white/90 border-t border-gray-200/40">
           <div className="flex items-center gap-2">
             {/* +号按钮 */}
             <button type="button" onClick={() => { setShowPlusMenu(!showPlusMenu); setShowStickerPanel(false); setActivePanel(null); setShowGenerateSelector(false) }}
-              className="w-8 h-8 flex items-center justify-center text-gray-500 flex-shrink-0">
-              <svg className={`w-6 h-6 transition-transform ${showPlusMenu ? 'rotate-45' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              className="w-7 h-7 rounded-full border-2 border-gray-400 flex items-center justify-center transition-transform active:scale-90 flex-shrink-0">
+              <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
             </button>
             
             {/* 表情按钮 */}
             <button type="button" onClick={() => { setShowStickerPanel(!showStickerPanel); setShowPlusMenu(false); setShowGenerateSelector(false) }}
-              className="w-8 h-8 flex items-center justify-center text-gray-500 flex-shrink-0">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90 flex-shrink-0 ${showStickerPanel ? 'bg-green-100' : ''}`}>
+              <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
               </svg>
             </button>
@@ -1124,7 +1124,7 @@ ${history}`
             <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
               onFocus={() => { setShowPlusMenu(false); setShowStickerPanel(false); setShowGenerateSelector(false) }}
-              placeholder="发送消息..." className="flex-1 px-3 py-2 rounded-lg bg-white text-sm outline-none border border-gray-200" disabled={aiTyping} />
+              placeholder="输入消息..." className="flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/90 outline-none text-gray-800 text-sm" disabled={aiTyping} />
             
             {/* 生成按钮 */}
             <div className="relative flex-shrink-0">
@@ -1135,8 +1135,11 @@ ${history}`
                   setShowGenerateSelector(true); setShowPlusMenu(false); setShowStickerPanel(false)
                 }
               }} disabled={aiTyping}
-                className={`w-8 h-8 flex items-center justify-center rounded-full ${aiTyping ? 'text-gray-300' : 'bg-gradient-to-r from-green-400 to-green-500 text-white shadow-sm'}`}>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                className={`w-7 h-7 rounded-full flex items-center justify-center shadow-sm transition-all flex-shrink-0 ${aiTyping ? 'opacity-50' : 'active:scale-90'} bg-gradient-to-r from-green-400 to-green-500`}
+                title="生成群成员回复">
+                <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z" />
+                </svg>
               </button>
               
               {showGenerateSelector && (
@@ -1175,7 +1178,7 @@ ${history}`
             </div>
             
             <button type="button" onClick={handleSend} disabled={!inputText.trim() || aiTyping}
-              className={`px-3 py-2 rounded-lg text-sm font-medium flex-shrink-0 ${inputText.trim() && !aiTyping ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all flex-shrink-0 ${inputText.trim() && !aiTyping ? 'bg-gradient-to-r from-green-400 to-green-500 text-white shadow-sm' : 'bg-gray-200 text-gray-400'}`}>
               发送
             </button>
           </div>
@@ -1458,10 +1461,8 @@ ${history}`
                   
                   <div className="mb-4">
                     <div className="text-sm text-gray-600 mb-2">群名称</div>
-                    <div className="flex gap-2">
-                      <input type="text" value={groupNameDraft} onChange={(e) => setGroupNameDraft(e.target.value)} className="flex-1 px-3 py-2 rounded-lg bg-gray-100 text-sm outline-none" placeholder="输入群名称" />
-                      <button type="button" onClick={handleSaveGroupName} className="px-3 py-2 rounded-lg bg-green-500 text-white text-sm">保存</button>
-                    </div>
+                    <input type="text" value={groupNameDraft} onChange={(e) => setGroupNameDraft(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-100 text-sm outline-none mb-2" placeholder="输入群名称" />
+                    <button type="button" onClick={handleSaveGroupName} className="w-full py-2 rounded-lg bg-green-500 text-white text-sm font-medium">保存群名称</button>
                   </div>
                   
                   {/* 群成员 + 添加/移除按钮（包含自己） */}
