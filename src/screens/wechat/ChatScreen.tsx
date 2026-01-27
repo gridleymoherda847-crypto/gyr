@@ -2674,10 +2674,11 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     setTransferActionMsg(null)
     
     // 用AI生成真人式回复（遵守自动/手动模式）
+    // 注意：这里是"用户领取了AI的转账"，所以要告诉AI"用户收了你给的钱"
     generateHumanLikeReplies(
       action === 'receive' 
-        ? `对方收下了你的${amount}元转账（备注：${note}）` 
-        : `对方退还了你的${amount}元转账（备注：${note}）`
+        ? `用户收下了你给TA的${amount}元转账（备注：${note}），你可以表达开心/满足` 
+        : `用户退还了你给TA的${amount}元转账（备注：${note}），你可以表达不解/失落`
     )
   }
 
