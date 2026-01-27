@@ -375,6 +375,19 @@ export default function XScreen() {
       await fn()
       setLoadingProgress(100)
       window.setTimeout(() => setLoadingOpen(false), 240)
+    } catch (err) {
+      // 显示错误提示
+      const errMsg = err instanceof Error ? err.message : String(err)
+      setLoadingOpen(false)
+      setTipDialog({ 
+        open: true, 
+        title: '刷新失败', 
+        message: errMsg.includes('timeout') || errMsg.includes('超时') 
+          ? '请求超时，请检查网络后重试。' 
+          : errMsg.includes('API') || errMsg.includes('key') || errMsg.includes('401') || errMsg.includes('403')
+            ? 'API配置可能有问题，请检查设置中的API配置。'
+            : `出错了：${errMsg.slice(0, 100)}`
+      })
     } finally {
       stopLoadingTimer()
       refreshLockRef.current = false
