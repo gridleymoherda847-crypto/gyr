@@ -41,6 +41,7 @@ const ChatSettingsScreen = lazy(() => import('./screens/wechat/ChatSettingsScree
 const CoupleSpaceScreen = lazy(() => import('./screens/wechat/CoupleSpaceScreen'))
 const WalletScreen = lazy(() => import('./screens/wechat/WalletScreen'))
 const FundScreen = lazy(() => import('./screens/wechat/FundScreen'))
+const GroupChatScreen = lazy(() => import('./screens/wechat/GroupChatScreen'))
 
 function PhoneSkeleton() {
   return (
@@ -159,6 +160,7 @@ function InnerApp() {
             <Route path="/apps/wechat/chat/:characterId" element={<ChatScreen />} />
             <Route path="/apps/wechat/chat/:characterId/settings" element={<ChatSettingsScreen />} />
             <Route path="/apps/wechat/couple-space/:characterId" element={<CoupleSpaceScreen />} />
+            <Route path="/apps/wechat/group/:groupId" element={<GroupChatScreen />} />
             <Route path="/apps/wechat/wallet" element={<WeChatWalletRoute />} />
             <Route path="/apps/wechat/fund" element={<WeChatFundRoute />} />
             <Route path="/apps/:appId" element={<AppScreen />} />

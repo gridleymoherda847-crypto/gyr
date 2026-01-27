@@ -1146,8 +1146,10 @@ export default function XScreen() {
     if (userId === 'me') return
     let next = data
     const set = new Set(next.follows || [])
-    if (set.has(userId)) set.delete(userId)
-    else {
+    const wasFollowing = set.has(userId)
+    if (wasFollowing) {
+      set.delete(userId)
+    } else {
       const ensured = ensureXUserFromCharacter(next, userId)
       next = ensured.data
       set.add(userId)
@@ -1155,6 +1157,12 @@ export default function XScreen() {
     const updated: XDataV1 = { ...next, follows: Array.from(set) }
     setData(updated)
     await xSave(updated)
+    // 关注成功时显示互关提示
+    if (!wasFollowing) {
+      const user = next.users.find(u => u.id === userId)
+      const userName = user?.name || characters.find(c => c.id === userId)?.name || '对方'
+      setTipDialog({ open: true, title: '🎉 互相关注', message: `${userName}也关注了你，你们已互关！` })
+    }
   }
 
   const muteUser = async (userId: string) => {
@@ -2415,7 +2423,7 @@ export default function XScreen() {
                     followed ? 'bg-gray-100 text-gray-800' : 'bg-black text-white'
                   }`}
                 >
-                  {followed ? '已关注' : '关注'}
+                  {followed ? '互相关注' : '关注'}
                 </button>
               </div>
             )}
@@ -3005,7 +3013,7 @@ export default function XScreen() {
                     }}
                     className="w-full py-2 rounded-xl bg-gray-900 text-white text-[13px] font-semibold active:scale-[0.99]"
                   >
-                    {followed ? '取消关注' : '关注'}
+                    {followed ? '取消互关' : '关注'}
                   </button>
                 )}
                 {!isMePost && (

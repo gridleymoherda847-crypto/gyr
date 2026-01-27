@@ -10,10 +10,13 @@ type Props = {
 export default function ChatsTab({ onBack }: Props) {
   const navigate = useNavigate()
   const { fontColor } = useOS()
-  const { characters, getLastMessage, togglePinned, hideFromChat, clearMessages } = useWeChat()
+  const { characters, groups, getLastMessage, togglePinned, hideFromChat, clearMessages, createGroup, getGroupMessages } = useWeChat()
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [swipedId, setSwipedId] = useState<string | null>(null)
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const [showGroupCreate, setShowGroupCreate] = useState(false)
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([])
   
   // 触摸状态
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -34,11 +37,39 @@ export default function ChatsTab({ onBack }: Props) {
       return (lastB?.timestamp || b.createdAt) - (lastA?.timestamp || a.createdAt)
     })
   }, [characters, getLastMessage])
+  
+  // 群聊列表，按最后消息时间排序
+  const sortedGroups = useMemo(() => {
+    return [...groups].sort((a, b) => {
+      return (b.lastMessageAt || b.createdAt) - (a.lastMessageAt || a.createdAt)
+    })
+  }, [groups])
 
   // 搜索过滤
   const filteredCharacters = searchQuery
     ? sortedCharacters.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : sortedCharacters
+  
+  const filteredGroups = searchQuery
+    ? sortedGroups.filter(g => g.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : sortedGroups
+  
+  // 合并私聊和群聊列表
+  type ChatItem = { type: 'private'; data: typeof sortedCharacters[0] } | { type: 'group'; data: typeof sortedGroups[0] }
+  const allChats = useMemo<ChatItem[]>(() => {
+    const items: ChatItem[] = [
+      ...filteredCharacters.map(c => ({ type: 'private' as const, data: c })),
+      ...filteredGroups.map(g => ({ type: 'group' as const, data: g })),
+    ]
+    // 按最后消息时间排序（私聊置顶优先）
+    return items.sort((a, b) => {
+      if (a.type === 'private' && a.data.isPinned && !(b.type === 'private' && b.data.isPinned)) return -1
+      if (b.type === 'private' && b.data.isPinned && !(a.type === 'private' && a.data.isPinned)) return 1
+      const timeA = a.type === 'private' ? (getLastMessage(a.data.id)?.timestamp || a.data.createdAt) : (a.data.lastMessageAt || a.data.createdAt)
+      const timeB = b.type === 'private' ? (getLastMessage(b.data.id)?.timestamp || b.data.createdAt) : (b.data.lastMessageAt || b.data.createdAt)
+      return timeB - timeA
+    })
+  }, [filteredCharacters, filteredGroups, getLastMessage])
 
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp)
@@ -112,15 +143,49 @@ export default function ChatsTab({ onBack }: Props) {
               <path d="m21 21-4.35-4.35"/>
             </svg>
           </button>
-          <button
-            type="button"
-            onClick={() => navigate('/apps/wechat/create-character')}
-            className="w-7 h-7 flex items-center justify-center"
-          >
-            <svg className="w-5 h-5 text-[#000]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowAddMenu(!showAddMenu)}
+              className="w-7 h-7 flex items-center justify-center"
+            >
+              <svg className="w-5 h-5 text-[#000]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            {/* 添加菜单 */}
+            {showAddMenu && (
+              <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-100 overflow-hidden z-50">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddMenu(false)
+                    navigate('/apps/wechat/create-character')
+                  }}
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 active:bg-gray-100 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  </svg>
+                  创建角色
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddMenu(false)
+                    setShowGroupCreate(true)
+                    setSelectedGroupMembers([])
+                  }}
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 active:bg-gray-100 flex items-center gap-2 border-t border-gray-100"
+                >
+                  <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  发起群聊
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -150,7 +215,7 @@ export default function ChatsTab({ onBack }: Props) {
 
       {/* 聊天列表 */}
       <div className="flex-1 overflow-y-auto bg-transparent">
-        {filteredCharacters.length === 0 ? (
+        {allChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm">
             {searchQuery ? (
               <span>未找到联系人</span>
@@ -162,7 +227,60 @@ export default function ChatsTab({ onBack }: Props) {
             )}
           </div>
         ) : (
-          filteredCharacters.map(character => {
+          allChats.map(item => {
+            // 群聊项
+            if (item.type === 'group') {
+              const group = item.data
+              const groupMembers = group.memberIds.map(id => characters.find(c => c.id === id)).filter(Boolean)
+              const lastGroupMsg = getGroupMessages(group.id).slice(-1)[0]
+              
+              return (
+                <div 
+                  key={`group_${group.id}`} 
+                  onClick={() => {
+                    const now = Date.now()
+                    if (now - navLockRef.current < 450) return
+                    navLockRef.current = now
+                    navigate(`/apps/wechat/group/${group.id}`)
+                  }}
+                  className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 active:bg-gray-50 cursor-pointer"
+                >
+                  {/* 群头像 */}
+                  <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+                    {group.avatar ? (
+                      <img src={group.avatar} alt={group.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* 信息 */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <span className="font-medium text-[#000] truncate">{group.name}</span>
+                        <span className="text-xs text-gray-400">({groupMembers.length})</span>
+                      </div>
+                      {lastGroupMsg && (
+                        <span className="text-xs text-gray-400">{formatTime(lastGroupMsg.timestamp)}</span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-500 truncate mt-0.5">
+                      {lastGroupMsg ? (
+                        lastGroupMsg.isUser ? `我: ${lastGroupMsg.content?.slice(0, 20)}` : `${characters.find(c => c.id === lastGroupMsg.groupSenderId)?.name || '群友'}: ${lastGroupMsg.content?.slice(0, 15)}`
+                      ) : '暂无消息'}
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+            
+            // 私聊项
+            const character = item.data
             const lastMsg = getLastMessage(character.id)
             const isSwiped = swipedId === character.id
             
@@ -303,6 +421,105 @@ export default function ChatsTab({ onBack }: Props) {
       <div className="px-3 py-1 text-center text-[10px] text-gray-400 bg-transparent">
         左滑消息可置顶或删除（电脑可右键）
       </div>
+      
+      {/* 点击外部关闭添加菜单 */}
+      {showAddMenu && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => setShowAddMenu(false)}
+        />
+      )}
+      
+      {/* 创建群聊弹窗 */}
+      {showGroupCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-[320px] bg-white rounded-2xl shadow-xl max-h-[70vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowGroupCreate(false)
+                  setSelectedGroupMembers([])
+                }}
+                className="text-gray-500 text-sm"
+              >
+                取消
+              </button>
+              <span className="font-semibold text-gray-800">发起群聊</span>
+              <button
+                type="button"
+                disabled={selectedGroupMembers.length < 2}
+                onClick={() => {
+                  if (selectedGroupMembers.length >= 2) {
+                    const newGroup = createGroup(selectedGroupMembers)
+                    setShowGroupCreate(false)
+                    setSelectedGroupMembers([])
+                    navigate(`/apps/wechat/group/${newGroup.id}`)
+                  }
+                }}
+                className={`text-sm font-medium ${selectedGroupMembers.length >= 2 ? 'text-green-500' : 'text-gray-300'}`}
+              >
+                完成({selectedGroupMembers.length})
+              </button>
+            </div>
+            
+            <div className="p-3 border-b border-gray-100 bg-yellow-50">
+              <div className="text-xs text-yellow-700 flex items-start gap-1">
+                <span>💡</span>
+                <span>群聊记录和私聊记录记忆不互通，可手动转发聊天记录进行记忆互通</span>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-2">
+              {characters.filter(c => !c.isHiddenFromChat).length === 0 ? (
+                <div className="text-center text-gray-400 text-sm py-8">暂无联系人</div>
+              ) : (
+                <div className="space-y-1">
+                  {characters.filter(c => !c.isHiddenFromChat).map(c => {
+                    const isSelected = selectedGroupMembers.includes(c.id)
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedGroupMembers(prev => prev.filter(id => id !== c.id))
+                          } else {
+                            setSelectedGroupMembers(prev => [...prev, c.id])
+                          }
+                        }}
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors ${
+                          isSelected ? 'bg-green-50 border border-green-200' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                          isSelected ? 'border-green-500 bg-green-500' : 'border-gray-300'
+                        }`}>
+                          {isSelected && (
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+                          {c.avatar ? (
+                            <img src={c.avatar} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white text-sm">
+                              {c.name[0]}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-sm font-medium text-gray-800 truncate">{c.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

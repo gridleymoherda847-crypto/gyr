@@ -20,7 +20,7 @@ export default function ChatScreen() {
     walletBalance, updateWalletBalance, addWalletBill,
     getUserPersona, getCurrentPersona,
     addFavoriteDiary, isDiaryFavorited,
-    characters, getTransfersByCharacter
+    characters, getTransfersByCharacter, groups
   } = useWeChat()
   
   const character = getCharacter(characterId || '')
@@ -263,6 +263,11 @@ export default function ChatScreen() {
   // X（推特）关注状态
   const [xFollowing, setXFollowing] = useState(false)
   const [xFollowLoading, setXFollowLoading] = useState(false)
+  
+  // 转发聊天记录状态
+  const [forwardMode, setForwardMode] = useState(false)
+  const [forwardSelectedIds, setForwardSelectedIds] = useState<Set<string>>(new Set())
+  const [showForwardTargetPicker, setShowForwardTargetPicker] = useState(false)
   
   // 查手机等待提示语循环
   useEffect(() => {
@@ -3960,6 +3965,44 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       )
     }
     
+    // 转发聊天记录卡片
+    if (msg.type === 'chat_forward' && msg.forwardedMessages) {
+      const fwdMsgs = msg.forwardedMessages
+      const previewCount = Math.min(4, fwdMsgs.length)
+      
+      return (
+        <div className="min-w-[180px] max-w-[240px] rounded-xl overflow-hidden bg-white border border-gray-200 shadow-sm">
+          <div className="px-3 py-2 border-b border-gray-100">
+            <div className="text-[12px] text-gray-500 mb-1">
+              {msg.forwardedFrom ? `来自与${msg.forwardedFrom}的聊天` : '聊天记录'}
+            </div>
+            <div className="space-y-1">
+              {fwdMsgs.slice(0, previewCount).map((fm, i) => (
+                <div key={i} className="text-[12px] truncate">
+                  <span className="text-gray-600 font-medium">{fm.senderName}：</span>
+                  <span className="text-gray-500">
+                    {fm.type === 'image' ? '[图片]' : 
+                     fm.type === 'sticker' ? '[表情包]' : 
+                     fm.type === 'transfer' ? `[转账 ¥${fm.transferAmount?.toFixed(2)}]` :
+                     fm.type === 'voice' ? `[语音 ${fm.voiceDuration || 0}"]` :
+                     fm.content.slice(0, 20)}{fm.content.length > 20 ? '...' : ''}
+                  </span>
+                </div>
+              ))}
+              {fwdMsgs.length > previewCount && (
+                <div className="text-[11px] text-gray-400">
+                  ...还有{fwdMsgs.length - previewCount}条消息
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="px-3 py-1.5 bg-gray-50 text-[10px] text-gray-400">
+            聊天记录 · {fwdMsgs.length}条
+          </div>
+        </div>
+      )
+    }
+    
     // 查手机卡片消息
     if (msg.content.startsWith('[查手机卡片:')) {
       const match = msg.content.match(/^\[查手机卡片:([^\]]+)\]\n([\s\S]*)$/)
@@ -4241,9 +4284,13 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 
       // 编辑模式：是否被选中
       const isSelected = selectedMsgIds.has(msg.id)
+      // 转发模式：是否被选中
+      const isForwardSelected = forwardSelectedIds.has(msg.id)
+      // 可转发的消息类型
+      const canForward = ['text', 'image', 'sticker', 'transfer', 'voice'].includes(msg.type)
 
       const bubbleStyle =
-        msg.type !== 'transfer' && msg.type !== 'music' && msg.type !== 'location'
+        msg.type !== 'transfer' && msg.type !== 'music' && msg.type !== 'location' && msg.type !== 'chat_forward'
           ? (msg.isUser ? bubbleStyles.user : bubbleStyles.char)
           : undefined
 
@@ -4255,7 +4302,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         >
           <div className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
             {/* 编辑模式：可勾选双方消息 */}
-            {editMode && (
+            {editMode && !forwardMode && (
               <button
                 type="button"
                 onClick={() => {
@@ -4275,6 +4322,35 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                   }`}
                 >
                   {isSelected && (
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+              </button>
+            )}
+            {/* 转发模式：所有消息都显示勾选框 */}
+            {forwardMode && !editMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!canForward) return // 不可转发的消息点击无效
+                  setForwardSelectedIds((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(msg.id)) next.delete(msg.id)
+                    else next.add(msg.id)
+                    return next
+                  })
+                }}
+                className={`flex items-center self-center ${!canForward ? 'opacity-30' : ''}`}
+                title={canForward ? '选择转发' : '此消息类型不支持转发'}
+              >
+                <div
+                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                    isForwardSelected ? 'border-green-500 bg-green-500' : 'border-gray-400 bg-white/70'
+                  }`}
+                >
+                  {isForwardSelected && (
                     <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
@@ -4339,13 +4415,13 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
               
               <div
                 className={`w-fit text-[15px] ${
-                  msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice'
+                  msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' || msg.type === 'chat_forward'
                     ? 'bg-transparent p-0 shadow-none'
                     : `px-3.5 py-2.5 shadow-sm ${msg.isUser
                         ? 'text-gray-800 rounded-2xl rounded-tr-md'
                         : 'text-gray-800 rounded-2xl rounded-tl-md'}`
                 }`}
-                style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' ? undefined : bubbleStyle as any}
+                style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' || msg.type === 'chat_forward' ? undefined : bubbleStyle as any}
               >
                 {renderMessageContent(msg)}
               </div>
@@ -4440,6 +4516,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     character?.blockedAt,
     editMode,
     selectedMsgIds,
+    forwardMode,
+    forwardSelectedIds,
     selectedPersona?.avatar,
     selectedPersona?.name,
     bubbleStyles,
@@ -4483,6 +4561,27 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                   删除
                 </button>
               </div>
+            </>
+          ) : forwardMode ? (
+            <>
+              <button
+                type="button"
+                onClick={() => { setForwardMode(false); setForwardSelectedIds(new Set()) }}
+                className="text-gray-500 text-sm"
+              >
+                取消
+              </button>
+              <span className="font-semibold text-[#000]">
+                选择要转发的消息
+              </span>
+              <button
+                type="button"
+                disabled={forwardSelectedIds.size === 0}
+                onClick={() => setShowForwardTargetPicker(true)}
+                className={`text-sm font-medium ${forwardSelectedIds.size > 0 ? 'text-green-500' : 'text-gray-300'}`}
+              >
+                转发({forwardSelectedIds.size})
+              </button>
             </>
           ) : (
             <>
@@ -4816,6 +4915,26 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                       </svg>
                     </div>
                     <span className="text-xs text-gray-600">查手机</span>
+                  </button>
+                  
+                  {/* 转发 */}
+                  <button 
+                    type="button" 
+                    onClick={() => { 
+                      setShowPlusMenu(false)
+                      setEditMode(false) // 关闭编辑模式
+                      setSelectedMsgIds(new Set())
+                      setForwardMode(true)
+                      setForwardSelectedIds(new Set())
+                    }} 
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-gray-600">转发</span>
                   </button>
                   
                   {/* 清空 */}
@@ -5749,6 +5868,148 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         onCancel={() => setShowClearConfirm(false)}
         onConfirm={handleClearAll}
       />
+
+      {/* 转发目标选择弹窗 */}
+      {showForwardTargetPicker && (
+        <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/50">
+          <div className="w-full max-w-[400px] rounded-t-2xl bg-white shadow-xl max-h-[60vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowForwardTargetPicker(false)}
+                className="text-gray-500 text-sm"
+              >
+                取消
+              </button>
+              <span className="font-semibold text-gray-800">转发给...</span>
+              <div className="w-10" />
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {/* 群聊列表 */}
+              {groups.length > 0 && (
+                <>
+                  <div className="text-xs text-gray-400 px-3 py-2">群聊</div>
+                  <div className="space-y-1 mb-2">
+                    {groups.map(g => {
+                      const groupMembers = g.memberIds.map(id => characters.find(c => c.id === id)).filter(Boolean)
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => {
+                            const selectedMessages = messages
+                              .filter(m => forwardSelectedIds.has(m.id))
+                              .sort((a, b) => a.timestamp - b.timestamp)
+                              .map(m => ({
+                                senderName: m.isUser ? (selectedPersona?.name || '我') : character.name,
+                                content: m.content,
+                                timestamp: m.timestamp,
+                                type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
+                                transferAmount: m.transferAmount,
+                                transferNote: m.transferNote,
+                                voiceText: m.voiceText,
+                                voiceDuration: m.voiceDuration,
+                              }))
+                            
+                            addMessage({
+                              characterId: '',
+                              groupId: g.id,
+                              content: `[转发了${selectedMessages.length}条消息]`,
+                              isUser: true,
+                              type: 'chat_forward',
+                              forwardedMessages: selectedMessages,
+                              forwardedFrom: character.name,
+                            })
+                            
+                            setShowForwardTargetPicker(false)
+                            setForwardMode(false)
+                            setForwardSelectedIds(new Set())
+                            setInfoDialog({ open: true, title: '转发成功', message: `已转发${selectedMessages.length}条消息到「${g.name}」` })
+                          }}
+                          className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                        >
+                          <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center">
+                            {g.avatar ? (
+                              <img src={g.avatar} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-white text-sm font-medium">{g.name[0]}</span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0 text-left">
+                            <div className="text-sm font-medium text-gray-800 truncate">{g.name}</div>
+                            <div className="text-xs text-gray-400 truncate">{groupMembers.slice(0, 3).map(m => m?.name).join('、')}{groupMembers.length > 3 ? '...' : ''}</div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+              
+              {/* 联系人列表 */}
+              <div className="text-xs text-gray-400 px-3 py-2">联系人</div>
+              {characters.filter(c => c.id !== characterId && !c.isHiddenFromChat).length === 0 ? (
+                <div className="text-center text-gray-400 text-sm py-8">暂无其他联系人</div>
+              ) : (
+                <div className="space-y-1">
+                  {characters.filter(c => c.id !== characterId && !c.isHiddenFromChat).map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        // 收集选中的消息
+                        const selectedMessages = messages
+                          .filter(m => forwardSelectedIds.has(m.id))
+                          .sort((a, b) => a.timestamp - b.timestamp)
+                          .map(m => ({
+                            senderName: m.isUser ? (selectedPersona?.name || '我') : character.name,
+                            content: m.content,
+                            timestamp: m.timestamp,
+                            type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
+                            transferAmount: m.transferAmount,
+                            transferNote: m.transferNote,
+                            voiceText: m.voiceText,
+                            voiceDuration: m.voiceDuration,
+                          }))
+                        
+                        // 发送转发消息
+                        addMessage({
+                          characterId: c.id,
+                          content: `[转发了${selectedMessages.length}条消息]`,
+                          isUser: true,
+                          type: 'chat_forward',
+                          forwardedMessages: selectedMessages,
+                          forwardedFrom: character.name,
+                        })
+                        
+                        // 关闭弹窗和转发模式
+                        setShowForwardTargetPicker(false)
+                        setForwardMode(false)
+                        setForwardSelectedIds(new Set())
+                        
+                        // 提示成功
+                        setInfoDialog({ open: true, title: '转发成功', message: `已转发${selectedMessages.length}条消息给${c.name}` })
+                      }}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                    >
+                      <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0">
+                        {c.avatar ? (
+                          <img src={c.avatar} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-sm font-medium">
+                            {c.name[0]}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-gray-800">{c.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 编辑消息对话框 */}
       {editingMessageId && (() => {

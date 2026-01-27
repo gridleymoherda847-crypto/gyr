@@ -95,7 +95,10 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice' | 'pat' | 'fund_share'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice' | 'pat' | 'fund_share' | 'chat_forward'
+  // 群聊相关
+  groupId?: string // 群ID（有值=群消息，无值=私聊）
+  groupSenderId?: string // 群消息发送者（角色ID）
   // 转账相关
   transferAmount?: number
   transferNote?: string
@@ -166,6 +169,21 @@ export type WeChatMessage = {
   
   // 拍一拍相关
   patText?: string // 拍一拍显示的文字（如"拍了拍我的小脑袋"）
+  
+  // 转发聊天记录相关
+  forwardedMessages?: {
+    senderName: string
+    content: string
+    timestamp: number
+    type: 'text' | 'image' | 'sticker' | 'transfer' | 'voice'
+    // 转账相关
+    transferAmount?: number
+    transferNote?: string
+    // 语音相关
+    voiceText?: string
+    voiceDuration?: number
+  }[]
+  forwardedFrom?: string // 来源（私聊角色名 或 群聊名）
 }
 
 // 转账记录
@@ -176,6 +194,41 @@ export type TransferRecord = {
   note: string
   isIncome: boolean // true=收到，false=发出
   timestamp: number
+}
+
+// 群聊关系网项
+export type GroupRelation = {
+  id: string
+  person1Id: string // 'user' 表示自己，否则是角色ID
+  person2Id: string // 'user' 表示自己，否则是角色ID
+  relationship: string // 关系描述（如"情侣"、"闺蜜"、"死对头"）
+  story?: string // 故事设定
+}
+
+// 群聊
+export type GroupChat = {
+  id: string
+  name: string
+  avatar: string // 群头像（可以是自定义图片或空字符串）
+  memberIds: string[] // 成员角色ID列表
+  createdAt: number
+  lastMessageAt: number
+  // 群设置
+  chatBackground?: string // 聊天背景
+  offlineMode?: boolean // 离线模式（手动模式）
+  memoryEnabled?: boolean // 记忆功能
+  memorySummary?: string // 长期记忆摘要
+  timeSyncEnabled?: boolean // 时间同步
+  timeSyncType?: 'realtime' | 'custom' // 同步类型
+  customTime?: string // 自定义时间（如 2024-01-01 12:00）
+  patEnabled?: boolean // 拍一拍开关
+  // 气泡设置（每个成员可以有不同气泡，用 memberId 做 key）
+  bubbleSettings?: {
+    user?: { bgColor?: string; bgOpacity?: number; borderColor?: string; borderOpacity?: number }
+    [memberId: string]: { bgColor?: string; bgOpacity?: number; borderColor?: string; borderOpacity?: number } | undefined
+  }
+  // 关系网
+  relations?: GroupRelation[]
 }
 
 // 纪念日
@@ -504,6 +557,16 @@ type WeChatContextValue = {
   getFundHolding: (fundId: string) => FundHolding | undefined
   getTotalFundValue: () => number // 获取基金总市值
   
+  // 群聊操作
+  groups: GroupChat[]
+  createGroup: (memberIds: string[], name?: string) => GroupChat
+  updateGroup: (id: string, updates: Partial<GroupChat>) => void
+  deleteGroup: (id: string) => void
+  getGroup: (id: string) => GroupChat | undefined
+  addGroupMember: (groupId: string, memberId: string) => void
+  removeGroupMember: (groupId: string, memberId: string) => void
+  getGroupMessages: (groupId: string) => WeChatMessage[]
+  
 }
 
 const WeChatContext = createContext<WeChatContextValue | undefined>(undefined)
@@ -528,7 +591,8 @@ const STORAGE_KEYS = {
   walletBills: 'wechat_wallet_bills',
   bubbleOpacityMode: 'wechat_bubble_opacity_mode',
   funds: 'wechat_funds',
-  fundHoldings: 'wechat_fund_holdings', // 一次性迁移：旧存档 bgOpacity/borderOpacity 为“不透明度”
+  fundHoldings: 'wechat_fund_holdings',
+  groups: 'wechat_groups', // 群聊
 }
 
 // 初始化基金列表（带随机初始价格）
@@ -717,6 +781,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   // 基金状态
   const [funds, setFunds] = useState<Fund[]>(() => [])
   const [fundHoldings, setFundHoldings] = useState<FundHolding[]>(() => [])
+  
+  // 群聊状态
+  const [groups, setGroups] = useState<GroupChat[]>(() => [])
 
   // 异步 Hydration：从 IndexedDB 加载；首次会从 localStorage 迁移（避免丢数据）
   useEffect(() => {
@@ -761,6 +828,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         nextWalletBills,
         nextFunds,
         nextFundHoldings,
+        nextGroups,
       ] = await Promise.all([
         kvGetJSONDeep<WeChatCharacter[]>(STORAGE_KEYS.characters, []),
         kvGetJSONDeep<WeChatMessage[]>(STORAGE_KEYS.messages, []),
@@ -780,6 +848,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<WalletBill[]>(STORAGE_KEYS.walletBills, []),
         kvGetJSONDeep<Fund[]>(STORAGE_KEYS.funds, []),
         kvGetJSONDeep<FundHolding[]>(STORAGE_KEYS.fundHoldings, []),
+        kvGetJSONDeep<GroupChat[]>(STORAGE_KEYS.groups, []),
       ])
 
       if (cancelled) return
@@ -808,6 +877,8 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       // 基金：如果没有数据则初始化
       setFunds(nextFunds.length > 0 ? nextFunds : initializeFunds())
       setFundHoldings(nextFundHoldings)
+      // 群聊
+      setGroups(nextGroups)
       setIsHydrated(true)
     }
     void hydrate()
@@ -861,6 +932,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.walletBills, walletBills) }, [walletBills, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.funds, funds) }, [funds, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fundHoldings, fundHoldings) }, [fundHoldings, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.groups, groups) }, [groups, isHydrated])
 
   // 清理“卡住的正在输入中”状态（防止重启后一直显示）
   useEffect(() => {
@@ -1541,6 +1613,64 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     }, 0)
   }, [funds, fundHoldings])
 
+  // ==================== 群聊操作 ====================
+  
+  const createGroup = useCallback((memberIds: string[], name?: string): GroupChat => {
+    const memberNames = memberIds.map(id => {
+      const char = characters.find(c => c.id === id)
+      return char?.name || '未知'
+    })
+    const newGroup: GroupChat = {
+      id: `group_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      name: name || memberNames.slice(0, 3).join('、'),
+      avatar: '',
+      memberIds,
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+    }
+    setGroups(prev => [...prev, newGroup])
+    return newGroup
+  }, [characters])
+  
+  const updateGroup = useCallback((id: string, updates: Partial<GroupChat>) => {
+    setGroups(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g))
+  }, [])
+  
+  const deleteGroup = useCallback((id: string) => {
+    setGroups(prev => prev.filter(g => g.id !== id))
+    // 同时删除群消息
+    setMessages(prev => prev.filter(m => m.groupId !== id))
+  }, [])
+  
+  const getGroup = useCallback((id: string) => {
+    return groups.find(g => g.id === id)
+  }, [groups])
+  
+  const addGroupMember = useCallback((groupId: string, memberId: string) => {
+    setGroups(prev => prev.map(g => {
+      if (g.id === groupId && !g.memberIds.includes(memberId)) {
+        return { ...g, memberIds: [...g.memberIds, memberId] }
+      }
+      return g
+    }))
+  }, [])
+  
+  const removeGroupMember = useCallback((groupId: string, memberId: string) => {
+    setGroups(prev => prev.map(g => {
+      if (g.id === groupId) {
+        const newMemberIds = g.memberIds.filter(id => id !== memberId)
+        // 如果成员少于2人，不允许移除
+        if (newMemberIds.length < 2) return g
+        return { ...g, memberIds: newMemberIds }
+      }
+      return g
+    }))
+  }, [])
+  
+  const getGroupMessages = useCallback((groupId: string) => {
+    return messages.filter(m => m.groupId === groupId)
+  }, [messages])
+
   // ==================== Context Value ====================
 
   const value = useMemo<WeChatContextValue>(() => ({
@@ -1568,7 +1698,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     initializeWallet, addWalletBill, updateWalletBalance,
     // 基金
     funds, fundHoldings, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue,
-  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, funds, fundHoldings, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue])
+    // 群聊
+    groups, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages,
+  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, funds, fundHoldings, groups, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages])
 
   return <WeChatContext.Provider value={value}>{children}</WeChatContext.Provider>
 }

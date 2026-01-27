@@ -87,6 +87,7 @@ export type XDataV1 = {
   meFollowerCount?: number
   suppressOtherProfileEditTip?: boolean
   follows: string[] // userIds
+  followers: string[] // 关注你的人（虚拟角色自动互关）
   muted: string[] // muted userIds
   blocked: string[] // blocked userIds
   users: XUser[]
@@ -225,6 +226,7 @@ export function xBase(meName: string): XDataV1 {
     meFollowerCount: 0,
     suppressOtherProfileEditTip: false,
     follows: [],
+    followers: [],
     muted: [],
     blocked: [],
     users: [],
