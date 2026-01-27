@@ -1257,10 +1257,13 @@ export default function DoudizhuScreen() {
       </div>
       
       {/* 顶部栏 */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-black/40 flex-shrink-0 border-b border-white/10">
-        <button onClick={() => navigate(-1)} className="text-white/80 p-1.5 hover:bg-white/10 rounded-lg transition-colors ml-10">
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+      <div className="flex items-center justify-between px-4 py-2.5 bg-black/40 flex-shrink-0 border-b border-white/10 relative z-[60]">
+        <button 
+          onClick={() => navigate(-1)} 
+          className="text-white/80 p-4 hover:bg-white/10 rounded-lg transition-colors active:scale-95 -ml-2 relative z-[70]"
+        >
+          <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
         
