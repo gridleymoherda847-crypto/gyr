@@ -149,9 +149,14 @@ export default function MusicScreen() {
   const confirmImport = () => {
     if (!importSongData) return
     
+    const songId = `song-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const songTitle = importSongName.trim() || '未命名'
+    
+    console.log('[MusicScreen] Importing song:', songTitle, 'URL:', importSongData.url.slice(0, 60))
+    
     addSong({
-      id: `song-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      title: importSongName.trim() || '未命名',
+      id: songId,
+      title: songTitle,
       artist: importSongArtist.trim() || '本地音乐',
       cover: '/icons/music-cover.png',
       url: importSongData.url,
@@ -163,6 +168,8 @@ export default function MusicScreen() {
     setImportSongData(null)
     setImportSuccess(true)
     setTimeout(() => setImportSuccess(false), 2000)
+    
+    console.log('[MusicScreen] Import complete:', songTitle)
   }
 
   return (

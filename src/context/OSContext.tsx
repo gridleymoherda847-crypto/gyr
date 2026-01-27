@@ -403,18 +403,38 @@ export function OSProvider({ children }: PropsWithChildren) {
       ])
 
       // 音乐：读取已保存的列表
-      // 注意：不再使用版本控制强制重置，避免覆盖用户导入的歌曲
+      // 优先从 IndexedDB 读取，如果失败则从 localStorage 备份恢复
       let nextPlaylist = await kvGetJSONDeep<Song[]>(MUSIC_STORAGE_KEY, null as any)
-      console.log('[Music] Loaded from storage:', nextPlaylist?.length || 0, 'songs')
+      console.log('[Music] Loaded from IndexedDB:', nextPlaylist?.length || 0, 'songs')
       
-      // 如果没有任何歌曲，使用默认列表
+      // 如果 IndexedDB 没有数据，尝试从 localStorage 备份恢复
+      if (!nextPlaylist || !Array.isArray(nextPlaylist) || nextPlaylist.length === 0) {
+        try {
+          const backup = localStorage.getItem(MUSIC_STORAGE_KEY + '_backup')
+          if (backup) {
+            const parsed = JSON.parse(backup)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              nextPlaylist = parsed
+              console.log('[Music] Restored from localStorage backup:', nextPlaylist.length, 'songs')
+              // 同步回 IndexedDB
+              await kvSetJSON(MUSIC_STORAGE_KEY, nextPlaylist)
+            }
+          }
+        } catch (e) {
+          console.error('[Music] Failed to restore from backup:', e)
+        }
+      }
+      
+      // 如果仍然没有任何歌曲，使用默认列表
       if (!nextPlaylist || !Array.isArray(nextPlaylist) || nextPlaylist.length === 0) {
         console.log('[Music] No saved songs, using defaults')
         nextPlaylist = [...DEFAULT_SONGS]
       } else {
         // 打印用户导入的歌曲（非默认）
         const userSongs = nextPlaylist.filter(s => s.source === 'url' || s.source === 'data')
-        console.log('[Music] User imported songs:', userSongs.length, userSongs.map(s => s.title))
+        if (userSongs.length > 0) {
+          console.log('[Music] User imported songs:', userSongs.length, userSongs.map(s => s.title))
+        }
       }
       
       // 更新版本号（仅记录，不强制重置）
@@ -793,14 +813,21 @@ export function OSProvider({ children }: PropsWithChildren) {
     setMusicPlaylist(prev => {
       const next = [...prev, normalized]
       // 立即持久化，避免刷新丢失
-      // 无论是否 hydrated 都尝试保存（确保不丢失）
+      // 同时保存到 IndexedDB 和 localStorage（双保险）
       void (async () => {
         try {
           await kvSetJSON(MUSIC_STORAGE_KEY, next)
           await kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
-          console.log('[Music] Saved playlist:', next.length, 'songs')
+          console.log('[Music] Saved to IndexedDB:', next.length, 'songs')
         } catch (e) {
-          console.error('[Music] Failed to save:', e)
+          console.error('[Music] IndexedDB save failed:', e)
+        }
+        // 备份到 localStorage（移动端 IndexedDB 可能不可靠）
+        try {
+          localStorage.setItem(MUSIC_STORAGE_KEY + '_backup', JSON.stringify(next))
+          console.log('[Music] Backup to localStorage:', next.length, 'songs')
+        } catch (e) {
+          console.error('[Music] localStorage backup failed:', e)
         }
       })()
       return next
