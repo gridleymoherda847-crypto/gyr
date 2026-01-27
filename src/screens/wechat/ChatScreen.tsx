@@ -1048,10 +1048,10 @@ ${recentTimeline || '（无）'}
 - 你可能会在历史里看到 <DIARY ...>：那是“用户转发的一篇日记”，作者信息在 author/authorId。
   - 如果 authorId/author 显示是“你自己”，说明这是你写的日记被用户转发回来，你要对此有反应（羞耻/炸毛/装死/嘴硬/否认/解释等按人设）。
   - 如果作者不是你，就当作别人写的日记来评价/吐槽/震惊/共情（按人设）。
-- 若要触发转账，必须使用上面的 [转账:金额:备注] 格式，且单独一行
-- 若要分享推文，单独一行写：[推文:内容]（内容<=140字）
-- 若要分享你的推特主页，单独一行写：[推特主页] 或 [X主页]
-- 若要分享你的位置，单独一行写：[位置:地点名称:详细地址:城市]
+- 【转账】只有当你真的想给用户转钱时，才能使用 [转账:金额:备注] 格式（单独一行）。严禁在聊天中提及/解释/演示这个格式，一旦你写出这个格式就会真的扣你的钱转给对方！
+- 【推文】只有当你真的想发推文时，才能使用 [推文:内容] 格式（单独一行，内容<=140字）。严禁在聊天中提及这个格式。
+- 【主页】只有当你真的想分享你的推特主页时，才能使用 [推特主页] 或 [X主页]（单独一行）。
+- 【位置】只有当你真的想分享位置时，才能使用 [位置:地点名称:详细地址:城市] 格式（单独一行）。
 - 【一起听歌】如果用户主动提出想一起听歌，你可以发送音乐邀请卡片，格式：[音乐:歌名:歌手]（单独一行），曲库：${musicPlaylist.slice(0, 10).map(s => s.title).join('、')}${musicPlaylist.length > 10 ? '...' : ''}；不要在无关对话主动提歌名。听歌邀请只通过“音乐卡片”流程处理（用户发卡片→点箭头→你决定→弹确认→进入一起听界面）。`
 
         systemPrompt += `
@@ -1992,6 +1992,68 @@ ${recentTimeline || '（无）'}
       }
     }
 
+    // 检查是否是位置格式：[位置:名称:地址:城市]
+    const locationMatch = inputText.trim().match(/[【\[]\s*位置\s*[:：]\s*([^:：\]】]+)\s*(?:[:：]\s*([^:：\]】]*))?\s*(?:[:：]\s*([^\]】]*))?\s*[】\]]/)
+    if (locationMatch) {
+      const name = (locationMatch[1] || '').trim()
+      if (name) {
+        const address = (locationMatch[2] || '').trim()
+        const city = (locationMatch[3] || '').trim()
+        
+        const locationMsg = addMessage({
+          characterId: character.id,
+          content: `[位置] ${name}`,
+          isUser: true,
+          type: 'location',
+          locationName: name,
+          locationAddress: address,
+          locationCity: city,
+          locationCountry: '',
+        })
+        messagesRef.current = [...messagesRef.current, locationMsg]
+        
+        setInputText('')
+        setPendingCount(prev => prev + 1)
+        return
+      }
+    }
+
+    // 检查是否是音乐格式：[音乐:歌名:歌手]
+    const musicMatch = inputText.trim().match(/[【\[]\s*音乐\s*[:：]\s*([^\]】]+)\s*[】\]]/)
+    if (musicMatch) {
+      const body = (musicMatch[1] || '').trim()
+      if (body) {
+        const parts = body.split(/[:：]/).map(s => s.trim()).filter(Boolean)
+        let title = '', artist = ''
+        if (parts.length >= 2) {
+          title = parts[0]
+          artist = parts.slice(1).join('：')
+        } else {
+          title = parts[0]
+          // 尝试从曲库匹配歌手
+          const found = musicPlaylist.find(s => s.title.toLowerCase().includes(title.toLowerCase()))
+          artist = found?.artist || ''
+        }
+        
+        if (title) {
+          const musicMsg = addMessage({
+            characterId: character.id,
+            content: `[音乐邀请] ${title}${artist ? ` - ${artist}` : ''}`,
+            isUser: true,
+            type: 'music',
+            musicTitle: title,
+            musicArtist: artist,
+            musicStatus: 'pending',
+          })
+          messagesRef.current = [...messagesRef.current, musicMsg]
+          
+          setInputText('')
+          setPendingCount(prev => prev + 1)
+          return
+        }
+      }
+    }
+
     // 获取引用消息内容
     const replyTo = replyingToMessageId ? (() => {
       const replyMsg = messages.find(m => m.id === replyingToMessageId)
@@ -2431,9 +2493,9 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
           const msgDelay = delay
           const trimmedLine = line.trim()
           
-          // 检查是否是转账消息
-          const transferMatch = trimmedLine.match(/\[转账:(\d+(?:\.\d+)?):(.+?)\]/)
-          const transferAltMatch = trimmedLine.match(/[【\[]\s*转账\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*([^】\]]+)\s*[】\]]/)
+          // 检查是否是转账消息（必须整行只有转账格式，防止AI在聊天中随便提到格式时误触发）
+          const transferMatch = trimmedLine.match(/^\[转账:(\d+(?:\.\d+)?):(.+?)\]$/)
+          const transferAltMatch = trimmedLine.match(/^[【\[]\s*转账\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*([^】\]]+)\s*[】\]]$/)
           if (transferMatch || transferAltMatch) {
             const m = transferMatch || transferAltMatch!
             const amount = parseFloat(m[1])
