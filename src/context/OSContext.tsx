@@ -402,15 +402,23 @@ export function OSProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<UserProfile>(STORAGE_KEYS.userProfile, defaultUserProfile),
       ])
 
-      // 音乐：版本控制
-      let nextPlaylist = [...DEFAULT_SONGS]
-      if (savedVersion !== CURRENT_MUSIC_VERSION) {
-        await kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
-        await kvSetJSON(MUSIC_STORAGE_KEY, DEFAULT_SONGS)
+      // 音乐：读取已保存的列表
+      // 注意：不再使用版本控制强制重置，避免覆盖用户导入的歌曲
+      let nextPlaylist = await kvGetJSONDeep<Song[]>(MUSIC_STORAGE_KEY, null as any)
+      console.log('[Music] Loaded from storage:', nextPlaylist?.length || 0, 'songs')
+      
+      // 如果没有任何歌曲，使用默认列表
+      if (!nextPlaylist || !Array.isArray(nextPlaylist) || nextPlaylist.length === 0) {
+        console.log('[Music] No saved songs, using defaults')
         nextPlaylist = [...DEFAULT_SONGS]
       } else {
-        nextPlaylist = await kvGetJSONDeep<Song[]>(MUSIC_STORAGE_KEY, [...DEFAULT_SONGS])
+        // 打印用户导入的歌曲（非默认）
+        const userSongs = nextPlaylist.filter(s => s.source === 'url' || s.source === 'data')
+        console.log('[Music] User imported songs:', userSongs.length, userSongs.map(s => s.title))
       }
+      
+      // 更新版本号（仅记录，不强制重置）
+      await kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
       // 合并 hydration 前新增歌曲（避免覆盖）
       try {
         const pending = pendingAddedSongsRef.current || []
@@ -666,34 +674,30 @@ export function OSProvider({ children }: PropsWithChildren) {
         audioUrl = encodeURI(song.url).replace(/#/g, '%23')
       }
       
-      console.log('Loading audio:', audioUrl.slice(0, 100) + (audioUrl.length > 100 ? '...' : ''))
-      audioRef.current.src = audioUrl
-      audioRef.current.load() // 强制加载
+      console.log('[Music] Loading audio:', audioUrl.slice(0, 100) + (audioUrl.length > 100 ? '...' : ''))
       
-      // 设置跨域属性（部分外部链接需要）
-      if (song.url.startsWith('http://') || song.url.startsWith('https://')) {
-        audioRef.current.crossOrigin = 'anonymous'
-      } else {
-        audioRef.current.crossOrigin = null
-      }
+      // 对于外部链接，先尝试不设置 crossOrigin（大多数 CDN 不支持 CORS）
+      // catbox.moe 等文件托管服务通常不设置 CORS 头
+      const isExternal = song.url.startsWith('http://') || song.url.startsWith('https://')
+      
+      // 重要：crossOrigin 必须在 src 之前设置
+      // 对于不支持 CORS 的外部链接，不设置 crossOrigin 反而能播放
+      audioRef.current.crossOrigin = null
+      audioRef.current.src = audioUrl
+      audioRef.current.load()
       
       // 尝试播放
       const playPromise = audioRef.current.play()
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            console.log('Music playing:', song.title)
+            console.log('[Music] Playing:', song.title)
           })
           .catch((error) => {
-            console.error('Music play failed:', error, 'URL:', audioUrl.slice(0, 100))
-            // 如果跨域失败，尝试不设置crossOrigin重试一次
-            if (song.url.startsWith('http') && audioRef.current) {
-              audioRef.current.crossOrigin = null
-              audioRef.current.src = audioUrl
-              audioRef.current.load()
-              audioRef.current.play().catch(() => {
-                // 最终失败，静默处理
-              })
+            console.error('[Music] Play failed:', error.message || error)
+            // 播放失败时给用户提示
+            if (isExternal) {
+              console.warn('[Music] External link may have CORS or format issues:', audioUrl.slice(0, 60))
             }
           })
       }
@@ -768,9 +772,16 @@ export function OSProvider({ children }: PropsWithChildren) {
     setMusicPlaylist(prev => {
       const next = [...prev, normalized]
       // 立即持久化，避免刷新丢失
-      if (isHydrated) {
-        void kvSetJSON(MUSIC_STORAGE_KEY, next)
-      }
+      // 无论是否 hydrated 都尝试保存（确保不丢失）
+      void (async () => {
+        try {
+          await kvSetJSON(MUSIC_STORAGE_KEY, next)
+          await kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
+          console.log('[Music] Saved playlist:', next.length, 'songs')
+        } catch (e) {
+          console.error('[Music] Failed to save:', e)
+        }
+      })()
       return next
     })
   }
