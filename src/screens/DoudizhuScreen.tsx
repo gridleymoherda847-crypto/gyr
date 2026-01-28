@@ -16,6 +16,26 @@ import { useWeChat } from '../context/WeChatContext'
 type GamePhase = 'idle' | 'matching' | 'selectBase' | 'bidding' | 'playing' | 'ended'
 type Player = 0 | 1 | 2
 
+// 检测是否需要旋转（竖屏手机需要旋转成横屏）
+const useNeedsRotation = () => {
+  const [needsRotation, setNeedsRotation] = useState(false)
+  
+  useEffect(() => {
+    const checkOrientation = () => {
+      // 只有当高度明显大于宽度时才旋转（竖屏手机）
+      // iPad 和电脑通常是横屏或接近正方形，不需要旋转
+      const isPortrait = window.innerHeight > window.innerWidth * 1.2
+      setNeedsRotation(isPortrait)
+    }
+    
+    checkOrientation()
+    window.addEventListener('resize', checkOrientation)
+    return () => window.removeEventListener('resize', checkOrientation)
+  }, [])
+  
+  return needsRotation
+}
+
 // 默认玩家名称（单机模式）
 // const DEFAULT_PLAYER_NAMES = ['我', '电脑A', '电脑B']
 const DOUDIZHU_STORAGE_KEY = 'doudizhu_stats'
@@ -371,6 +391,7 @@ export default function DoudizhuScreen() {
   const navigate = useNavigate()
   const location = useLocation()
   const { userPersonas, walletBalance, updateWalletBalance, addWalletBill, characters, addMessage } = useWeChat()
+  const needsRotation = useNeedsRotation()
   
   const defaultPersona = userPersonas[0]
   const myAvatarUrl = defaultPersona?.avatar || ''
@@ -1242,21 +1263,32 @@ export default function DoudizhuScreen() {
   const isInGame = phase === 'bidding' || phase === 'playing'
   const currentMultiplier = Math.pow(2, bombCount)
 
-  return (
-    <div 
-      className="flex flex-col h-full overflow-hidden relative"
-      style={{ 
+  // 根据屏幕方向决定布局样式
+  const containerStyle = needsRotation
+    ? {
+        // 竖屏手机：旋转90度变成横屏
         transform: 'rotate(90deg)',
         transformOrigin: 'center center',
         width: '100vh',
         height: '100vw',
-        position: 'absolute',
+        position: 'absolute' as const,
         top: '50%',
         left: '50%',
         marginTop: '-50vw',
         marginLeft: '-50vh',
         background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4c1d95 70%, #581c87 100%)'
-      }}
+      }
+    : {
+        // 横屏设备（iPad/电脑）：正常横向布局
+        width: '100%',
+        height: '100%',
+        background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4c1d95 70%, #581c87 100%)'
+      }
+
+  return (
+    <div 
+      className="flex flex-col h-full overflow-hidden relative"
+      style={containerStyle}
     >
       {/* 装饰背景 */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
