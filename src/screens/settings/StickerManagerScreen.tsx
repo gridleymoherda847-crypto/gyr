@@ -104,6 +104,8 @@ export default function StickerManagerScreen() {
   const pendingImportCategoryRef = useRef<string>('')
   const [quickImportCategory, setQuickImportCategory] = useState('')
   const [showQuickImportModal, setShowQuickImportModal] = useState(false)
+  const [urlImportInput, setUrlImportInput] = useState('')
+  const [urlImportLoading, setUrlImportLoading] = useState(false)
 
   const categories = useMemo(() => {
     const names = stickerCategories.map(c => c.name)
@@ -160,6 +162,59 @@ export default function StickerManagerScreen() {
     a.download = filename
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // 批量从多个URL导入
+  const importMultipleUrls = async (urls: string, categoryName: string) => {
+    const lines = urls.split(/[\n,]/).map(s => s.trim()).filter(s => s.startsWith('http'))
+    if (lines.length === 0) {
+      setToast('未找到有效的图片链接')
+      window.setTimeout(() => setToast(null), 2000)
+      return
+    }
+    
+    setUrlImportLoading(true)
+    const cat = safeName(categoryName) || '链接导入'
+    
+    // 确保分类存在
+    if (!stickerCategories.some(c => c.name === cat)) {
+      addStickerCategory(cat)
+    }
+    
+    const targetId = targetCharacterId
+    let count = 0
+    
+    for (const url of lines.slice(0, 100)) { // 限制最多100张
+      let keyword = '表情'
+      try {
+        const urlObj = new URL(url)
+        const pathname = urlObj.pathname
+        const filename = pathname.split('/').pop() || ''
+        const nameWithoutExt = filename.replace(/\.[^/.]+$/, '')
+        if (nameWithoutExt) keyword = safeName(nameWithoutExt) || '表情'
+      } catch {
+        // ignore
+      }
+      
+      addSticker({
+        characterId: targetId,
+        keyword,
+        imageUrl: url,
+        category: cat,
+      })
+      count++
+    }
+    
+    setUrlImportLoading(false)
+    setUrlImportInput('')
+    setShowQuickImportModal(false)
+    
+    if (count > 0) {
+      setToast(`已导入 ${count} 张到「${cat}」`)
+      setPostImportGuideCategory(cat)
+      setPostImportGuideOpen(true)
+    }
+    window.setTimeout(() => setToast(null), 2200)
   }
 
   const importPack = async (raw: string, forcedCategory?: string) => {
@@ -596,28 +651,20 @@ export default function StickerManagerScreen() {
 
         {/* 快速导入弹窗 */}
         {showQuickImportModal && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-4">
             <div className="absolute inset-0 bg-black/35" onClick={() => setShowQuickImportModal(false)} role="presentation" />
-            <div className="relative w-full max-w-[340px] rounded-[22px] border border-white/35 bg-white/90 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+            <div className="relative w-full max-w-[360px] max-h-[90vh] overflow-y-auto rounded-[22px] border border-white/35 bg-white/95 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl">
               <div className="text-[15px] font-semibold text-[#111] text-center">批量导入表情包</div>
-              <div className="mt-3 text-[12px] text-gray-600">
-                <div className="p-3 bg-purple-50 rounded-xl space-y-1.5">
-                  <div className="font-medium text-purple-700">支持的文件格式：</div>
-                  <div className="text-purple-600">• 图片文件（PNG、JPG、GIF、WebP）</div>
-                  <div className="text-purple-600">• JSON 文件（表情包数据）</div>
-                  <div className="text-[11px] text-purple-500 mt-2">可以一次选择多个文件，图片和 JSON 混合都行</div>
-                </div>
-              </div>
+              
+              {/* 导入到分类 */}
               <div className="mt-3">
-                <div className="text-[12px] text-gray-600 mb-1.5">导入到分类：</div>
-                <div className="flex gap-2">
-                  <input
-                    value={quickImportCategory}
-                    onChange={(e) => setQuickImportCategory(e.target.value)}
-                    placeholder="输入分类名（如：沙雕表情）"
-                    className="flex-1 px-3 py-2 rounded-xl bg-white/80 border border-black/10 outline-none text-sm text-[#111]"
-                  />
-                </div>
+                <div className="text-[12px] text-gray-600 mb-1.5 font-medium">导入到分类：</div>
+                <input
+                  value={quickImportCategory}
+                  onChange={(e) => setQuickImportCategory(e.target.value)}
+                  placeholder="输入分类名（如：沙雕表情）"
+                  className="w-full px-3 py-2 rounded-xl bg-white/80 border border-black/10 outline-none text-sm text-[#111]"
+                />
                 {categories.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {categories.slice(0, 6).map(cat => (
@@ -637,34 +684,69 @@ export default function StickerManagerScreen() {
                   </div>
                 )}
               </div>
-              <div className="mt-4 flex gap-2">
+              
+              {/* 方式一：链接导入 */}
+              <div className="mt-4 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-100">
+                <div className="text-[12px] font-semibold text-blue-700 mb-2">方式一：粘贴图片链接</div>
+                <textarea
+                  value={urlImportInput}
+                  onChange={(e) => setUrlImportInput(e.target.value)}
+                  placeholder="粘贴图片URL，每行一个或用逗号分隔&#10;例如：&#10;https://example.com/sticker1.png&#10;https://example.com/sticker2.gif"
+                  className="w-full h-20 px-3 py-2 rounded-lg bg-white/90 border border-blue-200 outline-none text-[11px] text-[#111] resize-none placeholder:text-gray-400"
+                />
                 <button
                   type="button"
-                  onClick={() => setShowQuickImportModal(false)}
-                  className="flex-1 rounded-full border border-black/10 bg-white/70 px-4 py-2.5 text-[13px] font-medium text-[#333]"
+                  disabled={!urlImportInput.trim() || urlImportLoading || !quickImportCategory.trim()}
+                  onClick={() => importMultipleUrls(urlImportInput, quickImportCategory)}
+                  className="mt-2 w-full py-2 rounded-full text-[12px] font-semibold text-white disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)' }}
                 >
-                  取消
+                  {urlImportLoading ? '导入中...' : '从链接导入'}
                 </button>
+                <div className="text-[10px] text-blue-500 mt-1.5">支持 PNG、JPG、GIF、WebP 等图片链接</div>
+              </div>
+              
+              {/* 分隔线 */}
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-[11px] text-gray-400">或</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+              
+              {/* 方式二：文件导入 */}
+              <div className="p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-100">
+                <div className="text-[12px] font-semibold text-purple-700 mb-2">方式二：选择文件</div>
+                <div className="text-[11px] text-purple-600 space-y-1">
+                  <div>• 图片文件（PNG、JPG、GIF、WebP）</div>
+                  <div>• JSON 文件（表情包数据）</div>
+                </div>
                 <button
                   type="button"
+                  disabled={!quickImportCategory.trim()}
                   onClick={() => quickImportRef.current?.click()}
-                  className="flex-1 rounded-full px-4 py-2.5 text-[13px] font-semibold text-white"
+                  className="mt-2 w-full py-2 rounded-full text-[12px] font-semibold text-white disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)' }}
                 >
-                  选择文件
+                  选择文件导入
                 </button>
               </div>
               
+              {/* 取消按钮 */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQuickImportModal(false)
+                  setUrlImportInput('')
+                }}
+                className="mt-4 w-full py-2.5 rounded-full border border-black/10 bg-white/70 text-[13px] font-medium text-[#333]"
+              >
+                取消
+              </button>
+              
               {/* JSON 格式说明 */}
-              <div className="mt-4 p-3 bg-gray-50 rounded-xl">
-                <div className="text-[11px] font-medium text-gray-700 mb-1">JSON 格式说明：</div>
-                <div className="text-[10px] text-gray-500 font-mono whitespace-pre-wrap">{`{
-  "categoryName": "分类名",
-  "stickers": [
-    { "keyword": "关键词", "imageUrl": "图片base64或URL" }
-  ]
-}`}</div>
-                <div className="text-[10px] text-gray-400 mt-1">* 也支持 images/data 字段名，以及 url/image 等</div>
+              <div className="mt-3 p-2.5 bg-gray-50 rounded-xl">
+                <div className="text-[10px] font-medium text-gray-600 mb-1">JSON 格式参考：</div>
+                <div className="text-[9px] text-gray-400 font-mono">{`{ "stickers": [{ "keyword": "名称", "imageUrl": "链接" }] }`}</div>
               </div>
             </div>
           </div>

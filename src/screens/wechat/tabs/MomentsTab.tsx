@@ -23,6 +23,7 @@ export default function MomentsTab({ onBack }: Props) {
   const [refreshWarnOpen, setRefreshWarnOpen] = useState(false)
   const [commentDraftByMoment, setCommentDraftByMoment] = useState<Record<string, string>>({})
   const [replyTarget, setReplyTarget] = useState<{ momentId: string; commentId: string; authorId: string; authorName: string } | null>(null)
+  const [replyInputText, setReplyInputText] = useState('')
   const [coverShrink, setCoverShrink] = useState(0)
   const [translatedMoments, setTranslatedMoments] = useState<Set<string>>(new Set()) // 已切换到中文的朋友圈
 
@@ -74,27 +75,53 @@ export default function MomentsTab({ onBack }: Props) {
     }
     setRefreshing(true)
     try {
-      const friend = characters[Math.floor(Math.random() * characters.length)]
+      // 根据聊天频率计算每个好友的权重（聊天越多权重越高）
+      const now = Date.now()
+      const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000
+      
+      const friendWeights = characters.map(c => {
+        const msgs = getMessagesByCharacter(c.id)
+        // 只计算最近一周的消息
+        const recentMsgs = msgs.filter(m => m.timestamp > oneWeekAgo)
+        // 基础权重 + 消息数量权重（每条消息+0.5权重，最多+50）
+        const weight = 1 + Math.min(50, recentMsgs.length * 0.5)
+        return { character: c, weight }
+      })
+      
+      // 按权重随机选择好友
+      const totalWeight = friendWeights.reduce((sum, fw) => sum + fw.weight, 0)
+      let random = Math.random() * totalWeight
+      let selectedFriend = friendWeights[0].character
+      for (const fw of friendWeights) {
+        random -= fw.weight
+        if (random <= 0) {
+          selectedFriend = fw.character
+          break
+        }
+      }
+      
+      const friend = selectedFriend
       const anyPosts = moments
-      const willComment = anyPosts.length > 0 && Math.random() < 0.8
+      
+      // 降低评论概率，提高发新朋友圈的概率（40%评论，60%发朋友圈）
+      // 如果用户没有发过朋友圈，则100%发新朋友圈
+      const userPosts = anyPosts.filter(p => p.authorId === 'user')
+      const willComment = userPosts.length > 0 && Math.random() < 0.4
+      
       const globalPresets = getGlobalPresets()
       const recentChat = getMessagesByCharacter(friend.id).slice(-8).map(m => `${m.isUser ? '我' : friend.name}：${m.content}`).join('\n')
-      const now = Date.now()
       const randomPastMs = (minMin: number, maxMin: number) => {
         const min = minMin * 60 * 1000
         const max = maxMin * 60 * 1000
         return now - (min + Math.random() * (max - min))
       }
 
-      if (willComment) {
-        // AI角色只能评论用户发的朋友圈，不能互相评论其他AI的帖子
-        const postsToComment = anyPosts.filter(p => p.authorId === 'user')
-        if (postsToComment.length === 0) {
-          // 没有用户发的帖子可评论，改为发动态
-          setRefreshing(false)
-          setRefreshWarnOpen(false)
-          return
-        }
+      // 决定是评论还是发新朋友圈
+      const postsToComment = anyPosts.filter(p => p.authorId === 'user')
+      const shouldComment = willComment && postsToComment.length > 0
+      
+      if (shouldComment) {
+        // AI角色评论用户发的朋友圈
         const target = postsToComment[Math.floor(Math.random() * postsToComment.length)]
         // 有概率回复用户的评论（楼中楼），只回复用户的评论
         const userComments = target.comments.filter(c => c.authorId === 'user')
@@ -149,6 +176,7 @@ ${replyTo ? `【你要回复的评论】\n@${replyTo.authorName}：${replyTo.con
           timestamp: randomPastMs(1, 30), // 评论时间改为1~30分钟内，更合理
         })
       } else {
+        // 发新朋友圈（没有可评论的帖子时也发新朋友圈）
         // 获取最近聊天的时间，用于生成合理的发帖时间
         const recentMessages = getMessagesByCharacter(friend.id).slice(-10)
         const lastMsgTime = recentMessages.length > 0 ? recentMessages[recentMessages.length - 1].timestamp : now
@@ -758,46 +786,106 @@ ${params.userText}
         }}
       />
 
-      {/* 回复评论弹窗 */}
-      <WeChatDialog
-        open={!!replyTarget}
-        title="回复评论"
-        message={replyTarget ? `回复 @${replyTarget.authorName}` : ''}
-        confirmText="发送"
-        cancelText="取消"
-        onCancel={() => setReplyTarget(null)}
-        onConfirm={() => {
-          if (!replyTarget) return
-          const text = (commentDraftByMoment[replyTarget.momentId] || '').trim()
-          if (!text) {
-            setReplyTarget(null)
-            return
-          }
-          const newC = addMomentComment(replyTarget.momentId, {
-            authorId: 'user',
-            authorName: displayNameById['user'] || '我',
-            content: text,
-            replyToCommentId: replyTarget.commentId,
-            replyToAuthorName: replyTarget.authorName,
-          })
-          setCommentDraftByMoment(prev => ({ ...prev, [replyTarget.momentId]: '' }))
-          setReplyTarget(null)
-
-          // 让被回复的人（如果是好友）有概率再回我一句（楼中楼）
-          const friend = characters.find(c => c.id === replyTarget.authorId)
-          if (friend) {
-            maybeAutoReplyToUserComment({
-              momentId: replyTarget.momentId,
-              friendId: friend.id,
-              friendName: friend.name,
-              friendPrompt: friend.prompt,
-              userText: text,
-              replyToCommentId: newC.id,
-              replyToAuthorName: displayNameById['user'] || '我',
-            })
-          }
-        }}
-      />
+      {/* 回复评论弹窗 - 带输入框 */}
+      {replyTarget && (
+        <div className="absolute inset-0 z-50 flex items-end justify-center">
+          <div 
+            className="absolute inset-0 bg-black/40" 
+            onClick={() => {
+              setReplyTarget(null)
+              setReplyInputText('')
+            }} 
+            role="presentation" 
+          />
+          <div className="relative w-full bg-white rounded-t-2xl p-4 animate-slide-up">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-gray-700">
+                回复 <span className="text-[#576B95]">@{replyTarget.authorName}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setReplyTarget(null)
+                  setReplyInputText('')
+                }}
+                className="text-gray-400 text-sm"
+              >
+                取消
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                value={replyInputText}
+                onChange={(e) => setReplyInputText(e.target.value)}
+                placeholder={`回复 ${replyTarget.authorName}...`}
+                autoFocus
+                className="flex-1 px-4 py-2.5 rounded-full bg-gray-100 text-[#000] text-sm outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && replyInputText.trim()) {
+                    e.preventDefault()
+                    const text = replyInputText.trim()
+                    const newC = addMomentComment(replyTarget.momentId, {
+                      authorId: 'user',
+                      authorName: displayNameById['user'] || '我',
+                      content: text,
+                      replyToCommentId: replyTarget.commentId,
+                      replyToAuthorName: replyTarget.authorName,
+                    })
+                    // 让被回复的人（如果是好友）有概率再回我一句（楼中楼）
+                    const friend = characters.find(c => c.id === replyTarget.authorId)
+                    if (friend) {
+                      maybeAutoReplyToUserComment({
+                        momentId: replyTarget.momentId,
+                        friendId: friend.id,
+                        friendName: friend.name,
+                        friendPrompt: friend.prompt,
+                        userText: text,
+                        replyToCommentId: newC.id,
+                        replyToAuthorName: displayNameById['user'] || '我',
+                      })
+                    }
+                    setReplyTarget(null)
+                    setReplyInputText('')
+                  }
+                }}
+              />
+              <button
+                type="button"
+                disabled={!replyInputText.trim()}
+                onClick={() => {
+                  const text = replyInputText.trim()
+                  if (!text) return
+                  const newC = addMomentComment(replyTarget.momentId, {
+                    authorId: 'user',
+                    authorName: displayNameById['user'] || '我',
+                    content: text,
+                    replyToCommentId: replyTarget.commentId,
+                    replyToAuthorName: replyTarget.authorName,
+                  })
+                  // 让被回复的人（如果是好友）有概率再回我一句（楼中楼）
+                  const friend = characters.find(c => c.id === replyTarget.authorId)
+                  if (friend) {
+                    maybeAutoReplyToUserComment({
+                      momentId: replyTarget.momentId,
+                      friendId: friend.id,
+                      friendName: friend.name,
+                      friendPrompt: friend.prompt,
+                      userText: text,
+                      replyToCommentId: newC.id,
+                      replyToAuthorName: displayNameById['user'] || '我',
+                    })
+                  }
+                  setReplyTarget(null)
+                  setReplyInputText('')
+                }}
+                className="px-4 py-2.5 rounded-full bg-[#07C160] text-white text-sm font-medium disabled:opacity-50"
+              >
+                发送
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

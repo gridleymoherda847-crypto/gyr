@@ -853,9 +853,12 @@ export default function ChatSettingsScreen() {
                   className="flex items-center justify-between px-4 py-3 cursor-pointer active:bg-gray-50"
                   onClick={() => setOfflineSettingsExpanded(!offlineSettingsExpanded)}
                 >
-                  <span className="text-sm text-gray-600">线下模式设置</span>
+                  <div className="flex flex-col">
+                    <span className="text-[#000]">线下模式设置</span>
+                    <span className="text-xs text-gray-400 mt-0.5">可调整字体颜色和输出字数</span>
+                  </div>
                   <svg 
-                    className={`w-4 h-4 text-gray-400 transition-transform ${offlineSettingsExpanded ? 'rotate-90' : ''}`} 
+                    className={`w-5 h-5 text-gray-400 transition-transform ${offlineSettingsExpanded ? 'rotate-90' : ''}`} 
                     fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -866,7 +869,7 @@ export default function ChatSettingsScreen() {
                   <div className="px-4 pb-4 space-y-4">
                     {/* 字体颜色设置 */}
                     <div className="space-y-3">
-                      <div className="text-xs text-gray-500 font-medium">字体颜色</div>
+                      <div className="text-sm text-gray-700 font-medium">字体颜色</div>
                       
                       {/* 用户字体颜色 */}
                       <div className="flex items-center justify-between">
@@ -1010,7 +1013,7 @@ export default function ChatSettingsScreen() {
                     
                     {/* 预览效果 */}
                     <div className="space-y-2 pt-2 border-t border-gray-100">
-                      <div className="text-xs text-gray-500 font-medium">预览效果</div>
+                      <div className="text-sm text-gray-700 font-medium">预览效果</div>
                       <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
                         <div className="text-sm text-right italic" style={{ color: offlineUserColorDraft }}>
                           我轻轻靠近，<span className="font-medium" style={{ color: offlineDialogColorDraft }}>"你在想什么？"</span>
@@ -1018,6 +1021,9 @@ export default function ChatSettingsScreen() {
                         <div className="text-sm" style={{ color: offlineCharColorDraft }}>
                           TA抬起头，眼中闪过一丝温柔，<span className="font-medium" style={{ color: offlineDialogColorDraft }}>"在想你呀。"</span>
                         </div>
+                      </div>
+                      <div className="text-[11px] text-green-600 bg-green-50 rounded-lg px-3 py-2 mt-2">
+                        ✓ 颜色和字数设置已自动保存，返回聊天后所有历史消息都会应用新颜色
                       </div>
                     </div>
                   </div>
