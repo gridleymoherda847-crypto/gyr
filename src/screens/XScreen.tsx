@@ -23,6 +23,21 @@ import {
   type XReply,
 } from '../storage/x'
 
+// 防抖保存：避免快速连续写入导致数据竞态
+let xSaveTimer: ReturnType<typeof setTimeout> | null = null
+let xSavePending: XDataV1 | null = null
+const xSaveDebounced = (data: XDataV1) => {
+  xSavePending = data
+  if (xSaveTimer) clearTimeout(xSaveTimer)
+  xSaveTimer = setTimeout(() => {
+    if (xSavePending) {
+      void xSave(xSavePending)
+      xSavePending = null
+    }
+    xSaveTimer = null
+  }, 300)
+}
+
 type MainTab = 'home' | 'search' | 'notifications' | 'messages'
 type View = 'main' | 'post' | 'profile' | 'dm'
 
@@ -998,7 +1013,7 @@ export default function XScreen() {
             })
           }
           const next: XDataV1 = { ...prev, dms: threads }
-          void xSave(next)
+          xSaveDebounced(next) // 使用防抖保存，避免快速连续写入导致数据丢失
           return next
         })
 

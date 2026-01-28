@@ -4692,7 +4692,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         <div
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto px-3 py-4"
-          style={{ WebkitOverflowScrolling: 'touch' }}
+          style={{ contain: 'content', willChange: 'transform', WebkitOverflowScrolling: 'touch' }}
           onScroll={() => {
             const el = messagesContainerRef.current
             if (!el) return
