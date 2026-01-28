@@ -679,6 +679,45 @@ export default function XScreen() {
         .filter(Boolean) as string[]
       const uniqueRepliedTo = [...new Set(repliedToNames)]
       
+      // 获取已有的评论（用于让好友回应）
+      const existingReplies = (data.replies || [])
+        .filter((r) => r.postId === openPost.id && r.authorId !== 'me')
+        .slice(-10)
+      const existingContext = existingReplies.length > 0
+        ? `\n已有的其他评论：\n${existingReplies.map(r => `- ${r.authorName}："${r.text.replace(/\s+/g, ' ').slice(0, 80)}"`).join('\n')}\n`
+        : ''
+      
+      // 判断是否是用户自己的帖子（好友会来护驾）
+      const isMyPost = openPost.authorId === 'me'
+      
+      // 如果是用户的帖子，让 chat 好友参与互动
+      let friendSection = ''
+      let friendsToInclude: typeof characters = []
+      if (isMyPost && characters && characters.length > 0) {
+        // 随机选 1~2 个好友参与评论区互动
+        const pool = characters.slice(0, 30)
+        const count = Math.min(2, Math.max(1, Math.random() < 0.6 ? 1 : 2), pool.length)
+        friendsToInclude = [...pool].sort(() => Math.random() - 0.5).slice(0, count)
+        
+        if (friendsToInclude.length > 0) {
+          const chatFriendList = friendsToInclude
+            .map((c) => `- characterId:${c.id}\n  名字:${c.name}\n  人设:${(c.prompt || '').replace(/\s+/g, ' ').slice(0, 100) || '（无）'}`)
+            .join('\n')
+          friendSection = `
+【Chat好友参与】
+以下是用户的 Chat 好友，他们也会在评论区互动：
+${chatFriendList}
+
+好友互动规则：
+- 好友可以回复用户的评论，支持/附和用户
+- 如果评论区有人攻击/阴阳/骂用户，好友必须帮用户怼回去！
+- 好友可以和其他评论者互动（对线/玩梗/补充）
+- 好友评论要符合他们的人设性格
+- 好友评论放在 friendReplies 数组中，格式：{ "characterId": "...", "text": "..." }
+`
+        }
+      }
+      
       const want = 8 + Math.floor(Math.random() * 13) // 8~20
       const replyToSection = uniqueRepliedTo.length > 0 
         ? `\n【重要】用户回复了这些人：${uniqueRepliedTo.join('、')}\n` +
@@ -689,12 +728,14 @@ export default function XScreen() {
         sysPrefix() +
         `【X（推特风格）/评论区生成】\n` +
         `你要生成一些评论，像推特评论区那样。\n` +
-        `主贴作者：${openPost.authorName}\n` +
+        `主贴作者：${openPost.authorName}${isMyPost ? '（这是用户自己的帖子）' : ''}\n` +
         `主贴内容：${openPost.text}\n` +
+        existingContext +
         `用户（我）的最近评论：\n${myRecent || '（无）'}\n` +
         replyToSection +
+        friendSection +
         `\n要求：\n` +
-        `- 生成 ${want} 条评论\n` +
+        `- 生成 ${want} 条路人评论\n` +
         `- 如果用户发过评论：本次新评论中，必须有 20%~40% 是“在和用户评论互动”的（回复/引用/阴阳/支持/反驳都行）\n` +
         `- 其余可以是路人互相对线/玩梗/补充信息\n` +
         `- 长度分布：至少 2 条超短（比如“？”“笑死”“懂了”）\n` +
@@ -705,13 +746,17 @@ export default function XScreen() {
         `\n` +
         `JSON 格式：\n` +
         `{\n` +
-        `  "replies": [ { "authorName": "名字", "text": "评论" } ]\n` +
-        `}\n`
-      const parsed = await callJson(sys, '现在生成 replies。', 700)
+        `  "replies": [ { "authorName": "名字", "text": "评论" } ]` +
+        (friendsToInclude.length > 0 ? `,\n  "friendReplies": [ { "characterId": "...", "text": "评论" } ]` : '') +
+        `\n}\n`
+      const parsed = await callJson(sys, '现在生成 replies。', 900)
       const raw = Array.isArray((parsed as any).replies) ? (parsed as any).replies : []
+      const friendRaw = Array.isArray((parsed as any).friendReplies) ? (parsed as any).friendReplies : []
 
       let next = data
       const newReplies: XReply[] = []
+      
+      // 处理路人评论
       for (const r of raw.slice(0, want)) {
         const authorName = String(r?.authorName || '').trim()
         const text = String(r?.text || '').trim()
@@ -720,6 +765,27 @@ export default function XScreen() {
           const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
           next = d2
           return { id: userId, name: (authorName || 'User').trim() || 'User' }
+        })()
+        newReplies.push(xNewReply(openPost.id, ensured.id, ensured.name, text))
+      }
+      
+      // 处理 Chat 好友评论
+      for (const fr of friendRaw.slice(0, friendsToInclude.length)) {
+        const cid = String(fr?.characterId || '').trim()
+        const text = String(fr?.text || '').trim()
+        if (!cid || !text) continue
+        const c = friendsToInclude.find((x) => x.id === cid) || characters?.find((x) => x.id === cid)
+        if (!c) continue
+        const identity = getCharacterIdentity(c, true)
+        const ensured = (() => {
+          const { data: d2, userId } = xEnsureUser(next, {
+            id: c.id,
+            name: c.name,
+            handle: identity.handle,
+            avatarUrl: c.avatar || undefined,
+          })
+          next = d2
+          return { id: userId, name: c.name }
         })()
         newReplies.push(xNewReply(openPost.id, ensured.id, ensured.name, text))
       }
@@ -758,21 +824,45 @@ export default function XScreen() {
     void (async () => {
       try {
         if (!characters || characters.length === 0) return
-        // 选 1~3 个好友（最多 3 个，避免太费 API）
-        const pool = characters.slice(0, 60)
-        const count = Math.min(3, Math.max(1, Math.random() < 0.7 ? 1 : Math.random() < 0.9 ? 2 : 3), pool.length)
-        const picked = [...pool].sort(() => Math.random() - 0.5).slice(0, count)
+        // 解析帖子中艾特的好友（@xxx 或 @"xxx"）
+        const atMatches = text.match(/@["""]?([^@\s"""\n]+)["""]?/g) || []
+        const mentionedNames = atMatches.map(m => m.replace(/^@["""]?|["""]?$/g, '').trim()).filter(Boolean)
+        
+        // 找到被艾特的 chat 好友
+        const mentionedFriends = mentionedNames
+          .map(name => characters.find(c => 
+            c.name === name || 
+            c.name.toLowerCase() === name.toLowerCase() ||
+            c.name.includes(name) ||
+            name.includes(c.name)
+          ))
+          .filter(Boolean) as typeof characters
+        
+        // 选好友：被艾特的必须来 + 随机补充 1~2 个
+        const pool = characters.slice(0, 60).filter(c => !mentionedFriends.some(m => m.id === c.id))
+        const randomCount = Math.min(2, Math.max(0, Math.random() < 0.5 ? 1 : 2), pool.length)
+        const randomPicked = [...pool].sort(() => Math.random() - 0.5).slice(0, randomCount)
+        const picked = [...mentionedFriends, ...randomPicked]
+        
         if (picked.length === 0) return
 
         const friendList = picked
-          .map((c) => `- id:${c.id}\n  名字:${c.name}\n  人设:${(c.prompt || '').replace(/\s+/g, ' ').slice(0, 140) || '（未设置）'}`)
+          .map((c) => {
+            const isMentioned = mentionedFriends.some(m => m.id === c.id)
+            return `- id:${c.id}\n  名字:${c.name}\n  人设:${(c.prompt || '').replace(/\s+/g, ' ').slice(0, 140) || '（未设置）'}${isMentioned ? '\n  【被艾特】用户在帖子里艾特了TA，必须回应！' : ''}`
+          })
           .join('\n')
+        
+        const mentionHint = mentionedFriends.length > 0 
+          ? `\n【重要】用户在帖子里艾特了：${mentionedFriends.map(c => c.name).join('、')}\n被艾特的好友必须评论，而且要表现出"被cue到"的感觉（比如"？叫我干嘛""看到艾特了""来了来了"之类）\n`
+          : ''
 
         const sys =
           sysPrefix() +
           `【X（推特风格）/好友评论】\n` +
           `用户（我）刚发布了一条推文。\n` +
           `推文内容：${text}\n` +
+          mentionHint +
           `\n` +
           `现在你要让以下“Chat 好友”分别评论这条推文，每人 1 条：\n` +
           `${friendList}\n` +
@@ -786,7 +876,7 @@ export default function XScreen() {
           `- 只输出 JSON，不要解释\n` +
           `JSON：{ "comments": [ { "characterId": "...", "text": "..." } ] }\n`
 
-        const parsed = await callJson(sys, '现在生成 comments。', 260)
+        const parsed = await callJson(sys, '现在生成 comments。', 360)
         const raw = Array.isArray((parsed as any)?.comments) ? (parsed as any).comments : []
         if (raw.length === 0) return
 
@@ -2964,7 +3054,7 @@ export default function XScreen() {
               placeholder="你在想什么？"
               className="w-full min-h-[130px] resize-none px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none"
             />
-            <div className="text-[11px] text-gray-500">发完后想看新互动：点“刷新”。</div>
+            <div className="text-[11px] text-gray-500">@好友 艾特好友来评论，刷新时好友会帮你互动：点“刷新”。</div>
           </div>
         </WeChatDialog>
 
