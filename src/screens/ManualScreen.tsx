@@ -102,6 +102,14 @@ export default function ManualScreen() {
     return localStorage.getItem('mina_disclaimer_agreed') !== 'true'
   })
   
+  // 新手引导相关状态
+  const [showNewUserGuide, setShowNewUserGuide] = useState(false)
+  const [showVeteranMessage, setShowVeteranMessage] = useState(false)
+  const [showTutorialLink, setShowTutorialLink] = useState(false)
+  
+  // 新手教程文档链接
+  const tutorialDocUrl = 'https://ucn6kusdy9lu.feishu.cn/wiki/BCdbw0VipiOIWYkll5vcDtX7nYf?from=from_copylink'
+  
   // 问答搜索相关状态
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearchConfirm, setShowSearchConfirm] = useState(false)
@@ -113,6 +121,30 @@ export default function ManualScreen() {
   const handleAgreeDisclaimer = () => {
     localStorage.setItem('mina_disclaimer_agreed', 'true')
     setShowDisclaimer(false)
+    // 检查是否需要显示新手引导（首次使用）
+    if (localStorage.getItem('mina_tutorial_completed') !== 'true') {
+      setShowNewUserGuide(true)
+    }
+  }
+  
+  // 选择新玩家 - 显示教程文档链接
+  const handleNewPlayer = () => {
+    setShowNewUserGuide(false)
+    localStorage.setItem('mina_tutorial_completed', 'true')
+    setShowTutorialLink(true)
+  }
+  
+  // 选择老玩家
+  const handleVeteranPlayer = () => {
+    setShowNewUserGuide(false)
+    localStorage.setItem('mina_tutorial_completed', 'true')
+    setShowVeteranMessage(true)
+  }
+  
+  // 复制链接
+  const copyTutorialLink = () => {
+    navigator.clipboard.writeText(tutorialDocUrl)
+    alert('链接已复制！')
   }
   
   // 执行问答搜索
@@ -154,6 +186,45 @@ ${MANUAL_TEXT}
   // 手册章节
   const sections: Section[] = [
     {
+      id: 'author',
+      title: '作者信息与版权',
+      icon: '👩‍💻',
+      content: (
+        <div className="space-y-4">
+          <div className="p-4 bg-gradient-to-r from-pink-100 to-rose-100 rounded-2xl border-2 border-pink-300">
+            <h4 className="font-bold text-pink-700 mb-3 text-center text-lg">📱 作者唯一媒体账号</h4>
+            <p className="text-center text-pink-800 font-bold text-xl mb-2">小红书 @米莉亚</p>
+          </div>
+          
+          <div className="p-4 bg-red-50 rounded-2xl border border-red-200">
+            <h4 className="font-bold text-red-700 mb-3">🚫 版权声明</h4>
+            <div className="space-y-2 text-sm text-red-700">
+              <p>• <strong>禁止二传二贩！</strong></p>
+              <p>• 遇到盗版贩子请不要购买！</p>
+              <p>• 找二贩子买的，作者不负责任何售后</p>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-200">
+            <h4 className="font-bold text-blue-700 mb-3">🐛 售后说明</h4>
+            <div className="space-y-2 text-sm text-blue-700">
+              <p>• 遇到 Bug 请在<strong>售后群</strong>或<strong>小红书</strong>联系作者</p>
+              <p>• 包售后 Bug</p>
+              <p>• 更新新内容随缘，欢迎许愿和反馈</p>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-green-50 rounded-2xl border border-green-200">
+            <h4 className="font-bold text-green-700 mb-3">💰 退款政策</h4>
+            <div className="space-y-2 text-sm text-green-700">
+              <p>• 对小手机不满意，<strong>3 天内可无条件退款</strong></p>
+              <p>• 在小手机可以正常使用的情况下，<strong>售出 3 天后不予退换</strong></p>
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
       id: 'faq',
       title: '常见问题汇总',
       icon: '❓',
@@ -166,6 +237,26 @@ ${MANUAL_TEXT}
               <br />路径：设置 → 导出数据
               <br />小手机没有云端数据库，数据存在浏览器本地，清除浏览器数据会导致全部丢失！
             </p>
+          </div>
+          
+          {/* 新手基础教程链接 */}
+          <div className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-2xl border border-blue-200">
+            <h4 className="font-bold text-blue-700 mb-2">📚 新手基础教程链接</h4>
+            <p className="text-sm text-blue-600 mb-3">复制链接到浏览器打开，查看详细的新手教程文档</p>
+            <div className="p-2 bg-white/60 rounded-xl mb-3">
+              <p className="text-xs text-gray-600 break-all select-all">
+                https://ucn6kusdy9lu.feishu.cn/wiki/BCdbw0VipiOIWYkll5vcDtX7nYf?from=from_copylink
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText('https://ucn6kusdy9lu.feishu.cn/wiki/BCdbw0VipiOIWYkll5vcDtX7nYf?from=from_copylink')
+                alert('链接已复制！')
+              }}
+              className="w-full py-2.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-xl text-sm active:scale-[0.98]"
+            >
+              📋 复制链接
+            </button>
           </div>
           
           <h4 className="font-bold text-lg">📱 屏幕适配问题</h4>
@@ -710,6 +801,7 @@ ${MANUAL_TEXT}
               开发者不对因使用本应用而产生的任何损失承担责任，包括数据丢失、API 费用、因违规使用导致的法律责任等。
             </p>
           </div>
+          
         </div>
       ),
     },
@@ -763,6 +855,7 @@ ${MANUAL_TEXT}
                   <br />• 开发者不对 AI 生成内容负责
                 </p>
               </div>
+              
             </div>
           </div>
           
@@ -788,14 +881,22 @@ ${MANUAL_TEXT}
         {/* 头部 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              if (activeSection) {
+                setActiveSection(null)
+              } else {
+                navigate('/')
+              }
+            }}
             className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
           >
             <svg className="w-6 h-6" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h1 className="text-lg font-bold" style={{ color: fontColor.value }}>使用手册</h1>
+          <h1 className="text-lg font-bold" style={{ color: fontColor.value }}>
+            {activeSection ? sections.find(s => s.id === activeSection)?.title : '使用手册'}
+          </h1>
           <div className="w-10" />
         </div>
         
@@ -804,16 +905,6 @@ ${MANUAL_TEXT}
           {activeSection ? (
             // 章节详情
             <div className="p-4">
-              <button
-                onClick={() => setActiveSection(null)}
-                className="flex items-center gap-2 text-sm text-gray-500 mb-4 hover:text-gray-700"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-                返回目录
-              </button>
-              
               <div className="flex items-center gap-3 mb-4">
                 <span className="text-3xl">{sections.find(s => s.id === activeSection)?.icon}</span>
                 <h2 className="text-xl font-bold" style={{ color: fontColor.value }}>
@@ -995,6 +1086,96 @@ ${MANUAL_TEXT}
                 >
                   我知道了
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* 新手引导询问弹窗 */}
+        {showNewUserGuide && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
+              <div className="p-6 text-center">
+                <div className="text-5xl mb-4">🎮</div>
+                <h2 className="text-xl font-bold text-gray-800 mb-2">你好呀！</h2>
+                <p className="text-sm text-gray-500 mb-6">请问你是第一次使用小手机吗？</p>
+                <div className="space-y-3">
+                  <button
+                    onClick={handleNewPlayer}
+                    className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98] shadow-lg"
+                  >
+                    🌱 我是小手机新玩家
+                  </button>
+                  <button
+                    onClick={handleVeteranPlayer}
+                    className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl text-[15px] active:scale-[0.98]"
+                  >
+                    🏆 我是小手机老玩家
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* 老玩家提示弹窗 */}
+        {showVeteranMessage && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
+              <div className="p-6 text-center">
+                <div className="text-5xl mb-4">👑</div>
+                <h2 className="text-xl font-bold text-gray-800 mb-2">原来是元老级别的！</h2>
+                <p className="text-sm text-gray-500 mb-4">
+                  好勒，那我溜了～
+                </p>
+                <div className="p-3 bg-purple-50 rounded-xl mb-4">
+                  <p className="text-xs text-purple-700">
+                    💡 对了对了，如果遇到不会使用的问题，告诉你一个宝典：
+                  </p>
+                  <p className="text-sm text-purple-800 font-medium mt-1">
+                    在主页「使用手册」里有个「问答百科」智能搜索功能，超好用的！
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowVeteranMessage(false)}
+                  className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98]"
+                >
+                  好嘞，知道了
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* 新手教程文档链接弹窗 */}
+        {showTutorialLink && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
+              <div className="p-6 text-center">
+                <div className="text-5xl mb-4">📚</div>
+                <h2 className="text-xl font-bold text-gray-800 mb-2">新手教程</h2>
+                <p className="text-sm text-gray-500 mb-4">
+                  请复制下方链接，在浏览器中打开查看详细教程
+                </p>
+                <div className="p-3 bg-gray-100 rounded-xl mb-4">
+                  <p className="text-xs text-gray-600 break-all select-all">
+                    {tutorialDocUrl}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={copyTutorialLink}
+                    className="w-full py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98]"
+                  >
+                    📋 复制链接
+                  </button>
+                  <button
+                    onClick={() => setShowTutorialLink(false)}
+                    className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl text-[15px] active:scale-[0.98]"
+                  >
+                    我知道了
+                  </button>
+                </div>
               </div>
             </div>
           </div>

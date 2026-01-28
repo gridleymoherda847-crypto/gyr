@@ -1586,15 +1586,17 @@ ${recentTimeline || '（无）'}
               
               if (sendAsVoice) {
                 // 发送语音消息（先创建消息，再异步生成语音URL）
-                // 注意：已移除语音转文字功能，优先保证语音输出速度
                 const voiceDuration = Math.max(2, Math.min(60, Math.ceil(textContent.length / 5)))
+                
+                // 判断是否是中文（用于决定是否需要翻译）
+                const isChinese = characterLanguage === 'zh' || /[\u4e00-\u9fa5]/.test(textContent.slice(0, 20))
                 
                 const voiceMsg = addMessage({
                   characterId: character.id,
                   content: '[语音消息]',
                   isUser: false,
                   type: 'voice',
-                  voiceText: '', // 不再显示文字（提升速度）
+                  voiceText: isChinese ? textContent : textContent, // 先显示原文
                   voiceOriginalText: textContent, // 原文（用于TTS朗读）
                   voiceDuration: voiceDuration,
                   voiceUrl: '', // 先为空，异步填充
@@ -1608,6 +1610,25 @@ ${recentTimeline || '（无）'}
                     updateMessage(voiceMsg.id, { voiceUrl: url })
                   }
                 })()
+                
+                // 如果是外文，异步翻译并更新显示文字
+                if (!isChinese && translationMode) {
+                  ;(async () => {
+                    try {
+                      const transResult = await callLLM([
+                        { role: 'system', content: '你是一个翻译器。把用户给你的内容翻译成简体中文。只输出翻译结果，不要解释。' },
+                        { role: 'user', content: textContent }
+                      ], undefined, { maxTokens: 200, timeoutMs: 30000 })
+                      const zhText = transResult.trim()
+                      if (zhText) {
+                        // 格式：原文。（中文翻译）
+                        updateMessage(voiceMsg.id, { voiceText: `${textContent}（${zhText}）` })
+                      }
+                    } catch {
+                      // 翻译失败，保持原文
+                    }
+                  })()
+                }
               } else {
                 // 发送普通文本消息
                 const msg = addMessage({
@@ -4492,9 +4513,9 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                 </span>
                 
                 {/* 消息操作按钮（非系统消息且非编辑模式） */}
-                {(msg.type === 'text' || msg.type === 'voice' || msg.type === 'image') && !editMode && (
+                {(msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'doudizhu_share' || msg.type === 'doudizhu_invite') && !editMode && (
                   <>
-                    {/* 编辑按钮（仅对方消息） */}
+                    {/* 编辑按钮（仅对方消息的文本/语音） */}
                     {!msg.isUser && (msg.type === 'text' || msg.type === 'voice') && (
                       <button
                         type="button"
@@ -4507,7 +4528,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                         编辑
                       </button>
                     )}
-                    {/* 引用按钮（仅对方消息） */}
+                    {/* 引用按钮（仅对方消息的文本/语音） */}
                     {!msg.isUser && (msg.type === 'text' || msg.type === 'voice') && (
                       <button
                         type="button"

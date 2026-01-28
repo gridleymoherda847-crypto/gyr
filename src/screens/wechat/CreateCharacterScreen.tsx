@@ -6,37 +6,13 @@ import WeChatLayout from './WeChatLayout'
 import WeChatDialog from './components/WeChatDialog'
 import { compressImageFileToDataUrl } from '../../utils/image'
 
-// 角色卡类型
-type CharacterCard = {
-  schemaVersion: number
-  type: string
-  exportedAt?: number
-  character: {
-    name: string
-    avatar?: string
-    gender?: 'male' | 'female' | 'other'
-    prompt?: string
-    birthday?: string
-    callMeName?: string
-    relationship?: string
-    country?: string
-    language?: 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'
-    chatTranslationEnabled?: boolean
-    initialMessage?: string
-  }
-}
-
 export default function CreateCharacterScreen() {
   const navigate = useNavigate()
   const { fontColor } = useOS()
   const { addCharacter } = useWeChat()
   const avatarInputRef = useRef<HTMLInputElement>(null)
-  const cardInputRef = useRef<HTMLInputElement>(null)
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null)
   const [tipOpen, setTipOpen] = useState(false)
-  const [showImportModal, setShowImportModal] = useState(false)
-  const [importText, setImportText] = useState('')
-  const [importError, setImportError] = useState('')
   const [langPickerOpen, setLangPickerOpen] = useState(false)
   const prevLangRef = useRef<'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'>('zh')
   const [langDialog, setLangDialog] = useState<{ open: boolean; lang: 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de' }>({
@@ -107,71 +83,6 @@ export default function CreateCharacterScreen() {
 
     navigate('/apps/wechat')
   }
-  
-  // 导入角色卡
-  const handleImportCard = (text: string) => {
-    setImportError('')
-    const txt = (text || '').trim()
-    if (!txt) {
-      setImportError('请输入角色卡内容')
-      return
-    }
-    
-    let card: CharacterCard
-    try {
-      card = JSON.parse(txt)
-    } catch {
-      setImportError('JSON 格式错误，请检查内容')
-      return
-    }
-    
-    if (!card || typeof card !== 'object') {
-      setImportError('角色卡格式不正确')
-      return
-    }
-    
-    // 兼容多种格式
-    const charData = card.character || (card as any)
-    if (!charData || typeof charData !== 'object') {
-      setImportError('未找到角色数据')
-      return
-    }
-    
-    const name = charData.name || ''
-    if (!name.trim()) {
-      setImportError('角色卡中缺少名字')
-      return
-    }
-    
-    // 填充表单
-    setFormData({
-      name: name,
-      avatar: charData.avatar || '',
-      gender: charData.gender || 'female',
-      prompt: charData.prompt || '',
-      birthday: charData.birthday || '',
-      callMeName: charData.callMeName || '',
-      relationship: charData.relationship || '',
-      country: charData.country || '',
-      language: charData.language || 'zh',
-      chatTranslationEnabled: !!charData.chatTranslationEnabled,
-    })
-    
-    setShowImportModal(false)
-    setImportText('')
-  }
-  
-  const handleCardFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      const text = await file.text()
-      handleImportCard(text)
-    } catch {
-      setImportError('读取文件失败')
-    }
-    e.target.value = ''
-  }
 
   const handleBack = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation()
@@ -199,24 +110,6 @@ export default function CreateCharacterScreen() {
           <span className="font-semibold text-[#000]">创建角色</span>
           <button type="button" onClick={handleSubmit} className="text-[#07C160] font-medium text-sm">
             完成
-          </button>
-        </div>
-
-        {/* 导入角色卡入口 */}
-        <div className="mx-3 mt-2">
-          <button
-            type="button"
-            onClick={() => {
-              setShowImportModal(true)
-              setImportText('')
-              setImportError('')
-            }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-600 text-[13px] font-medium active:scale-[0.99]"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            导入角色卡
           </button>
         </div>
 
@@ -488,60 +381,6 @@ export default function CreateCharacterScreen() {
           ))}
         </div>
       </WeChatDialog>
-      
-      {/* 导入角色卡弹窗 */}
-      {showImportModal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowImportModal(false)} role="presentation" />
-          <div className="relative w-full max-w-[340px] rounded-2xl bg-white p-4 shadow-xl">
-            <div className="text-center font-bold text-[#111] mb-3">导入角色卡</div>
-            
-            <div className="p-3 bg-purple-50 rounded-xl mb-3">
-              <div className="text-[11px] text-purple-600">
-                支持从其他用户分享的角色卡导入，会自动填充头像、名字、人设等信息。
-              </div>
-            </div>
-            
-            <textarea
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              placeholder="粘贴角色卡 JSON…"
-              className="w-full h-28 px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 outline-none text-[12px] text-[#111] resize-none"
-            />
-            
-            {importError && (
-              <div className="mt-2 text-[11px] text-red-500">{importError}</div>
-            )}
-            
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={() => cardInputRef.current?.click()}
-                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-[13px] font-medium text-gray-700 active:scale-[0.98]"
-              >
-                选择文件
-              </button>
-              <button
-                type="button"
-                onClick={() => handleImportCard(importText)}
-                disabled={!importText.trim()}
-                className="flex-1 py-2.5 rounded-xl bg-purple-500 text-[13px] font-medium text-white active:scale-[0.98] disabled:opacity-50"
-              >
-                导入
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* 隐藏的文件选择 */}
-      <input
-        ref={cardInputRef}
-        type="file"
-        accept=".json,application/json"
-        className="hidden"
-        onChange={handleCardFileChange}
-      />
     </WeChatLayout>
   )
 }

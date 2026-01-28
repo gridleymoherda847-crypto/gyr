@@ -154,6 +154,103 @@ export default function PresetScreen() {
     }))
   }
   
+  // 世界书导入导出
+  const lorebookImportRef = useRef<HTMLInputElement>(null)
+  
+  // 导出所有世界书
+  const exportAllLorebooks = () => {
+    if (config.lorebooks.length === 0) {
+      alert('没有可导出的世界书')
+      return
+    }
+    const data = {
+      version: 1,
+      type: 'mina_lorebooks',
+      lorebooks: config.lorebooks,
+      exportedAt: Date.now(),
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `世界书备份_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+  
+  // 导出单个世界书
+  const exportSingleLorebook = (lorebook: Lorebook) => {
+    const data = {
+      version: 1,
+      type: 'mina_lorebook',
+      lorebook: lorebook,
+      exportedAt: Date.now(),
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `世界书_${lorebook.name}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+  
+  // 导入世界书
+  const handleLorebookImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string)
+        
+        // 检查是否是有效的世界书文件
+        if (data.type === 'mina_lorebooks' && Array.isArray(data.lorebooks)) {
+          // 批量导入
+          let importCount = 0
+          for (const lb of data.lorebooks) {
+            if (lb.id && lb.name && Array.isArray(lb.entries)) {
+              // 生成新ID避免冲突
+              const newLorebook = {
+                ...lb,
+                id: `lorebook_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              }
+              setConfig(prev => ({
+                ...prev,
+                lorebooks: [...prev.lorebooks, newLorebook]
+              }))
+              importCount++
+            }
+          }
+          alert(`成功导入 ${importCount} 个世界书`)
+        } else if (data.type === 'mina_lorebook' && data.lorebook) {
+          // 单个导入
+          const lb = data.lorebook
+          if (lb.name && Array.isArray(lb.entries)) {
+            const newLorebook = {
+              ...lb,
+              id: `lorebook_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            }
+            setConfig(prev => ({
+              ...prev,
+              lorebooks: [...prev.lorebooks, newLorebook]
+            }))
+            alert(`成功导入世界书：${lb.name}`)
+          } else {
+            alert('世界书格式不正确')
+          }
+        } else {
+          alert('不是有效的世界书文件')
+        }
+      } catch {
+        alert('文件解析失败')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+  
   // 处理文件上传
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -416,21 +513,28 @@ export default function PresetScreen() {
                                   </div>
                                 )}
                               </div>
-                              <div className="flex gap-2">
+                              <div className="flex gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setEditingLorebook(lorebook)
                                     setShowLorebookForm(true)
                                   }}
-                                  className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium"
+                                  className="px-2 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium"
                                 >
                                   编辑
                                 </button>
                                 <button
                                   type="button"
+                                  onClick={() => exportSingleLorebook(lorebook)}
+                                  className="px-2 py-1 rounded-lg bg-green-100 text-green-700 text-xs font-medium"
+                                >
+                                  导出
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => deleteLorebook(lorebook.id)}
-                                  className="px-2.5 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-medium"
+                                  className="px-2 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-medium"
                                 >
                                   删除
                                 </button>
@@ -477,21 +581,28 @@ export default function PresetScreen() {
                                     </div>
                                   )}
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex gap-1.5">
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setEditingLorebook(lorebook)
                                       setShowLorebookForm(true)
                                     }}
-                                    className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium"
+                                    className="px-2 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium"
                                   >
                                     编辑
                                   </button>
                                   <button
                                     type="button"
+                                    onClick={() => exportSingleLorebook(lorebook)}
+                                    className="px-2 py-1 rounded-lg bg-green-100 text-green-700 text-xs font-medium"
+                                  >
+                                    导出
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => deleteLorebook(lorebook.id)}
-                                    className="px-2.5 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-medium"
+                                    className="px-2 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-medium"
                                   >
                                     删除
                                   </button>
@@ -523,6 +634,31 @@ export default function PresetScreen() {
               >
                 + 创建新世界书
               </button>
+              
+              {/* 导入导出按钮 */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => lorebookImportRef.current?.click()}
+                  className="flex-1 py-2.5 rounded-xl bg-green-100 text-green-700 font-medium text-sm"
+                >
+                  📥 导入世界书
+                </button>
+                <button
+                  type="button"
+                  onClick={exportAllLorebooks}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-100 text-purple-700 font-medium text-sm"
+                >
+                  📤 导出全部
+                </button>
+              </div>
+              <input
+                ref={lorebookImportRef}
+                type="file"
+                accept=".json"
+                onChange={handleLorebookImport}
+                className="hidden"
+              />
             </div>
           )}
           

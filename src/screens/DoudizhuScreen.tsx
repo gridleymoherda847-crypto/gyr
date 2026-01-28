@@ -1403,14 +1403,15 @@ export default function DoudizhuScreen() {
       {/* 好友选择弹窗 */}
       {showFriendSelect && (
         <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl w-[85vw] max-w-[300px] max-h-[70vh] overflow-hidden shadow-2xl flex flex-col">
+          <div className="bg-gradient-to-br from-white to-gray-100 rounded-2xl w-[85vw] max-w-[300px] overflow-hidden shadow-2xl flex flex-col">
             <div className="bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-3 text-center flex-shrink-0">
               <h3 className="text-white font-bold text-lg">邀请好友</h3>
               <p className="text-white/80 text-xs">选择1-2位好友，不足3人由电脑补位</p>
             </div>
-            <div className="flex-1 overflow-y-auto p-3">
+            {/* 好友列表 - 固定高度，最多显示约2个好友 */}
+            <div className="max-h-[140px] overflow-y-auto p-3 flex-shrink-0">
               {characters.filter(c => !c.isHiddenFromChat).length === 0 ? (
-                <p className="text-center text-gray-400 text-sm py-8">暂无好友，请先在微信添加</p>
+                <p className="text-center text-gray-400 text-sm py-4">暂无好友，请先在微信添加</p>
               ) : (
                 <div className="space-y-2">
                   {characters.filter(c => !c.isHiddenFromChat).map(char => {

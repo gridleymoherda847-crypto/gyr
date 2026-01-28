@@ -44,6 +44,46 @@ export default function HomeScreen() {
   const [tempSignature, setTempSignature] = useState('')
   const avatarInputRef = useRef<HTMLInputElement>(null)
   
+  // 新手引导相关状态
+  const [showDisclaimer, setShowDisclaimer] = useState(() => {
+    return localStorage.getItem('mina_disclaimer_agreed') !== 'true'
+  })
+  const [showNewUserGuide, setShowNewUserGuide] = useState(false)
+  const [showVeteranMessage, setShowVeteranMessage] = useState(false)
+  const [showTutorialLink, setShowTutorialLink] = useState(false)
+  
+  // 新手教程文档链接
+  const tutorialDocUrl = 'https://ucn6kusdy9lu.feishu.cn/wiki/BCdbw0VipiOIWYkll5vcDtX7nYf?from=from_copylink'
+  
+  // 同意免责声明
+  const handleAgreeDisclaimer = () => {
+    localStorage.setItem('mina_disclaimer_agreed', 'true')
+    setShowDisclaimer(false)
+    if (localStorage.getItem('mina_tutorial_completed') !== 'true') {
+      setShowNewUserGuide(true)
+    }
+  }
+  
+  // 选择新玩家 - 显示教程文档链接
+  const handleNewPlayer = () => {
+    setShowNewUserGuide(false)
+    localStorage.setItem('mina_tutorial_completed', 'true')
+    setShowTutorialLink(true)
+  }
+  
+  // 选择老玩家
+  const handleVeteranPlayer = () => {
+    setShowNewUserGuide(false)
+    localStorage.setItem('mina_tutorial_completed', 'true')
+    setShowVeteranMessage(true)
+  }
+  
+  // 复制链接
+  const copyTutorialLink = () => {
+    navigator.clipboard.writeText(tutorialDocUrl)
+    alert('链接已复制！')
+  }
+  
   const now = new Date()
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`
@@ -587,6 +627,151 @@ export default function HomeScreen() {
               >
                 保存
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 免责声明弹窗 */}
+      {showDisclaimer && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-[340px] max-h-[85vh] bg-white rounded-2xl overflow-hidden shadow-xl flex flex-col">
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="text-center py-4">
+                <div className="text-3xl mb-2">⚠️</div>
+                <h1 className="text-xl font-bold text-gray-800">使用须知</h1>
+                <p className="text-sm text-gray-500 mt-1">请仔细阅读以下内容</p>
+              </div>
+              
+              <div className="space-y-4 text-sm text-gray-600">
+                <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+                  <div className="font-bold text-red-700 mb-1">🔞 内容声明</div>
+                  <p>本应用可能涉及成人内容，仅限 18 岁以上用户使用。</p>
+                </div>
+                
+                <div className="p-3 bg-orange-50 rounded-xl border border-orange-100">
+                  <div className="font-bold text-orange-700 mb-1">🤖 AI 声明</div>
+                  <p>所有角色均为 AI 虚拟角色，其回复由 AI 模型生成，不代表任何真实人物的观点或立场。</p>
+                </div>
+                
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                  <div className="font-bold text-blue-700 mb-1">💾 数据声明</div>
+                  <p>所有数据存储在浏览器本地，清除浏览器数据会导致数据丢失。请定期使用「设置 → 导出数据」功能进行备份。</p>
+                </div>
+                
+                <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
+                  <div className="font-bold text-purple-700 mb-1">🔑 API 声明</div>
+                  <p>本应用需要用户自行配置 AI API。开发者不提供 API 服务，不对 API 服务的可用性、安全性负责。</p>
+                </div>
+                
+                <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                  <div className="font-bold text-gray-700 mb-1">⚖️ 免责声明</div>
+                  <p>开发者不对因使用本应用而产生的任何损失承担责任，包括数据丢失、API 费用、因违规使用导致的法律责任等。</p>
+                </div>
+                
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-gray-100 bg-gray-50">
+              <button
+                onClick={handleAgreeDisclaimer}
+                className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-xl active:scale-[0.98]"
+              >
+                我已阅读并同意
+              </button>
+              <p className="text-[10px] text-gray-400 text-center mt-2">
+                点击即表示你已年满 18 岁并同意以上条款
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 新手引导询问弹窗 */}
+      {showNewUserGuide && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
+            <div className="p-6 text-center">
+              <div className="text-5xl mb-4">🎮</div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">你好呀！</h2>
+              <p className="text-sm text-gray-500 mb-6">请问你是第一次使用小手机吗？</p>
+              <div className="space-y-3">
+                <button
+                  onClick={handleNewPlayer}
+                  className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98] shadow-lg"
+                >
+                  🌱 我是小手机新玩家
+                </button>
+                <button
+                  onClick={handleVeteranPlayer}
+                  className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl text-[15px] active:scale-[0.98]"
+                >
+                  🏆 我是小手机老玩家
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 老玩家提示弹窗 */}
+      {showVeteranMessage && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
+            <div className="p-6 text-center">
+              <div className="text-5xl mb-4">👑</div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">原来是元老级别的！</h2>
+              <p className="text-sm text-gray-500 mb-4">
+                好勒，那我溜了～
+              </p>
+              <div className="p-3 bg-purple-50 rounded-xl mb-4">
+                <p className="text-xs text-purple-700">
+                  💡 对了对了，如果遇到不会使用的问题，告诉你一个宝典：
+                </p>
+                <p className="text-sm text-purple-800 font-medium mt-1">
+                  在主页「使用手册」里有个「问答百科」智能搜索功能，超好用的！
+                </p>
+              </div>
+              <button
+                onClick={() => setShowVeteranMessage(false)}
+                className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98]"
+              >
+                好嘞，知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 新手教程文档链接弹窗 */}
+      {showTutorialLink && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
+            <div className="p-6 text-center">
+              <div className="text-5xl mb-4">📚</div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">新手教程</h2>
+              <p className="text-sm text-gray-500 mb-4">
+                请复制下方链接，在浏览器中打开查看详细教程
+              </p>
+              <div className="p-3 bg-gray-100 rounded-xl mb-4">
+                <p className="text-xs text-gray-600 break-all select-all">
+                  {tutorialDocUrl}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <button
+                  onClick={copyTutorialLink}
+                  className="w-full py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98]"
+                >
+                  📋 复制链接
+                </button>
+                <button
+                  onClick={() => setShowTutorialLink(false)}
+                  className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl text-[15px] active:scale-[0.98]"
+                >
+                  我知道了
+                </button>
+              </div>
             </div>
           </div>
         </div>

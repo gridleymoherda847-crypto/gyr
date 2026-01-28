@@ -2,6 +2,36 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWeChat } from '../../../context/WeChatContext'
 import { useOS } from '../../../context/OSContext'
+import WeChatDialog from '../components/WeChatDialog'
+
+// 角色卡类型
+type CharacterCard = {
+  schemaVersion?: number
+  type?: string
+  character?: {
+    name: string
+    avatar?: string
+    gender?: 'male' | 'female' | 'other'
+    prompt?: string
+    birthday?: string
+    callMeName?: string
+    relationship?: string
+    country?: string
+    language?: 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'
+    chatTranslationEnabled?: boolean
+  }
+  // 兼容直接的角色数据格式
+  name?: string
+  avatar?: string
+  gender?: 'male' | 'female' | 'other'
+  prompt?: string
+  birthday?: string
+  callMeName?: string
+  relationship?: string
+  country?: string
+  language?: 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'
+  chatTranslationEnabled?: boolean
+}
 
 type Props = {
   onBack: () => void
@@ -10,13 +40,84 @@ type Props = {
 export default function ChatsTab({ onBack }: Props) {
   const navigate = useNavigate()
   const { fontColor } = useOS()
-  const { characters, groups, getLastMessage, togglePinned, hideFromChat, clearMessages, createGroup, getGroupMessages } = useWeChat()
+  const { characters, groups, getLastMessage, togglePinned, hideFromChat, clearMessages, createGroup, getGroupMessages, addCharacter } = useWeChat()
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [swipedId, setSwipedId] = useState<string | null>(null)
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [showGroupCreate, setShowGroupCreate] = useState(false)
   const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([])
+  
+  // 导入角色卡相关
+  const cardInputRef = useRef<HTMLInputElement>(null)
+  const [showCopyrightWarning, setShowCopyrightWarning] = useState(false)
+  const [showImportConfirm, setShowImportConfirm] = useState(false)
+  const [pendingCardData, setPendingCardData] = useState<CharacterCard | null>(null)
+  const [importError, setImportError] = useState('')
+  
+  // 处理角色卡文件导入
+  const handleCardFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    
+    try {
+      const text = await file.text()
+      let card: CharacterCard
+      try {
+        card = JSON.parse(text)
+      } catch {
+        setImportError('文件格式错误，请选择有效的角色卡 JSON 文件')
+        return
+      }
+      
+      // 兼容多种格式
+      const charData = card.character || card
+      if (!charData || typeof charData !== 'object') {
+        setImportError('角色卡格式不正确')
+        return
+      }
+      
+      const name = charData.name || ''
+      if (!name.trim()) {
+        setImportError('角色卡中缺少名字')
+        return
+      }
+      
+      // 显示确认导入弹窗
+      setPendingCardData(card)
+      setShowImportConfirm(true)
+      setImportError('')
+    } catch {
+      setImportError('读取文件失败')
+    }
+  }
+  
+  // 确认导入角色卡
+  const confirmImportCard = () => {
+    if (!pendingCardData) return
+    
+    const charData = pendingCardData.character || pendingCardData
+    
+    addCharacter({
+      name: charData.name || '未命名角色',
+      avatar: charData.avatar || '',
+      gender: charData.gender || 'female',
+      prompt: charData.prompt || '',
+      birthday: charData.birthday || '',
+      callMeName: charData.callMeName || '',
+      relationship: charData.relationship || '',
+      country: charData.country || '',
+      language: charData.language || 'zh',
+      chatTranslationEnabled: !!charData.chatTranslationEnabled,
+      coupleSpaceEnabled: false,
+      chatBackground: '',
+      unreadCount: 0,
+    })
+    
+    setShowImportConfirm(false)
+    setPendingCardData(null)
+  }
   
   // 触摸状态
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -168,6 +269,19 @@ export default function ChatsTab({ onBack }: Props) {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                   </svg>
                   创建角色
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddMenu(false)
+                    setShowCopyrightWarning(true)
+                  }}
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 active:bg-gray-100 flex items-center gap-2 border-t border-gray-100"
+                >
+                  <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  导入角色卡
                 </button>
                 <button
                   type="button"
@@ -520,6 +634,63 @@ export default function ChatsTab({ onBack }: Props) {
           </div>
         </div>
       )}
+      
+      {/* 隐藏的角色卡文件选择 */}
+      <input
+        ref={cardInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleCardFileChange}
+      />
+      
+      {/* 导入错误提示 */}
+      {importError && (
+        <WeChatDialog
+          open={true}
+          title="导入失败"
+          message={importError}
+          confirmText="知道了"
+          onConfirm={() => setImportError('')}
+          onCancel={() => setImportError('')}
+        />
+      )}
+      
+      {/* 版权警告弹窗（选择文件前） */}
+      <WeChatDialog
+        open={showCopyrightWarning}
+        title="版权声明"
+        message={
+          `⚠️ 请尊重原创作者的劳动成果：\n\n` +
+          `• 未经授权，请勿导入他人为爱发电创作的角色卡\n` +
+          `• 请确认你拥有该角色卡的使用权限\n` +
+          `• 商用或二次分发需获得原作者授权\n\n` +
+          `点击「我知道了」即表示你已获得相应授权。`
+        }
+        confirmText="我知道了"
+        cancelText="取消"
+        onConfirm={() => {
+          setShowCopyrightWarning(false)
+          cardInputRef.current?.click()
+        }}
+        onCancel={() => {
+          setShowCopyrightWarning(false)
+        }}
+      />
+      
+      {/* 确认导入弹窗（选择文件后） */}
+      <WeChatDialog
+        open={showImportConfirm && !!pendingCardData}
+        title="确认导入"
+        message={`即将导入角色：${pendingCardData?.character?.name || pendingCardData?.name || '未知'}\n\n确定要导入这个角色吗？`}
+        confirmText="确认导入"
+        cancelText="取消"
+        onConfirm={confirmImportCard}
+        onCancel={() => {
+          setShowImportConfirm(false)
+          setPendingCardData(null)
+        }}
+      />
     </div>
   )
 }
