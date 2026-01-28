@@ -179,24 +179,36 @@ export default function ManualScreen() {
               <div className="text-sm text-red-600">每点一次 = 调用 1 次 API（一次生成多人回复）</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">朋友圈：下拉刷新</div>
-              <div className="text-sm text-red-600">每次刷新 = 调用 1 次 API（生成多条动态）</div>
+              <div className="font-medium text-red-700">朋友圈：点击右上角刷新按钮</div>
+              <div className="text-sm text-red-600">每次刷新 = 调用 1 次 API（生成动态/评论）</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">情侣空间：发送留言</div>
-              <div className="text-sm text-red-600">每条留言 = 调用 1 次 API（生成对方回复）</div>
+              <div className="font-medium text-red-700">情侣空间：每次进入刷新留言</div>
+              <div className="text-sm text-red-600">每次进入 = 调用 1 次 API（刷新对方留言）</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">X 私信：发送消息</div>
-              <div className="text-sm text-red-600">每条消息 = 调用 1 次 API</div>
+              <div className="font-medium text-red-700">偷看日记：点击「偷看日记」按钮</div>
+              <div className="text-sm text-red-600">每次偷看 = 调用 1 次 API（生成日记内容）</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">X 私信翻译：点击翻译按钮</div>
-              <div className="text-sm text-red-600">每次翻译 = 调用 1 次 API</div>
+              <div className="font-medium text-red-700">查手机：点击「查手机」按钮</div>
+              <div className="text-sm text-red-600">每次查看 = 调用 1 次 API（生成聊天/账单等）</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
               <div className="font-medium text-red-700">聊天记忆总结：点击「AI 总结」</div>
               <div className="text-sm text-red-600">每次总结 = 调用 1 次 API</div>
+            </div>
+            <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+              <div className="font-medium text-red-700">X（推特）：点击右上角刷新主页</div>
+              <div className="text-sm text-red-600">每次刷新 = 调用 1 次 API（生成新推文）</div>
+            </div>
+            <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+              <div className="font-medium text-red-700">X（推特）：搜索话题</div>
+              <div className="text-sm text-red-600">每次搜索 = 调用 1 次 API（生成相关推文）</div>
+            </div>
+            <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+              <div className="font-medium text-red-700">X（推特）私信：点击右上角刷新</div>
+              <div className="text-sm text-red-600">每次刷新 = 调用 1 次 API（生成新私信）</div>
             </div>
           </div>
           
@@ -217,7 +229,7 @@ export default function ManualScreen() {
           <h4 className="font-bold text-lg text-green-600 mt-6">🟢 不消耗 API 的功能</h4>
           
           <div className="grid grid-cols-2 gap-2">
-            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">📔 日记本（全部）</div>
+            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">📔 日记本（查看/编辑）</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🎵 音乐播放器</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🃏 斗地主</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">⚙️ 所有设置</div>
@@ -227,6 +239,8 @@ export default function ManualScreen() {
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">📊 基金模拟</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">💳 钱包功能</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">📱 发送消息本身</div>
+            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🐦 X 私信发送消息</div>
+            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🌐 X 私信翻译</div>
           </div>
           
           <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 mt-4">
