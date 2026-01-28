@@ -17,7 +17,7 @@ export default function ChatSettingsScreen() {
     characters, addStickerToCharacter,
     userPersonas, getUserPersona, getCurrentPersona,
     stickerCategories, addStickerCategory, removeStickerCategory,
-    getMessagesByCharacter
+    getMessagesByCharacter, addMessage
   } = useWeChat()
   
   const character = getCharacter(characterId || '')
@@ -117,6 +117,14 @@ export default function ChatSettingsScreen() {
   // 拍一拍设置状态（草稿）
   const [patMeTextDraft, setPatMeTextDraft] = useState<string>(character?.patMeText || '拍了拍我的小脑袋')
   const [patThemTextDraft, setPatThemTextDraft] = useState<string>(character?.patThemText || '拍了拍TA的肩膀')
+  
+  // 线下模式设置（折叠面板）
+  const [offlineSettingsExpanded, setOfflineSettingsExpanded] = useState(false)
+  const [offlineUserColorDraft, setOfflineUserColorDraft] = useState(character?.offlineUserColor || '#2563eb')
+  const [offlineCharColorDraft, setOfflineCharColorDraft] = useState(character?.offlineCharColor || '#7c3aed')
+  const [offlineDialogColorDraft, setOfflineDialogColorDraft] = useState(character?.offlineDialogColor || '#111827')
+  const [offlineMinLengthDraft, setOfflineMinLengthDraft] = useState(character?.offlineMinLength || 50)
+  const [offlineMaxLengthDraft, setOfflineMaxLengthDraft] = useState(character?.offlineMaxLength || 300)
   
   // 气泡设置状态
   const defaultBubble = { bgColor: '#fce7f3', bgOpacity: 100, borderColor: '#f9a8d4', borderOpacity: 0, textColor: '#111827' }
@@ -805,7 +813,18 @@ export default function ChatSettingsScreen() {
             {/* 线下模式 */}
             <div 
               className="flex items-center justify-between px-4 py-4 cursor-pointer active:bg-gray-50"
-              onClick={() => updateCharacter(character.id, { offlineMode: !character.offlineMode })}
+              onClick={() => {
+                const newOfflineMode = !character.offlineMode
+                updateCharacter(character.id, { offlineMode: newOfflineMode })
+                // 插入分割线消息
+                addMessage({
+                  characterId: character.id,
+                  content: newOfflineMode ? '—— 进入线下模式 ——' : '—— 结束线下模式 ——',
+                  isUser: false,
+                  type: 'system',
+                  systemSubtype: newOfflineMode ? 'offline_start' : 'offline_end',
+                })
+              }}
             >
               <div className="flex flex-col">
                 <span className="text-[#000]">线下模式</span>
@@ -815,6 +834,185 @@ export default function ChatSettingsScreen() {
                 <div className={`w-6 h-6 bg-white rounded-full shadow mt-0.5 transition-transform ${character.offlineMode ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`} />
               </div>
             </div>
+            
+            {/* 线下模式详细设置（折叠面板） */}
+            {character.offlineMode && (
+              <div className="border-t border-gray-100">
+                <div 
+                  className="flex items-center justify-between px-4 py-3 cursor-pointer active:bg-gray-50"
+                  onClick={() => setOfflineSettingsExpanded(!offlineSettingsExpanded)}
+                >
+                  <span className="text-sm text-gray-600">线下模式设置</span>
+                  <svg 
+                    className={`w-4 h-4 text-gray-400 transition-transform ${offlineSettingsExpanded ? 'rotate-90' : ''}`} 
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+                
+                {offlineSettingsExpanded && (
+                  <div className="px-4 pb-4 space-y-4">
+                    {/* 字体颜色设置 */}
+                    <div className="space-y-3">
+                      <div className="text-xs text-gray-500 font-medium">字体颜色</div>
+                      
+                      {/* 用户字体颜色 */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">我的叙述</span>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer"
+                            style={{ backgroundColor: offlineUserColorDraft }}
+                            onClick={() => {
+                              const input = document.createElement('input')
+                              input.type = 'color'
+                              input.value = offlineUserColorDraft
+                              input.onchange = (e) => {
+                                const color = (e.target as HTMLInputElement).value
+                                setOfflineUserColorDraft(color)
+                                updateCharacter(character.id, { offlineUserColor: color })
+                              }
+                              input.click()
+                            }}
+                          />
+                          <span className="text-xs text-gray-400 w-16">{offlineUserColorDraft}</span>
+                        </div>
+                      </div>
+                      
+                      {/* 角色字体颜色 */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">TA的叙述</span>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer"
+                            style={{ backgroundColor: offlineCharColorDraft }}
+                            onClick={() => {
+                              const input = document.createElement('input')
+                              input.type = 'color'
+                              input.value = offlineCharColorDraft
+                              input.onchange = (e) => {
+                                const color = (e.target as HTMLInputElement).value
+                                setOfflineCharColorDraft(color)
+                                updateCharacter(character.id, { offlineCharColor: color })
+                              }
+                              input.click()
+                            }}
+                          />
+                          <span className="text-xs text-gray-400 w-16">{offlineCharColorDraft}</span>
+                        </div>
+                      </div>
+                      
+                      {/* 语言/对话颜色 */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">引号内语言</span>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer"
+                            style={{ backgroundColor: offlineDialogColorDraft }}
+                            onClick={() => {
+                              const input = document.createElement('input')
+                              input.type = 'color'
+                              input.value = offlineDialogColorDraft
+                              input.onchange = (e) => {
+                                const color = (e.target as HTMLInputElement).value
+                                setOfflineDialogColorDraft(color)
+                                updateCharacter(character.id, { offlineDialogColor: color })
+                              }
+                              input.click()
+                            }}
+                          />
+                          <span className="text-xs text-gray-400 w-16">{offlineDialogColorDraft}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* 输出字数范围 */}
+                    <div className="space-y-3 pt-2 border-t border-gray-100">
+                      <div className="text-xs text-gray-500 font-medium">对方输出字数范围</div>
+                      
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <label className="text-xs text-gray-500 mb-1 block">最少</label>
+                          <input
+                            type="number"
+                            min={10}
+                            max={500}
+                            value={offlineMinLengthDraft}
+                            onChange={(e) => {
+                              const val = Math.max(10, Math.min(500, Number(e.target.value) || 10))
+                              setOfflineMinLengthDraft(val)
+                              updateCharacter(character.id, { offlineMinLength: val })
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/50"
+                          />
+                        </div>
+                        <span className="text-gray-400 mt-5">~</span>
+                        <div className="flex-1">
+                          <label className="text-xs text-gray-500 mb-1 block">最多</label>
+                          <input
+                            type="number"
+                            min={50}
+                            max={2000}
+                            value={offlineMaxLengthDraft}
+                            onChange={(e) => {
+                              const val = Math.max(50, Math.min(2000, Number(e.target.value) || 300))
+                              setOfflineMaxLengthDraft(val)
+                              updateCharacter(character.id, { offlineMaxLength: val })
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/50"
+                          />
+                        </div>
+                        <span className="text-xs text-gray-400 mt-5">字</span>
+                      </div>
+                      
+                      {/* 预设快捷选项 */}
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {[
+                          { label: '简短', min: 30, max: 100 },
+                          { label: '适中', min: 50, max: 300 },
+                          { label: '详细', min: 100, max: 500 },
+                          { label: '长文', min: 200, max: 1000 },
+                        ].map((preset) => (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => {
+                              setOfflineMinLengthDraft(preset.min)
+                              setOfflineMaxLengthDraft(preset.max)
+                              updateCharacter(character.id, { 
+                                offlineMinLength: preset.min, 
+                                offlineMaxLength: preset.max 
+                              })
+                            }}
+                            className={`px-3 py-1.5 text-xs rounded-full transition-colors ${
+                              offlineMinLengthDraft === preset.min && offlineMaxLengthDraft === preset.max
+                                ? 'bg-green-500 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {/* 预览效果 */}
+                    <div className="space-y-2 pt-2 border-t border-gray-100">
+                      <div className="text-xs text-gray-500 font-medium">预览效果</div>
+                      <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                        <div className="text-sm text-right italic" style={{ color: offlineUserColorDraft }}>
+                          我轻轻靠近，<span className="font-medium" style={{ color: offlineDialogColorDraft }}>"你在想什么？"</span>
+                        </div>
+                        <div className="text-sm" style={{ color: offlineCharColorDraft }}>
+                          TA抬起头，眼中闪过一丝温柔，<span className="font-medium" style={{ color: offlineDialogColorDraft }}>"在想你呀。"</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 记忆功能 */}
             <div

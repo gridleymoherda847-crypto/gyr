@@ -62,6 +62,12 @@ export type WeChatCharacter = {
   charBubbleStyle?: BubbleStyle // 角色气泡样式
   bubbleSyncEnabled?: boolean // 气泡样式双方同步（编辑时便捷开关）
   offlineMode: boolean // 线下模式（默认关闭）
+  // 线下模式自定义设置
+  offlineUserColor?: string // 用户字体颜色
+  offlineCharColor?: string // 角色字体颜色
+  offlineDialogColor?: string // 语言/对话颜色（引号内）
+  offlineMinLength?: number // 最小输出字数
+  offlineMaxLength?: number // 最大输出字数
   // 记忆功能
   memoryRounds: number // 每次回复附带的历史“回合”数量（按用户发言回合计）
   memorySummary: string // 长期记忆摘要（用户可编辑），每次回复必读
@@ -170,6 +176,10 @@ export type WeChatMessage = {
   
   // 拍一拍相关
   patText?: string // 拍一拍显示的文字（如"拍了拍我的小脑袋"）
+  
+  // 线下模式相关
+  isOffline?: boolean // 是否是线下模式发送的消息
+  systemSubtype?: 'offline_start' | 'offline_end' // 系统消息子类型
   
   // 转发聊天记录相关
   forwardedMessages?: {

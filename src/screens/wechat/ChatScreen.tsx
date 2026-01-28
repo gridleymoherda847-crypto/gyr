@@ -506,6 +506,22 @@ export default function ChatScreen() {
     }
   }, [])
 
+  // 线下模式分割线现在由 ChatSettingsScreen 在切换时直接插入
+  // 这里只处理语音功能的自动关闭
+  const currentOfflineMode = character?.offlineMode
+  useEffect(() => {
+    if (!character) return
+    // 如果开启了线下模式且语音功能开启，自动关闭语音
+    if (currentOfflineMode && character.voiceEnabled) {
+      updateCharacter(character.id, { voiceEnabled: false })
+      setInfoDialog({
+        open: true,
+        title: '语音功能已关闭',
+        message: '线下模式暂不支持语音功能，已自动关闭。',
+      })
+    }
+  }, [currentOfflineMode, character?.id, character?.voiceEnabled, updateCharacter])
+
   if (!character) {
     return (
       <WeChatLayout>
@@ -654,7 +670,13 @@ export default function ChatScreen() {
         const splitToReplies = (raw: string) => {
           const text = (raw || '').trim()
           if (!text) return []
-          // 先按换行切
+          
+          // 线下模式：不分割，直接返回完整的一条
+          if (character.offlineMode) {
+            return [text]
+          }
+          
+          // 线上模式：按换行和标点分割
           const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
       const keepCmd = (s: string) =>
         /\|\|\|/.test(s) ||
@@ -1099,7 +1121,7 @@ ${recentTimeline || '（无）'}
 - 允许：只发一个问号/省略号/句号来表达情绪（结合上下文）
 - ${noMisogynyBan}`
 
-        // 线下模式关闭时，禁止动作描述
+        // 线下模式关闭时，禁止动作描述；开启时，允许描写神态动作
         if (!character.offlineMode) {
           systemPrompt += `
 
@@ -1109,6 +1131,33 @@ ${recentTimeline || '（无）'}
 - 禁止出现类似"（笑）"、"*摸摸头*"、"【害羞】"这样的内容
 - 只能发送纯文字对话，就像真人发微信一样
 - 可以用表情符号emoji，但不能描述动作`
+        } else {
+          // 获取字数范围设置
+          const minLen = character.offlineMinLength || 50
+          const maxLen = character.offlineMaxLength || 300
+          const isLongForm = maxLen >= 500
+          systemPrompt += `
+
+【线下模式 - 叙事风格】
+- 现在是线下模式，你需要用小说/剧本的叙事风格来输出
+- 【重要】每次只输出一段完整的叙事，不要分成多条消息！
+- 这一段叙事应该包含：神态描写 + 动作描写 + 语言描写（如果有的话）
+- 说话的部分要用中文引号""包裹，例如："我想你了。"
+- 动作/神态描写不加引号，直接描述
+- 输出格式示例（一整段，不要换行分成多条）：
+  低下头，脸颊微微泛红，手指不自觉地绞着衣角。"那个...我有点想你了。"说完抬起眼睛偷偷看了你一眼，发现你在看她，又慌忙低下头去。
+- 保持你的人设性格，用第三人称叙事的方式展现
+- 不要输出多条消息，只输出一整段叙事文字
+
+【字数要求 - 严格遵守】
+- 输出长度必须在 ${minLen}~${maxLen} 字之间
+- 这是硬性要求，不能少于 ${minLen} 字，也不能超过 ${maxLen} 字
+${isLongForm ? `- 由于字数要求较多，你需要：
+  * 更细腻地描写人物的神态、表情、动作细节
+  * 适当推进剧情发展，可以有场景转换
+  * 增加环境描写、氛围渲染
+  * 可以有更多的心理活动暗示（通过动作和神态体现）
+  * 对话可以更丰富，多轮交流` : `- 保持精炼但不失细节，重点描写关键神态和动作`}`
         }
 
         const translationMode = characterLanguage !== 'zh' && chatTranslationEnabled
@@ -1187,7 +1236,11 @@ ${recentTimeline || '（无）'}
           })
         }
 
-        let response = await callLLM(llmMessages, undefined, { maxTokens: 420, timeoutMs: 600000 })
+        // 根据线下模式字数范围调整 maxTokens
+        const offlineMaxLen = character.offlineMaxLength || 300
+        const dynamicMaxTokens = character.offlineMode ? Math.max(420, Math.ceil(offlineMaxLen * 1.5)) : 420
+
+        let response = await callLLM(llmMessages, undefined, { maxTokens: dynamicMaxTokens, timeoutMs: 600000 })
         
         // 解析斗地主决策
         let doudizhuDecision: boolean | null = null
@@ -1639,6 +1692,7 @@ ${recentTimeline || '（无）'}
                   messageLanguage: characterLanguage,
                   chatTranslationEnabledAtSend: translationMode,
                   translationStatus: translationMode ? 'pending' : undefined,
+                  isOffline: character.offlineMode, // 标记是否是线下模式消息
                 })
                 
                 // 翻译策略（仅文本消息需要）
@@ -2122,6 +2176,7 @@ ${recentTimeline || '（无）'}
       isUser: true,
       type: 'text',
       replyTo: replyTo,
+      isOffline: character.offlineMode, // 标记是否是线下模式消息
     })
     // 立即同步 ref，避免用户立刻点箭头时还拿到旧 messages
     messagesRef.current = [...messagesRef.current, newMsg]
@@ -2475,6 +2530,12 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}` : ''}
       const splitToReplies = (raw: string) => {
         const text = (raw || '').trim()
         if (!text) return []
+        
+        // 线下模式：不分割，直接返回完整的一条
+        if (character.offlineMode) {
+          return [text]
+        }
+        
         const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
         const keepCmd = (s: string) =>
           /\|\|\|/.test(s) ||
@@ -2542,7 +2603,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       
       // 听歌邀请逻辑已改为“卡片→确认进入一起听界面”，这里禁止让模型主动发“音乐指令/歌名”
       
-      // 线下模式关闭时，禁止动作描述
+      // 线下模式关闭时，禁止动作描述；开启时，允许描写神态动作
       if (!character.offlineMode) {
         systemPrompt += `
 
@@ -2552,12 +2613,39 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 - 禁止出现类似"（笑）"、"*摸摸头*"、"【害羞】"这样的内容
 - 只能发送纯文字对话，就像真人发微信一样
 - 可以用表情符号emoji，但不能描述动作`
+      } else {
+        // 获取字数范围设置
+        const minLen = character.offlineMinLength || 50
+        const maxLen = character.offlineMaxLength || 300
+        const isLongForm = maxLen >= 500
+        systemPrompt += `
+
+【线下模式 - 叙事风格】
+- 现在是线下模式，你需要用小说/剧本的叙事风格来输出
+- 【重要】每次只输出一段完整的叙事，不要分成多条消息！
+- 这一段叙事应该包含：神态描写 + 动作描写 + 语言描写（如果有的话）
+- 说话的部分要用中文引号""包裹
+- 动作/神态描写不加引号，直接描述
+- 保持你的人设性格，用第三人称叙事的方式展现
+
+【字数要求 - 严格遵守】
+- 输出长度必须在 ${minLen}~${maxLen} 字之间
+- 这是硬性要求，不能少于 ${minLen} 字，也不能超过 ${maxLen} 字
+${isLongForm ? `- 由于字数要求较多，你需要：
+  * 更细腻地描写人物的神态、表情、动作细节
+  * 适当推进剧情发展，可以有场景转换
+  * 增加环境描写、氛围渲染
+  * 对话可以更丰富，多轮交流` : `- 保持精炼但不失细节`}`
       }
+
+      // 根据字数范围调整 maxTokens
+      const offlineMaxLen = character.offlineMaxLength || 300
+      const dynamicMaxTokens = character.offlineMode ? Math.max(260, Math.ceil(offlineMaxLen * 1.5)) : 260
 
       const result = await callLLM([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: context }
-      ], undefined, { maxTokens: 260, timeoutMs: 600000 })
+      ], undefined, { maxTokens: dynamicMaxTokens, timeoutMs: 600000 })
       
       if (result) {
         const lines = splitToReplies(result)
@@ -4344,6 +4432,68 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       const isBlockedMessage =
         !msg.isUser && character.isBlocked && character.blockedAt && msg.timestamp > character.blockedAt
 
+      // 线下模式消息的特殊渲染（不显示头像和气泡，使用叙事风格）
+      if (msg.isOffline && msg.type === 'text') {
+        // 获取自定义颜色设置
+        const offlineUserColor = character.offlineUserColor || '#2563eb'
+        const offlineCharColor = character.offlineCharColor || '#7c3aed'
+        const offlineDialogColor = character.offlineDialogColor || '#111827'
+        
+        // 处理引号内的文字：使用自定义对话颜色
+        const renderOfflineContent = (content: string) => {
+          // 匹配中文引号内的内容
+          const parts = content.split(/(".*?")/g)
+          return parts.map((part, i) => {
+            if (part.startsWith('"') && part.endsWith('"')) {
+              // 引号内的对话：使用对话颜色
+              return (
+                <span key={i} className="font-medium" style={{ color: offlineDialogColor }}>
+                  {part}
+                </span>
+              )
+            }
+            // 普通叙述文字：使用叙述颜色
+            return <span key={i}>{part}</span>
+          })
+        }
+        
+        return (
+          <div
+            key={msg.id}
+            className="mb-2 px-4 group"
+            style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 60px' }}
+          >
+            {/* 叙事内容 - 使用自定义颜色 */}
+            <div 
+              className={`text-[15px] leading-relaxed whitespace-pre-wrap ${msg.isUser ? 'text-right italic' : 'text-left'}`}
+              style={{ color: msg.isUser ? offlineUserColor : offlineCharColor }}
+            >
+              {renderOfflineContent(msg.content)}
+            </div>
+            {/* 操作按钮：删除和编辑 */}
+            <div className={`mt-1.5 flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingMessageId(msg.id)
+                  setEditingContent(msg.content)
+                }}
+                className="text-xs text-gray-400 hover:text-gray-600 active:opacity-70"
+              >
+                编辑
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMessage(msg.id)}
+                className="text-xs text-gray-400 hover:text-red-500 active:opacity-70"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        )
+      }
+
       // 编辑模式：是否被选中
       const isSelected = selectedMsgIds.has(msg.id)
       // 转发模式：是否被选中
@@ -4719,26 +4869,40 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             renderedMessageItems
           )}
           
-          {/* AI正在输入提示 */}
+          {/* AI正在输入提示 - 线下模式时不显示头像 */}
           {showTyping && (
-            <div className="flex gap-2 mb-3">
-              <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
-                {character.avatar ? (
-                  <img src={character.avatar} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-[15px] font-medium">
-                    {character.name[0]}
+            character.offlineMode ? (
+              // 线下模式：只显示三个点，居中
+              <div className="flex justify-center mb-3">
+                <div className="px-4 py-2 bg-gray-100/80 rounded-full">
+                  <div className="flex gap-1.5">
+                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
-                )}
-              </div>
-              <div className="px-4 py-3 bg-white/90 rounded-2xl rounded-tl-md shadow-sm">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               </div>
-            </div>
+            ) : (
+              // 线上模式：显示头像和气泡
+              <div className="flex gap-2 mb-3">
+                <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
+                  {character.avatar ? (
+                    <img src={character.avatar} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-[15px] font-medium">
+                      {character.name[0]}
+                    </div>
+                  )}
+                </div>
+                <div className="px-4 py-3 bg-white/90 rounded-2xl rounded-tl-md shadow-sm">
+                  <div className="flex gap-1">
+                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+              </div>
+            )
           )}
           
           {/* 重新生成按钮（只在最后一条消息是AI回复时显示，用户发消息后不显示） */}
@@ -4786,17 +4950,23 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         {/* 移动端禁用 blur（滚动+输入会非常卡），桌面端保留 */}
         <div className="px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40">
           <div className="flex items-center gap-2">
-            {/* 加号按钮 */}
+            {/* 加号按钮 - 线下模式时禁用 */}
             <button
               type="button"
               onClick={() => {
+                if (character.offlineMode) return // 线下模式禁用
                 setShowPlusMenu(!showPlusMenu)
                 setShowStickerPanel(false)
                 setActivePanel(null)
               }}
-              className="w-7 h-7 rounded-full border-2 border-gray-400 flex items-center justify-center transition-transform active:scale-90 flex-shrink-0"
+              disabled={character.offlineMode}
+              className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-transform flex-shrink-0 ${
+                character.offlineMode
+                  ? 'border-gray-300 cursor-not-allowed opacity-40'
+                  : 'border-gray-400 active:scale-90'
+              }`}
             >
-              <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className={`w-3.5 h-3.5 ${character.offlineMode ? 'text-gray-300' : 'text-gray-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
             </button>
