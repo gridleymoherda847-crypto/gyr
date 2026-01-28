@@ -29,9 +29,9 @@ export default function FontScreen() {
       return
     }
     
-    // 检查文件大小（限制 10MB）
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadError('字体文件过大，请选择小于 10MB 的文件')
+    // 检查文件大小（限制 20MB）
+    if (file.size > 20 * 1024 * 1024) {
+      setUploadError('字体文件过大，请选择小于 20MB 的文件')
       return
     }
     
@@ -197,7 +197,7 @@ export default function FontScreen() {
           
           {/* 说明 */}
           <div className="text-xs opacity-40 text-center pb-4" style={{ color: fontColor.value }}>
-            支持 TTF、OTF、WOFF、WOFF2 格式，文件大小限制 10MB
+            支持 TTF、OTF、WOFF、WOFF2 格式，文件大小限制 20MB
           </div>
         </div>
       </div>
