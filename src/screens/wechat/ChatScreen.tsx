@@ -1611,17 +1611,17 @@ ${recentTimeline || '（无）'}
                   }
                 })()
                 
-                // 如果是外文，异步翻译并更新显示文字
-                if (!isChinese && translationMode) {
+                // 如果是外文，异步翻译并更新显示文字（无论是否开启翻译模式，语音转文字都带中文翻译）
+                if (!isChinese) {
                   ;(async () => {
                     try {
                       const transResult = await callLLM([
-                        { role: 'system', content: '你是一个翻译器。把用户给你的内容翻译成简体中文。只输出翻译结果，不要解释。' },
+                        { role: 'system', content: '你是一个翻译器。把用户给你的内容翻译成简体中文。只输出翻译结果，不要解释，不要加引号。' },
                         { role: 'user', content: textContent }
                       ], undefined, { maxTokens: 200, timeoutMs: 30000 })
                       const zhText = transResult.trim()
                       if (zhText) {
-                        // 格式：原文。（中文翻译）
+                        // 格式：原文（中文翻译）
                         updateMessage(voiceMsg.id, { voiceText: `${textContent}（${zhText}）` })
                       }
                     } catch {

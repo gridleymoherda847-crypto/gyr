@@ -11,7 +11,10 @@ type Props = PropsWithChildren<{
 export default function WeChatLayout({ children, className = '' }: Props) {
   const navigate = useNavigate()
   const { pauseMusic, audioRef, musicPlaylist, playSong } = useOS()
-  const { listenTogether, stopListenTogether, updateListenTogetherSong, getCharacter, getCurrentPersona } = useWeChat()
+  const { listenTogether, stopListenTogether, updateListenTogetherSong, getCharacter, getCurrentPersona, userSettings } = useWeChat()
+  
+  // 使用自定义背景或默认背景
+  const wechatBg = userSettings.wechatBackground || '/icons/wechat-bg.png'
   const [showListenPanel, setShowListenPanel] = useState(false)
 
   // 外部触发打开“一起听歌界面”（例如：聊天里确认后进入）
@@ -60,7 +63,7 @@ export default function WeChatLayout({ children, className = '' }: Props) {
     <div 
       className={`relative h-full w-full overflow-hidden ${className}`}
       style={{
-        backgroundImage: 'url(/icons/wechat-bg.png)',
+        backgroundImage: `url(${wechatBg})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
       }}

@@ -394,6 +394,7 @@ export type WeChatUserSettings = {
   currentPersonaId: string | null // 当前使用的人设ID
   chatListBackground: string
   momentsBackground: string
+  wechatBackground: string // 微信整体背景图
 }
 
 // ==================== Context ====================
@@ -663,6 +664,7 @@ const defaultUserSettings: WeChatUserSettings = {
   currentPersonaId: null,
   chatListBackground: '',
   momentsBackground: '',
+  wechatBackground: '',
 }
 
 // 兼容迁移：直接读取 localStorage 原始字符串（仅迁移时使用）

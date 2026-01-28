@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useWeChat } from '../../../context/WeChatContext'
 import { useOS } from '../../../context/OSContext'
 import WeChatDialog from '../components/WeChatDialog'
+import { compressImageFileToDataUrl } from '../../../utils/image'
 
 type Props = {
   onBack: () => void
@@ -16,6 +17,10 @@ export default function MeTab({ onBack }: Props) {
     userPersonas, addUserPersona, updateUserPersona, deleteUserPersona, getUserPersona,
     walletBalance, getTotalFundValue
   } = useWeChat()
+  
+  // 更换背景相关
+  const bgInputRef = useRef<HTMLInputElement>(null)
+  const [bgUploading, setBgUploading] = useState(false)
 
   // 安全的返回处理
   const handleBack = useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -64,6 +69,28 @@ export default function MeTab({ onBack }: Props) {
     }
     setNewPersona({ name: '', avatar: '', description: '' })
     setShowAddPersona(false)
+  }
+  
+  // 更换微信背景
+  const handleBgChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBgUploading(true)
+    try {
+      const compressed = await compressImageFileToDataUrl(file, { maxSide: 1200, quality: 0.85 })
+      updateUserSettings({ wechatBackground: compressed })
+    } catch (err) {
+      console.error('背景压缩失败:', err)
+      // 降级：直接使用原图
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        updateUserSettings({ wechatBackground: event.target?.result as string })
+      }
+      reader.readAsDataURL(file)
+    } finally {
+      setBgUploading(false)
+      if (bgInputRef.current) bgInputRef.current.value = ''
+    }
   }
 
   return (
@@ -171,6 +198,46 @@ export default function MeTab({ onBack }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
           </div>
+          
+          {/* 更换微信背景 */}
+          <div 
+            className="flex items-center gap-3 p-3 bg-white/60 rounded-xl cursor-pointer"
+            onClick={() => bgInputRef.current?.click()}
+          >
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="font-medium text-[#000]">微信背景</div>
+              <div className="text-xs text-gray-500">
+                {bgUploading ? '上传中...' : (userSettings.wechatBackground ? '已设置自定义背景' : '点击更换整体背景图')}
+              </div>
+            </div>
+            {userSettings.wechatBackground && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  updateUserSettings({ wechatBackground: '' })
+                }}
+                className="text-xs text-red-500 px-2 py-1"
+              >
+                恢复默认
+              </button>
+            )}
+            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+          <input
+            ref={bgInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleBgChange}
+          />
         </div>
 
         {/* 底部提示 */}

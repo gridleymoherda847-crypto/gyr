@@ -67,12 +67,12 @@ export default function ActivationScreen({ onActivated }: ActivationScreenProps)
   if (showMigration) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-100 via-white to-purple-100 p-4">
-        <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl p-6 space-y-6">
+        <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl p-6 space-y-5">
           <div className="text-center">
             <div className="text-5xl mb-4">📱</div>
-            <h2 className="text-xl font-bold text-gray-800">设备迁移</h2>
+            <h2 className="text-xl font-bold text-gray-800">更换绑定设备</h2>
             <p className="text-sm text-gray-500 mt-2">
-              此兑换码已在其他设备激活。是否将激活转移到当前设备？
+              此兑换码已在其他设备激活。是否将绑定转移到当前设备？
             </p>
           </div>
           
@@ -80,7 +80,17 @@ export default function ActivationScreen({ onActivated }: ActivationScreenProps)
             <div className="flex items-start gap-3">
               <span className="text-xl">⚠️</span>
               <div className="text-sm text-amber-800">
-                <strong>注意：</strong>迁移后，原设备将无法继续使用此兑换码。每个兑换码只能在一个设备上使用。
+                <strong>注意：</strong>这只会转移激活码的绑定关系，原设备将无法继续使用此兑换码。
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-200">
+            <div className="flex items-start gap-3">
+              <span className="text-xl">💾</span>
+              <div className="text-sm text-blue-800">
+                <strong>数据不会自动迁移！</strong>
+                <br />聊天记录等数据存储在浏览器本地。如需迁移数据，请在原设备「设置 → 导出数据」，再到新设备「设置 → 导入数据」。
               </div>
             </div>
           </div>
@@ -98,7 +108,7 @@ export default function ActivationScreen({ onActivated }: ActivationScreenProps)
               disabled={loading}
               className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium shadow-lg disabled:opacity-50"
             >
-              {loading ? '迁移中...' : '确认迁移'}
+              {loading ? '处理中...' : '确认换绑'}
             </button>
           </div>
         </div>
