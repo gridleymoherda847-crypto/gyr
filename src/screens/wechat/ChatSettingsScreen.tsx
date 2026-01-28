@@ -347,16 +347,22 @@ export default function ChatSettingsScreen() {
     }
   }
 
-  const handleStickerImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleStickerImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // 使用 FileReader 转换为 base64
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const base64 = event.target?.result as string
+      try {
+        // 压缩表情包图片
+        const base64 = await compressImageFileToDataUrl(file, { maxSide: 256, quality: 0.8 })
         setNewStickerImage(base64)
+      } catch {
+        // 压缩失败时使用原始方式
+        const reader = new FileReader()
+        reader.onload = (event) => {
+          const base64 = event.target?.result as string
+          setNewStickerImage(base64)
+        }
+        reader.readAsDataURL(file)
       }
-      reader.readAsDataURL(file)
     }
   }
 
@@ -472,6 +478,56 @@ export default function ChatSettingsScreen() {
     e.preventDefault()
     navigate(-1)
   }
+  
+  // 角色卡导出相关状态
+  const [showExportCard, setShowExportCard] = useState(false)
+  const [exportCardData, setExportCardData] = useState('')
+  
+  // 导出角色卡
+  const exportCharacterCard = () => {
+    if (!character) return
+    const card = {
+      schemaVersion: 1,
+      type: 'mina_character_card',
+      exportedAt: Date.now(),
+      character: {
+        name: character.name,
+        avatar: character.avatar || '',
+        gender: character.gender,
+        prompt: character.prompt || '',
+        birthday: character.birthday || '',
+        callMeName: character.callMeName || '',
+        relationship: character.relationship || '',
+        country: character.country || '',
+        language: character.language || 'zh',
+        chatTranslationEnabled: !!character.chatTranslationEnabled,
+      }
+    }
+    const json = JSON.stringify(card, null, 2)
+    setExportCardData(json)
+    setShowExportCard(true)
+  }
+  
+  const downloadCharacterCard = () => {
+    if (!character || !exportCardData) return
+    const blob = new Blob([exportCardData], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${character.name}_角色卡_${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+  
+  const copyCharacterCard = async () => {
+    if (!exportCardData) return
+    try {
+      await navigator.clipboard.writeText(exportCardData)
+      setShowExportCard(false)
+    } catch {
+      // fallback
+    }
+  }
 
   return (
     <WeChatLayout>
@@ -546,6 +602,14 @@ export default function ChatSettingsScreen() {
                   {character.relationship && ` · ${character.relationship}`}
                 </div>
               </div>
+              {/* 导出角色卡按钮 */}
+              <button
+                type="button"
+                onClick={exportCharacterCard}
+                className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-600 text-[11px] font-medium active:scale-[0.98]"
+              >
+                导出角色卡
+              </button>
             </div>
             
             {/* 角色人设入口（避免在此处展示长文本） */}
@@ -1309,6 +1373,50 @@ export default function ChatSettingsScreen() {
           setShowMemorySettings(true)
         }}
       />
+      
+      {/* 导出角色卡弹窗 */}
+      {showExportCard && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowExportCard(false)} role="presentation" />
+          <div className="relative w-full max-w-[340px] rounded-2xl bg-white p-4 shadow-xl">
+            <div className="text-center font-bold text-[#111] mb-2">导出角色卡</div>
+            <div className="p-3 bg-green-50 rounded-xl mb-3">
+              <div className="text-[12px] text-green-700 font-medium mb-1">已导出内容：</div>
+              <div className="text-[11px] text-green-600 space-y-0.5">
+                <div>• 头像、名字、性别</div>
+                <div>• 人设提示词</div>
+                <div>• 生日、称呼、关系</div>
+                <div>• 国籍、语言设置</div>
+              </div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl mb-3">
+              <div className="text-[12px] text-gray-500 font-medium mb-1">未导出（隐私保护）：</div>
+              <div className="text-[11px] text-gray-400">
+                聊天记录、记忆、表情包、气泡、背景等
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={copyCharacterCard}
+                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-[13px] font-medium text-gray-700 active:scale-[0.98]"
+              >
+                复制
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  downloadCharacterCard()
+                  setShowExportCard(false)
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-[#07C160] text-[13px] font-medium text-white active:scale-[0.98]"
+              >
+                下载文件
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <WeChatDialog
         open={langDialog.open}

@@ -134,7 +134,7 @@ export default function XScreen() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { callLLM } = useOS()
-  const { getCurrentPersona, characters, addMessage, updateCharacter } = useWeChat()
+  const { getCurrentPersona, characters, addMessage, updateCharacter, getMessagesByCharacter } = useWeChat()
 
   const persona = useMemo(() => getCurrentPersona(), [getCurrentPersona])
   const meNameBase = persona?.name || '我'
@@ -1071,8 +1071,22 @@ export default function XScreen() {
         `对方主要语言：${peerLang}\n` +
         `用户：${meName}（${data.meHandle || xMakeHandle(meName)}）\n` +
         (peerCharacter
-          ? `对方角色人设：${(peerCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 280)}\n` +
-            `对方长期记忆摘要：${(peerCharacter as any).memorySummary || '（无）'}\n`
+          ? `【对方角色人设】\n${(peerCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 800)}\n` +
+            `【对方与用户的关系】${peerCharacter.relationship || '（未设定）'}\n` +
+            `【对方长期记忆摘要】\n${(peerCharacter as any).memorySummary || '（无）'}\n` +
+            (() => {
+              // 获取微信聊天上下文
+              const chatMsgs = getMessagesByCharacter(peerCharacter.id)
+              if (chatMsgs.length > 0) {
+                const recentChat = chatMsgs.slice(-8).map((m) => {
+                  const sender = m.isUser ? '用户' : peerCharacter.name
+                  const content = (m.content || '').replace(/\s+/g, ' ').slice(0, 80)
+                  return `${sender}: ${content}`
+                }).join('\n')
+                return `【与用户在微信的最近聊天】\n${recentChat}\n`
+              }
+              return ''
+            })()
           : '') +
         `用户最近发的推文：\n${myRecentPosts || '（无）'}\n` +
         `用户最近的评论：\n${myRecentReplies || '（无）'}\n` +

@@ -24,13 +24,47 @@ type LooseStickerPack = {
   data?: { keyword?: string; name?: string; imageUrl?: string; url?: string; image?: string; description?: string; desc?: string }[]
 }
 
-const fileToBase64 = (file: File) =>
-  new Promise<string>((resolve, reject) => {
+const fileToBase64 = async (file: File): Promise<string> => {
+  // 压缩表情包图片（最大 256px，质量 0.8）
+  const maxSide = 256
+  const quality = 0.8
+
+  const originalDataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (event) => resolve((event.target?.result as string) || '')
     reader.onerror = () => reject(new Error('读取图片失败'))
     reader.readAsDataURL(file)
   })
+
+  // 尝试压缩
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('image_load_error'))
+      el.src = originalDataUrl
+    })
+
+    const w = img.naturalWidth || img.width || 0
+    const h = img.naturalHeight || img.height || 0
+    if (!w || !h) return originalDataUrl
+
+    const scale = Math.min(1, maxSide / Math.max(w, h))
+    const tw = Math.max(1, Math.round(w * scale))
+    const th = Math.max(1, Math.round(h * scale))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = tw
+    canvas.height = th
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return originalDataUrl
+
+    ctx.drawImage(img, 0, 0, tw, th)
+    return canvas.toDataURL('image/jpeg', quality)
+  } catch {
+    return originalDataUrl
+  }
+}
 
 const safeName = (name: string) => (name || '').trim().replace(/\s+/g, ' ').slice(0, 30)
 
