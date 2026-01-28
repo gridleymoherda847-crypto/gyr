@@ -2391,6 +2391,7 @@ ${languageRule}
 - 符合人设的日常记录
 
 【照片描述】基于聊天记录中提到的场景或事件
+- 注意：照片描述必须始终用中文书写，不管角色是什么语言！
 
 输出格式（纯JSON，不要markdown）：
 {
@@ -2409,7 +2410,7 @@ ${languageRule}
   ],
   "walletBalance": 1234.56,
   "memo": "备忘录内容"${isNonChinese ? ',\n  "memoZh": "备忘录中文翻译"' : ''},
-  "recentPhotos": ["照片1的文字描述", "照片2的描述"]
+  "recentPhotos": ["用中文描述照片1", "用中文描述照片2"]
 }
 
 ${otherCharacters.length > 0 ? `可参考的已有角色：

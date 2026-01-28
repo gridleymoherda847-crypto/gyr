@@ -9,6 +9,7 @@ export type XUser = {
   bannerUrl?: string // 主页背景图（SVG DataURL）
   lang?: 'zh' | 'en' | 'ja' | 'ko' // 主要语言（用于私信/内容生成）
   bio?: string
+  followerCount?: number // 粉丝数量（手动设置，优先级高于自动计算）
   createdAt: number
 }
 

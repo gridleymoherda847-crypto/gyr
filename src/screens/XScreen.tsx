@@ -197,6 +197,7 @@ export default function XScreen() {
   const [otherProfileTipDontShow, setOtherProfileTipDontShow] = useState(false)
   const [otherBioEditOpen, setOtherBioEditOpen] = useState(false)
   const [otherBioDraft, setOtherBioDraft] = useState('')
+  const [otherFollowerDraft, setOtherFollowerDraft] = useState('')
   const [profileEditOpen, setProfileEditOpen] = useState(false)
   const [profileDraftName, setProfileDraftName] = useState('')
   const [profileDraftBio, setProfileDraftBio] = useState('')
@@ -2325,6 +2326,13 @@ export default function XScreen() {
     // 根据角色人设智能计算粉丝数
     const getFollowerCountForCharacter = () => {
       if (isMe) return Math.max(0, data?.meFollowerCount || 0)
+      
+      // 优先使用手动设置的粉丝数
+      const storedUser = (data.users || []).find((u) => u.id === uid)
+      if (storedUser && typeof storedUser.followerCount === 'number') {
+        return storedUser.followerCount
+      }
+      
       // 查找角色
       const character = characters.find((c) => c.id === uid)
       const prompt = (character?.prompt || '').toLowerCase()
@@ -2691,11 +2699,14 @@ export default function XScreen() {
                   type="button"
                   onClick={() => {
                     setOtherBioDraft(meta.bio || '')
+                    // 获取当前存储的粉丝数或自动计算的粉丝数
+                    const storedUser = (data?.users || []).find((u) => u.id === uid)
+                    setOtherFollowerDraft(storedUser?.followerCount?.toString() || followerCount.toString())
                     setOtherBioEditOpen(true)
                   }}
                   className="w-full py-2 rounded-xl bg-gray-100 text-sm text-gray-800"
                 >
-                  修改签名
+                  修改资料
                 </button>
                 <label className="flex items-center gap-2 text-[12px] text-gray-600">
                   <input
@@ -2726,7 +2737,7 @@ export default function XScreen() {
           </div>
         )}
 
-        {/* 路人签名编辑弹窗 */}
+        {/* 路人资料编辑弹窗 */}
         {!isMe && otherBioEditOpen && (
           <div className="absolute inset-0 z-[65] flex items-center justify-center p-4">
             <div
@@ -2735,16 +2746,31 @@ export default function XScreen() {
               role="presentation"
             />
             <div className="relative w-full max-w-[320px] rounded-2xl bg-white/95 border border-white/30 shadow-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-black/5 text-center text-sm font-semibold">修改签名</div>
+              <div className="px-4 py-3 border-b border-black/5 text-center text-sm font-semibold">修改资料</div>
               <div className="p-4 space-y-3">
-                <textarea
-                  value={otherBioDraft}
-                  onChange={(e) => setOtherBioDraft(e.target.value)}
-                  placeholder="输入签名..."
-                  className="w-full h-24 px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none resize-none"
-                  maxLength={200}
-                />
-                <div className="text-[11px] text-gray-400 text-right">{otherBioDraft.length}/200</div>
+                <div>
+                  <label className="text-[11px] text-gray-500 mb-1 block">签名</label>
+                  <textarea
+                    value={otherBioDraft}
+                    onChange={(e) => setOtherBioDraft(e.target.value)}
+                    placeholder="输入签名..."
+                    className="w-full h-20 px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none resize-none"
+                    maxLength={200}
+                  />
+                  <div className="text-[11px] text-gray-400 text-right">{otherBioDraft.length}/200</div>
+                </div>
+                <div>
+                  <label className="text-[11px] text-gray-500 mb-1 block">粉丝数量</label>
+                  <input
+                    type="number"
+                    value={otherFollowerDraft}
+                    onChange={(e) => setOtherFollowerDraft(e.target.value)}
+                    placeholder="输入粉丝数量..."
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none"
+                    min={0}
+                  />
+                  <div className="text-[11px] text-gray-400 mt-1">留空则根据人设自动计算</div>
+                </div>
               </div>
               <div className="p-3 border-t border-black/5 flex gap-2">
                 <button
@@ -2759,16 +2785,18 @@ export default function XScreen() {
                   onClick={() => {
                     setData((prev) => {
                       if (!prev) return prev
+                      // 解析粉丝数
+                      const followerNum = otherFollowerDraft.trim() ? Math.max(0, parseInt(otherFollowerDraft, 10) || 0) : undefined
                       // 检查用户是否已存在于 users 数组
                       const existingUser = (prev.users || []).find((u) => u.id === uid)
                       let users
                       if (existingUser) {
-                        // 用户存在，更新 bio
-                        users = (prev.users || []).map((u) => (u.id === uid ? { ...u, bio: otherBioDraft } : u))
+                        // 用户存在，更新 bio 和 followerCount
+                        users = (prev.users || []).map((u) => (u.id === uid ? { ...u, bio: otherBioDraft, followerCount: followerNum } : u))
                       } else {
                         // 用户不存在（可能是角色），先确保用户存在再更新
                         const { data: ensured } = xEnsureUser(prev, { id: uid, name: meta.name, handle: meta.handle, bio: otherBioDraft })
-                        users = ensured.users
+                        users = ensured.users.map((u) => (u.id === uid ? { ...u, followerCount: followerNum } : u))
                       }
                       const next = { ...prev, users }
                       void xSave(next)
