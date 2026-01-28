@@ -815,7 +815,17 @@ export default function ChatSettingsScreen() {
               className="flex items-center justify-between px-4 py-4 cursor-pointer active:bg-gray-50"
               onClick={() => {
                 const newOfflineMode = !character.offlineMode
-                updateCharacter(character.id, { offlineMode: newOfflineMode })
+                // 如果开启线下模式且语音功能开启，自动关闭语音并提示
+                if (newOfflineMode && character.voiceEnabled) {
+                  updateCharacter(character.id, { offlineMode: newOfflineMode, voiceEnabled: false })
+                  setDialog({
+                    open: true,
+                    title: '语音功能已自动关闭',
+                    message: '线下模式暂不支持语音功能，已帮你自动关闭。',
+                  })
+                } else {
+                  updateCharacter(character.id, { offlineMode: newOfflineMode })
+                }
                 // 插入分割线消息
                 addMessage({
                   characterId: character.id,
