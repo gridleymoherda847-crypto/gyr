@@ -4507,22 +4507,22 @@ ${isLongForm ? `- 由于字数要求较多，你需要：
             >
               {renderOfflineContent(msg.content)}
             </div>
-            {/* 操作按钮：删除和编辑 */}
-            <div className={`mt-1.5 flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
+            {/* 操作按钮：删除和编辑 - 常驻显示 */}
+            <div className={`mt-1.5 flex gap-3 ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
               <button
                 type="button"
                 onClick={() => {
                   setEditingMessageId(msg.id)
                   setEditingContent(msg.content)
                 }}
-                className="text-xs text-gray-400 hover:text-gray-600 active:opacity-70"
+                className="text-xs text-gray-300 hover:text-gray-600 active:opacity-70"
               >
                 编辑
               </button>
               <button
                 type="button"
                 onClick={() => deleteMessage(msg.id)}
-                className="text-xs text-gray-400 hover:text-red-500 active:opacity-70"
+                className="text-xs text-gray-300 hover:text-red-500 active:opacity-70"
               >
                 删除
               </button>
@@ -4700,15 +4700,15 @@ ${isLongForm ? `- 由于字数要求较多，你需要：
                 </span>
                 
                 {/* 消息操作按钮（非系统消息且非编辑模式） */}
-                {(msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'doudizhu_share' || msg.type === 'doudizhu_invite') && !editMode && (
+                {(msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'transfer' || msg.type === 'doudizhu_share' || msg.type === 'doudizhu_invite') && !editMode && (
                   <>
-                    {/* 编辑按钮（仅对方消息的文本/语音） */}
-                    {!msg.isUser && (msg.type === 'text' || msg.type === 'voice') && (
+                    {/* 编辑按钮（仅对方消息的文本/语音/转账备注） */}
+                    {!msg.isUser && (msg.type === 'text' || msg.type === 'voice' || msg.type === 'transfer') && (
                       <button
                         type="button"
                         onClick={() => {
                           setEditingMessageId(msg.id)
-                          setEditingContent(msg.content)
+                          setEditingContent(msg.type === 'transfer' ? (msg.transferNote || '') : msg.content)
                         }}
                         className="px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:bg-gray-100 active:opacity-70"
                       >
