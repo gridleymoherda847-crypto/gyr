@@ -433,64 +433,73 @@ export default function DoudizhuScreen() {
   
   // 背景音乐控制：打开斗地主App就开始播放，退出时停止
   useEffect(() => {
+    // 防止重复创建音频实例
+    if (bgmRef.current) {
+      return
+    }
+    
     // 创建音频
     const audio = new Audio()
     audio.loop = true
     audio.volume = 0.3
     audio.preload = 'auto'
-    
-    // 设置音频源 - 夸克等浏览器可能对ogg支持不好，但我们只有ogg文件
     audio.src = '/music/斗地主.mp3'
     bgmRef.current = audio
     
-    let hasPlayed = false
+    let isPlaying = false
+    let isLoaded = false
     
-    // 尝试播放
+    // 尝试播放（带防重复机制）
     const tryPlay = () => {
-      if (hasPlayed && !audio.paused) return
+      if (isPlaying || !bgmRef.current) return
       
-      // 先load确保资源加载
-      audio.load()
+      const currentAudio = bgmRef.current
       
-      const playPromise = audio.play()
+      // 只加载一次
+      if (!isLoaded) {
+        currentAudio.load()
+        isLoaded = true
+      }
+      
+      // 防止重复调用 play
+      if (!currentAudio.paused) return
+      
+      const playPromise = currentAudio.play()
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            hasPlayed = true
+            isPlaying = true
           })
           .catch((err) => {
             console.log('BGM autoplay blocked:', err.name)
-            // 某些浏览器需要用户交互后才能播放
           })
       }
     }
     
-    // 延迟一点尝试播放，给浏览器一些准备时间
+    // 延迟一点尝试播放
     const initTimer = setTimeout(tryPlay, 100)
     
-    // 如果自动播放失败，监听用户交互后播放
+    // 如果自动播放失败，监听用户交互后播放（只监听一次）
     const handleInteraction = () => {
-      if (audio.paused && bgmRef.current) {
+      if (!isPlaying && bgmRef.current?.paused) {
         tryPlay()
       }
     }
     
-    // 监听多种交互事件
+    // 监听交互事件
     document.addEventListener('click', handleInteraction)
     document.addEventListener('touchstart', handleInteraction)
-    document.addEventListener('touchend', handleInteraction)
-    document.addEventListener('pointerdown', handleInteraction)
     
     // 组件卸载时停止
     return () => {
       clearTimeout(initTimer)
       document.removeEventListener('click', handleInteraction)
       document.removeEventListener('touchstart', handleInteraction)
-      document.removeEventListener('touchend', handleInteraction)
-      document.removeEventListener('pointerdown', handleInteraction)
-      audio.pause()
-      audio.src = ''
-      bgmRef.current = null
+      if (bgmRef.current) {
+        bgmRef.current.pause()
+        bgmRef.current.src = ''
+        bgmRef.current = null
+      }
     }
   }, [])
   
