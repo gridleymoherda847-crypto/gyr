@@ -931,7 +931,7 @@ export default function ChatScreen() {
 
         // 构建系统提示（严格顺序：预设 → 角色设定 → 我的人设 → 长期记忆摘要 → 时间感 → 输出 → 说话风格）
         const periodHintForLLM = (() => {
-          if (currentPeriod) return '【特殊状态】用户目前处于经期，请适当关心她的身体状况。'
+          if (currentPeriod) return '【背景信息】用户目前处于经期（仅作为参考信息，不是每次都要问）。'
           try {
             const today = new Date().toISOString().split('T')[0]
             const records = getPeriodRecords()
@@ -940,7 +940,7 @@ export default function ChatScreen() {
               .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0]
             if (!upcoming) return ''
             const days = Math.ceil((new Date(upcoming.startDate).getTime() - new Date(today).getTime()) / (1000 * 60 * 60 * 24))
-            if (days >= 0 && days <= 7) return `【特殊状态】用户的经期可能快要来了（约${days}天内），可以更体贴地关心她。`
+            if (days >= 0 && days <= 7) return `【背景信息】用户的经期可能快要来了（约${days}天内），仅供参考。`
             return ''
           } catch {
             return ''
@@ -959,7 +959,7 @@ export default function ChatScreen() {
                 return range
               })
               .join('；')
-            return `【经期真实日历记录（必须相信并使用）】最近${Math.min(8, records.length)}次：${recent}\n- 这些是用户在“经期日历”里真实保存的记录，你必须按此判断/关心。`
+            return `【经期日历记录（仅供参考）】最近${Math.min(8, records.length)}次：${recent}\n- 这是用户的经期记录，你知道就好。除非用户主动聊这个话题或刚分享了经期卡片，否则不要反复问"肚子疼不疼"或每次都绕回经期话题。正常聊天即可。`
           } catch {
             return ''
           }
@@ -2507,7 +2507,7 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}` : ''}
               return range
             })
             .join('；')
-          return `【经期真实日历记录（必须相信并使用）】最近${Math.min(8, records.length)}次：${recent}`
+          return `【经期日历记录（仅供参考）】最近${Math.min(8, records.length)}次：${recent}`
         } catch {
           return ''
         }
@@ -3205,7 +3205,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     setActivePanel(null)
     
     // 用AI生成关心的回复
-    generateHumanLikeReplies(`你收到了对方同步的经期日历记录（请你实时读取经期日历里的内容），并根据${periodInfo || '经期情况'}关心她，表达体贴但不要像人机。`)
+    generateHumanLikeReplies(`你收到了对方同步的经期日历。简单关心一下就好（比如"收到啦"、"注意休息"之类），不要过度追问或每次都绕回这个话题。之后正常聊天即可。`)
   }
 
   // 偷看日记（每次打开都会生成新的）
