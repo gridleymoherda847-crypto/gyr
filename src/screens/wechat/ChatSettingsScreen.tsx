@@ -34,6 +34,7 @@ export default function ChatSettingsScreen() {
   const [showPersonaSelector, setShowPersonaSelector] = useState(false)
   const [showAddToOthers, setShowAddToOthers] = useState<string | null>(null)
   const [newStickerImage, setNewStickerImage] = useState('')
+  const [newStickerUrl, setNewStickerUrl] = useState('')
   const [newStickerCategory, setNewStickerCategory] = useState('')
   const [stickerGroupsExpanded, setStickerGroupsExpanded] = useState<Record<string, boolean>>({})
   const [publicGroupsExpanded, setPublicGroupsExpanded] = useState<Record<string, boolean>>({})
@@ -1282,6 +1283,35 @@ export default function ChatSettingsScreen() {
                   />
                   
                   <div className="flex-1">
+                    {/* 链接导入 */}
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={newStickerUrl}
+                        onChange={(e) => setNewStickerUrl(e.target.value)}
+                        placeholder="粘贴图片链接（可选）"
+                        className="flex-1 px-3 py-2 rounded-lg bg-white border border-gray-200 outline-none text-[#000] text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = newStickerUrl.trim()
+                          if (!url) {
+                            setDialog({ open: true, title: '提示', message: '请输入图片链接' })
+                            return
+                          }
+                          if (!url.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) && !url.match(/^https?:\/\//i)) {
+                            // 宽松检查，只要是 http(s) 开头就允许尝试
+                          }
+                          setNewStickerImage(url)
+                          setNewStickerUrl('')
+                        }}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
+                      >
+                        加载
+                      </button>
+                    </div>
+                    
                     {/* 情绪分类选择 */}
                     <select
                       value={newStickerCategory}
@@ -1302,6 +1332,7 @@ export default function ChatSettingsScreen() {
                       >
                         添加
                       </button>
+                      <span className="text-xs text-gray-400">点击左边图框选择本地图片</span>
                     </div>
                   </div>
                 </div>

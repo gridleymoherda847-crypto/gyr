@@ -238,6 +238,7 @@ export default function XScreen() {
 
   // Reply
   const [replyDraft, setReplyDraft] = useState('')
+  const [replyingTo, setReplyingTo] = useState<{ id: string; authorName: string } | null>(null)
 
   // Share to WeChat
   const [shareOpen, setShareOpen] = useState(false)
@@ -819,8 +820,10 @@ export default function XScreen() {
 
   const addMyReply = async () => {
     if (!data || !openPost) return
-    const text = replyDraft.trim()
-    if (!text) return
+    const rawText = replyDraft.trim()
+    if (!rawText) return
+    // 如果是回复某人，加上 @xxx 前缀
+    const text = replyingTo ? `@${replyingTo.authorName} ${rawText}` : rawText
     const r = xNewReply(openPost.id, 'me', meName, text)
     const updatedPosts = data.posts.map((p) => (p.id === openPost.id ? { ...p, replyCount: (p.replyCount || 0) + 1 } : p))
     // 用户可无限评论，但留存每帖最多 50（旧的按最早删）
@@ -839,6 +842,7 @@ export default function XScreen() {
     setData(next)
     await xSave(next)
     setReplyDraft('')
+    setReplyingTo(null)
     // 你发了评论后：再点刷新就会触发路人互动（由 refreshReplies 做）
   }
 
@@ -2225,7 +2229,18 @@ export default function XScreen() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-[13px] font-bold text-gray-900 truncate">{r.authorName}</div>
-                        <div className="text-[11px] text-gray-400">{fmtRelative(r.createdAt)}</div>
+                        <div className="flex items-center gap-2">
+                          {r.authorId !== 'me' && (
+                            <button
+                              type="button"
+                              onClick={() => setReplyingTo({ id: r.id, authorName: r.authorName })}
+                              className="text-[11px] text-blue-500 hover:text-blue-600"
+                            >
+                              回复
+                            </button>
+                          )}
+                          <div className="text-[11px] text-gray-400">{fmtRelative(r.createdAt)}</div>
+                        </div>
                       </div>
                       <div className="mt-1 text-[13px] text-gray-900 whitespace-pre-wrap break-words">{r.text}</div>
                     </div>
@@ -2237,12 +2252,27 @@ export default function XScreen() {
         </div>
 
         <div className="border-t border-black/10 px-3 py-2 bg-white">
+          {/* 回复目标提示 */}
+          {replyingTo && (
+            <div className="flex items-center justify-between mb-2 px-2 py-1 bg-gray-100 rounded-lg">
+              <span className="text-[12px] text-gray-600">
+                回复 <span className="font-medium text-gray-800">@{replyingTo.authorName}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setReplyingTo(null)}
+                className="text-[12px] text-gray-400 hover:text-gray-600"
+              >
+                取消
+              </button>
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <textarea
               value={replyDraft}
               onChange={(e) => setReplyDraft(e.target.value)}
               className="flex-1 min-h-[42px] max-h-[90px] resize-none rounded-2xl bg-gray-100 px-3 py-2 text-[13px] outline-none"
-              placeholder="写评论…（你评论后，点刷新会有路人互动）"
+              placeholder={replyingTo ? `回复 @${replyingTo.authorName}…` : '写评论…（你评论后，点刷新会有路人互动）'}
             />
             <button
               type="button"
