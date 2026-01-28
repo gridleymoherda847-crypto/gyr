@@ -1736,7 +1736,7 @@ ${isLongForm ? `- 由于字数要求较多，你需要：
                               { role: 'user', content: textContent },
                             ],
                             undefined,
-                            { maxTokens: 140, timeoutMs: 60000, temperature: 0.2 }
+                            { maxTokens: 500, timeoutMs: 60000, temperature: 0.2 }
                           )
                           const cleaned = (zh || '').trim()
                           updateMessage(msg.id, { translatedZh: cleaned || '（空）', translationStatus: cleaned ? 'done' : 'error' })
