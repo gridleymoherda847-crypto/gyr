@@ -269,6 +269,7 @@ export async function xLoad(meName: string): Promise<XDataV1> {
       bannerUrl,
       lang: lang === 'en' || lang === 'ja' || lang === 'ko' || lang === 'zh' ? lang : undefined,
       bio: typeof u?.bio === 'string' ? u.bio : xMakeBio(handle + '::bio'),
+      followerCount: typeof u?.followerCount === 'number' ? u.followerCount : undefined,
       createdAt: typeof u?.createdAt === 'number' ? u.createdAt : Date.now(),
     }
   })

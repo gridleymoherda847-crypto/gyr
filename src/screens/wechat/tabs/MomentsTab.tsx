@@ -274,31 +274,44 @@ ${recentChat || '（暂无）'}
     setPostImages([])
     setShowPostModal(false)
     
-    // 用户发朋友圈后，随机让1-2个好友来评论
+    // 用户发朋友圈后，让大部分好友来评论
     if (hasApiConfig && characters.length > 0) {
       const newMomentId = newMoment.id
       
-      const numCommenters = Math.min(characters.length, Math.random() < 0.5 ? 1 : 2)
+      // 80%的好友会来评论
       const shuffled = [...characters].sort(() => Math.random() - 0.5)
-      const commenters = shuffled.slice(0, numCommenters)
+      const numCommenters = Math.max(1, Math.ceil(shuffled.length * 0.8))
+      const commenters = shuffled.slice(0, Math.min(numCommenters, 15)) // 最多15个，避免太多API调用
+      
+      // 构建所有好友的名字列表（用于互相识别）
+      const allFriendNames = characters.map(c => c.name)
       
       // 延迟执行，等待新帖子添加完成
       window.setTimeout(async () => {
+        const globalPresets = getGlobalPresets()
+        const collectedComments: { friendId: string; friendName: string; content: string; timestamp: number }[] = []
+        
+        // 第一轮：每个好友独立评论
         for (const friend of commenters) {
-          // 60%概率评论
-          if (Math.random() > 0.6) continue
-          
-          const globalPresets = getGlobalPresets()
-          const recentChat = getMessagesByCharacter(friend.id).slice(-8).map(m => `${m.isUser ? '我' : friend.name}：${m.content}`).join('\n')
+          const recentChat = getMessagesByCharacter(friend.id).slice(-12).map(m => `${m.isUser ? '我' : friend.name}：${m.content}`).join('\n')
           const lore = getLorebookEntriesForCharacter(friend.id, `${recentChat || ''}\n${newMomentContent || ''}`)
           const lang = (friend as any).language || 'zh'
           const langName =
             lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
-          // 获取角色的长期记忆
           const characterMemory = friend.memorySummary || ''
-          // 获取图片信息提示
           const hasImages = newMomentImages && newMomentImages.length > 0
-          const imageHint = hasImages ? `（朋友圈配图${newMomentImages.length}张，可能是聊天记录截图、自拍、风景等）` : ''
+          
+          // 其他好友名字（排除自己）
+          const otherFriendNames = allFriendNames.filter(n => n !== friend.name)
+          
+          // 检测截图中是否可能有自己的聊天记录
+          const chatMentionHint = recentChat 
+            ? `\n【重要】如果朋友圈截图里有你和TA的聊天记录，你要能认出是自己的对话！查看最近聊天片段判断。`
+            : ''
+          
+          const imageHint = hasImages 
+            ? `（朋友圈配图${newMomentImages.length}张，可能是聊天记录截图、自拍、风景等）${chatMentionHint}` 
+            : ''
           
           try {
             const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈"评论"的方式发言。
@@ -319,27 +332,101 @@ ${characterMemory ? `你的长期记忆：\n${characterMemory}` : ''}
 【最近你们的聊天片段】
 ${recentChat || '（暂无）'}
 
+【其他好友名字（仅供参考，你可能不认识他们）】
+${otherFriendNames.slice(0, 10).join('、') || '（无）'}
+
 【任务】
 请写1条朋友圈评论：
 - 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
+- 如果截图里有你和TA的聊天记录，你可以认出来并回应（比如"这不是我吗""我说的话被发出来了"）
 - 你认识发朋友圈的人，要基于你们的关系和聊天记忆来评论
 - 口语化、短（<=30字）
 - 不要动作描写/旁白
 - 只输出评论内容，不要加引号，不要换行`
             
             const text = await callLLM([{ role: 'user', content: prompt }], undefined, { maxTokens: 90, timeoutMs: 600000 })
-            
-            // 延迟添加评论，模拟真实场景
-            window.setTimeout(() => {
+            const cleanText = text.trim()
+            if (cleanText) {
+              const timestamp = Date.now() - Math.random() * 5 * 60 * 1000
+              collectedComments.push({
+                friendId: friend.id,
+                friendName: friend.name,
+                content: cleanText,
+                timestamp
+              })
+              // 立即添加评论
               addMomentComment(newMomentId, {
                 authorId: friend.id,
                 authorName: friend.name,
-                content: text.trim(),
-                timestamp: Date.now() - Math.random() * 5 * 60 * 1000, // 0~5分钟前
+                content: cleanText,
+                timestamp
               })
-            }, 500 + Math.random() * 1500)
+            }
           } catch {
             // ignore
+          }
+        }
+        
+        // 第二轮：50%的好友会互相回复（但不能乱回复）
+        if (collectedComments.length >= 2) {
+          const replyCount = Math.max(1, Math.floor(collectedComments.length * 0.5))
+          const shuffledForReply = [...commenters].sort(() => Math.random() - 0.5).slice(0, replyCount)
+          
+          for (const friend of shuffledForReply) {
+            // 找一个可以回复的评论（排除自己的评论）
+            const otherComments = collectedComments.filter(c => c.friendId !== friend.id)
+            if (otherComments.length === 0) continue
+            
+            const targetComment = otherComments[Math.floor(Math.random() * otherComments.length)]
+            const targetFriend = characters.find(c => c.id === targetComment.friendId)
+            if (!targetFriend) continue
+            
+            // 检查这两个好友是否"认识"（有共同的聊天记录提及对方）
+            // 简化处理：假设同一个朋友圈下的好友都互相认识
+            
+            const lang = (friend as any).language || 'zh'
+            const langName =
+              lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
+            
+            try {
+              const replyPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在微信朋友圈评论区回复另一个人的评论。
+
+【你的身份】
+你是：${friend.name}
+你的人设：${friend.prompt || '（未设置）'}
+你的主要语言：${langName}
+
+【朋友圈发布者】
+发布者：${currentPersona?.name || '我'}
+
+【你要回复的评论】
+评论者：${targetComment.friendName}
+评论内容：${targetComment.content}
+
+【严格规则 - 必须遵守】
+1. 你回复的是「${targetComment.friendName}」，不是「${currentPersona?.name || '我'}」！
+2. 禁止把「${targetComment.friendName}」当成朋友圈发布者来回复
+3. 禁止调情、暧昧、亲密称呼（你们只是普通朋友/网友）
+4. 可以友好互动、玩梗、附和、吐槽，但要保持正常社交距离
+5. 【语言强规则】只用「${langName}」输出
+
+【任务】
+写1条回复「${targetComment.friendName}」的评论（<=20字）：
+- 只输出评论内容，不要加引号、@符号`
+              
+              const replyText = await callLLM([{ role: 'user', content: replyPrompt }], undefined, { maxTokens: 60, timeoutMs: 600000 })
+              const cleanReply = replyText.trim()
+              if (cleanReply) {
+                addMomentComment(newMomentId, {
+                  authorId: friend.id,
+                  authorName: friend.name,
+                  content: `回复 ${targetComment.friendName}：${cleanReply}`,
+                  timestamp: Date.now() - Math.random() * 2 * 60 * 1000
+                })
+              }
+            } catch {
+              // ignore
+            }
           }
         }
       }, 100)
