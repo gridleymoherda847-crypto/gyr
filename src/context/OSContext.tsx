@@ -35,6 +35,15 @@ export type Notification = { id: string; app: string; title: string; body: strin
 export type VirtualCharacter = { id: string; name: string; avatar: string; prompt: string; intimacy: number }
 export type ChatMessage = { id: string; senderId: string; senderName: string; text: string; app?: string; timestamp: number }
 export type FontOption = { id: string; name: string; fontFamily: string; preview: string }
+
+// 自定义字体
+export type CustomFont = {
+  id: string
+  name: string
+  fontFamily: string  // 字体族名称（用于 CSS）
+  dataUrl: string     // base64 编码的字体文件
+  createdAt: number
+}
 export type ColorOption = { id: string; name: string; value: string }
 
 // 纪念日类型
@@ -257,6 +266,11 @@ type OSContextValue = {
   // 备忘录
   memo: Memo
   setMemo: (memo: Partial<Memo>) => void
+  // 自定义字体
+  customFonts: CustomFont[]
+  addCustomFont: (font: Omit<CustomFont, 'id' | 'createdAt'>) => CustomFont
+  removeCustomFont: (id: string) => void
+  getAllFontOptions: () => FontOption[]  // 获取所有字体选项（内置 + 自定义）
   // API相关（手动配置）
   fetchAvailableModels: (override?: { apiBaseUrl?: string; apiKey?: string }) => Promise<string[]>
   callLLM: (
@@ -310,6 +324,7 @@ const STORAGE_KEYS = {
   waterCount: 'os_water_count',
   waterDate: 'os_water_date',
   signature: 'os_signature',
+  customFonts: 'os_custom_fonts',
 } as const
 
 // 图标主题定义
@@ -340,6 +355,33 @@ const seedCharacters: VirtualCharacter[] = [
 const seedChat: ChatMessage[] = [
   { id: 'chat-01', senderId: 'char-01', senderName: '青禾', text: '欢迎来到 LittlePhone~', timestamp: Date.now() - 1000 * 60 * 45, app: '系统' },
 ]
+
+// 注入自定义字体的 CSS @font-face 规则
+function injectCustomFontStyle(font: CustomFont) {
+  const styleId = `custom-font-style-${font.id}`
+  // 避免重复注入
+  if (document.getElementById(styleId)) return
+  
+  const style = document.createElement('style')
+  style.id = styleId
+  style.textContent = `
+    @font-face {
+      font-family: "${font.fontFamily}";
+      src: url("${font.dataUrl}") format("truetype");
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
+  `
+  document.head.appendChild(style)
+}
+
+// 移除自定义字体的 CSS 规则
+function removeCustomFontStyle(fontId: string) {
+  const styleId = `custom-font-style-${fontId}`
+  const style = document.getElementById(styleId)
+  if (style) style.remove()
+}
 
 export function OSProvider({ children }: PropsWithChildren) {
   const [isHydrated, setIsHydrated] = useState(false)
@@ -391,6 +433,9 @@ export function OSProvider({ children }: PropsWithChildren) {
   // 备忘录
   const defaultMemo: Memo = { content: '', image: '', todos: [] }
   const [memo, setMemoState] = useState<Memo>(defaultMemo)
+  
+  // 自定义字体
+  const [customFonts, setCustomFonts] = useState<CustomFont[]>([])
   // 兼容：hydration 完成前导入音乐，后续 hydrate 会 setMusicPlaylist 覆盖，导致“导入后刷新就没了”
   const pendingAddedSongsRef = useRef<Song[]>([])
 
@@ -449,6 +494,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         nextIconTheme,
         nextAnniversaries,
         nextMemo,
+        nextCustomFonts,
       ] = await Promise.all([
         kvGetJSONDeep<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig),
         kvGetJSONDeep<TTSConfig>(STORAGE_KEYS.ttsConfig, defaultTTSConfig),
@@ -472,6 +518,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<IconTheme>(STORAGE_KEYS.iconTheme, 'custom'),
         kvGetJSONDeep<Anniversary[]>(STORAGE_KEYS.anniversaries, []),
         kvGetJSONDeep<Memo>(STORAGE_KEYS.memo, { content: '', image: '', todos: [] }),
+        kvGetJSONDeep<CustomFont[]>(STORAGE_KEYS.customFonts, []),
       ])
 
       // 音乐：读取已保存的列表
@@ -579,6 +626,24 @@ export function OSProvider({ children }: PropsWithChildren) {
       if (nextIconTheme) setIconThemeState(nextIconTheme)
       if (Array.isArray(nextAnniversaries)) setAnniversaries(nextAnniversaries)
       if (nextMemo) setMemoState({ ...defaultMemo, ...nextMemo, todos: nextMemo.todos || [] })
+      // 加载自定义字体
+      if (Array.isArray(nextCustomFonts) && nextCustomFonts.length > 0) {
+        setCustomFonts(nextCustomFonts)
+        // 注入 CSS @font-face 规则
+        nextCustomFonts.forEach(font => injectCustomFontStyle(font))
+      }
+      // 如果当前选中的是自定义字体，需要从 customFonts 中找到
+      if (nextFontId?.startsWith('custom-') && nextCustomFonts) {
+        const customFont = nextCustomFonts.find((f: CustomFont) => f.id === nextFontId)
+        if (customFont) {
+          setCurrentFontState({
+            id: customFont.id,
+            name: customFont.name,
+            fontFamily: customFont.fontFamily,
+            preview: '自定义字体 ABC 123',
+          })
+        }
+      }
       setIsHydrated(true)
     }
     void hydrate()
@@ -607,9 +672,44 @@ export function OSProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.iconTheme, iconTheme) }, [iconTheme, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.anniversaries, anniversaries) }, [anniversaries, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.memo, memo) }, [memo, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.customFonts, customFonts) }, [customFonts, isHydrated])
 
   const setCurrentFont = (font: FontOption) => setCurrentFontState(font)
   const setIconTheme = (theme: IconTheme) => setIconThemeState(theme)
+  
+  // 自定义字体管理
+  const addCustomFont = (font: Omit<CustomFont, 'id' | 'createdAt'>): CustomFont => {
+    const newFont: CustomFont = {
+      ...font,
+      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      createdAt: Date.now(),
+    }
+    // 注入 CSS 规则
+    injectCustomFontStyle(newFont)
+    setCustomFonts(prev => [...prev, newFont])
+    return newFont
+  }
+  
+  const removeCustomFont = (id: string) => {
+    // 如果当前使用的是这个字体，切换回默认字体
+    if (currentFont.id === id) {
+      setCurrentFontState(FONT_OPTIONS.find(f => f.id === 'elegant') || FONT_OPTIONS[0])
+    }
+    // 移除 CSS 规则
+    removeCustomFontStyle(id)
+    setCustomFonts(prev => prev.filter(f => f.id !== id))
+  }
+  
+  // 获取所有字体选项（内置 + 自定义）
+  const getAllFontOptions = (): FontOption[] => {
+    const customOptions: FontOption[] = customFonts.map(f => ({
+      id: f.id,
+      name: f.name,
+      fontFamily: `"${f.fontFamily}", sans-serif`,
+      preview: '自定义字体 ABC 123',
+    }))
+    return [...FONT_OPTIONS, ...customOptions]
+  }
   
   // 喝水计数
   const addWater = () => {
@@ -1204,9 +1304,10 @@ export function OSProvider({ children }: PropsWithChildren) {
     iconTheme, setIconTheme,
     anniversaries, addAnniversary, updateAnniversary, removeAnniversary,
     memo, setMemo,
+    customFonts, addCustomFont, removeCustomFont, getAllFontOptions,
     fetchAvailableModels, callLLM,
   }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, 
-      notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo,
+      notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo, customFonts,
       locationSettings, weather,
       musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, isHydrated])
 
