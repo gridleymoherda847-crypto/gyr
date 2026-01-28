@@ -9,7 +9,7 @@ import { compressImageFileToDataUrl } from '../../utils/image'
 export default function ChatSettingsScreen() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { fontColor, llmConfig, callLLM, ttsConfig } = useOS()
+  const { fontColor, llmConfig, callLLM, ttsConfig, getAllFontOptions } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
     getCharacter, updateCharacter, deleteCharacter, 
@@ -126,6 +126,7 @@ export default function ChatSettingsScreen() {
   const [offlineDialogColorDraft, setOfflineDialogColorDraft] = useState(character?.offlineDialogColor || '#111827')
   const [offlineMinLengthDraft, setOfflineMinLengthDraft] = useState(character?.offlineMinLength || 50)
   const [offlineMaxLengthDraft, setOfflineMaxLengthDraft] = useState(character?.offlineMaxLength || 300)
+  const [offlineFontIdDraft, setOfflineFontIdDraft] = useState(character?.offlineFontId || '')
   
   // 气泡设置状态
   const defaultBubble = { bgColor: '#fce7f3', bgOpacity: 100, borderColor: '#f9a8d4', borderOpacity: 0, textColor: '#111827' }
@@ -942,6 +943,25 @@ export default function ChatSettingsScreen() {
                           <span className="text-xs text-gray-400 w-16">{offlineDialogColorDraft}</span>
                         </div>
                       </div>
+                    </div>
+                    
+                    {/* 字体选择 */}
+                    <div className="space-y-3 pt-2 border-t border-gray-100">
+                      <div className="text-sm text-gray-700 font-medium">叙事字体</div>
+                      <select
+                        value={offlineFontIdDraft}
+                        onChange={(e) => {
+                          setOfflineFontIdDraft(e.target.value)
+                          updateCharacter(character.id, { offlineFontId: e.target.value || undefined })
+                        }}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/50 bg-white"
+                      >
+                        <option value="">跟随全局字体</option>
+                        {getAllFontOptions().map((font) => (
+                          <option key={font.id} value={font.id}>{font.name}</option>
+                        ))}
+                      </select>
+                      <div className="text-[11px] text-gray-400">设置线下模式的叙事文字字体，留空则使用全局设置</div>
                     </div>
                     
                     {/* 输出字数范围 */}

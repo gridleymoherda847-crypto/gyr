@@ -9,13 +9,13 @@ import { xEnsureUser, xLoad, xNewPost, xSave, xAddFollow, xRemoveFollow, xIsFoll
 
 export default function ChatScreen() {
   const navigate = useNavigate()
-  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, ttsConfig } = useOS()
+  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, pauseMusic, ttsConfig, getAllFontOptions, currentFont } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const { 
     getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds,
     getStickersByCharacter,clearMessages,
     addTransfer, getPeriodRecords, addPeriodRecord,
-    updatePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether,
+    updatePeriodRecord, getCurrentPeriod, listenTogether, startListenTogether, stopListenTogether,
     setCurrentChatId, toggleBlocked, setCharacterTyping, updateCharacter,
     walletBalance, updateWalletBalance, addWalletBill,
     getUserPersona, getCurrentPersona,
@@ -1125,12 +1125,22 @@ ${recentTimeline || '（无）'}
         if (!character.offlineMode) {
           systemPrompt += `
 
-【重要限制】
-- 这是微信聊天，不是小说！禁止使用任何动作描写、神态描写、心理描写
-- 禁止使用括号()、*号*、【】等符号来描述动作或神态
-- 禁止出现类似"（笑）"、"*摸摸头*"、"【害羞】"这样的内容
-- 只能发送纯文字对话，就像真人发微信一样
-- 可以用表情符号emoji，但不能描述动作`
+##############################################
+#  【线上模式 - 绝对禁止动作描写】          #
+##############################################
+
+❌ 禁止任何动作描写！（如：*摸头*、（笑）、【害羞】）
+❌ 禁止任何神态描写！（如：微微一笑、红了脸）
+❌ 禁止任何心理描写！（如：心里想着...）
+❌ 禁止使用括号()、*号*、【】等符号描述动作或神态！
+❌ 禁止出现类似"（笑）"、"*摸摸头*"、"【害羞】"这样的内容！
+
+✅ 这是微信聊天，不是小说！
+✅ 只能发送纯文字对话，就像真人发微信一样
+✅ 可以用表情符号emoji（如😊😭），但绝对不能描述动作
+✅ 你只能说话，不能描写你在做什么
+
+##############################################`
         } else {
           // 获取字数范围设置
           const minLen = character.offlineMinLength || 50
@@ -1919,7 +1929,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                         `你叫用户：${character.callMeName || '（未设置）'}\n` +
                         `用户名字：${selectedPersonaName}\n` +
                         `用户邀请你一起听《${songTitle}》${songArtist ? `- ${songArtist}` : ''}。\n` +
-                        `\n` +
+                        `你的主要语言：${languageName(characterLanguage)}\n` +
+                        (characterLanguage !== 'zh' ? `\n【语言规则】\n- 你必须用${languageName(characterLanguage)}回复\n- chatReply 用${languageName(characterLanguage)}写\n- chatReplyZh 提供中文翻译\n\n` : `\n`) +
                         `【决策规则】\n` +
                         `- 你拥有“拒绝”的权利，但绝不能像人机：必须结合你的性格、人设、你们关系、以及最近聊天氛围。\n` +
                         `- 如果你现在心情不好/很忙/关系一般/对方刚惹你：更可能拒绝或先推一下。\n` +
@@ -1931,7 +1942,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                         `【只输出 JSON】\n` +
                         `{\n` +
                         `  "decision": "accept|reject",\n` +
-                        `  "chatReply": "你接下来发给对方的一条微信回复（自然口吻，别写系统提示）"\n` +
+                        `  "chatReply": "你接下来发给对方的一条微信回复（禁止动作神态描写，只能纯文字对话）"${characterLanguage !== 'zh' ? ',\n  "chatReplyZh": "chatReply的中文翻译"' : ''}\n` +
                         `}\n`
 
                       const llmMessages = [
@@ -2652,7 +2663,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 3. 要有情感，不要机械化
 4. 可以表达惊喜、感动、开心等情绪
 5. 可以追问、撒娇、表达关心等
-6. 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复；禁止夹杂中文（除非是专有名词/人名/歌名必须保留原文）。`
+6. 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复；禁止夹杂中文（除非是专有名词/人名/歌名必须保留原文）。
+${((character as any).language && (character as any).language !== 'zh') ? `7. 【翻译规则 - 必须遵守】你是非中文角色，每一条消息都必须带翻译！格式：外语原文 ||| 中文翻译。例如：Hello, how are you? ||| 你好，你怎么样？` : ''}`
 
       // 如果可能发转账，添加提示
       if (options?.includeTransfer) {
@@ -2665,12 +2677,22 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       if (!character.offlineMode) {
         systemPrompt += `
 
-【重要限制】
-- 这是微信聊天，不是小说！禁止使用任何动作描写、神态描写、心理描写
-- 禁止使用括号()、*号*、【】等符号来描述动作或神态
-- 禁止出现类似"（笑）"、"*摸摸头*"、"【害羞】"这样的内容
-- 只能发送纯文字对话，就像真人发微信一样
-- 可以用表情符号emoji，但不能描述动作`
+##############################################
+#  【线上模式 - 绝对禁止动作描写】          #
+##############################################
+
+❌ 禁止任何动作描写！（如：*摸头*、（笑）、【害羞】）
+❌ 禁止任何神态描写！（如：微微一笑、红了脸）
+❌ 禁止任何心理描写！（如：心里想着...）
+❌ 禁止使用括号()、*号*、【】等符号描述动作或神态！
+❌ 禁止出现类似"（笑）"、"*摸摸头*"、"【害羞】"这样的内容！
+
+✅ 这是微信聊天，不是小说！
+✅ 只能发送纯文字对话，就像真人发微信一样
+✅ 可以用表情符号emoji（如😊😭），但绝对不能描述动作
+✅ 你只能说话，不能描写你在做什么
+
+##############################################`
       } else {
         // 获取字数范围设置
         const minLen = character.offlineMinLength || 50
@@ -2927,6 +2949,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
   // 发送音乐分享
   const handleShareMusic = (song: { title: string; artist: string; id?: string }) => {
+    // 如果之前在听歌，先结束（避免和另一个人同时听歌导致格式混乱）
+    if (listenTogether) {
+      stopListenTogether()
+      pauseMusic()
+    }
+    
     // 用户主动发送：强制滚到底部（否则需要手动滑一下才看到“对方处理结果”）
     forceScrollRef.current = true
     nearBottomRef.current = true
@@ -4539,6 +4567,16 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         const offlineCharColor = character.offlineCharColor || '#7c3aed'
         const offlineDialogColor = character.offlineDialogColor || '#111827'
         
+        // 获取线下模式字体（优先使用角色设置，否则跟随全局）
+        const offlineFontFamily = (() => {
+          if (character.offlineFontId) {
+            const allFonts = getAllFontOptions()
+            const selectedFont = allFonts.find(f => f.id === character.offlineFontId)
+            return selectedFont?.fontFamily || currentFont.fontFamily
+          }
+          return currentFont.fontFamily
+        })()
+        
         // 处理引号内的文字：使用自定义对话颜色
         const renderOfflineContent = (content: string) => {
           // 匹配中文引号内的内容
@@ -4563,10 +4601,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             className="mb-2 px-4 group"
             style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 60px' }}
           >
-            {/* 叙事内容 - 使用自定义颜色 */}
+            {/* 叙事内容 - 使用自定义颜色和字体 */}
             <div 
-              className={`text-[15px] leading-relaxed whitespace-pre-wrap ${msg.isUser ? 'text-right italic' : 'text-left'}`}
-              style={{ color: msg.isUser ? offlineUserColor : offlineCharColor }}
+              className={`text-[15px] leading-relaxed whitespace-pre-wrap ${msg.isUser ? 'text-right' : 'text-left'}`}
+              style={{ 
+                color: msg.isUser ? offlineUserColor : offlineCharColor,
+                fontFamily: offlineFontFamily,
+                fontStyle: msg.isUser ? 'italic' : 'normal'
+              }}
             >
               {renderOfflineContent(msg.content)}
             </div>

@@ -68,6 +68,7 @@ export type WeChatCharacter = {
   offlineDialogColor?: string // 语言/对话颜色（引号内）
   offlineMinLength?: number // 最小输出字数
   offlineMaxLength?: number // 最大输出字数
+  offlineFontId?: string // 线下模式字体ID（留空则跟随全局）
   // 记忆功能
   memoryRounds: number // 每次回复附带的历史“回合”数量（按用户发言回合计）
   memorySummary: string // 长期记忆摘要（用户可编辑），每次回复必读
