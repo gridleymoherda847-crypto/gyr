@@ -4991,19 +4991,25 @@ ${isLongForm ? `- 由于字数要求较多，你需要：
         {/* 移动端禁用 blur（滚动+输入会非常卡），桌面端保留 */}
         <div className="px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40">
           <div className="flex items-center gap-2">
-            {/* 加号按钮 - 线下模式时禁用 */}
+            {/* 加号按钮 - 线下模式时点击显示提示 */}
             <button
               type="button"
               onClick={() => {
-                if (character.offlineMode) return // 线下模式禁用
+                if (character.offlineMode) {
+                  setInfoDialog({
+                    open: true,
+                    title: '线下模式',
+                    message: '线下模式专注于沉浸式叙事体验，暂不支持发送图片、位置、音乐等功能。\n\n如需使用这些功能，请在聊天设置中关闭线下模式。'
+                  })
+                  return
+                }
                 setShowPlusMenu(!showPlusMenu)
                 setShowStickerPanel(false)
                 setActivePanel(null)
               }}
-              disabled={character.offlineMode}
               className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-transform flex-shrink-0 ${
                 character.offlineMode
-                  ? 'border-gray-300 cursor-not-allowed opacity-40'
+                  ? 'border-gray-300 opacity-40'
                   : 'border-gray-400 active:scale-90'
               }`}
             >
