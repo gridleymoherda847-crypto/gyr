@@ -390,13 +390,18 @@ export default function DoudizhuScreen() {
   const [gameMode, setGameMode] = useState<GameMode>('solo')
   const [showFriendSelect, setShowFriendSelect] = useState(false)
   const [selectedFriends, setSelectedFriends] = useState<OnlineFriend[]>([])
+  const [fromGroupId, setFromGroupId] = useState<string | null>(null)
   
-  // 从聊天界面跳转过来时自动开始联机模式
+  // 从聊天界面/群聊跳转过来时自动开始联机模式
   useEffect(() => {
-    const state = location.state as { mode?: string; friends?: OnlineFriend[] } | null
+    const state = location.state as { mode?: string; friends?: OnlineFriend[]; fromGroupId?: string } | null
     if (state?.mode === 'online' && state?.friends?.length) {
       setGameMode('online')
       setSelectedFriends(state.friends)
+      // 如果是从群聊来的，保存群聊ID用于战绩同步
+      if (state.fromGroupId) {
+        setFromGroupId(state.fromGroupId)
+      }
       // 自动开始游戏
       if (stats.coins >= 1000) {
         playSound('start')
@@ -971,9 +976,11 @@ export default function DoudizhuScreen() {
           
           // 延迟发送消息，确保游戏结果已设置
           setTimeout(() => {
-            selectedFriends.forEach(friend => {
+            // 如果是从群聊来的，同步战绩到群聊
+            if (fromGroupId) {
               addMessage({
-                characterId: friend.id,
+                characterId: '',
+                groupId: fromGroupId,
                 content: JSON.stringify({
                   type: 'doudizhu_result',
                   isWin,
@@ -994,7 +1001,33 @@ export default function DoudizhuScreen() {
                 isUser: true,
                 type: 'doudizhu_share',
               })
-            })
+            } else {
+              // 否则发送给每个好友
+              selectedFriends.forEach(friend => {
+                addMessage({
+                  characterId: friend.id,
+                  content: JSON.stringify({
+                    type: 'doudizhu_result',
+                    isWin,
+                    winnerSide,
+                    winnerNames,
+                    loserNames,
+                    role: roleText,
+                    baseScore: stateRef.current.baseScore,
+                    multiplier: calcResult.multiplier,
+                    coinChange: calcResult.playerCoins[0],
+                    playerCoins: calcResult.playerCoins,
+                    playerNames,
+                    bombCount: calcResult.bombCount,
+                    bombDescription: bombDescription || undefined,
+                    difficulty: difficultyText,
+                    opponents: opponentNames,
+                  }),
+                  isUser: true,
+                  type: 'doudizhu_share',
+                })
+              })
+            }
           }, 500)
         }
         

@@ -710,24 +710,22 @@ ${uniqueNames.join('、')}
     const player2 = characters.find(c => c.id === doudizhuSelected[1])
     if (!player1 || !player2) return
     
-    const isUserWin = Math.random() > 0.5
-    const coinChange = Math.floor(50 + Math.random() * 150) * (isUserWin ? 1 : -1)
-    
-    addMessage({
-      characterId: '',
-      groupId: group.id,
-      content: JSON.stringify({
-        isWin: isUserWin,
-        coinChange,
-        opponents: [player1.name, player2.name],
-      }),
-      isUser: true,
-      type: 'doudizhu_share',
-    })
-    updateGroup(group.id, { lastMessageAt: Date.now() })
+    // 关闭面板
     setDoudizhuSelected([])
     setActivePanel(null)
     setShowPlusMenu(false)
+    
+    // 跳转到斗地主界面，传递好友信息和群聊ID（用于战绩同步）
+    navigate('/apps/doudizhu', { 
+      state: { 
+        mode: 'online', 
+        friends: [
+          { id: player1.id, name: player1.name, avatar: player1.avatar, position: 1 },
+          { id: player2.id, name: player2.name, avatar: player2.avatar, position: 2 }
+        ],
+        fromGroupId: group.id  // 传递群聊ID，用于战绩同步
+      } 
+    })
   }
   
   const handleClearMessages = () => {
