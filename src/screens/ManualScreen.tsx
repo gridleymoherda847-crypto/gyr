@@ -218,8 +218,8 @@ ${MANUAL_TEXT}
           <div className="p-4 bg-green-50 rounded-2xl border border-green-200">
             <h4 className="font-bold text-green-700 mb-3">💰 退款政策</h4>
             <div className="space-y-2 text-sm text-green-700">
-              <p>• 对小手机不满意，<strong>3 天内可无条件退款</strong></p>
-              <p>• 在小手机可以正常使用的情况下，<strong>售出 3 天后不予退换</strong></p>
+              <p>• 对小手机不满意，<strong>48 小时内可无条件退款</strong></p>
+              <p>• 在小手机可以正常使用的情况下，<strong>售出 48 小时后不予退换</strong></p>
             </div>
           </div>
         </div>
