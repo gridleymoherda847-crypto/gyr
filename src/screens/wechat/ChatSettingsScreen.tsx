@@ -1690,7 +1690,7 @@ export default function ChatSettingsScreen() {
         open={langDialog.open}
         title="语言提示"
         message={
-          '你选择了中文以外的语言：\n' +
+          '你选择了中文以外的语言，以下界面有内置翻译：聊天/推特/朋友圈/线下模式\n' +
           '- 该角色的聊天/日记/朋友圈/情侣空间都会用此语言输出\n' +
           '- 只有“聊天对话框”可内置翻译；其他界面请用浏览器翻译\n' +
           '\n' +
@@ -2633,7 +2633,7 @@ ${history}`
                 </svg>
               </button>
               <div className="mt-1 text-[11px] text-gray-400">
-                语言会影响聊天/日记/朋友圈/情侣空间。翻译仅聊天可选，其他界面请用浏览器翻译。
+                语言会影响聊天/日记/朋友圈等。聊天/推特/朋友圈/线下模式都有内置翻译。
               </div>
             </div>
 
