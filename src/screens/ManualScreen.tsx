@@ -82,6 +82,15 @@ const MANUAL_TEXT = `
 - 编辑角色：聊天 → 右上角「…」→ 聊天设置
 - 人设提示词：描述角色性格、说话方式等
 - 记忆管理：聊天设置 → 记忆管理 → AI 总结
+
+【API 质量问题】
+以下问题通常与 API 服务商或模型有关，开发者无法解决，请尝试更换模型或联系 API 服务商：
+- AI 回复被截断/不完整：API 服务商可能限制了 max_tokens，联系服务商或换支持长输出的模型
+- AI 回复很短/敷衍：模型能力弱或中转站篡改参数，换更强模型如 GPT-4/Claude
+- AI 智商低/不理解上下文：模型版本旧或被偷换便宜模型，升级模型或换可信服务商
+- AI 回复很慢/超时：服务商负载高或网络延迟，换响应快的模型或低延迟服务商
+- 一直报错/返回 Error：401=API Key 无效，429=额度用完/频率过高，500/502/503=服务商问题
+- AI 回复乱码/格式错误：服务商返回数据异常，更换稳定可靠的 API 服务商
 `
 
 export default function ManualScreen() {
@@ -222,6 +231,80 @@ ${MANUAL_TEXT}
             <p className="text-sm text-gray-600">
               微信 → 右上角 + 号 → 「创建群聊」
               <br />需要先创建至少 2 个角色才能拉群
+            </p>
+          </div>
+          
+          <h4 className="font-bold text-lg mt-6">⚠️ API 质量问题</h4>
+          
+          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200">
+            <p className="text-sm text-amber-700 mb-2">
+              <strong>以下问题通常与 API 服务商或模型有关，开发者无法解决。</strong>
+              <br />请尝试更换模型或联系你的 API 服务商咨询。
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">Q: AI 回复被截断/不完整？</h4>
+            <p className="text-sm text-gray-600">
+              可能原因：
+              <br />• API 服务商设置了 max_tokens 限制
+              <br />• 使用的模型输出长度有限制
+              <br />• 网络不稳定导致传输中断
+              <br /><strong>解决方案：</strong>联系 API 服务商调整限制，或更换支持更长输出的模型/服务商
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">Q: AI 回复很短/敷衍？</h4>
+            <p className="text-sm text-gray-600">
+              可能原因：
+              <br />• 使用的模型能力较弱（如 GPT-3.5）
+              <br />• API 中转站篡改了请求参数
+              <br />• 人设提示词不够详细
+              <br /><strong>解决方案：</strong>更换更强的模型（如 GPT-4、Claude），或更换 API 服务商
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">Q: AI 智商好像很低/不理解上下文？</h4>
+            <p className="text-sm text-gray-600">
+              可能原因：
+              <br />• 使用的模型版本较旧或能力弱
+              <br />• 某些中转站可能「偷换」了便宜模型
+              <br />• 对话历史太长超出模型上下文窗口
+              <br /><strong>解决方案：</strong>升级到更智能的模型，或更换可信赖的 API 服务商
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">Q: AI 回复很慢/超时？</h4>
+            <p className="text-sm text-gray-600">
+              可能原因：
+              <br />• API 服务商服务器负载高
+              <br />• 网络延迟（尤其是海外 API）
+              <br />• 使用的模型本身推理速度慢
+              <br /><strong>解决方案：</strong>换一个响应更快的模型，或更换延迟更低的 API 服务商
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">Q: 一直报错 / 返回 Error？</h4>
+            <p className="text-sm text-gray-600">
+              常见错误码：
+              <br />• <strong>401</strong>：API Key 无效或过期
+              <br />• <strong>429</strong>：请求频率过高/额度用完
+              <br />• <strong>500/502/503</strong>：服务商服务器问题
+              <br /><strong>解决方案：</strong>检查 API Key 是否正确，确认余额充足，或等待服务商恢复
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">Q: AI 回复乱码/格式错误？</h4>
+            <p className="text-sm text-gray-600">
+              可能原因：
+              <br />• API 服务商返回数据格式异常
+              <br />• 中转站处理响应时出错
+              <br /><strong>解决方案：</strong>更换 API 服务商，选择稳定可靠的服务
             </p>
           </div>
           
