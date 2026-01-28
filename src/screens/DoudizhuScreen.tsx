@@ -381,8 +381,9 @@ export default function DoudizhuScreen() {
   const [rechargeAmount, setRechargeAmount] = useState(10)
   const [showRechargeSuccess, setShowRechargeSuccess] = useState(false)
   
-  // 背景音乐
+  // 背景音乐 - 使用 ref 追踪是否已初始化
   const bgmRef = useRef<HTMLAudioElement | null>(null)
+  const bgmInitializedRef = useRef(false)
   
   // 游戏模式选择
   const [showModeSelect, setShowModeSelect] = useState(false)
@@ -434,64 +435,50 @@ export default function DoudizhuScreen() {
   
   // 背景音乐控制：打开斗地主App就开始播放，退出时停止
   useEffect(() => {
-    // 防止重复创建音频实例
-    if (bgmRef.current) {
+    // 严格防止重复初始化
+    if (bgmInitializedRef.current) {
       return
     }
+    bgmInitializedRef.current = true
     
-    // 创建音频
-    const audio = new Audio()
+    // 停止并清理任何现有的音频
+    if (bgmRef.current) {
+      bgmRef.current.pause()
+      bgmRef.current.src = ''
+      bgmRef.current = null
+    }
+    
+    // 创建新的音频实例
+    const audio = new Audio('/music/斗地主.mp3')
     audio.loop = true
     audio.volume = 0.3
-    audio.preload = 'auto'
-    audio.src = '/music/斗地主.mp3'
     bgmRef.current = audio
     
-    let isPlaying = false
-    let isLoaded = false
-    
-    // 尝试播放（带防重复机制）
+    // 尝试播放
     const tryPlay = () => {
-      if (isPlaying || !bgmRef.current) return
-      
       const currentAudio = bgmRef.current
+      if (!currentAudio || !currentAudio.paused) return
       
-      // 只加载一次
-      if (!isLoaded) {
-        currentAudio.load()
-        isLoaded = true
-      }
-      
-      // 防止重复调用 play
-      if (!currentAudio.paused) return
-      
-      const playPromise = currentAudio.play()
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            isPlaying = true
-          })
-          .catch((err) => {
-            console.log('BGM autoplay blocked:', err.name)
-          })
-      }
+      currentAudio.play().catch(() => {
+        // 自动播放被阻止，等待用户交互
+      })
     }
     
-    // 延迟一点尝试播放
-    const initTimer = setTimeout(tryPlay, 100)
+    // 延迟尝试播放
+    const initTimer = setTimeout(tryPlay, 200)
     
-    // 如果自动播放失败，监听用户交互后播放（只监听一次）
+    // 用户交互后播放（使用 once 确保只触发一次）
     const handleInteraction = () => {
-      if (!isPlaying && bgmRef.current?.paused) {
-        tryPlay()
-      }
+      tryPlay()
+      // 移除监听器
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
     }
     
-    // 监听交互事件
     document.addEventListener('click', handleInteraction)
     document.addEventListener('touchstart', handleInteraction)
     
-    // 组件卸载时停止
+    // 组件卸载时清理
     return () => {
       clearTimeout(initTimer)
       document.removeEventListener('click', handleInteraction)
@@ -501,6 +488,7 @@ export default function DoudizhuScreen() {
         bgmRef.current.src = ''
         bgmRef.current = null
       }
+      bgmInitializedRef.current = false
     }
   }, [])
   
@@ -1242,23 +1230,45 @@ export default function DoudizhuScreen() {
   const handWidth = hands[0].length > 0 ? (hands[0].length - 1) * 28 + 48 : 0
   const isInGame = phase === 'bidding' || phase === 'playing'
   const currentMultiplier = Math.pow(2, bombCount)
+  
+  // 获取容器尺寸用于旋转计算
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
+  
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current?.parentElement) {
+        const parent = containerRef.current.parentElement
+        setContainerSize({ width: parent.clientWidth, height: parent.clientHeight })
+      }
+    }
+    updateSize()
+    window.addEventListener('resize', updateSize)
+    // 延迟再次更新，确保布局稳定
+    const timer = setTimeout(updateSize, 100)
+    return () => {
+      window.removeEventListener('resize', updateSize)
+      clearTimeout(timer)
+    }
+  }, [])
 
   return (
-    <div 
-      className="flex flex-col h-full overflow-hidden relative"
-      style={{ 
-        transform: 'rotate(90deg)',
-        transformOrigin: 'center center',
-        width: '100vh',
-        height: '100vw',
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        marginTop: '-50vw',
-        marginLeft: '-50vh',
-        background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4c1d95 70%, #581c87 100%)'
-      }}
-    >
+    <div ref={containerRef} className="w-full h-full relative overflow-hidden">
+      <div 
+        className="flex flex-col overflow-hidden"
+        style={{ 
+          transform: 'rotate(90deg)',
+          transformOrigin: 'center center',
+          width: containerSize.height || '100%',
+          height: containerSize.width || '100%',
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          marginTop: containerSize.width ? -containerSize.width / 2 : '-50%',
+          marginLeft: containerSize.height ? -containerSize.height / 2 : '-50%',
+          background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4c1d95 70%, #581c87 100%)'
+        }}
+      >
       {/* 装饰背景 */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-10 left-10 w-32 h-32 bg-pink-500/10 rounded-full blur-3xl" />
@@ -1718,6 +1728,7 @@ export default function DoudizhuScreen() {
           to { box-shadow: 0 0 0 5px #fbbf24, 0 0 30px rgba(251, 191, 36, 0.8); }
         }
       `}</style>
+      </div>
     </div>
   )
 }
