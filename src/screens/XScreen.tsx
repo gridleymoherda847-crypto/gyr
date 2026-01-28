@@ -2247,20 +2247,27 @@ export default function XScreen() {
       const character = characters.find((c) => c.id === uid)
       const prompt = (character?.prompt || '').toLowerCase()
       const name = (character?.name || meta.name || '').toLowerCase()
-      
-      // 根据人设关键词判断粉丝量级
-      // 明星/艺人/偶像/网红 -> 百万级
-      const isCelebrity = /明星|艺人|偶像|歌手|演员|idol|singer|actor|actress|celebrity|网红|博主|influencer|kol|主播|streamer|rapper|导演|director/.test(prompt + name)
-      // 公众人物/企业家/作家 -> 十万级
-      const isPublicFigure = /企业家|ceo|创始人|founder|作家|writer|author|教授|professor|医生|doctor|律师|lawyer|记者|journalist|运动员|athlete|设计师|designer/.test(prompt + name)
-      // 普通职业/学生 -> 几百到几千
-      const isOrdinary = /学生|student|高中|大学|college|university|上班族|员工|worker|普通|平凡/.test(prompt + name)
+      const combined = prompt + name
       
       // 用 handle 生成稳定的随机种子
       const seed = (meta.handle || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
       const rand = (min: number, max: number) => min + Math.floor((seed * 9301 + 49297) % 233280 / 233280 * (max - min))
       
-      if (isCelebrity) {
+      // 根据人设关键词判断粉丝量级
+      // 明星/艺人/偶像/网红 -> 百万级
+      const isCelebrity = /明星|艺人|偶像|歌手|演员|idol|singer|actor|actress|celebrity|网红|博主|influencer|kol|主播|streamer|rapper|导演|director|模特|model/.test(combined)
+      // 公众人物/企业家/作家 -> 十万级
+      const isPublicFigure = /企业家|ceo|创始人|founder|作家|writer|author|教授|professor|医生|doctor|律师|lawyer|记者|journalist|运动员|athlete|设计师|designer|政治|politician/.test(combined)
+      // 孤僻/不社交/内向/宅 -> 极少粉丝（可能根本不用推特）
+      const isIntrovert = /孤僻|内向|不爱社交|不喜欢社交|社恐|宅|独来独往|独处|不爱交际|沉默寡言|话少|不善言辞|低调|隐居|隐士|自闭|不合群|独行侠|冷漠|疏离|不与人交往|没有朋友|朋友很少|很少社交|不玩社交|讨厌社交|shy|introvert|antisocial|loner|recluse|quiet|reserved|withdrawn/.test(combined)
+      // 普通职业/学生 -> 几百到几千
+      const isOrdinary = /学生|student|高中|大学|college|university|上班族|员工|worker|普通|平凡|打工|社畜|程序员|coder|developer|engineer|工程师/.test(combined)
+      
+      // 优先判断：孤僻型角色粉丝极少
+      if (isIntrovert) {
+        // 孤僻/不社交：0 ~ 50（可能根本不怎么发推）
+        return rand(0, 50)
+      } else if (isCelebrity) {
         // 明星：50万 ~ 500万
         return rand(500000, 5000000)
       } else if (isPublicFigure) {
@@ -2270,8 +2277,8 @@ export default function XScreen() {
         // 普通人：50 ~ 2000
         return rand(50, 2000)
       } else {
-        // 默认：根据 handle 长度给一个中等范围
-        return rand(500, 30000)
+        // 默认：根据 handle 长度给一个中等范围（普通人偏多）
+        return rand(100, 5000)
       }
     }
     const followerCount = getFollowerCountForCharacter()

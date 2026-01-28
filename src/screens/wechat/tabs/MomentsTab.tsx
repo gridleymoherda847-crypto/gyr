@@ -92,6 +92,7 @@ export default function MomentsTab({ onBack }: Props) {
         if (postsToComment.length === 0) {
           // 没有用户发的帖子可评论，改为发动态
           setRefreshing(false)
+          setRefreshWarnOpen(false)
           return
         }
         const target = postsToComment[Math.floor(Math.random() * postsToComment.length)]
@@ -224,6 +225,7 @@ ${recentChat || '（暂无）'}
       setDialog({ open: true, title: '刷新失败', message: e?.message || '模型调用失败，请稍后重试' })
     } finally {
       setRefreshing(false)
+      setRefreshWarnOpen(false)
     }
   }
 
@@ -750,7 +752,8 @@ ${params.userText}
         cancelText={refreshing ? undefined : "取消"}
         onCancel={refreshing ? undefined : () => setRefreshWarnOpen(false)}
         onConfirm={refreshing ? undefined : () => {
-          setRefreshWarnOpen(false)
+          // 不要在这里关闭 refreshWarnOpen，让弹窗靠 refreshing 状态来控制
+          // 这样可以避免弹窗在 setRefreshing(true) 生效前短暂消失
           handleRefresh()
         }}
       />

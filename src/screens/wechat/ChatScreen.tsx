@@ -232,11 +232,12 @@ export default function ChatScreen() {
       characterName: string
       characterAvatar: string
       remark: string  // 备注
-      messages: Array<{ isUser: boolean; content: string; timestamp: number }>
+      messages: Array<{ isUser: boolean; content: string; contentZh?: string; timestamp: number }>
     }>
     bills: Array<{ type: string; amount: number; description: string; timestamp: number }>
     walletBalance: number  // 钱包余额
     memo: string
+    memoZh?: string  // 备忘录中文翻译
     recentPhotos: string[]  // 文字描述
   } | null>(null)
   const [phonePeekTab, setPhonePeekTab] = useState<'chats' | 'bills' | 'wallet' | 'memo' | 'photos'>('chats')
@@ -2179,6 +2180,23 @@ ${recentTimeline || '（无）'}
       }).join('\n')
       
       // 构建prompt：要求生成对方的聊天记录
+      const charLang = (character as any).language || 'zh'
+      const charLangName = languageName(charLang)
+      const isNonChinese = charLang !== 'zh'
+      
+      const languageRule = isNonChinese 
+        ? `
+【语言规则 - 非常重要！】
+角色${character.name}是${charLangName}使用者，因此：
+1. **社交圈的人也应该是同语言/同国籍的人**：朋友、家人、同事等都应该使用${charLangName}交流
+2. **所有聊天消息必须使用${charLangName}书写**
+3. **每条消息必须同时提供中文翻译**：使用 "contentZh" 字段
+4. **备忘录也要用${charLangName}书写，并在 "memoZh" 字段提供中文翻译**
+5. 朋友的名字也要符合该语言/国家的习惯（如日本人叫优衣、健太等，美国人叫 Mike、Emily 等）`
+        : `
+【语言规则】
+所有内容使用中文书写。`
+
       const systemPrompt = `你是一个聊天记录生成器。你需要生成${character.name}的手机内容，包括聊天记录、消费账单、钱包余额、备忘录和照片描述。
 
 === 角色人设（重要！决定了TA的社交圈和生活方式）===
@@ -2192,6 +2210,7 @@ ${lorebookText || '（无世界书）'}
 === 与用户（${selectedPersona?.name || '用户'}）的聊天记录 ===
 ${fullContext}
 === 聊天记录结束 ===
+${languageRule}
 
 【生成原则】
 1. **优先从人设和世界书中提取社交关系**：
@@ -2240,8 +2259,6 @@ ${fullContext}
 
 【照片描述】基于聊天记录中提到的场景或事件
 
-如果聊天内容不是中文，在每条消息后面括号内附上中文翻译。
-
 输出格式（纯JSON，不要markdown）：
 {
   "chats": [
@@ -2249,8 +2266,8 @@ ${fullContext}
       "characterName": "对方名字",
       "remark": "备注名（如：闺蜜小美、死党阿杰、老妈、暧昧对象等）",
       "messages": [
-        {"isUser": true, "content": "角色(${character.name})发的消息", "timestamp": 时间戳毫秒},
-        {"isUser": false, "content": "对方发的消息", "timestamp": 时间戳毫秒}
+        {"isUser": true, "content": "角色(${character.name})发的消息"${isNonChinese ? ', "contentZh": "中文翻译"' : ''}, "timestamp": 时间戳毫秒},
+        {"isUser": false, "content": "对方发的消息"${isNonChinese ? ', "contentZh": "中文翻译"' : ''}, "timestamp": 时间戳毫秒}
       ]
     }
   ],
@@ -2258,7 +2275,7 @@ ${fullContext}
     {"type": "支出", "amount": 35.5, "description": "美团外卖-黄焖鸡米饭", "timestamp": 时间戳毫秒}
   ],
   "walletBalance": 1234.56,
-  "memo": "备忘录内容",
+  "memo": "备忘录内容"${isNonChinese ? ',\n  "memoZh": "备忘录中文翻译"' : ''},
   "recentPhotos": ["照片1的文字描述", "照片2的描述"]
 }
 
@@ -2306,6 +2323,7 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}` : ''}
                 return {
                   isUser: msg.isUser !== false,
                   content: msg.content || '',
+                  contentZh: msg.contentZh || undefined,  // 中文翻译（非中文角色）
                   timestamp: ts,
                 }
               }),
@@ -2348,6 +2366,7 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}` : ''}
             bills: allBills,
             walletBalance: typeof parsed.walletBalance === 'number' ? parsed.walletBalance : parseFloat(parsed.walletBalance) || 0,
             memo: parsed.memo || '',
+            memoZh: parsed.memoZh || undefined,  // 备忘录中文翻译（非中文角色）
             recentPhotos: parsed.recentPhotos || [],
           })
         } catch (e) {
@@ -6296,6 +6315,12 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                                 }`}>
                                   {msg.content}
                                 </div>
+                                {/* 翻译（非中文角色） */}
+                                {msg.contentZh && (
+                                  <div className={`max-w-[220px] px-2 py-1 mt-1 rounded text-xs bg-blue-50 text-blue-600 ${msg.isUser ? 'text-right' : 'text-left'}`}>
+                                    {msg.contentZh}
+                                  </div>
+                                )}
                                 <div className="text-xs text-gray-400 mt-1 px-1">
                                   {formatTime(msg.timestamp)}
                                 </div>
@@ -6418,6 +6443,15 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                       <div className="text-sm text-gray-800 whitespace-pre-wrap">
                         {phonePeekData.memo || '暂无备忘录'}
                       </div>
+                      {/* 备忘录翻译（非中文角色） */}
+                      {phonePeekData.memoZh && (
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <div className="text-xs text-blue-500 mb-1">翻译：</div>
+                          <div className="text-sm text-blue-600 whitespace-pre-wrap">
+                            {phonePeekData.memoZh}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
