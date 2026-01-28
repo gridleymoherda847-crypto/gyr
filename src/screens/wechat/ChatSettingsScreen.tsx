@@ -875,21 +875,22 @@ export default function ChatSettingsScreen() {
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-700">我的叙述</span>
                         <div className="flex items-center gap-2">
-                          <div 
-                            className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer"
-                            style={{ backgroundColor: offlineUserColorDraft }}
-                            onClick={() => {
-                              const input = document.createElement('input')
-                              input.type = 'color'
-                              input.value = offlineUserColorDraft
-                              input.onchange = (e) => {
-                                const color = (e.target as HTMLInputElement).value
+                          <label className="relative w-8 h-8 rounded-lg border border-gray-200 cursor-pointer overflow-hidden">
+                            <input
+                              type="color"
+                              value={offlineUserColorDraft}
+                              onChange={(e) => {
+                                const color = e.target.value
                                 setOfflineUserColorDraft(color)
                                 updateCharacter(character.id, { offlineUserColor: color })
-                              }
-                              input.click()
-                            }}
-                          />
+                              }}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            />
+                            <div 
+                              className="w-full h-full"
+                              style={{ backgroundColor: offlineUserColorDraft }}
+                            />
+                          </label>
                           <span className="text-xs text-gray-400 w-16">{offlineUserColorDraft}</span>
                         </div>
                       </div>
@@ -898,21 +899,22 @@ export default function ChatSettingsScreen() {
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-700">TA的叙述</span>
                         <div className="flex items-center gap-2">
-                          <div 
-                            className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer"
-                            style={{ backgroundColor: offlineCharColorDraft }}
-                            onClick={() => {
-                              const input = document.createElement('input')
-                              input.type = 'color'
-                              input.value = offlineCharColorDraft
-                              input.onchange = (e) => {
-                                const color = (e.target as HTMLInputElement).value
+                          <label className="relative w-8 h-8 rounded-lg border border-gray-200 cursor-pointer overflow-hidden">
+                            <input
+                              type="color"
+                              value={offlineCharColorDraft}
+                              onChange={(e) => {
+                                const color = e.target.value
                                 setOfflineCharColorDraft(color)
                                 updateCharacter(character.id, { offlineCharColor: color })
-                              }
-                              input.click()
-                            }}
-                          />
+                              }}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            />
+                            <div 
+                              className="w-full h-full"
+                              style={{ backgroundColor: offlineCharColorDraft }}
+                            />
+                          </label>
                           <span className="text-xs text-gray-400 w-16">{offlineCharColorDraft}</span>
                         </div>
                       </div>
@@ -921,21 +923,22 @@ export default function ChatSettingsScreen() {
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-700">引号内语言</span>
                         <div className="flex items-center gap-2">
-                          <div 
-                            className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer"
-                            style={{ backgroundColor: offlineDialogColorDraft }}
-                            onClick={() => {
-                              const input = document.createElement('input')
-                              input.type = 'color'
-                              input.value = offlineDialogColorDraft
-                              input.onchange = (e) => {
-                                const color = (e.target as HTMLInputElement).value
+                          <label className="relative w-8 h-8 rounded-lg border border-gray-200 cursor-pointer overflow-hidden">
+                            <input
+                              type="color"
+                              value={offlineDialogColorDraft}
+                              onChange={(e) => {
+                                const color = e.target.value
                                 setOfflineDialogColorDraft(color)
                                 updateCharacter(character.id, { offlineDialogColor: color })
-                              }
-                              input.click()
-                            }}
-                          />
+                              }}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            />
+                            <div 
+                              className="w-full h-full"
+                              style={{ backgroundColor: offlineDialogColorDraft }}
+                            />
+                          </label>
                           <span className="text-xs text-gray-400 w-16">{offlineDialogColorDraft}</span>
                         </div>
                       </div>

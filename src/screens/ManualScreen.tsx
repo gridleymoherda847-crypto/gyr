@@ -58,9 +58,10 @@ const MANUAL_TEXT = `
 - 私聊：进入聊天 → 发送消息 → 点击右下角播放按钮让 AI 回复
 - 群聊：微信 → 右上角加号 → 发起群聊
 - 朋友圈：微信 → 底部朋友圈 Tab → 右上角刷新
-- 偷看日记：聊天 → 点击「+」→ 偷看日记
+- 偷看日记：聊天 → 点击「+」→ 偷看日记（生成角色视角的私人日记）
 - 查手机：聊天 → 点击「+」→ 查手机
 - 情侣空间：聊天 → 点击「+」→ 情侣空间
+- 线下模式：聊天 → 右上角「…」→ 线下模式（小说叙事风格，包含动作神态描写）
 
 【其他 App】
 - 日记本：主屏幕 → 日记，写日记不消耗 API，偷看日记消耗 API
@@ -600,6 +601,31 @@ ${MANUAL_TEXT}
             微信 → 底部「朋友圈」Tab
             <br />• 下拉刷新生成角色动态（消耗 API）
             <br />• 可以点赞、评论
+          </div>
+          
+          <h4 className="font-bold mt-4">📖 线下模式（小说风格）</h4>
+          <div className="p-3 bg-purple-50 rounded-xl text-sm border border-purple-200">
+            <strong>位置：</strong>聊天 → 右上角「⋯」→ 向下滑找到「线下模式」
+            <br /><br />
+            <strong>什么是线下模式？</strong>
+            <br />• 开启后，AI 的回复会变成小说叙事风格
+            <br />• 包含：动作描写、神态描写、对话描写
+            <br />• 适合喜欢沉浸式 RP 的用户
+            <br /><br />
+            <strong>线下模式设置：</strong>
+            <br />• 字体颜色：可分别设置「我的叙述」「TA的叙述」「引号内对话」颜色
+            <br />• 字数范围：设置 AI 输出的最少~最多字数
+            <br /><br />
+            <strong>注意：</strong>线下模式下 AI 只会输出纯文字叙事，不会发表情包、转账等
+          </div>
+          
+          <h4 className="font-bold mt-4">👀 偷看日记</h4>
+          <div className="p-3 bg-gray-50 rounded-xl text-sm">
+            <strong>位置：</strong>聊天 → 点击「+」→ 偷看日记
+            <br />• 生成角色的私人日记（角色视角）
+            <br />• 写的是角色自己的内心想法和生活
+            <br />• 可以收藏到日记本
+            <br /><span className="text-amber-600">⚡ 每次偷看消耗 API</span>
           </div>
         </div>
       ),
