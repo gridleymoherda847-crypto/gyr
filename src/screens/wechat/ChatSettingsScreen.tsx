@@ -28,6 +28,7 @@ export default function ChatSettingsScreen() {
   const bgInputRef = useRef<HTMLInputElement>(null)
   const stickerInputRef = useRef<HTMLInputElement>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null)
   
   const [showStickerManager, setShowStickerManager] = useState(false)
   const [showPersonaSelector, setShowPersonaSelector] = useState(false)
@@ -2134,10 +2135,12 @@ ${history}`
             <button
               type="button"
               onClick={() => {
+                // 保存前同步 textarea 的最新值（防止未触发 onBlur 时丢失数据）
+                const latestPrompt = promptTextareaRef.current?.value ?? editPrompt
                 updateCharacter(character.id, {
                   name: editName.trim() || character.name,
                   gender: editGender,
-                  prompt: editPrompt,
+                  prompt: latestPrompt,
                   birthday: editBirthday,
                   callMeName: editCallMeName,
                   relationship: editRelationship,
@@ -2305,8 +2308,9 @@ ${history}`
               {promptExpanded && (
                 <div className="px-3 pb-3">
                   <textarea
-                    value={editPrompt}
-                    onChange={(e) => setEditPrompt(e.target.value)}
+                    ref={promptTextareaRef}
+                    defaultValue={editPrompt}
+                    onBlur={(e) => setEditPrompt(e.target.value)}
                     placeholder="描述角色的性格、背景、说话方式等..."
                     rows={8}
                     className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-800 outline-none resize-none text-sm"

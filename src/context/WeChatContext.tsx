@@ -348,6 +348,7 @@ export type FavoriteDiary = {
   diaryAt: number // 日记“写下”的时间
   title: string // 展示标题（例如：YYYY-MM-DD 的日记）
   content: string // 日记全文
+  contentZh?: string // 中文翻译（非中文角色时自动生成）
   note?: string // 收藏备注（可选）
 }
 

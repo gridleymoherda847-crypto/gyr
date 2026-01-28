@@ -126,6 +126,8 @@ export default function ChatScreen() {
   const [diaryProgress, setDiaryProgress] = useState(0)
   const [diaryStage, setDiaryStage] = useState('')
   const [diaryContent, setDiaryContent] = useState('')
+  const [diaryContentZh, setDiaryContentZh] = useState('') // 中文翻译版本
+  const [diaryShowTranslated, setDiaryShowTranslated] = useState(false) // 是否显示翻译
   const [diaryAt, setDiaryAt] = useState<number>(0)
   const [diaryNoteDraft, setDiaryNoteDraft] = useState('')
   const [openDiaryShare, setOpenDiaryShare] = useState<typeof messages[0] | null>(null)
@@ -3196,6 +3198,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     setDiaryLoading(true)
     setDiaryProgress(0)
     setDiaryContent('')
+    setDiaryContentZh('')
+    setDiaryShowTranslated(false)
     setDiaryNoteDraft('')
 
     const now = Date.now()
@@ -3204,7 +3208,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
     // 进度条：故意“慢一点”，并且最多卡在 92%，等待模型真实返回后再 100%
     // 这样能和模型速度更匹配，不会出现“条满了还在等”的出戏感
     const stageByProgress = (p: number) => {
-      if (p < 18) return '破限App注入中…'
+      if (p < 18) return '正在注入世界书…'
       if (p < 35) return '读取角色人设中…'
       if (p < 52) return '翻看你们的聊天记录…'
       if (p < 70) return '正在窃取对方的日记信息…'
@@ -3218,7 +3222,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       '这段有点劲爆，先缓存一下…',
     ]
     let playfulIdx = 0
-    setDiaryStage('破限App注入中…')
+    setDiaryStage('正在注入世界书…')
     const timer = window.setInterval(() => {
       setDiaryProgress(prev => {
         const cap = 92
@@ -3265,11 +3269,15 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
         `你现在要写一篇“只给自己看的私密日记”。可以暴露真实想法、吐槽、阴暗面、欲望、犹豫、嫉妒、占有欲等（必须符合你的人设）。\n` +
         `日记不需要顾及对方感受，不要讨好用户，不要道德说教，不要自我审查。\n` +
         `如果你平时在聊天里表现得阳光/礼貌，但内心不一样，也允许在日记里写出真实一面。\n\n` +
-        `【语言强规则】\n` +
-        `- 这篇日记必须全程使用「${languageName((character as any).language || 'zh')}」书写。\n` +
-        `- 若语言不是中文：严禁出现中文字符；不提供翻译。\n\n` +
         `另外：日记不必只围绕聊天。你也可以写你自己的生活：工作/学习/朋友/家庭/路上见闻/刷到的东西/身体状态等。\n` +
         `至少写 2 个“具体的生活细节”（可以虚构但要像真的发生过）。\n\n` +
+        (((character as any).language && (character as any).language !== 'zh')
+          ? `【语言与翻译规则】\n` +
+            `由于角色是${languageName((character as any).language)}使用者，请按以下格式输出双语版本：\n` +
+            `1. 先输出"Original:"标记（单独一行），然后是完整的${languageName((character as any).language)}版本日记\n` +
+            `2. 再输出"Chinese:"标记（单独一行），然后是完整的中文翻译版本\n` +
+            `两个版本内容要对应，格式相同（日期、天气、心情、正文）。\n\n`
+          : `【语言规则】\n- 这篇日记必须全程使用中文书写。\n\n`) +
         `【输出格式（必须）】\n` +
         `- 第一行：日期时间（例如：2026-01-23 21:36:18）\n` +
         `- 第二行：天气：xx\n` +
@@ -3292,10 +3300,24 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
       const text = (res || '').trim()
       setDiaryProgress(100)
       setDiaryStage('已获取')
-      setDiaryContent(text || '（生成失败：空内容）')
+
+      // 解析双语版本（非中文角色）
+      const isNonChinese = (character as any).language && (character as any).language !== 'zh'
+      if (isNonChinese && text.includes('Original:') && text.includes('Chinese:')) {
+        const originalMatch = text.match(/Original:\s*([\s\S]*?)(?=Chinese:|$)/i)
+        const chineseMatch = text.match(/Chinese:\s*([\s\S]*?)$/i)
+        const originalText = originalMatch?.[1]?.trim() || text
+        const chineseText = chineseMatch?.[1]?.trim() || ''
+        setDiaryContent(originalText || '（生成失败：空内容）')
+        setDiaryContentZh(chineseText)
+      } else {
+        setDiaryContent(text || '（生成失败：空内容）')
+        setDiaryContentZh('')
+      }
     } catch (e: any) {
       setDiaryStage('失败')
       setDiaryContent(e?.message || '生成失败')
+      setDiaryContentZh('')
     } finally {
       window.clearInterval(timer)
       setDiaryLoading(false)
@@ -5442,6 +5464,16 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
             <button type="button" onClick={() => setDiaryOpen(false)} className="text-gray-700 text-sm">返回</button>
             <div className="text-[16px] font-bold text-[#111]">偷看日记</div>
             <div className="flex items-center gap-2">
+              {/* 翻译按钮（仅非中文角色且有翻译时显示） */}
+              {diaryContentZh && (
+                <button
+                  type="button"
+                  onClick={() => setDiaryShowTranslated(!diaryShowTranslated)}
+                  className={`px-2 py-1 rounded text-[11px] ${diaryShowTranslated ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}
+                >
+                  {diaryShowTranslated ? '原文' : '翻译'}
+                </button>
+              )}
               <button
                 type="button"
                 disabled={diaryLoading || !diaryContent.trim() || isDiaryFavorited(character.id, diaryAt || 0, (diaryContent || '').trim())}
@@ -5459,6 +5491,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     diaryAt: at,
                     title: `${new Date(at).toLocaleDateString('zh-CN')} 的日记`,
                     content,
+                    contentZh: diaryContentZh || undefined,
                     note: diaryNoteDraft.trim() || undefined,
                   })
                   setInfoDialog({ open: true, title: '收藏成功', message: '已保存到主页的「日记」App 里。' })
@@ -5525,7 +5558,11 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
                     'repeating-linear-gradient(to bottom, transparent 0px, transparent 25px, rgba(0,0,0,0.05) 25px, rgba(0,0,0,0.05) 26px)',
                 }}
               >
-                {diaryLoading && !diaryContent ? '…' : (diaryContent || '（空）')}
+                {diaryLoading && !diaryContent 
+                  ? '…' 
+                  : (diaryShowTranslated && diaryContentZh 
+                      ? diaryContentZh 
+                      : (diaryContent || '（空）'))}
               </div>
             </div>
           </div>

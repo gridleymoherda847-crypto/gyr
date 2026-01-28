@@ -10,6 +10,7 @@ export default function CreateCharacterScreen() {
   const { fontColor } = useOS()
   const { addCharacter } = useWeChat()
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null)
   const [tipOpen, setTipOpen] = useState(false)
   const [langPickerOpen, setLangPickerOpen] = useState(false)
   const prevLangRef = useRef<'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'>('zh')
@@ -62,8 +63,12 @@ export default function CreateCharacterScreen() {
       return
     }
 
+    // 保存前同步 textarea 的最新值（防止未触发 onBlur 时丢失数据）
+    const latestPrompt = promptTextareaRef.current?.value ?? formData.prompt
+
     addCharacter({
       ...formData,
+      prompt: latestPrompt,
       coupleSpaceEnabled: false,
       chatBackground: '',
       unreadCount: 0,
@@ -243,9 +248,10 @@ export default function CreateCharacterScreen() {
             {promptExpanded && (
               <div className="px-4 pb-3">
                 <textarea
+                  ref={promptTextareaRef}
                   placeholder="描述这个角色的性格、说话方式、背景故事等..."
-                  value={formData.prompt}
-                  onChange={(e) => setFormData(prev => ({ ...prev, prompt: e.target.value }))}
+                  defaultValue={formData.prompt}
+                  onBlur={(e) => setFormData(prev => ({ ...prev, prompt: e.target.value }))}
                   className="w-full h-32 p-3 bg-gray-50 rounded-lg outline-none resize-none text-[#000] text-sm"
                 />
                 <p className="text-xs text-gray-400 mt-2">好的人设让角色更生动：性格、语气、口头禅、背景故事...</p>

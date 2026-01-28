@@ -581,7 +581,7 @@ ${params.userText}
                           {moment.comments.slice(-5).map(c => (
                             <div
                               key={c.id}
-                              className="flex items-start gap-1 group"
+                              className="flex items-start gap-1"
                             >
                               <div
                                 className="flex-1 cursor-pointer active:opacity-70"
@@ -600,7 +600,7 @@ ${params.userText}
                               <button
                                 type="button"
                                 onClick={() => deleteMomentComment(moment.id, c.id)}
-                                className="opacity-0 group-hover:opacity-100 text-[10px] text-red-400 hover:text-red-500 flex-shrink-0 px-1"
+                                className="text-[10px] text-red-400 active:text-red-500 flex-shrink-0 px-1"
                               >
                                 删除
                               </button>
@@ -743,13 +743,13 @@ ${params.userText}
       />
 
       <WeChatDialog
-        open={refreshWarnOpen}
-        title="提示"
-        message="本次将消耗 API 调用，生成中请勿退出浏览器或此界面。"
-        confirmText="继续生成"
-        cancelText="取消"
-        onCancel={() => setRefreshWarnOpen(false)}
-        onConfirm={() => {
+        open={refreshWarnOpen || refreshing}
+        title={refreshing ? "正在生成中…" : "提示"}
+        message={refreshing ? "请稍候，AI 正在生成朋友圈内容，请勿退出此页面。" : "本次将消耗 API 调用，生成中请勿退出浏览器或此界面。"}
+        confirmText={refreshing ? undefined : "继续生成"}
+        cancelText={refreshing ? undefined : "取消"}
+        onCancel={refreshing ? undefined : () => setRefreshWarnOpen(false)}
+        onConfirm={refreshing ? undefined : () => {
           setRefreshWarnOpen(false)
           handleRefresh()
         }}

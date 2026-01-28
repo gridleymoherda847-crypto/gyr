@@ -54,6 +54,9 @@ export default function DiaryVaultScreen() {
   // 日期日记列表（点击日历某天时显示）
   const [dateDiariesOpen, setDateDiariesOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState('')
+  
+  // 收藏日记翻译显示状态
+  const [showFavoriteTranslated, setShowFavoriteTranslated] = useState(false)
 
   const selected = useMemo(() => favoriteDiaries.find(d => d.id === selectedId) || null, [favoriteDiaries, selectedId])
   const selectedMyDiary = useMemo(() => myDiaries.find(d => d.id === selectedId) || null, [myDiaries, selectedId])
@@ -623,9 +626,19 @@ export default function DiaryVaultScreen() {
         {tab === 'favorites' && selected && (
           <div className="absolute inset-0 z-50 flex flex-col bg-[#F7F4EE]">
             <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 bg-white/70 backdrop-blur">
-              <button type="button" onClick={() => setSelectedId(null)} className="text-gray-700 text-sm">返回</button>
+              <button type="button" onClick={() => { setSelectedId(null); setShowFavoriteTranslated(false) }} className="text-gray-700 text-sm">返回</button>
               <div className="text-sm font-semibold text-[#111] truncate">{selected.characterName} 的日记</div>
               <div className="flex items-center gap-2">
+                {/* 翻译按钮（仅有翻译时显示） */}
+                {selected.contentZh && (
+                  <button
+                    type="button"
+                    onClick={() => setShowFavoriteTranslated(!showFavoriteTranslated)}
+                    className={`px-2 py-1 rounded text-[11px] ${showFavoriteTranslated ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}
+                  >
+                    {showFavoriteTranslated ? '原文' : '翻译'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -661,7 +674,7 @@ export default function DiaryVaultScreen() {
                     backgroundSize: '100% 26px',
                   }}
                 >
-                  {selected.content}
+                  {showFavoriteTranslated && selected.contentZh ? selected.contentZh : selected.content}
                 </div>
               </div>
             </div>
