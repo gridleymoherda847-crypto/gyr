@@ -5019,29 +5019,17 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         {/* 移动端禁用 blur（滚动+输入会非常卡），桌面端保留 */}
         <div className="px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40">
           <div className="flex items-center gap-2">
-            {/* 加号按钮 - 线下模式时点击显示提示 */}
+            {/* 加号按钮 - 线下模式时也可用，但功能受限 */}
             <button
               type="button"
               onClick={() => {
-                if (character.offlineMode) {
-                  setInfoDialog({
-                    open: true,
-                    title: '线下模式',
-                    message: '线下模式专注于沉浸式叙事体验，暂不支持发送图片、位置、音乐等功能。\n\n如需使用这些功能，请在聊天设置中关闭线下模式。'
-                  })
-                  return
-                }
                 setShowPlusMenu(!showPlusMenu)
                 setShowStickerPanel(false)
                 setActivePanel(null)
               }}
-              className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-transform flex-shrink-0 ${
-                character.offlineMode
-                  ? 'border-gray-300 opacity-40'
-                  : 'border-gray-400 active:scale-90'
-              }`}
+              className="w-7 h-7 rounded-full border-2 border-gray-400 flex items-center justify-center transition-transform flex-shrink-0 active:scale-90"
             >
-              <svg className={`w-3.5 h-3.5 ${character.offlineMode ? 'text-gray-300' : 'text-gray-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
             </button>
@@ -5103,60 +5091,111 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               {!activePanel ? (
                 <div className="grid grid-cols-4 gap-4">
                   {/* === 第一行：实用功能 === */}
-                  {/* 相册 */}
-                  <button type="button" onClick={() => imageInputRef.current?.click()} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  {/* 相册 - 线下模式禁用 */}
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      if (character.offlineMode) {
+                        setInfoDialog({ open: true, title: '线下模式', message: '线下模式暂不支持此功能' })
+                        return
+                      }
+                      imageInputRef.current?.click()
+                    }} 
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${character.offlineMode ? 'bg-gray-100 opacity-40' : 'bg-white/60'}`}>
+                      <svg className={`w-6 h-6 ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">相册</span>
+                    <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>相册</span>
                   </button>
                   <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleSendImage} />
                   
-                  {/* 位置 */}
-                  <button type="button" onClick={() => setActivePanel('location')} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  {/* 位置 - 线下模式禁用 */}
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      if (character.offlineMode) {
+                        setInfoDialog({ open: true, title: '线下模式', message: '线下模式暂不支持此功能' })
+                        return
+                      }
+                      setActivePanel('location')
+                    }} 
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${character.offlineMode ? 'bg-gray-100 opacity-40' : 'bg-white/60'}`}>
+                      <svg className={`w-6 h-6 ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">位置</span>
+                    <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>位置</span>
                   </button>
                   
-                  {/* 转账 */}
-                  <button type="button" onClick={() => { setShowPlusMenu(false); setShowTransferModal(true) }} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  {/* 转账 - 线下模式禁用 */}
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      if (character.offlineMode) {
+                        setInfoDialog({ open: true, title: '线下模式', message: '线下模式暂不支持此功能' })
+                        return
+                      }
+                      setShowPlusMenu(false)
+                      setShowTransferModal(true)
+                    }} 
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${character.offlineMode ? 'bg-gray-100 opacity-40' : 'bg-white/60'}`}>
+                      <svg className={`w-6 h-6 ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">转账</span>
+                    <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>转账</span>
                   </button>
                   
-                  {/* 经期 */}
-                  <button type="button" onClick={() => setActivePanel('period')} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  {/* 经期 - 线下模式禁用 */}
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      if (character.offlineMode) {
+                        setInfoDialog({ open: true, title: '线下模式', message: '线下模式暂不支持此功能' })
+                        return
+                      }
+                      setActivePanel('period')
+                    }} 
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${character.offlineMode ? 'bg-gray-100 opacity-40' : 'bg-white/60'}`}>
+                      <svg className={`w-6 h-6 ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">经期</span>
+                    <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>经期</span>
                   </button>
                   
                   {/* === 第二行：娱乐/社交 === */}
-                  {/* 音乐 */}
-                  <button type="button" onClick={() => setActivePanel('music')} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  {/* 音乐 - 线下模式禁用 */}
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      if (character.offlineMode) {
+                        setInfoDialog({ open: true, title: '线下模式', message: '线下模式暂不支持此功能' })
+                        return
+                      }
+                      setActivePanel('music')
+                    }} 
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${character.offlineMode ? 'bg-gray-100 opacity-40' : 'bg-white/60'}`}>
+                      <svg className={`w-6 h-6 ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5l-10.5 3v7.803a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66A2.25 2.25 0 009 12.553z" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">音乐</span>
+                    <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>音乐</span>
                   </button>
 
-                  {/* 情侣空间 */}
+                  {/* 情侣空间 - 线下模式可用 */}
                   <button
                     type="button"
                     onClick={() => {
@@ -5179,7 +5218,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                     <span className="text-xs text-gray-600">情侣</span>
                   </button>
 
-                  {/* 日记 */}
+                  {/* 日记 - 线下模式可用 */}
                   <button
                     type="button"
                     onClick={() => {
@@ -5198,16 +5237,26 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                     <span className="text-xs text-gray-600">日记</span>
                   </button>
                   
-                  {/* 斗地主 */}
-                  <button type="button" onClick={() => setShowDoudizhuInviteConfirm(true)} className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <span className="text-2xl">🃏</span>
+                  {/* 斗地主 - 线下模式禁用 */}
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      if (character.offlineMode) {
+                        setInfoDialog({ open: true, title: '线下模式', message: '线下模式暂不支持此功能' })
+                        return
+                      }
+                      setShowDoudizhuInviteConfirm(true)
+                    }} 
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${character.offlineMode ? 'bg-gray-100 opacity-40' : 'bg-white/60'}`}>
+                      <span className={`text-2xl ${character.offlineMode ? 'opacity-40' : ''}`}>🃏</span>
                     </div>
-                    <span className="text-xs text-gray-600">斗地主</span>
+                    <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>斗地主</span>
                   </button>
                   
                   {/* === 第三行：管理功能 === */}
-                  {/* 查手机 */}
+                  {/* 查手机 - 线下模式可用 */}
                   <button 
                     type="button" 
                     onClick={() => {
@@ -5224,27 +5273,31 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                     <span className="text-xs text-gray-600">查手机</span>
                   </button>
                   
-                  {/* 转发 */}
+                  {/* 转发 - 线下模式禁用 */}
                   <button 
                     type="button" 
-                    onClick={() => { 
+                    onClick={() => {
+                      if (character.offlineMode) {
+                        setInfoDialog({ open: true, title: '线下模式', message: '线下模式暂不支持此功能' })
+                        return
+                      }
                       setShowPlusMenu(false)
-                      setEditMode(false) // 关闭编辑模式
+                      setEditMode(false)
                       setSelectedMsgIds(new Set())
                       setForwardMode(true)
                       setForwardSelectedIds(new Set())
                     }} 
                     className="flex flex-col items-center gap-1"
                   >
-                    <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${character.offlineMode ? 'bg-gray-100 opacity-40' : 'bg-white/60'}`}>
+                      <svg className={`w-6 h-6 ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
                       </svg>
                     </div>
-                    <span className="text-xs text-gray-600">转发</span>
+                    <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>转发</span>
                   </button>
                   
-                  {/* 清空 */}
+                  {/* 清空 - 线下模式可用 */}
                   <button type="button" onClick={() => { setShowPlusMenu(false); setShowClearConfirm(true) }} className="flex flex-col items-center gap-1">
                     <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
                       <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
