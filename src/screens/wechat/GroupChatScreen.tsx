@@ -420,11 +420,18 @@ ${recentMessages || '（暂无消息）'}`
       const userPrompt = `请模拟以下成员的群聊回复（总共约${replyCount}条，每人可发多条）：
 ${uniqueNames.join('、')}
 
+输出格式说明：
+- 普通回复：[成员名]内容
+- 引用/回复某人消息：[成员名>>被引用者名]内容
+
 输出格式示例：
 [小明]今天天气不错
 [小红]是啊，出去玩吧
 [小明]好主意！
-[小刚]你们去哪？带我一个
+[小刚>>小红]你们去哪？带我一个
+[小红>>小刚]去商场啊
+
+注意：如果要回复/引用某人说的话，使用 >> 符号，比如[小刚>>小红]表示小刚回复小红
 
 现在开始生成回复：`
 
@@ -433,11 +440,22 @@ ${uniqueNames.join('、')}
         { role: 'user', content: userPrompt }
       ], undefined, { maxTokens: 2000 })
       
-      // 解析回复
+      // 解析回复，支持引用格式 [成员名>>被引用者] 或普通格式 [成员名]
       const lines = response.split('\n').filter(l => l.trim())
-      const parsedReplies: { name: string; content: string }[] = []
+      const parsedReplies: { name: string; content: string; replyTo?: string }[] = []
       
       for (const line of lines) {
+        // 尝试匹配引用格式：[成员名>>被引用者]内容
+        const matchWithReply = line.match(/^[\[【]([^\]】>]+)>>([^\]】]+)[\]】]\s*(.+)$/)
+        if (matchWithReply) {
+          parsedReplies.push({ 
+            name: matchWithReply[1].trim(), 
+            content: matchWithReply[3].trim(),
+            replyTo: matchWithReply[2].trim()
+          })
+          continue
+        }
+        // 普通格式：[成员名]内容
         const match = line.match(/^[\[【]([^\]】]+)[\]】]\s*(.+)$/)
         if (match) {
           parsedReplies.push({ name: match[1].trim(), content: match[2].trim() })
@@ -445,6 +463,19 @@ ${uniqueNames.join('、')}
       }
       
       // 逐条发送，根据字数间隔1-5秒
+      // 记录每个成员最近发送的消息ID，用于引用
+      const recentMessageIdBySender: Record<string, string> = {}
+      
+      // 先记录现有消息中每个人最近的消息
+      for (const msg of messages.slice(-30)) {
+        const senderName = msg.isUser 
+          ? (selectedPersona?.name || '我') 
+          : characters.find(c => c.id === msg.groupSenderId)?.name
+        if (senderName) {
+          recentMessageIdBySender[senderName] = msg.id
+        }
+      }
+      
       for (const reply of parsedReplies) {
         const member = members.find(m => m.name === reply.name)
         if (!member) continue
@@ -456,14 +487,24 @@ ${uniqueNames.join('、')}
         
         shouldScrollRef.current = true // AI回复时滚动到底部
         
-        addMessage({
+        // 查找引用目标
+        let replyToMessageId: string | undefined
+        if (reply.replyTo) {
+          replyToMessageId = recentMessageIdBySender[reply.replyTo]
+        }
+        
+        const newMsg = addMessage({
           characterId: '',
           groupId: group.id,
           groupSenderId: member.id,
           content: reply.content,
           isUser: false,
           type: 'text',
+          replyToMessageId,
         })
+        
+        // 更新这个成员最近的消息ID
+        recentMessageIdBySender[member.name] = newMsg.id
         
         updateGroup(group.id, { lastMessageAt: Date.now() })
       }
@@ -1477,8 +1518,8 @@ ${history}`
                         </div>
                         <span className="text-[10px] text-green-600 mt-1 truncate max-w-[40px] font-medium">{selectedPersona?.name || '我'}</span>
                       </div>
-                      {/* 其他成员 */}
-                      {members.slice(0, 7).map(m => (
+                      {/* 其他成员 - 显示所有成员 */}
+                      {members.map(m => (
                         <div key={m.id} className="flex flex-col items-center">
                           <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-200">
                             {m.avatar ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> :
@@ -1487,11 +1528,6 @@ ${history}`
                           <span className="text-[10px] text-gray-500 mt-1 truncate max-w-[40px]">{m.name}</span>
                         </div>
                       ))}
-                      {members.length > 7 && (
-                        <div className="flex flex-col items-center justify-center">
-                          <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-xs">+{members.length - 7}</div>
-                        </div>
-                      )}
                       {/* + 按钮 */}
                       <button type="button" onClick={() => { setAddMemberSelected([]); setShowAddMemberModal(true) }}
                         className="w-10 h-10 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:border-green-400 hover:text-green-500">

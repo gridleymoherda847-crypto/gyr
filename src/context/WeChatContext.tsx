@@ -329,6 +329,7 @@ export type StickerConfig = {
   imageUrl: string
   keyword: string
   category?: string // 情绪分类：开心、难过、生气、害羞、撒娇等
+  description?: string // 表情包备注/描述，用于精准匹配（如"你真可爱"、"生气了"）
 }
 
 // 表情包分类
@@ -369,6 +370,7 @@ export type MomentPost = {
   authorName: string
   authorAvatar: string
   content: string
+  contentZh?: string // 中文翻译版本（非中文角色时自动生成）
   images: string[]
   timestamp: number
   likes: string[]
@@ -482,6 +484,7 @@ type WeChatContextValue = {
   // 表情包操作
   addSticker: (sticker: Omit<StickerConfig, 'id'>) => void
   removeSticker: (id: string) => void
+  updateSticker: (id: string, updates: Partial<Omit<StickerConfig, 'id'>>) => void
   getStickersByCharacter: (characterId: string) => StickerConfig[]
   addStickerToCharacter: (stickerId: string, targetCharacterId: string) => void
   addStickerToAll: (sticker: Omit<StickerConfig, 'id' | 'characterId'>) => void
@@ -508,6 +511,7 @@ type WeChatContextValue = {
   deleteMoment: (id: string) => void
   likeMoment: (momentId: string, userId: string) => void
   addMomentComment: (momentId: string, comment: Omit<MomentComment, 'id' | 'timestamp'> & { timestamp?: number }) => MomentComment
+  deleteMomentComment: (momentId: string, commentId: string) => void
   
   // 用户设置
   updateUserSettings: (settings: Partial<WeChatUserSettings>) => void
@@ -1228,6 +1232,10 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     setStickers(prev => prev.filter(s => s.id !== id))
   }
 
+  const updateSticker = (id: string, updates: Partial<Omit<StickerConfig, 'id'>>) => {
+    setStickers(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s))
+  }
+
   const getStickersByCharacter = useCallback(
     (characterId: string) => stickers.filter(s => s.characterId === characterId || s.characterId === 'all'),
     [stickers]
@@ -1362,6 +1370,12 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       m.id === momentId ? { ...m, comments: [...m.comments, newComment] } : m
     ))
     return newComment
+  }
+
+  const deleteMomentComment = (momentId: string, commentId: string) => {
+    setMoments(prev => prev.map(m => 
+      m.id === momentId ? { ...m, comments: m.comments.filter(c => c.id !== commentId) } : m
+    ))
   }
 
   // ==================== 用户设置 ====================
@@ -1738,10 +1752,10 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     togglePinned, toggleSpecialCare, toggleBlocked, hideFromChat, showInChat, setCurrentChatId, setCharacterTyping,
     addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter, getMessagesByCharacter, getLastMessage, clearMessages,
     getMessagesPage,
-    addSticker, removeSticker, getStickersByCharacter, addStickerToCharacter, addStickerToAll,
+    addSticker, removeSticker, updateSticker, getStickersByCharacter, addStickerToCharacter, addStickerToAll,
     addFavoriteDiary, removeFavoriteDiary, isDiaryFavorited,
     myDiaries, addMyDiary, updateMyDiary, deleteMyDiary, getMyDiaryByDate,
-    addMoment, deleteMoment, likeMoment, addMomentComment,
+    addMoment, deleteMoment, likeMoment, addMomentComment, deleteMomentComment,
     updateUserSettings,
     addUserPersona, updateUserPersona, deleteUserPersona, getUserPersona, getCurrentPersona,
     addTransfer, getTransfersByCharacter,

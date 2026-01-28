@@ -10,7 +10,7 @@ type Props = {
 
 export default function MomentsTab({ onBack }: Props) {
   const { llmConfig, callLLM } = useOS()
-  const { moments, characters, userSettings, updateUserSettings, addMoment, likeMoment, deleteMoment, addMomentComment, getCurrentPersona, getMessagesByCharacter } = useWeChat()
+  const { moments, characters, userSettings, updateUserSettings, addMoment, likeMoment, deleteMoment, addMomentComment, deleteMomentComment, getCurrentPersona, getMessagesByCharacter } = useWeChat()
   const currentPersona = getCurrentPersona()
   const [showPostModal, setShowPostModal] = useState(false)
   const [postContent, setPostContent] = useState('')
@@ -24,6 +24,7 @@ export default function MomentsTab({ onBack }: Props) {
   const [commentDraftByMoment, setCommentDraftByMoment] = useState<Record<string, string>>({})
   const [replyTarget, setReplyTarget] = useState<{ momentId: string; commentId: string; authorId: string; authorName: string } | null>(null)
   const [coverShrink, setCoverShrink] = useState(0)
+  const [translatedMoments, setTranslatedMoments] = useState<Set<string>>(new Set()) // 已切换到中文的朋友圈
 
   const hasApiConfig = llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel
 
@@ -105,22 +106,35 @@ export default function MomentsTab({ onBack }: Props) {
           friend.id,
           `${recentChat || ''}\n${target.content || ''}\n${replyTo ? replyTo.content : ''}`
         )
-        const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈“评论/回复”的方式发言。
+        // 获取角色的长期记忆
+        const characterMemory = friend.memorySummary || ''
+        // 获取图片信息提示
+        const hasImages = target.images && target.images.length > 0
+        const imageHint = hasImages ? `（朋友圈配图${target.images.length}张，可能是聊天记录截图、自拍、风景等）` : ''
+        const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈"评论/回复"的方式发言。
+
+【你的身份】
 你是：${friend.name}
 你的人设：${friend.prompt || '（未设置）'}
 你的国家/地区：${(friend as any).country || '（未设置）'}
 你的主要语言：${langName}
-最近聊天片段（可用来贴合语境）：
+你称呼TA为：${friend.callMeName || '（未设置）'}
+你们的关系：${friend.relationship || '朋友'}
+${characterMemory ? `你的长期记忆：\n${characterMemory}` : ''}
+
+【朋友圈发布者信息】
+发布者：${target.authorName}（就是你认识的那个${friend.callMeName || '朋友'}）
+朋友圈内容：${target.content || '（仅图片）'}${imageHint}
+
+【最近你们的聊天片段】
 ${recentChat || '（暂无）'}
 
-朋友圈发布者：${target.authorName}
-朋友圈内容：
-${target.content || '（图片）'}
+${replyTo ? `【你要回复的评论】\n@${replyTo.authorName}：${replyTo.content}` : ''}
 
-${replyTo ? `你要回复的评论：@${replyTo.authorName}：${replyTo.content}` : ''}
-
+【任务】
 请写1条朋友圈评论：
 - 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
+- 你认识发朋友圈的人（${target.authorName}），要基于你们的关系和聊天记忆来评论
 - 口语化、短（<=30字）
 - 不要动作描写/旁白
 - 只输出评论内容，不要加引号，不要换行`
@@ -144,8 +158,28 @@ ${replyTo ? `你要回复的评论：@${replyTo.authorName}：${replyTo.content}
         const lang = (friend as any).language || 'zh'
         const langName =
           lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
+        const isNonChinese = lang !== 'zh'
         const lore = getLorebookEntriesForCharacter(friend.id, `${recentChat || ''}`)
-        const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈“发布动态”的方式发言。
+        
+        // 非中文角色需要同时生成原文和中文翻译
+        const prompt = isNonChinese
+          ? `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈"发布动态"的方式发言。
+你是：${friend.name}
+你的人设：${friend.prompt || '（未设置）'}
+你的国家/地区：${(friend as any).country || '（未设置）'}
+你的主要语言：${langName}
+最近聊天片段（可用来贴合语境）：
+${recentChat || '（暂无）'}
+
+请写1条朋友圈动态，同时提供原文和中文翻译：
+- 原文用「${langName}」写，中文翻译要自然流畅
+- 口语化、自然（<=80字）
+- 不要动作描写/旁白
+
+【输出格式】严格按以下格式输出：
+原文：（${langName}内容）
+中文：（中文翻译）`
+          : `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈"发布动态"的方式发言。
 你是：${friend.name}
 你的人设：${friend.prompt || '（未设置）'}
 你的国家/地区：${(friend as any).country || '（未设置）'}
@@ -154,16 +188,34 @@ ${replyTo ? `你要回复的评论：@${replyTo.authorName}：${replyTo.content}
 ${recentChat || '（暂无）'}
 
 请写1条朋友圈动态：
-- 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
+- 【语言强规则】只用「${langName}」输出
 - 口语化、自然（<=80字）
 - 不要动作描写/旁白
 - 只输出动态内容，不要加引号，不要换行`
-        const text = await callLLM([{ role: 'user', content: prompt }], undefined, { maxTokens: 140, timeoutMs: 600000 })
+
+        const text = await callLLM([{ role: 'user', content: prompt }], undefined, { maxTokens: isNonChinese ? 280 : 140, timeoutMs: 600000 })
+        
+        // 解析双语内容
+        let content = text.trim()
+        let contentZh: string | undefined
+        
+        if (isNonChinese) {
+          // 尝试解析格式：原文：xxx\n中文：xxx
+          const originalMatch = text.match(/原文[：:]\s*(.+?)(?:\n|中文[：:]|$)/s)
+          const zhMatch = text.match(/中文[：:]\s*(.+?)$/s)
+          
+          if (originalMatch && zhMatch) {
+            content = originalMatch[1].trim()
+            contentZh = zhMatch[1].trim()
+          }
+        }
+        
         addMoment({
           authorId: friend.id,
           authorName: friend.name,
           authorAvatar: friend.avatar || '',
-          content: text.trim(),
+          content,
+          contentZh,
           images: [],
           timestamp: postTime,
         })
@@ -179,6 +231,7 @@ ${recentChat || '（暂无）'}
     if (!postContent.trim() && postImages.length === 0) return
     
     const newMomentContent = postContent
+    const newMomentImages = postImages
     const newMoment = addMoment({
       authorId: 'user',
       authorName: currentPersona?.name || '我',
@@ -208,18 +261,38 @@ ${recentChat || '（暂无）'}
           const globalPresets = getGlobalPresets()
           const recentChat = getMessagesByCharacter(friend.id).slice(-8).map(m => `${m.isUser ? '我' : friend.name}：${m.content}`).join('\n')
           const lore = getLorebookEntriesForCharacter(friend.id, `${recentChat || ''}\n${newMomentContent || ''}`)
+          const lang = (friend as any).language || 'zh'
+          const langName =
+            lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
+          // 获取角色的长期记忆
+          const characterMemory = friend.memorySummary || ''
+          // 获取图片信息提示
+          const hasImages = newMomentImages && newMomentImages.length > 0
+          const imageHint = hasImages ? `（朋友圈配图${newMomentImages.length}张，可能是聊天记录截图、自拍、风景等）` : ''
           
           try {
             const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈"评论"的方式发言。
+
+【你的身份】
 你是：${friend.name}
 你的人设：${friend.prompt || '（未设置）'}
-最近聊天片段：
+你的国家/地区：${(friend as any).country || '（未设置）'}
+你的主要语言：${langName}
+你称呼TA为：${friend.callMeName || '（未设置）'}
+你们的关系：${friend.relationship || '朋友'}
+${characterMemory ? `你的长期记忆：\n${characterMemory}` : ''}
+
+【朋友圈发布者信息】
+发布者：${currentPersona?.name || '我'}（就是你认识的那个${friend.callMeName || '朋友'}）
+朋友圈内容：${newMomentContent || '（仅图片）'}${imageHint}
+
+【最近你们的聊天片段】
 ${recentChat || '（暂无）'}
 
-你的好友刚发了一条朋友圈：
-${newMomentContent || '（图片）'}
-
+【任务】
 请写1条朋友圈评论：
+- 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
+- 你认识发朋友圈的人，要基于你们的关系和聊天记忆来评论
 - 口语化、短（<=30字）
 - 不要动作描写/旁白
 - 只输出评论内容，不要加引号，不要换行`
@@ -256,16 +329,29 @@ ${newMomentContent || '（图片）'}
       const lang = (friend as any)?.language || 'zh'
       const langName =
         lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
-      const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈“回复评论”的方式发言。
+      const recentChat = getMessagesByCharacter(params.friendId).slice(-8).map(m => `${m.isUser ? '我' : params.friendName}：${m.content}`).join('\n')
+      const characterMemory = friend?.memorySummary || ''
+      const prompt = `${globalPresets ? globalPresets + '\n\n' : ''}你正在以微信朋友圈"回复评论"的方式发言。
+
+【你的身份】
 你是：${params.friendName}
 你的人设：${params.friendPrompt || '（未设置）'}
 你的国家/地区：${(friend as any)?.country || '（未设置）'}
 你的主要语言：${langName}
+你称呼TA为：${friend?.callMeName || '（未设置）'}
+你们的关系：${friend?.relationship || '朋友'}
+${characterMemory ? `你的长期记忆：\n${characterMemory}` : ''}
 
-对方刚刚评论/回复了你：${params.userText}
+【最近你们的聊天片段】
+${recentChat || '（暂无）'}
 
+【对方刚刚评论/回复了你】
+${params.userText}
+
+【任务】
 请写1条回复：
 - 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
+- 你认识对方，要基于你们的关系来回复
 - 口语化、短（<=30字）
 - 不要动作描写/旁白
 - 只输出回复内容，不要加引号，不要换行`
@@ -418,9 +504,33 @@ ${newMomentContent || '（图片）'}
                 
                 {/* 内容 */}
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-[#576B95]">{moment.authorName}</div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium text-[#576B95]">{moment.authorName}</div>
+                    {/* 翻译按钮 - 只在有中文翻译时显示 */}
+                    {moment.contentZh && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTranslatedMoments(prev => {
+                            const next = new Set(prev)
+                            if (next.has(moment.id)) {
+                              next.delete(moment.id)
+                            } else {
+                              next.add(moment.id)
+                            }
+                            return next
+                          })
+                        }}
+                        className="text-[10px] text-[#576B95] px-2 py-0.5 rounded bg-gray-100 hover:bg-gray-200"
+                      >
+                        {translatedMoments.has(moment.id) ? '原文' : '翻译'}
+                      </button>
+                    )}
+                  </div>
                   {moment.content && (
-                    <div className="text-[#000] text-sm mt-1 whitespace-pre-wrap">{moment.content}</div>
+                    <div className="text-[#000] text-sm mt-1 whitespace-pre-wrap">
+                      {translatedMoments.has(moment.id) && moment.contentZh ? moment.contentZh : moment.content}
+                    </div>
                   )}
                   
                   {/* 图片 */}
@@ -471,18 +581,29 @@ ${newMomentContent || '（图片）'}
                           {moment.comments.slice(-5).map(c => (
                             <div
                               key={c.id}
-                              className="cursor-pointer active:opacity-70"
-                              onClick={() => setReplyTarget({ momentId: moment.id, commentId: c.id, authorId: c.authorId, authorName: c.authorName })}
-                              title="点击回复"
+                              className="flex items-start gap-1 group"
                             >
-                              <span className="text-[#576B95]">{c.authorName}</span>
-                              {c.replyToAuthorName && (
-                                <span className="text-gray-500"> 回复 </span>
-                              )}
-                              {c.replyToAuthorName && (
-                                <span className="text-[#576B95]">{c.replyToAuthorName}</span>
-                              )}
-                              ：{c.content}
+                              <div
+                                className="flex-1 cursor-pointer active:opacity-70"
+                                onClick={() => setReplyTarget({ momentId: moment.id, commentId: c.id, authorId: c.authorId, authorName: c.authorName })}
+                                title="点击回复"
+                              >
+                                <span className="text-[#576B95]">{c.authorName}</span>
+                                {c.replyToAuthorName && (
+                                  <span className="text-gray-500"> 回复 </span>
+                                )}
+                                {c.replyToAuthorName && (
+                                  <span className="text-[#576B95]">{c.replyToAuthorName}</span>
+                                )}
+                                ：{c.content}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => deleteMomentComment(moment.id, c.id)}
+                                className="opacity-0 group-hover:opacity-100 text-[10px] text-red-400 hover:text-red-500 flex-shrink-0 px-1"
+                              >
+                                删除
+                              </button>
                             </div>
                           ))}
                         </div>

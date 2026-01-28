@@ -9,7 +9,7 @@ type StickerPackV1 = {
   schemaVersion: 1
   categoryName: string
   exportedAt: number
-  stickers: { keyword: string; imageUrl: string }[]
+  stickers: { keyword: string; imageUrl: string; description?: string }[]
 }
 
 const fileToBase64 = (file: File) =>
@@ -39,6 +39,7 @@ export default function StickerManagerScreen() {
     stickerCategories,
     addSticker,
     removeSticker,
+    updateSticker,
     addStickerCategory,
   } = useWeChat()
 
@@ -86,6 +87,7 @@ export default function StickerManagerScreen() {
     const list = (stickersByCategory[cat] || []).map(s => ({
       keyword: s.keyword,
       imageUrl: s.imageUrl,
+      description: s.description,
     })).filter(x => !!x.keyword && !!x.imageUrl)
     return { schemaVersion: 1, categoryName: cat, exportedAt: Date.now(), stickers: list }
   }
@@ -139,7 +141,7 @@ export default function StickerManagerScreen() {
     const targetId = targetCharacterId
     const items = pack.stickers
       .filter(s => typeof s.keyword === 'string' && typeof s.imageUrl === 'string')
-      .map(s => ({ keyword: safeName(s.keyword) || '表情', imageUrl: s.imageUrl }))
+      .map(s => ({ keyword: safeName(s.keyword) || '表情', imageUrl: s.imageUrl, description: s.description || '' }))
       .filter(s => s.imageUrl.startsWith('data:image/'))
       .slice(0, 300)
 
@@ -149,6 +151,7 @@ export default function StickerManagerScreen() {
         keyword: s.keyword,
         imageUrl: s.imageUrl,
         category: catName,
+        description: s.description,
       })
     }
 
@@ -328,6 +331,13 @@ export default function StickerManagerScreen() {
                                 <div className="mt-1 text-[11px] text-gray-600 truncate" title={s.keyword}>
                                   {s.keyword || '表情'}
                                 </div>
+                                <input
+                                  type="text"
+                                  value={s.description || ''}
+                                  onChange={(e) => updateSticker(s.id, { description: e.target.value })}
+                                  placeholder="备注（如：你真可爱）"
+                                  className="mt-1 w-full px-1.5 py-1 rounded bg-gray-50 border border-gray-200 outline-none text-[10px] text-gray-600"
+                                />
                                 <button
                                   type="button"
                                   onClick={() => removeSticker(s.id)}
