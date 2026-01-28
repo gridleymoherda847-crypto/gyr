@@ -26,7 +26,7 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'wechat_stickers',
   'wechat_sticker_categories',
   'wechat_favorite_diaries',
-  'wechat_my_diaries', // 我的日记（之前遗漏）
+  'wechat_my_diaries', // 我的日记
   'wechat_moments',
   'wechat_user_settings',
   'wechat_user_personas',
@@ -38,27 +38,40 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'wechat_wallet_initialized',
   'wechat_wallet_bills',
   'wechat_bubble_opacity_mode',
-  'wechat_funds', // 基金数据（之前遗漏）
-  'wechat_fund_holdings', // 基金持仓（之前遗漏）
-  'wechat_groups', // 群聊数据（之前遗漏）
+  'wechat_funds', // 基金数据
+  'wechat_fund_holdings', // 基金持仓
+  'wechat_groups', // 群聊数据
 
   // OS
   'os_llm_config',
-  'os_tts_config', // TTS配置（之前遗漏）
+  'os_tts_config', // TTS配置
   'os_micoin_balance',
   'os_current_font_id',
   'os_font_color_id',
-  'os_wallpaper', // 壁纸（之前遗漏）
-  'os_custom_app_icons', // 自定义app图标（之前遗漏）
-  'os_decor_image', // 装饰图片（之前遗漏）
-  'os_user_profile', // 用户资料（之前遗漏）
-  'os_icon_theme', // 图标主题（之前遗漏）
-  'os_anniversaries', // 纪念日（之前遗漏）
-  'os_memo', // 备忘录（之前遗漏）
-  'os_home_avatar', // 主页头像（之前遗漏）
-  'os_water_count', // 喝水计数（之前遗漏）
-  'os_water_date', // 喝水日期（之前遗漏）
-  'os_signature', // 签名（之前遗漏）
+  'os_wallpaper', // 壁纸
+  'os_custom_app_icons', // 自定义app图标
+  'os_decor_image', // 装饰图片
+  'os_user_profile', // 用户资料
+  'os_icon_theme', // 图标主题
+  'os_anniversaries', // 纪念日
+  'os_memo', // 备忘录
+  'os_home_avatar', // 主页头像
+  'os_water_count', // 喝水计数
+  'os_water_date', // 喝水日期
+  'os_signature', // 签名
+  'os_custom_fonts', // 自定义字体 ★新增
+
+  // API 配置
+  'mina_api_configs', // API配置列表 ★新增
+  'mina_current_api_config_id', // 当前使用的API配置ID ★新增
+
+  // 屏幕适配设置
+  'mina_screen_padding_top', // 屏幕上边距 ★新增
+  'mina_screen_padding_bottom', // 屏幕下边距 ★新增
+  'mina_screen_padding_left', // 屏幕左边距 ★新增
+  'mina_screen_padding_right', // 屏幕右边距 ★新增
+  'mina_hide_status_bar', // 隐藏状态栏 ★新增
+  'mina_ios_safe_area', // iOS安全区域 ★新增
 
   // Music / system
   'littlephone_is_locked',
@@ -66,6 +79,7 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'littlephone_music_version',
   'littlephone_location',
   'littlephone_weather',
+  'littlephone_recent_stickers', // 最近使用的表情包 ★新增
 
   // 创作工坊
   'littlephone_workshop_config', // 工坊配置（叙事设置+世界书）
