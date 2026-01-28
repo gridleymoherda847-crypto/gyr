@@ -656,20 +656,43 @@ export default function XScreen() {
   const refreshReplies = async () => {
     if (!data || !openPost) return
     await withLoading('正在加载更多评论…', async () => {
-      const myRecent = (data.replies || [])
+      // 获取用户的所有评论
+      const myReplies = (data.replies || [])
         .filter((r) => r.postId === openPost.id && r.authorId === 'me')
-        .slice(-5)
-        .map((r) => `- ${r.text.replace(/\s+/g, ' ').slice(0, 120)}`)
+        .slice(-8)
+      
+      // 格式化用户评论（包括回复对象）
+      const myRecent = myReplies
+        .map((r) => {
+          const atMatch = r.text.match(/^@(\S+)\s+(.*)/)
+          if (atMatch) {
+            return `- 我回复 @${atMatch[1]}："${atMatch[2].slice(0, 100)}"`
+          }
+          return `- 我说："${r.text.replace(/\s+/g, ' ').slice(0, 100)}"`
+        })
         .join('\n')
+      
+      // 找出用户回复了哪些人（提取 @xxx）
+      const repliedToNames = myReplies
+        .map((r) => r.text.match(/^@(\S+)/)?.[1])
+        .filter(Boolean) as string[]
+      const uniqueRepliedTo = [...new Set(repliedToNames)]
+      
       const want = 8 + Math.floor(Math.random() * 13) // 8~20
+      const replyToSection = uniqueRepliedTo.length > 0 
+        ? `\n【重要】用户回复了这些人：${uniqueRepliedTo.join('、')}\n` +
+          `这些被回复的人必须在本次评论中出现，并回复用户！\n` +
+          `他们的回复要针对用户对他们说的话进行回应\n`
+        : ''
       const sys =
         sysPrefix() +
         `【X（推特风格）/评论区生成】\n` +
         `你要生成一些评论，像推特评论区那样。\n` +
         `主贴作者：${openPost.authorName}\n` +
         `主贴内容：${openPost.text}\n` +
-        `用户（我）的最近评论（如果有）：\n${myRecent || '（无）'}\n` +
-        `要求（重要）：\n` +
+        `用户（我）的最近评论：\n${myRecent || '（无）'}\n` +
+        replyToSection +
+        `\n要求：\n` +
         `- 生成 ${want} 条评论\n` +
         `- 如果用户发过评论：本次新评论中，必须有 20%~40% 是“在和用户评论互动”的（回复/引用/阴阳/支持/反驳都行）\n` +
         `- 其余可以是路人互相对线/玩梗/补充信息\n` +
