@@ -15,20 +15,132 @@ type Section = {
   content: React.ReactNode
 }
 
+// 手册内容文本（用于 AI 搜索）
+const MANUAL_TEXT = `
+【常见问题】
+- 苹果手机底部有黑条：设置 → 屏幕适配 → 打开「iOS 底部适配」
+- 按钮被屏幕截断：设置 → 屏幕适配 → 调整边距
+- 苹果手机无法全屏：Safari 分享 → 添加到主屏幕（PWA 方式）
+- AI 不回复：检查 API 配置，确认 Base URL、API Key、模型名称正确
+- AI 回复乱码：可能是 API 中转站问题，尝试更换
+- 聊天记录丢失：设置 → 导入数据，恢复备份
+- 私聊如何让 AI 回复：点击右下角的播放按钮
+- 群聊生成回复：点击消息列表右下角的生成按钮
+
+【API 消耗详解】
+消耗 API 的操作：
+- 私聊点击播放按钮触发回复
+- 群聊点击生成按钮
+- 朋友圈点击右上角刷新按钮
+- 情侣空间每次进入刷新留言
+- 偷看日记
+- 查手机
+- 聊天记忆总结点击 AI 总结
+- X 推特刷新主页
+- X 推特搜索话题
+- X 推特刷新私信
+
+不消耗 API 的操作：
+- 日记本查看/编辑
+- 音乐播放器
+- 斗地主
+- 所有设置
+- 创作工坊
+- 壁纸设置
+- 创建/编辑角色
+- 基金模拟
+- 钱包功能
+- 发送消息本身
+- X 私信发送消息
+- X 私信翻译
+
+【微信功能】
+- 私聊：进入聊天 → 发送消息 → 点击右下角播放按钮让 AI 回复
+- 群聊：微信 → 右上角加号 → 发起群聊
+- 朋友圈：微信 → 底部朋友圈 Tab → 右上角刷新
+- 偷看日记：聊天 → 点击「+」→ 偷看日记
+- 查手机：聊天 → 点击「+」→ 查手机
+- 情侣空间：聊天 → 点击「+」→ 情侣空间
+
+【其他 App】
+- 日记本：主屏幕 → 日记，写日记不消耗 API，偷看日记消耗 API
+- 音乐：主屏幕 → 音乐，不消耗 API
+- 斗地主：主屏幕 → 斗地主，不消耗 API
+- X 推特：主屏幕 → X，刷新主页/搜索/刷新私信消耗 API，发送私信/翻译不消耗
+- 创作工坊：主屏幕 → 创作工坊，不消耗 API
+- 钱包/基金：微信 → 我 → 钱包，不消耗 API
+- 设置：主屏幕 → 设置，不消耗 API
+
+【API 配置】
+- 位置：设置 → API 配置 → AI 对话配置
+- 需要填写：Base URL、API Key、选择模型
+- 开发者不提供 API，需要自行获取
+- 可使用 OpenAI 官方或国内中转站
+
+【角色设置】
+- 创建角色：微信 → 右上角加号 → 新建角色
+- 编辑角色：聊天 → 右上角「…」→ 聊天设置
+- 人设提示词：描述角色性格、说话方式等
+- 记忆管理：聊天设置 → 记忆管理 → AI 总结
+`
+
 export default function ManualScreen() {
   const navigate = useNavigate()
-  const { fontColor } = useOS()
+  const { fontColor, llmConfig, callLLM } = useOS()
   const [activeSection, setActiveSection] = useState<string | null>(null)
   const [showDisclaimer, setShowDisclaimer] = useState(() => {
     // 检查是否已经同意过免责声明
     return localStorage.getItem('mina_disclaimer_agreed') !== 'true'
   })
   
+  // 问答搜索相关状态
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showSearchConfirm, setShowSearchConfirm] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [searchResult, setSearchResult] = useState<string | null>(null)
+  const [showSearchResult, setShowSearchResult] = useState(false)
+  
   // 同意免责声明
   const handleAgreeDisclaimer = () => {
     localStorage.setItem('mina_disclaimer_agreed', 'true')
     setShowDisclaimer(false)
   }
+  
+  // 执行问答搜索
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return
+    setShowSearchConfirm(false)
+    setSearching(true)
+    setSearchResult(null)
+    
+    try {
+      const systemPrompt = `你是 Mina 小手机的使用帮助助手。根据用户的问题，从以下手册内容中找到相关答案并整理回复。
+
+【手册内容】
+${MANUAL_TEXT}
+
+【回答要求】
+1. 如果问题能在手册中找到答案，直接给出清晰简洁的回答
+2. 如果问题在手册中找不到相关内容，回复："❌ 抱歉，这个问题不在使用手册范围内。建议您联系开发者反馈此问题。"
+3. 回答要简洁明了，使用中文
+4. 可以补充一些操作路径和注意事项`
+
+      const result = await callLLM([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: searchQuery },
+      ], undefined, { maxTokens: 500, timeoutMs: 30000 })
+      
+      setSearchResult(result || '未能获取回答，请稍后重试')
+    } catch (e: any) {
+      setSearchResult(`搜索失败：${e?.message || '未知错误'}`)
+    } finally {
+      setSearching(false)
+      setShowSearchResult(true)
+    }
+  }
+  
+  // 检查 API 是否配置
+  const hasApiConfig = !!(llmConfig?.apiBaseUrl && llmConfig?.apiKey && llmConfig?.selectedModel)
   
   // 手册章节
   const sections: Section[] = [
@@ -330,8 +442,9 @@ export default function ManualScreen() {
             <br />• 记录心情日记，支持心情和天气标签
             <br />• 日历视图查看历史
             <br />• 可以分享日记给角色
-            <br />• 收藏角色分享给你的日记
-            <br /><span className="text-green-600">✓ 不消耗 API</span>
+            <br />• 收藏角色「偷看日记」的内容
+            <br /><span className="text-green-600">✓ 写日记/查看日记不消耗 API</span>
+            <br /><span className="text-amber-600">⚡ 聊天里「偷看日记」消耗 API</span>
           </div>
           
           <h4 className="font-bold mt-4">🎵 音乐</h4>
@@ -357,8 +470,8 @@ export default function ManualScreen() {
             <strong>位置：</strong>主屏幕 → X
             <br />• 模拟 X/Twitter 界面
             <br />• 角色会发推文
-            <br />• 私信功能（消耗 API）
-            <br />• 非中文消息可翻译（消耗 API）
+            <br /><span className="text-amber-600">⚡ 消耗 API：刷新主页、搜索话题、刷新私信</span>
+            <br /><span className="text-green-600">✓ 不消耗 API：发送私信、私信翻译</span>
           </div>
           
           <h4 className="font-bold mt-4">🎨 创作工坊</h4>
@@ -383,7 +496,15 @@ export default function ManualScreen() {
             <strong>位置：</strong>聊天 → 点击「+」→ 情侣空间
             <br />• 每个角色专属的情侣空间
             <br />• 留言板互动
-            <br /><span className="text-amber-600">⚡ 发送留言消耗 API</span>
+            <br /><span className="text-amber-600">⚡ 每次进入刷新留言消耗 API</span>
+          </div>
+          
+          <h4 className="font-bold mt-4">📱 查手机</h4>
+          <div className="p-3 bg-gray-50 rounded-xl text-sm">
+            <strong>位置：</strong>聊天 → 点击「+」→ 查手机
+            <br />• 查看角色的聊天记录、账单、备忘录等
+            <br />• 展示角色的社交圈
+            <br /><span className="text-amber-600">⚡ 每次查看消耗 API</span>
           </div>
           
           <h4 className="font-bold mt-4">⚙️ 设置</h4>
@@ -393,6 +514,7 @@ export default function ManualScreen() {
             <br />• 屏幕适配（边距调整、iOS 适配）
             <br />• 导出/导入数据
             <br />• 字体、颜色、壁纸等
+            <br /><span className="text-green-600">✓ 不消耗 API</span>
           </div>
         </div>
       ),
@@ -649,6 +771,49 @@ export default function ManualScreen() {
                 <p className="text-xs text-gray-500">使用手册 v2.0</p>
               </div>
               
+              {/* 问答百科搜索入口 */}
+              <div className="p-4 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl text-white">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl">🔍</span>
+                  <span className="font-bold">问答百科一键搜索</span>
+                </div>
+                <p className="text-xs opacity-90 mb-3">输入你的问题，AI 会从手册中找出答案</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="例如：怎么让 AI 回复？"
+                    className="flex-1 px-3 py-2 rounded-xl bg-white/20 placeholder-white/60 text-white text-sm outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && searchQuery.trim()) {
+                        if (!hasApiConfig) {
+                          alert('请先配置 API（设置 → API 配置）')
+                        } else {
+                          setShowSearchConfirm(true)
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      if (!searchQuery.trim()) {
+                        alert('请输入问题')
+                        return
+                      }
+                      if (!hasApiConfig) {
+                        alert('请先配置 API（设置 → API 配置）')
+                        return
+                      }
+                      setShowSearchConfirm(true)
+                    }}
+                    className="px-4 py-2 bg-white/20 rounded-xl text-sm font-medium hover:bg-white/30 transition-colors"
+                  >
+                    搜索
+                  </button>
+                </div>
+              </div>
+              
               {sections.map((section) => (
                 <button
                   key={section.id}
@@ -669,6 +834,88 @@ export default function ManualScreen() {
             </div>
           )}
         </div>
+        
+        {/* 搜索确认弹窗 */}
+        {showSearchConfirm && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="w-[300px] bg-white rounded-2xl overflow-hidden shadow-xl">
+              <div className="p-4 text-center">
+                <div className="text-4xl mb-3">🔍</div>
+                <div className="font-bold text-gray-800 mb-2">问答搜索</div>
+                <div className="text-sm text-gray-500 mb-1">本次搜索将消耗 1 次 API 调用</div>
+                <div className="text-xs text-gray-400">AI 会从手册内容中精准查找答案</div>
+              </div>
+              <div className="flex border-t border-gray-100">
+                <button
+                  onClick={() => setShowSearchConfirm(false)}
+                  className="flex-1 py-3 text-gray-600 text-[15px] border-r border-gray-100"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSearch}
+                  className="flex-1 py-3 text-purple-500 font-medium text-[15px]"
+                >
+                  确认搜索
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* 搜索中弹窗 */}
+        {searching && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="w-[280px] bg-white rounded-2xl p-6 text-center shadow-xl">
+              <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <div className="font-bold text-gray-800 mb-1">正在搜索…</div>
+              <div className="text-sm text-gray-500">AI 正在分析手册内容</div>
+            </div>
+          </div>
+        )}
+        
+        {/* 搜索结果弹窗 */}
+        {showSearchResult && searchResult && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-[340px] max-h-[80vh] bg-white rounded-2xl overflow-hidden shadow-xl flex flex-col">
+              <div className="p-4 border-b border-gray-100 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-gray-800">搜索结果</div>
+                  <button
+                    onClick={() => {
+                      setShowSearchResult(false)
+                      setSearchResult(null)
+                      setSearchQuery('')
+                    }}
+                    className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="text-xs text-gray-400 mt-1">问题：{searchQuery}</div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                  {searchResult}
+                </div>
+              </div>
+              <div className="p-3 border-t border-gray-100 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    setShowSearchResult(false)
+                    setSearchResult(null)
+                    setSearchQuery('')
+                  }}
+                  className="w-full py-2.5 bg-purple-500 text-white rounded-xl text-sm font-medium"
+                >
+                  我知道了
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </PageContainer>
   )
