@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import type { Card, PlayResult } from '../utils/doudizhu'
 import {
   dealCards,
@@ -264,9 +265,15 @@ function ShareDialog({
     }, 1000)
   }
   
-  return (
-    <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
-      <div className="bg-gradient-to-br from-white to-gray-100 rounded-xl w-[72vw] max-w-[240px] max-h-[50vh] flex flex-col shadow-2xl overflow-hidden">
+  return createPortal(
+    <div
+      className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]"
+      style={{
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}
+    >
+      <div className="bg-gradient-to-br from-white to-gray-100 rounded-xl w-[86vw] max-w-[320px] max-h-[82vh] flex flex-col shadow-2xl overflow-hidden">
         <div className="px-2 pt-2 pb-1">
           <h3 className="text-center font-bold text-sm">📤 分享战绩</h3>
         </div>
@@ -353,7 +360,8 @@ function ShareDialog({
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

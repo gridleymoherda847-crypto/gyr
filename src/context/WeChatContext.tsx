@@ -1282,21 +1282,38 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       name,
       createdAt: Date.now()
     }
-    setStickerCategories(prev => [...prev, newCategory])
+    setStickerCategories(prev => {
+      const next = [...prev, newCategory]
+      // 立即持久化：避免用户很快刷新导致 useEffect 还没写入
+      if (canPersist()) void kvSetJSON(STORAGE_KEYS.stickerCategories, next)
+      return next
+    })
     return newCategory
   }
 
   const removeStickerCategory = (id: string, opts?: { deleteStickers?: boolean }) => {
     const catName = stickerCategories.find(c => c.id === id)?.name
-    setStickerCategories(prev => prev.filter(c => c.id !== id))
+    setStickerCategories(prev => {
+      const next = prev.filter(c => c.id !== id)
+      if (canPersist()) void kvSetJSON(STORAGE_KEYS.stickerCategories, next)
+      return next
+    })
     if (!catName) return
     if (opts?.deleteStickers) {
       // 同时删除该分类下的所有表情
-      setStickers(prev => prev.filter(s => s.category !== catName))
+      setStickers(prev => {
+        const next = prev.filter(s => s.category !== catName)
+        if (canPersist()) void kvSetJSON(STORAGE_KEYS.stickers, next)
+        return next
+      })
       return
     }
     // 仅清除该分类标签（保留表情）
-    setStickers(prev => prev.map(s => (s.category === catName ? { ...s, category: undefined } : s)))
+    setStickers(prev => {
+      const next = prev.map(s => (s.category === catName ? { ...s, category: undefined } : s))
+      if (canPersist()) void kvSetJSON(STORAGE_KEYS.stickers, next)
+      return next
+    })
   }
 
   const renameStickerCategory = (id: string, newName: string) => {
@@ -1304,9 +1321,17 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     if (!nextName) return
     const oldName = stickerCategories.find(c => c.id === id)?.name
     if (!oldName || oldName === nextName) return
-    setStickerCategories(prev => prev.map(c => (c.id === id ? { ...c, name: nextName } : c)))
+    setStickerCategories(prev => {
+      const next = prev.map(c => (c.id === id ? { ...c, name: nextName } : c))
+      if (canPersist()) void kvSetJSON(STORAGE_KEYS.stickerCategories, next)
+      return next
+    })
     // 同步更新所有表情的分类名
-    setStickers(prev => prev.map(s => (s.category === oldName ? { ...s, category: nextName } : s)))
+    setStickers(prev => {
+      const next = prev.map(s => (s.category === oldName ? { ...s, category: nextName } : s))
+      if (canPersist()) void kvSetJSON(STORAGE_KEYS.stickers, next)
+      return next
+    })
   }
 
   const getStickersByCategory = (categoryName: string): StickerConfig[] => {
