@@ -1079,6 +1079,13 @@ ${recentTimeline || '（无）'}
   ❌ "[图片]"、"[表情包]"、"[转账]"、"[音乐]"、"[情侣空间]"、"[情侣空间申请]"
   ❌ "[拍一拍：xxx]"、"[拍了拍xxx]"、"[拍一拍]" ← 写了只显示文字，超级出戏！
   ❌ 任何你在历史消息中看到的方括号格式，都不要模仿！
+- 【发送图片 - 唯一允许的格式】如果你想发送图片给用户，使用这个格式：
+  ✅ [图片：详细描述图片内容]
+  例如：[图片：一只橘猫懒洋洋地趴在沙发上晒太阳]
+  例如：[图片：我刚买的奶茶，珍珠超多]
+  例如：[图片：窗外的夜景，霓虹灯闪烁]
+  - 描述要具体、生动，像真的在分享照片一样
+  - 系统会把这个格式渲染成图片卡片的样式
 - 【拍一拍】如果用户说"拍拍我"，你正常说话回应（如"哎呀干嘛啦"），系统会自动处理拍一拍
 - 【情侣空间】如果用户提到情侣空间，你可以口语回应，但不要写任何方括号格式
 - 你可能会在历史里看到 <DIARY ...>：那是"用户转发的一篇日记"，作者信息在 author/authorId。
@@ -1751,6 +1758,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 }
               } else {
                 // 发送普通文本消息
+                // 如果有伪翻译（dual），直接带上翻译，不需要显示"翻译中"
                 const msg = addMessage({
                   characterId: character.id,
                   content: textContent,
@@ -1758,42 +1766,37 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                   type: 'text',
                   messageLanguage: characterLanguage,
                   chatTranslationEnabledAtSend: translationMode,
-                  translationStatus: translationMode ? 'pending' : undefined,
+                  translationStatus: translationMode ? (dual ? 'done' : 'pending') : undefined,
+                  translatedZh: dual ? dual.zh : undefined, // 伪翻译直接带上
                   isOffline: character.offlineMode, // 标记是否是线下模式消息
                 })
                 
-                // 翻译策略（仅文本消息需要）
-                if (translationMode) {
-                  if (dual) {
-                    safeTimeoutEx(() => {
-                      updateMessage(msg.id, { translatedZh: dual.zh, translationStatus: 'done' })
-                    }, 420 + Math.random() * 520, { background: true })
-                  } else {
-                    safeTimeoutEx(() => {
-                      ;(async () => {
-                        try {
-                          const sys =
-                            `你是一个翻译器。把用户给你的内容翻译成"简体中文"（不是繁体中文！）。\n` +
-                            `要求：\n` +
-                            `- 只输出简体中文翻译，严禁繁体字（這個說們會過還點無問題等繁体字禁止）\n` +
-                            `- 保留人名/歌名/专有名词原样\n` +
-                            `- 不要添加引号/括号/前后缀\n`
-                          const zh = await callLLM(
-                            [
-                              { role: 'system', content: sys },
-                              { role: 'user', content: textContent },
-                            ],
-                            undefined,
-                            { maxTokens: 500, timeoutMs: 60000, temperature: 0.2 }
-                          )
-                          const cleaned = (zh || '').trim()
-                          updateMessage(msg.id, { translatedZh: cleaned || '（空）', translationStatus: cleaned ? 'done' : 'error' })
-                        } catch {
-                          updateMessage(msg.id, { translationStatus: 'error' })
-                        }
-                      })()
-                    }, 200 + Math.random() * 250, { background: true })
-                  }
+                // 翻译策略：只有没有伪翻译时才需要真翻译
+                if (translationMode && !dual) {
+                  safeTimeoutEx(() => {
+                    ;(async () => {
+                      try {
+                        const sys =
+                          `你是一个翻译器。把用户给你的内容翻译成"简体中文"（不是繁体中文！）。\n` +
+                          `要求：\n` +
+                          `- 只输出简体中文翻译，严禁繁体字（這個說們會過還點無問題等繁体字禁止）\n` +
+                          `- 保留人名/歌名/专有名词原样\n` +
+                          `- 不要添加引号/括号/前后缀\n`
+                        const zh = await callLLM(
+                          [
+                            { role: 'system', content: sys },
+                            { role: 'user', content: textContent },
+                          ],
+                          undefined,
+                          { maxTokens: 500, timeoutMs: 60000, temperature: 0.2 }
+                        )
+                        const cleaned = (zh || '').trim()
+                        updateMessage(msg.id, { translatedZh: cleaned || '（空）', translationStatus: cleaned ? 'done' : 'error' })
+                      } catch {
+                        updateMessage(msg.id, { translationStatus: 'error' })
+                      }
+                    })()
+                  }, 200 + Math.random() * 250, { background: true })
                 }
               }
               
@@ -4305,7 +4308,59 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       }
     }
 
-    return <span>{msg.content}</span>
+    // 检测 [图片：描述] 格式，渲染为图片卡片
+    const imageDescMatch = (msg.content || '').match(/^\[图片[：:]\s*(.+?)\]$/s)
+    if (imageDescMatch) {
+      const description = imageDescMatch[1].trim()
+      return (
+        <div className="w-[160px] h-[160px] rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300 flex items-center justify-center p-3 shadow-inner">
+          <div className="text-center">
+            <div className="text-[11px] text-gray-400 mb-1">📷</div>
+            <div className="text-[12px] text-gray-600 leading-relaxed break-words line-clamp-5">{description}</div>
+          </div>
+        </div>
+      )
+    }
+    
+    // 检测消息中包含 [图片：描述] 格式（混合在文本中）
+    const mixedImageRegex = /\[图片[：:]\s*(.+?)\]/g
+    if (mixedImageRegex.test(msg.content || '')) {
+      const parts: React.ReactNode[] = []
+      let lastIndex = 0
+      const content = msg.content || ''
+      const regex = /\[图片[：:]\s*(.+?)\]/g
+      let match
+      while ((match = regex.exec(content)) !== null) {
+        // 添加图片前的文本
+        if (match.index > lastIndex) {
+          const textBefore = content.slice(lastIndex, match.index).trim()
+          if (textBefore) {
+            parts.push(<span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">{textBefore}</span>)
+          }
+        }
+        // 添加图片卡片
+        const desc = match[1].trim()
+        parts.push(
+          <div key={`img-${match.index}`} className="my-2 w-[140px] h-[140px] rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300 flex items-center justify-center p-2 shadow-inner">
+            <div className="text-center">
+              <div className="text-[10px] text-gray-400 mb-0.5">📷</div>
+              <div className="text-[11px] text-gray-600 leading-relaxed break-words line-clamp-4">{desc}</div>
+            </div>
+          </div>
+        )
+        lastIndex = match.index + match[0].length
+      }
+      // 添加最后的文本
+      if (lastIndex < content.length) {
+        const textAfter = content.slice(lastIndex).trim()
+        if (textAfter) {
+          parts.push(<span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">{textAfter}</span>)
+        }
+      }
+      return <div className="flex flex-col">{parts}</div>
+    }
+    
+    return <span className="whitespace-pre-wrap break-words">{msg.content}</span>
   }
 
   // 渲染日历
