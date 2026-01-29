@@ -392,6 +392,25 @@ export default function DoudizhuScreen() {
   const [selectedFriends, setSelectedFriends] = useState<OnlineFriend[]>([])
   const [fromGroupId, setFromGroupId] = useState<string | null>(null)
   
+  // 进入斗地主时自动隐藏虚拟状态栏，退出时恢复
+  useEffect(() => {
+    const originalValue = localStorage.getItem('mina_hide_status_bar')
+    // 强制隐藏状态栏
+    localStorage.setItem('mina_hide_status_bar', 'true')
+    // 触发 storage 事件让 PhoneShell 更新（同页面需要手动派发）
+    window.dispatchEvent(new StorageEvent('storage', { key: 'mina_hide_status_bar', newValue: 'true' }))
+    
+    return () => {
+      // 退出时恢复原来的设置
+      if (originalValue === null) {
+        localStorage.removeItem('mina_hide_status_bar')
+      } else {
+        localStorage.setItem('mina_hide_status_bar', originalValue)
+      }
+      window.dispatchEvent(new StorageEvent('storage', { key: 'mina_hide_status_bar', newValue: originalValue }))
+    }
+  }, [])
+  
   // 从聊天界面/群聊跳转过来时自动开始联机模式
   useEffect(() => {
     const state = location.state as { mode?: string; friends?: OnlineFriend[]; fromGroupId?: string } | null
