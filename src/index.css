@@ -43,7 +43,37 @@ html, body {
   /* iOS Safari 安全区域 - 默认不添加padding */
 }
 
-/* iOS 安全区域适配模式 - 只在开启开关时生效 */
+/* iOS PWA 模式（自动检测）- 防止系统状态栏被触发 */
+html.ios-pwa,
+html.ios-pwa body {
+  /* 锁定整个页面，防止任何滚动触发系统 UI */
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  -webkit-overflow-scrolling: auto !important;
+  touch-action: pan-x pan-y !important;
+}
+
+html.ios-pwa body {
+  background-color: #000 !important;
+}
+
+html.ios-pwa #root {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  overflow: hidden !important;
+}
+
+/* iOS 安全区域适配模式 - 开关开启或自动检测到 iOS PWA */
 html.ios-safe-area {
   /* 确保 html 填满 */
   height: 100%;
@@ -58,11 +88,9 @@ html.ios-safe-area body {
   right: 0 !important;
   bottom: 0 !important;
   /* 使用动态视口高度 */
-  height: 100dvh !important;
-  height: -webkit-fill-available !important;
-  min-height: 100dvh !important;
-  min-height: -webkit-fill-available !important;
-  max-height: none !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  max-height: 100% !important;
   /* 禁用滚动 */
   overflow: hidden !important;
   overscroll-behavior: none !important;
@@ -71,17 +99,12 @@ html.ios-safe-area body {
 }
 
 html.ios-safe-area #root {
-  /* 内容区域：顶部和底部都添加安全区域padding */
-  padding-top: env(safe-area-inset-top, 0px) !important;
-  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   /* 确保填满整个视口 */
   height: 100% !important;
   min-height: 100% !important;
   max-height: 100% !important;
   box-sizing: border-box !important;
-  /* 允许内部滚动 */
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: hidden !important;
 }
 
 body {
