@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
@@ -221,6 +222,18 @@ export default function ChatScreen() {
   const [editingContent, setEditingContent] = useState('')
   const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(null)
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set())
+
+  // 线上模式：长按气泡弹出操作菜单（线下模式不动）
+  const [msgActionMenu, setMsgActionMenu] = useState<{
+    open: boolean
+    msg: typeof messages[0] | null
+    x: number
+    y: number
+    placement: 'top' | 'bottom'
+  }>({ open: false, msg: null, x: 0, y: 0, placement: 'top' })
+  const longPressTimerRef = useRef<number | null>(null)
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
+  const longPressTriggeredRef = useRef(false)
   
   // 查手机功能状态
   const [showPhonePeek, setShowPhonePeek] = useState(false)
@@ -4385,6 +4398,67 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     return <span className="whitespace-pre-wrap break-words">{msg.content}</span>
   }
 
+  const closeMsgActionMenu = useCallback(() => {
+    setMsgActionMenu({ open: false, msg: null, x: 0, y: 0, placement: 'top' })
+    longPressTriggeredRef.current = false
+  }, [])
+
+  const openMsgActionMenu = useCallback((msg: typeof messages[0], el: HTMLElement) => {
+    const rect = el.getBoundingClientRect()
+    const vw = window.innerWidth || 360
+    const cx = rect.left + rect.width / 2
+    const x = Math.min(vw - 16, Math.max(16, cx))
+    const placement: 'top' | 'bottom' = rect.top > 90 ? 'top' : 'bottom'
+    const y = placement === 'top' ? rect.top : rect.bottom
+    setMsgActionMenu({ open: true, msg, x, y, placement })
+  }, [])
+
+  // 线上模式长按：按住 420ms 触发；移动超过阈值取消
+  const onMsgPressStart = useCallback((e: React.PointerEvent, msg: typeof messages[0]) => {
+    if (editMode) return
+    if (character?.offlineMode) return // 线下模式不动
+    // 只处理左键/触摸
+    if (e.pointerType === 'mouse' && (e as any).button !== 0) return
+
+    longPressTriggeredRef.current = false
+    longPressStartRef.current = { x: e.clientX, y: e.clientY }
+    if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current)
+    const el = e.currentTarget as HTMLElement
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true
+      openMsgActionMenu(msg, el)
+    }, 420)
+  }, [character?.offlineMode, editMode, openMsgActionMenu])
+
+  const onMsgPressMove = useCallback((e: React.PointerEvent) => {
+    if (!longPressTimerRef.current || !longPressStartRef.current) return
+    const dx = e.clientX - longPressStartRef.current.x
+    const dy = e.clientY - longPressStartRef.current.y
+    if (Math.hypot(dx, dy) > 10) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+      longPressStartRef.current = null
+    }
+  }, [])
+
+  const onMsgPressEnd = useCallback(() => {
+    if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current)
+    longPressTimerRef.current = null
+    longPressStartRef.current = null
+  }, [])
+
+  // 菜单打开时：滚动/窗口变化关闭，避免菜单漂移
+  useEffect(() => {
+    if (!msgActionMenu.open) return
+    const onAny = () => closeMsgActionMenu()
+    window.addEventListener('resize', onAny)
+    window.addEventListener('scroll', onAny, true)
+    return () => {
+      window.removeEventListener('resize', onAny)
+      window.removeEventListener('scroll', onAny, true)
+    }
+  }, [msgActionMenu.open, closeMsgActionMenu])
+
   // 渲染日历
   const renderCalendar = () => {
     const year = calendarMonth.getFullYear()
@@ -4853,6 +4927,24 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                         : 'text-gray-800 rounded-2xl rounded-tl-md'}`
                 }`}
                 style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' || msg.type === 'chat_forward' ? undefined : bubbleStyle as any}
+                onPointerDown={(e) => onMsgPressStart(e, msg)}
+                onPointerMove={onMsgPressMove}
+                onPointerUp={onMsgPressEnd}
+                onPointerCancel={onMsgPressEnd}
+                onClickCapture={(e) => {
+                  // 长按已触发时：阻止“点开图片/卡片”等点击副作用
+                  if (longPressTriggeredRef.current) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    longPressTriggeredRef.current = false
+                  }
+                }}
+                onContextMenu={(e) => {
+                  if (editMode) return
+                  if (character?.offlineMode) return
+                  e.preventDefault()
+                  openMsgActionMenu(msg, e.currentTarget as HTMLElement)
+                }}
               >
                 {renderMessageContent(msg)}
               </div>
@@ -4882,7 +4974,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 </span>
                 
                 {/* 消息操作按钮（非系统消息且非编辑模式） */}
-                {(msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'transfer' || msg.type === 'doudizhu_share' || msg.type === 'doudizhu_invite') && !editMode && (
+                {/* 线下模式保持原样；线上模式改为“长按气泡 → 悬浮菜单” */}
+                {character?.offlineMode && (msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'transfer' || msg.type === 'doudizhu_share' || msg.type === 'doudizhu_invite') && !editMode && (
                   <>
                     {/* 编辑按钮（仅对方消息的文本/语音/转账备注） */}
                     {!msg.isUser && (msg.type === 'text' || msg.type === 'voice' || msg.type === 'transfer') && (
@@ -4945,6 +5038,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     character?.name,
     character?.isBlocked,
     character?.blockedAt,
+    character?.offlineMode,
     editMode,
     selectedMsgIds,
     forwardMode,
@@ -4952,6 +5046,10 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     selectedPersona?.avatar,
     selectedPersona?.name,
     bubbleStyles,
+    onMsgPressStart,
+    onMsgPressMove,
+    onMsgPressEnd,
+    openMsgActionMenu,
   ])
 
   return (
@@ -6944,6 +7042,82 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             )}
           </div>
         </div>
+      )}
+
+      {/* 线上模式：长按气泡操作菜单（线下模式不动） */}
+      {!character?.offlineMode && msgActionMenu.open && msgActionMenu.msg && createPortal(
+        <div
+          className="fixed inset-0 z-[95]"
+          onPointerDown={() => closeMsgActionMenu()}
+          role="presentation"
+        >
+          <div
+            className="fixed inset-0"
+            style={{ background: 'transparent' }}
+          />
+          <div
+            className="fixed"
+            style={{
+              left: msgActionMenu.x,
+              top: msgActionMenu.y,
+              transform:
+                msgActionMenu.placement === 'top'
+                  ? 'translate(-50%, -100%) translateY(-8px)'
+                  : 'translate(-50%, 8px)',
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-2xl bg-black/75 text-white shadow-lg border border-white/10 backdrop-blur">
+              {/* 编辑（仅对方消息的文本/语音/转账备注） */}
+              {!msgActionMenu.msg.isUser &&
+                (msgActionMenu.msg.type === 'text' || msgActionMenu.msg.type === 'voice' || msgActionMenu.msg.type === 'transfer') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const m = msgActionMenu.msg!
+                      setEditingMessageId(m.id)
+                      setEditingContent(m.type === 'transfer' ? (m.transferNote || '') : m.content)
+                      closeMsgActionMenu()
+                    }}
+                    className="px-2.5 py-1 rounded-xl text-[12px] hover:bg-white/15 active:bg-white/20"
+                  >
+                    编辑
+                  </button>
+                )}
+
+              {/* 引用（仅对方消息的文本/语音） */}
+              {!msgActionMenu.msg.isUser &&
+                (msgActionMenu.msg.type === 'text' || msgActionMenu.msg.type === 'voice') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplyingToMessageId(msgActionMenu.msg!.id)
+                      closeMsgActionMenu()
+                    }}
+                    className="px-2.5 py-1 rounded-xl text-[12px] hover:bg-white/15 active:bg-white/20"
+                  >
+                    引用
+                  </button>
+                )}
+
+              {/* 删除（双方消息都可删除） */}
+              <button
+                type="button"
+                onClick={() => {
+                  const id = msgActionMenu.msg!.id
+                  closeMsgActionMenu()
+                  if (confirm('确定删除这条消息吗？')) {
+                    deleteMessage(id)
+                  }
+                }}
+                className="px-2.5 py-1 rounded-xl text-[12px] text-red-200 hover:bg-red-500/25 active:bg-red-500/30"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* 斗地主邀请已接受弹窗 */}
