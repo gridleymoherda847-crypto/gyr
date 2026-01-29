@@ -1302,6 +1302,14 @@ export function OSProvider({ children }: PropsWithChildren) {
     if (!selectedModel) throw new Error('请先选择一个模型')
     
     try {
+      const maxTokens = options?.maxTokens ?? 900
+      const payload = {
+        model: selectedModel,
+        messages: messages,
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: maxTokens,
+      }
+
       const controller = new AbortController()
       const timeoutMs = options?.timeoutMs ?? 600000
       const t = window.setTimeout(() => controller.abort(), timeoutMs)
@@ -1313,12 +1321,7 @@ export function OSProvider({ children }: PropsWithChildren) {
           'Content-Type': 'application/json',
         },
         signal: controller.signal,
-        body: JSON.stringify({
-          model: selectedModel,
-          messages: messages,
-          temperature: options?.temperature ?? 0.7,
-          max_tokens: options?.maxTokens ?? 500,
-        }),
+        body: JSON.stringify(payload),
       })
       window.clearTimeout(t)
       
@@ -1343,6 +1346,51 @@ export function OSProvider({ children }: PropsWithChildren) {
             '如果你用的是 Gemini/Claude 官方原生接口，需要使用“OpenAI兼容中转”，或者后续我再给你加“接口类型”切换适配。'
         )
       }
+
+      // 兜底：Gemini 2.5 / 部分中转容易 length 截断（话说一半）
+      // 如果看到 finish_reason=length，自动走一次“继续输出”的补全（同域转发更稳定且无 CORS）
+      const finishReason =
+        data?.choices?.[0]?.finish_reason ??
+        data?.choices?.[0]?.finishReason ??
+        data?.finish_reason
+      if (String(finishReason || '').toLowerCase() === 'length') {
+        try {
+          const continueHint =
+            '继续上文，从刚才中断处接着写。\n' +
+            '要求：不要重复已说过的句子；保持同一语言与语气；继续完成这一轮回复。'
+          const contPayload = {
+            ...payload,
+            messages: [
+              ...messages,
+              { role: 'assistant', content: finalText },
+              { role: 'user', content: continueHint },
+            ],
+            max_tokens: Math.max(120, maxTokens),
+          }
+          const proxyRes = await fetch('/api/llm/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              apiBaseUrl: llmConfig.apiBaseUrl,
+              apiKey: key,
+              payload: contPayload,
+            }),
+          })
+          if (proxyRes.ok) {
+            const contData = await proxyRes.json().catch(() => ({}))
+            const contContent =
+              contData?.choices?.[0]?.message?.content ??
+              contData?.choices?.[0]?.text ??
+              contData?.message?.content ??
+              contData?.content
+            const contText = typeof contContent === 'string' ? contContent.trim() : ''
+            if (contText) return `${finalText}\n${contText}`.trim()
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       return finalText
     } catch (error: any) {
       if (error?.name === 'AbortError') {
@@ -1365,7 +1413,7 @@ export function OSProvider({ children }: PropsWithChildren) {
                 model: selectedModel,
                 messages: messages,
                 temperature: options?.temperature ?? 0.7,
-                max_tokens: options?.maxTokens ?? 500,
+                max_tokens: options?.maxTokens ?? 900,
               },
             }),
           })

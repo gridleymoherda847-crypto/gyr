@@ -125,6 +125,8 @@ export default function GroupChatScreen() {
   const [relationExpanded, setRelationExpanded] = useState<Set<string>>(new Set())
   const [newRelationPerson1, setNewRelationPerson1] = useState<string>('')
   const [newRelationPerson2, setNewRelationPerson2] = useState<string>('')
+  const [newRelationMode, setNewRelationMode] = useState<'single' | 'oneToMany' | 'manyToOne'>('single')
+  const [newRelationMulti, setNewRelationMulti] = useState<string[]>([])
   const [newRelationship, setNewRelationship] = useState('')
   const [newRelationStory, setNewRelationStory] = useState('')
   const [editingRelationId, setEditingRelationId] = useState<string | null>(null)
@@ -1793,45 +1795,190 @@ ${history}`
                   {/* 添加新关系 */}
                   <div className="bg-green-50 rounded-xl p-3">
                     <div className="text-sm font-medium text-gray-800 mb-2">添加关系</div>
+                    {/* 模式：单对单 / 1对多 / 多对1（只改这里，不影响读取顺序） */}
                     <div className="flex gap-2 mb-2">
-                      <select value={newRelationPerson1} onChange={(e) => setNewRelationPerson1(e.target.value)}
-                        className="flex-1 px-2 py-1.5 rounded bg-white border border-gray-200 text-xs outline-none">
-                        <option value="">选择人物</option>
-                        <option value="user">{selectedPersona?.name || '我'}</option>
-                        {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                      </select>
-                      <span className="flex items-center text-xs text-gray-400">和</span>
-                      <select value={newRelationPerson2} onChange={(e) => setNewRelationPerson2(e.target.value)}
-                        className="flex-1 px-2 py-1.5 rounded bg-white border border-gray-200 text-xs outline-none">
-                        <option value="">选择人物</option>
-                        <option value="user">{selectedPersona?.name || '我'}</option>
-                        {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                      </select>
+                      {([
+                        { id: 'single' as const, label: '单对单' },
+                        { id: 'oneToMany' as const, label: '1对多' },
+                        { id: 'manyToOne' as const, label: '多对1' },
+                      ]).map(t => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            setNewRelationMode(t.id)
+                            setNewRelationMulti([])
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-xs ${
+                            newRelationMode === t.id ? 'bg-green-500 text-white' : 'bg-white/70 border border-gray-200 text-gray-700'
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
                     </div>
+
+                    {(() => {
+                      const people = [
+                        { id: 'user', name: selectedPersona?.name || '我' },
+                        ...members.map(m => ({ id: m.id, name: m.name })),
+                      ]
+                      const toggleMulti = (id: string) => {
+                        setNewRelationMulti(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
+                      }
+
+                      if (newRelationMode === 'single') {
+                        return (
+                          <div className="flex gap-2 mb-2">
+                            <select value={newRelationPerson1} onChange={(e) => setNewRelationPerson1(e.target.value)}
+                              className="flex-1 px-2 py-1.5 rounded bg-white border border-gray-200 text-xs outline-none">
+                              <option value="">选择人物</option>
+                              {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                            <span className="flex items-center text-xs text-gray-400">和</span>
+                            <select value={newRelationPerson2} onChange={(e) => setNewRelationPerson2(e.target.value)}
+                              className="flex-1 px-2 py-1.5 rounded bg-white border border-gray-200 text-xs outline-none">
+                              <option value="">选择人物</option>
+                              {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
+                        )
+                      }
+
+                      if (newRelationMode === 'oneToMany') {
+                        const p1 = newRelationPerson1
+                        return (
+                          <div className="mb-2 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <select value={newRelationPerson1} onChange={(e) => { setNewRelationPerson1(e.target.value); setNewRelationMulti([]) }}
+                                className="flex-1 px-2 py-1.5 rounded bg-white border border-gray-200 text-xs outline-none">
+                                <option value="">选择“1”（人物）</option>
+                                {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </select>
+                              <span className="text-xs text-gray-400">→</span>
+                              <span className="text-xs text-gray-600">多个对象</span>
+                            </div>
+                            <div className="p-2 rounded-lg bg-white border border-gray-200">
+                              <div className="text-[11px] text-gray-500 mb-1">选择“多”（可多选）</div>
+                              <div className="flex flex-wrap gap-2">
+                                {people.filter(p => p.id !== p1).map(p => {
+                                  const checked = newRelationMulti.includes(p.id)
+                                  return (
+                                    <button
+                                      key={p.id}
+                                      type="button"
+                                      onClick={() => toggleMulti(p.id)}
+                                      className={`px-2.5 py-1.5 rounded-full text-xs border ${
+                                        checked ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-700'
+                                      }`}
+                                    >
+                                      {checked ? '✅ ' : ''}{p.name}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      // manyToOne
+                      const p2 = newRelationPerson2
+                      return (
+                        <div className="mb-2 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-600">多个对象</span>
+                            <span className="text-xs text-gray-400">→</span>
+                            <select value={newRelationPerson2} onChange={(e) => setNewRelationPerson2(e.target.value)}
+                              className="flex-1 px-2 py-1.5 rounded bg-white border border-gray-200 text-xs outline-none">
+                              <option value="">选择“1”（人物）</option>
+                              {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="p-2 rounded-lg bg-white border border-gray-200">
+                            <div className="text-[11px] text-gray-500 mb-1">选择“多”（可多选）</div>
+                            <div className="flex flex-wrap gap-2">
+                              {people.filter(p => p.id !== p2).map(p => {
+                                const checked = newRelationMulti.includes(p.id)
+                                return (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => toggleMulti(p.id)}
+                                    className={`px-2.5 py-1.5 rounded-full text-xs border ${
+                                      checked ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-700'
+                                    }`}
+                                  >
+                                    {checked ? '✅ ' : ''}{p.name}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
                     <input type="text" value={newRelationship} onChange={(e) => setNewRelationship(e.target.value)}
                       placeholder="关系（如：情侣、闺蜜、死对头、上下级）" className="w-full px-2 py-1.5 rounded bg-white border border-gray-200 text-xs outline-none mb-2" />
                     <textarea value={newRelationStory} onChange={(e) => setNewRelationStory(e.target.value)}
                       placeholder="故事设定（选填，可以写两人之间的故事背景）" rows={3} className="w-full px-2 py-1.5 rounded bg-white border border-gray-200 text-xs outline-none resize-none mb-2" />
                     <button type="button" onClick={() => {
-                      if (!newRelationPerson1 || !newRelationPerson2 || !newRelationship.trim()) {
-                        setInfoDialog({ open: true, title: '提示', message: '请选择两个人物并填写关系' })
+                      if (!newRelationship.trim()) {
+                        setInfoDialog({ open: true, title: '提示', message: '请填写关系' })
                         return
                       }
-                      if (newRelationPerson1 === newRelationPerson2) {
-                        setInfoDialog({ open: true, title: '提示', message: '不能选择同一个人' })
+
+                      const existing = group.relations || []
+                      const hasPair = (a: string, b: string) =>
+                        existing.some(r =>
+                          (r.person1Id === a && r.person2Id === b) ||
+                          (r.person1Id === b && r.person2Id === a)
+                        )
+
+                      const pairs: Array<[string, string]> = []
+                      if (newRelationMode === 'single') {
+                        if (!newRelationPerson1 || !newRelationPerson2) {
+                          setInfoDialog({ open: true, title: '提示', message: '请选择两个人物' })
+                          return
+                        }
+                        pairs.push([newRelationPerson1, newRelationPerson2])
+                      } else if (newRelationMode === 'oneToMany') {
+                        if (!newRelationPerson1 || newRelationMulti.length === 0) {
+                          setInfoDialog({ open: true, title: '提示', message: '请选择“1”和至少一个对象' })
+                          return
+                        }
+                        for (const p of newRelationMulti) pairs.push([newRelationPerson1, p])
+                      } else {
+                        if (!newRelationPerson2 || newRelationMulti.length === 0) {
+                          setInfoDialog({ open: true, title: '提示', message: '请选择“1”和至少一个对象' })
+                          return
+                        }
+                        for (const p of newRelationMulti) pairs.push([p, newRelationPerson2])
+                      }
+
+                      const deduped = pairs
+                        .filter(([a, b]) => !!a && !!b && a !== b)
+                        .filter(([a, b]) => !hasPair(a, b))
+
+                      if (deduped.length === 0) {
+                        setInfoDialog({ open: true, title: '提示', message: '没有可添加的关系（可能重复或选择无效）' })
                         return
                       }
-                      const newRelation = {
-                        id: `rel_${Date.now()}`,
-                        person1Id: newRelationPerson1,
-                        person2Id: newRelationPerson2,
+
+                      const now = Date.now()
+                      const newRelations = deduped.map(([a, b], idx) => ({
+                        id: `rel_${now}_${idx}`,
+                        person1Id: a,
+                        person2Id: b,
                         relationship: newRelationship.trim(),
                         story: newRelationStory.trim() || undefined,
-                      }
-                      const updatedRelations = [...(group.relations || []), newRelation]
+                      }))
+                      const updatedRelations = [...existing, ...newRelations]
                       updateGroup(group.id, { relations: updatedRelations })
+
                       setNewRelationPerson1('')
                       setNewRelationPerson2('')
+                      setNewRelationMulti([])
                       setNewRelationship('')
                       setNewRelationStory('')
                     }} className="w-full py-1.5 rounded bg-green-500 text-white text-xs font-medium">添加关系</button>
