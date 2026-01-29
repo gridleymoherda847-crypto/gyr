@@ -14,6 +14,11 @@ if (isIOS && isIOSStandalone) {
   document.documentElement.classList.add('ios-pwa')
 }
 
+// iOS 设备：自动启用安全区域适配（无需用户手动开关）
+if (isIOS) {
+  document.documentElement.classList.add('ios-safe-area')
+}
+
 // iOS 视口高度修复：用 innerHeight 兜底（解决部分机型 PWA 底部露黑）
 if (isIOS) {
   const setAppHeight = () => {
@@ -32,7 +37,6 @@ const savedPaddingTop = localStorage.getItem('mina_screen_padding_top')
 const savedPaddingBottom = localStorage.getItem('mina_screen_padding_bottom')
 const savedPaddingLeft = localStorage.getItem('mina_screen_padding_left')
 const savedPaddingRight = localStorage.getItem('mina_screen_padding_right')
-const savedIosSafeArea = localStorage.getItem('mina_ios_safe_area')
 
 if (savedPaddingTop) {
   document.documentElement.style.setProperty('--screen-padding-top', `${savedPaddingTop}px`)
@@ -45,10 +49,6 @@ if (savedPaddingLeft) {
 }
 if (savedPaddingRight) {
   document.documentElement.style.setProperty('--screen-padding-right', `${savedPaddingRight}px`)
-}
-// iOS 安全区域适配（用户手动开关 或 自动检测到 iOS PWA）
-if (savedIosSafeArea === 'true' || (isIOS && isIOSStandalone)) {
-  document.documentElement.classList.add('ios-safe-area')
 }
 
 const rootElement = document.getElementById('root')

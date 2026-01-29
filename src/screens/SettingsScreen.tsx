@@ -43,9 +43,6 @@ export default function SettingsScreen() {
   const [hideStatusBar, setHideStatusBar] = useState(() => {
     return localStorage.getItem('mina_hide_status_bar') === 'true'
   })
-  const [iosSafeArea, setIosSafeArea] = useState(() => {
-    return localStorage.getItem('mina_ios_safe_area') === 'true'
-  })
   const [fullscreenUnsupported, setFullscreenUnsupported] = useState(false)
 
   // 检测是否支持全屏 API
@@ -736,7 +733,6 @@ export default function SettingsScreen() {
                     localStorage.setItem('mina_screen_padding_left', String(screenPaddingLeft))
                     localStorage.setItem('mina_screen_padding_right', String(screenPaddingRight))
                     localStorage.setItem('mina_hide_status_bar', String(hideStatusBar))
-                    localStorage.setItem('mina_ios_safe_area', String(iosSafeArea))
                     document.documentElement.style.setProperty('--screen-padding-top', `${screenPaddingTop}px`)
                     document.documentElement.style.setProperty('--screen-padding-bottom', `${screenPaddingBottom}px`)
                     document.documentElement.style.setProperty('--screen-padding-left', `${screenPaddingLeft}px`)
@@ -752,21 +748,6 @@ export default function SettingsScreen() {
               </div>
               
               <div className="space-y-4">
-                {/* iOS 安全区域适配 */}
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <div>
-                    <span className="text-sm text-[#333]">🍎 iOS 底部适配</span>
-                    <p className="text-xs text-[#999]">修复 iPhone 底部黑条问题</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIosSafeArea(!iosSafeArea)}
-                    className={`w-12 h-7 rounded-full transition-colors ${iosSafeArea ? 'bg-green-500' : 'bg-gray-300'}`}
-                  >
-                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform mx-1 ${iosSafeArea ? 'translate-x-5' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-                
                 {/* 隐藏状态栏 */}
                 <div className="flex items-center justify-between py-2 border-b border-gray-100">
                   <div>
@@ -876,7 +857,6 @@ export default function SettingsScreen() {
                     setScreenPaddingLeft(0)
                     setScreenPaddingRight(0)
                     setHideStatusBar(false)
-                    setIosSafeArea(false)
                   }}
                   className="rounded-full border border-black/10 bg-white/60 px-6 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
                 >
