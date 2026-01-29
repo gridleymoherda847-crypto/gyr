@@ -721,11 +721,34 @@ export default function SettingsScreen() {
               role="presentation"
             />
             <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/90 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)] max-h-[80vh] overflow-y-auto">
-              <div className="text-center mb-4">
-                <div className="text-[15px] font-semibold text-[#111]">📱 屏幕适配</div>
-                <div className="mt-1 text-[12px] text-[#666]">
-                  调整边距和状态栏显示
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <div className="text-[15px] font-semibold text-[#111]">📱 屏幕适配</div>
+                  <div className="mt-1 text-[12px] text-[#666]">
+                    调整边距和状态栏显示
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.setItem('mina_screen_padding_top', String(screenPaddingTop))
+                    localStorage.setItem('mina_screen_padding_bottom', String(screenPaddingBottom))
+                    localStorage.setItem('mina_screen_padding_left', String(screenPaddingLeft))
+                    localStorage.setItem('mina_screen_padding_right', String(screenPaddingRight))
+                    localStorage.setItem('mina_hide_status_bar', String(hideStatusBar))
+                    localStorage.setItem('mina_ios_safe_area', String(iosSafeArea))
+                    document.documentElement.style.setProperty('--screen-padding-top', `${screenPaddingTop}px`)
+                    document.documentElement.style.setProperty('--screen-padding-bottom', `${screenPaddingBottom}px`)
+                    document.documentElement.style.setProperty('--screen-padding-left', `${screenPaddingLeft}px`)
+                    document.documentElement.style.setProperty('--screen-padding-right', `${screenPaddingRight}px`)
+                    setShowScreenFit(false)
+                    window.location.reload()
+                  }}
+                  className="rounded-full px-4 py-1.5 text-[13px] font-semibold text-white active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
+                >
+                  保存
+                </button>
               </div>
               
               <div className="space-y-4">
@@ -844,7 +867,7 @@ export default function SettingsScreen() {
                 </div>
               </div>
               
-              <div className="mt-4 flex gap-2">
+              <div className="mt-4 flex justify-center">
                 <button
                   type="button"
                   onClick={() => {
@@ -855,32 +878,9 @@ export default function SettingsScreen() {
                     setHideStatusBar(false)
                     setIosSafeArea(false)
                   }}
-                  className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+                  className="rounded-full border border-black/10 bg-white/60 px-6 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
                 >
-                  重置
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    localStorage.setItem('mina_screen_padding_top', String(screenPaddingTop))
-                    localStorage.setItem('mina_screen_padding_bottom', String(screenPaddingBottom))
-                    localStorage.setItem('mina_screen_padding_left', String(screenPaddingLeft))
-                    localStorage.setItem('mina_screen_padding_right', String(screenPaddingRight))
-                    localStorage.setItem('mina_hide_status_bar', String(hideStatusBar))
-                    localStorage.setItem('mina_ios_safe_area', String(iosSafeArea))
-                    // 应用到 CSS 变量
-                    document.documentElement.style.setProperty('--screen-padding-top', `${screenPaddingTop}px`)
-                    document.documentElement.style.setProperty('--screen-padding-bottom', `${screenPaddingBottom}px`)
-                    document.documentElement.style.setProperty('--screen-padding-left', `${screenPaddingLeft}px`)
-                    document.documentElement.style.setProperty('--screen-padding-right', `${screenPaddingRight}px`)
-                    setShowScreenFit(false)
-                    // 刷新页面应用变更
-                    window.location.reload()
-                  }}
-                  className="flex-1 rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
-                  style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
-                >
-                  保存
+                  重置为默认
                 </button>
               </div>
             </div>
