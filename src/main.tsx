@@ -14,6 +14,19 @@ if (isIOS && isIOSStandalone) {
   document.documentElement.classList.add('ios-pwa')
 }
 
+// iOS 视口高度修复：用 innerHeight 兜底（解决部分机型 PWA 底部露黑）
+if (isIOS) {
+  const setAppHeight = () => {
+    document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`)
+  }
+  setAppHeight()
+  window.addEventListener('resize', setAppHeight)
+  window.addEventListener('orientationchange', () => window.setTimeout(setAppHeight, 80))
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) window.setTimeout(setAppHeight, 80)
+  })
+}
+
 // 应用用户保存的屏幕边距设置
 const savedPaddingTop = localStorage.getItem('mina_screen_padding_top')
 const savedPaddingBottom = localStorage.getItem('mina_screen_padding_bottom')

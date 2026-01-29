@@ -53,7 +53,7 @@ html.ios-pwa body {
   right: 0 !important;
   bottom: 0 !important;
   width: 100% !important;
-  height: 100% !important;
+  height: var(--app-height, 100%) !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
   -webkit-overflow-scrolling: auto !important;
@@ -61,7 +61,11 @@ html.ios-pwa body {
 }
 
 html.ios-pwa body {
-  background-color: #000 !important;
+  /* 如果仍然露出“底色”，至少不要是黑色（默认白底，并优先跟随壁纸背景变量） */
+  background: var(--safe-area-bg, #fff) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
 }
 
 html.ios-pwa #root {
@@ -83,7 +87,7 @@ html.ios-safe-area {
 html.ios-safe-area,
 html.ios-safe-area body {
   /* 让背景延伸到安全区域外 */
-  background: var(--safe-area-bg, #fef7f0);
+  background: var(--safe-area-bg, #fff);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -97,9 +101,9 @@ html.ios-safe-area body {
   right: 0 !important;
   bottom: 0 !important;
   /* 使用动态视口高度 */
-  height: 100% !important;
-  min-height: 100% !important;
-  max-height: 100% !important;
+  height: var(--app-height, 100%) !important;
+  min-height: var(--app-height, 100%) !important;
+  max-height: var(--app-height, 100%) !important;
   /* 禁用滚动 */
   overflow: hidden !important;
   overscroll-behavior: none !important;

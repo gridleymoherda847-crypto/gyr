@@ -504,7 +504,8 @@ type WeChatContextValue = {
   // 表情包分类
   stickerCategories: StickerCategory[]
   addStickerCategory: (name: string) => StickerCategory
-  removeStickerCategory: (id: string) => void
+  removeStickerCategory: (id: string, opts?: { deleteStickers?: boolean }) => void
+  renameStickerCategory: (id: string, newName: string) => void
   getStickersByCategory: (categoryName: string) => StickerConfig[]
 
   // 日记收藏
@@ -1285,14 +1286,27 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     return newCategory
   }
 
-  const removeStickerCategory = (id: string) => {
+  const removeStickerCategory = (id: string, opts?: { deleteStickers?: boolean }) => {
+    const catName = stickerCategories.find(c => c.id === id)?.name
     setStickerCategories(prev => prev.filter(c => c.id !== id))
-    // 同时清除该分类下的所有表情包的分类标签
-    setStickers(prev => prev.map(s => 
-      s.category === stickerCategories.find(c => c.id === id)?.name 
-        ? { ...s, category: undefined } 
-        : s
-    ))
+    if (!catName) return
+    if (opts?.deleteStickers) {
+      // 同时删除该分类下的所有表情
+      setStickers(prev => prev.filter(s => s.category !== catName))
+      return
+    }
+    // 仅清除该分类标签（保留表情）
+    setStickers(prev => prev.map(s => (s.category === catName ? { ...s, category: undefined } : s)))
+  }
+
+  const renameStickerCategory = (id: string, newName: string) => {
+    const nextName = String(newName || '').trim()
+    if (!nextName) return
+    const oldName = stickerCategories.find(c => c.id === id)?.name
+    if (!oldName || oldName === nextName) return
+    setStickerCategories(prev => prev.map(c => (c.id === id ? { ...c, name: nextName } : c)))
+    // 同步更新所有表情的分类名
+    setStickers(prev => prev.map(s => (s.category === oldName ? { ...s, category: nextName } : s)))
   }
 
   const getStickersByCategory = (categoryName: string): StickerConfig[] => {
@@ -1777,7 +1791,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     addPeriodRecord, updatePeriodRecord, removePeriodRecord, getPeriodRecords, getCurrentPeriod,
     startListenTogether, updateListenTogetherSong, stopListenTogether,
     // 表情包分类
-    stickerCategories, addStickerCategory, removeStickerCategory, getStickersByCategory,
+    stickerCategories, addStickerCategory, removeStickerCategory, renameStickerCategory, getStickersByCategory,
     // 钱包
     walletBalance, walletInitialized, walletBills,
     initializeWallet, addWalletBill, updateWalletBalance,

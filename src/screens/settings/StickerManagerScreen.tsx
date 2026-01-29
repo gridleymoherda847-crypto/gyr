@@ -74,6 +74,56 @@ const filenameToKeyword = (fileName: string) => {
   return kw || '表情'
 }
 
+const extractStickerUrlEntries = (raw: string) => {
+  const text = String(raw || '').trim()
+  const out: { keyword: string; url: string }[] = []
+  if (!text) return out
+
+  // 备注：链接（支持中文/英文冒号），允许中间有空格；支持“整段粘贴没换行”的情况
+  const usedRanges: Array<[number, number]> = []
+  const pairRegex = /([^:\n\r]{1,80}?)[：:]\s*(https?:\/\/[^\s"'<>]+)/gi
+  for (const m of text.matchAll(pairRegex)) {
+    const idx = m.index ?? -1
+    if (idx < 0) continue
+    const keyword = safeName(m[1]) || '表情'
+    const url = String(m[2] || '').trim()
+    if (!url) continue
+    out.push({ keyword, url })
+    usedRanges.push([idx, idx + m[0].length])
+  }
+
+  // 纯链接：补充解析（避免用户只粘贴一堆 url，或“备注：链接”识别漏掉）
+  const isInsideUsedRange = (start: number) => usedRanges.some(([a, b]) => start >= a && start < b)
+  const urlRegex = /https?:\/\/[^\s"'<>]+/gi
+  for (const m of text.matchAll(urlRegex)) {
+    const idx = m.index ?? -1
+    if (idx < 0) continue
+    if (isInsideUsedRange(idx)) continue
+    const url = String(m[0] || '').trim()
+    if (!url) continue
+
+    let keyword = '表情'
+    try {
+      const urlObj = new URL(url)
+      const filename = urlObj.pathname.split('/').pop() || ''
+      const nameWithoutExt = filename.replace(/\.[^/.]+$/, '')
+      if (nameWithoutExt) keyword = safeName(nameWithoutExt) || '表情'
+    } catch {
+      // ignore
+    }
+    out.push({ keyword, url })
+  }
+
+  return out
+}
+
+const normalizeStickerUrlImportText = (raw: string) => {
+  const entries = extractStickerUrlEntries(raw)
+  if (entries.length === 0) return String(raw || '')
+  // 强制整理成“每行一个：备注：链接”
+  return entries.map(e => `${e.keyword}：${e.url}`).join('\n')
+}
+
 export default function StickerManagerScreen() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -87,6 +137,8 @@ export default function StickerManagerScreen() {
     removeSticker,
     updateSticker,
     addStickerCategory,
+    removeStickerCategory,
+    renameStickerCategory,
   } = useWeChat()
 
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -97,6 +149,17 @@ export default function StickerManagerScreen() {
   const [importPackText, setImportPackText] = useState('')
   const [postImportGuideOpen, setPostImportGuideOpen] = useState(false)
   const [postImportGuideCategory, setPostImportGuideCategory] = useState<string>('')
+  const [dialog, setDialog] = useState<{
+    open: boolean
+    title?: string
+    message?: string
+    confirmText?: string
+    cancelText?: string
+    danger?: boolean
+    onConfirm?: () => void
+  }>({ open: false })
+  const [renamingCatId, setRenamingCatId] = useState<string | null>(null)
+  const [renameCatValue, setRenameCatValue] = useState('')
 
   const imgInputRef = useRef<HTMLInputElement>(null)
   const packInputRef = useRef<HTMLInputElement>(null)
@@ -108,8 +171,7 @@ export default function StickerManagerScreen() {
   const [urlImportLoading, setUrlImportLoading] = useState(false)
 
   const categories = useMemo(() => {
-    const names = stickerCategories.map(c => c.name)
-    return names.sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    return [...stickerCategories].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
   }, [stickerCategories])
 
   const stickersByCategory = useMemo(() => {
@@ -166,33 +228,7 @@ export default function StickerManagerScreen() {
 
   // 批量从多个URL导入（支持 "备注：链接" 或 "备注:链接" 格式）
   const importMultipleUrls = async (urls: string, categoryName: string) => {
-    const lines = urls.split(/\n/).map(s => s.trim()).filter(s => s.length > 0)
-    
-    // 解析每一行，支持 "备注：链接" 或 "备注:链接" 或纯链接
-    const parsed: { keyword: string; url: string }[] = []
-    
-    for (const line of lines) {
-      // 尝试匹配 "备注：链接" 或 "备注:链接" 格式（中文冒号或英文冒号）
-      const match = line.match(/^(.+?)[：:](\s*)(https?:\/\/.+)$/i)
-      if (match) {
-        const keyword = safeName(match[1]) || '表情'
-        const url = match[3].trim()
-        parsed.push({ keyword, url })
-      } else if (line.startsWith('http://') || line.startsWith('https://')) {
-        // 纯链接，从 URL 提取文件名作为 keyword
-        let keyword = '表情'
-        try {
-          const urlObj = new URL(line)
-          const filename = urlObj.pathname.split('/').pop() || ''
-          const nameWithoutExt = filename.replace(/\.[^/.]+$/, '')
-          if (nameWithoutExt) keyword = safeName(nameWithoutExt) || '表情'
-        } catch {
-          // ignore
-        }
-        parsed.push({ keyword, url: line })
-      }
-      // 其他格式的行忽略
-    }
+    const parsed = extractStickerUrlEntries(urls)
     
     if (parsed.length === 0) {
       setToast('未找到有效的图片链接')
@@ -513,17 +549,17 @@ export default function StickerManagerScreen() {
               <div className="text-sm text-gray-400 px-1">暂无分类，先新建一个。</div>
             ) : (
               categories.map((cat) => {
-                const isOpen = !!expanded[cat]
-                const list = stickersByCategory[cat] || []
+                const isOpen = !!expanded[cat.id]
+                const list = stickersByCategory[cat.name] || []
                 return (
-                  <div key={cat} className="rounded-2xl border border-white/35 bg-white/70 overflow-hidden">
+                  <div key={cat.id} className="rounded-2xl border border-white/35 bg-white/70 overflow-hidden">
                     <button
                       type="button"
-                      onClick={() => setExpanded(prev => ({ ...prev, [cat]: !prev[cat] }))}
+                      onClick={() => setExpanded(prev => ({ ...prev, [cat.id]: !prev[cat.id] }))}
                       className="w-full px-3 py-3 flex items-center justify-between"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-semibold text-[#111] truncate">{cat}</span>
+                        <span className="font-semibold text-[#111] truncate">{cat.name}</span>
                         <span className="text-[11px] text-gray-500">{list.length} 张</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -536,12 +572,54 @@ export default function StickerManagerScreen() {
 
                     {isOpen && (
                       <div className="px-3 pb-3">
+                        {/* 分类：重命名/删除 */}
+                        {renamingCatId === cat.id ? (
+                          <div className="mb-3 rounded-xl bg-white/70 border border-black/10 p-2.5">
+                            <div className="text-[11px] text-gray-600 mb-1">重命名分类</div>
+                            <div className="flex items-center gap-2">
+                              <input
+                                value={renameCatValue}
+                                onChange={(e) => setRenameCatValue(e.target.value)}
+                                placeholder="输入新名称"
+                                className="flex-1 px-3 py-2 rounded-xl bg-white/90 border border-black/10 outline-none text-sm text-[#111]"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = safeName(renameCatValue)
+                                  if (!next) return
+                                  if (stickerCategories.some(c => c.name === next)) {
+                                    setToast('该分类已存在')
+                                    window.setTimeout(() => setToast(null), 1800)
+                                    return
+                                  }
+                                  renameStickerCategory(cat.id, next)
+                                  setRenamingCatId(null)
+                                  setRenameCatValue('')
+                                  setToast('已重命名')
+                                  window.setTimeout(() => setToast(null), 1600)
+                                }}
+                                className="px-3 py-2 rounded-xl bg-[#07C160] text-white text-sm font-medium"
+                              >
+                                保存
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setRenamingCatId(null); setRenameCatValue('') }}
+                                className="px-3 py-2 rounded-xl bg-white/80 border border-black/10 text-sm text-gray-700"
+                              >
+                                取消
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
                         <div className="flex flex-wrap gap-2 mb-3">
                           <button
                             type="button"
                             disabled={busy}
                             onClick={() => {
-                              pendingImportCategoryRef.current = cat
+                              pendingImportCategoryRef.current = cat.name
                               imgInputRef.current?.click()
                             }}
                             className="px-3 py-1.5 rounded-full bg-[#07C160] text-white text-xs font-medium disabled:opacity-50"
@@ -551,7 +629,7 @@ export default function StickerManagerScreen() {
                           <button
                             type="button"
                             onClick={() => {
-                              const pack = exportPack(cat)
+                              const pack = exportPack(cat.name)
                               if (!pack) return
                               const filename = `stickers_${safeName(pack.categoryName) || 'category'}_${Date.now()}.json`
                               downloadText(filename, JSON.stringify(pack, null, 2))
@@ -565,8 +643,8 @@ export default function StickerManagerScreen() {
                           <button
                             type="button"
                             onClick={() => {
-                              pendingImportCategoryRef.current = cat
-                              setImportingCategory(cat)
+                              pendingImportCategoryRef.current = cat.name
+                              setImportingCategory(cat.name)
                               setImportPackText('')
                             }}
                             className="px-3 py-1.5 rounded-full bg-white/80 border border-black/10 text-xs text-gray-700"
@@ -576,13 +654,57 @@ export default function StickerManagerScreen() {
                           <button
                             type="button"
                             onClick={() => {
-                              const pack = exportPack(cat)
+                              const pack = exportPack(cat.name)
                               if (!pack) return
                               copyToClipboard(JSON.stringify(pack))
                             }}
                             className="px-3 py-1.5 rounded-full bg-white/80 border border-black/10 text-xs text-gray-700"
                           >
                             复制包
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRenamingCatId(cat.id)
+                              setRenameCatValue(cat.name)
+                            }}
+                            className="px-3 py-1.5 rounded-full bg-white/80 border border-black/10 text-xs text-gray-700"
+                          >
+                            重命名
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDialog({
+                                open: true,
+                                title: '删除分类？',
+                                message: `确定删除「${cat.name}」分类吗？\n（不会删除表情图片，仅清空它们的分类标签）`,
+                                confirmText: '删除',
+                                cancelText: '取消',
+                                danger: true,
+                                onConfirm: () => removeStickerCategory(cat.id),
+                              })
+                            }}
+                            className="px-3 py-1.5 rounded-full bg-white/80 border border-red-200 text-xs text-red-600"
+                          >
+                            删除分类
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDialog({
+                                open: true,
+                                title: '删除分类和表情？',
+                                message: `确定删除「${cat.name}」分类，并删除该分类下所有表情吗？\n（此操作不可恢复）`,
+                                confirmText: '删除全部',
+                                cancelText: '取消',
+                                danger: true,
+                                onConfirm: () => removeStickerCategory(cat.id, { deleteStickers: true }),
+                              })
+                            }}
+                            className="px-3 py-1.5 rounded-full bg-red-500 text-white text-xs font-medium"
+                          >
+                            删除分类+表情
                           </button>
                         </div>
 
@@ -595,9 +717,17 @@ export default function StickerManagerScreen() {
                                 <div className="w-full aspect-square rounded-lg overflow-hidden bg-gray-100">
                                   <img src={s.imageUrl} alt="" className="w-full h-full object-cover" />
                                 </div>
-                                <div className="mt-1 text-[11px] text-gray-600 truncate" title={s.keyword}>
-                                  {s.keyword || '表情'}
-                                </div>
+                                <input
+                                  type="text"
+                                  value={s.keyword || ''}
+                                  onChange={(e) => updateSticker(s.id, { keyword: e.target.value })}
+                                  onBlur={(e) => {
+                                    const v = (e.target.value || '').trim().replace(/\s+/g, ' ').slice(0, 20)
+                                    updateSticker(s.id, { keyword: v || '表情' })
+                                  }}
+                                  placeholder="关键词（如：生气）"
+                                  className="mt-1 w-full px-1.5 py-1 rounded bg-gray-50 border border-gray-200 outline-none text-[10px] text-gray-700"
+                                />
                                 <input
                                   type="text"
                                   value={s.description || ''}
@@ -686,16 +816,16 @@ export default function StickerManagerScreen() {
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {categories.slice(0, 6).map(cat => (
                       <button
-                        key={cat}
+                        key={cat.id}
                         type="button"
-                        onClick={() => setQuickImportCategory(cat)}
+                        onClick={() => setQuickImportCategory(cat.name)}
                         className={`px-2 py-1 rounded-lg text-[11px] ${
-                          quickImportCategory === cat
+                          quickImportCategory === cat.name
                             ? 'bg-purple-500 text-white'
                             : 'bg-gray-100 text-gray-600'
                         }`}
                       >
-                        {cat}
+                        {cat.name}
                       </button>
                     ))}
                   </div>
@@ -708,6 +838,16 @@ export default function StickerManagerScreen() {
                 <textarea
                   value={urlImportInput}
                   onChange={(e) => setUrlImportInput(e.target.value)}
+                  onPaste={(e) => {
+                    try {
+                      const t = e.clipboardData.getData('text')
+                      if (!t) return
+                      e.preventDefault()
+                      setUrlImportInput(normalizeStickerUrlImportText(t))
+                    } catch {
+                      // ignore
+                    }
+                  }}
                   placeholder="支持两种格式，每行一个：&#10;&#10;格式1（带备注）：&#10;嘬嘬嘬：https://xxx.png&#10;&#10;格式2（纯链接）：&#10;https://xxx.png"
                   className="w-full h-24 px-3 py-2 rounded-lg bg-white/90 border border-blue-200 outline-none text-[11px] text-[#111] resize-none placeholder:text-gray-400"
                 />
@@ -836,6 +976,21 @@ export default function StickerManagerScreen() {
               return
             }
             navigate('/apps/wechat')
+          }}
+        />
+
+        <WeChatDialog
+          open={dialog.open}
+          title={dialog.title || ''}
+          message={dialog.message || ''}
+          confirmText={dialog.confirmText || '确定'}
+          cancelText={dialog.cancelText || '取消'}
+          danger={dialog.danger}
+          onCancel={() => setDialog({ open: false })}
+          onConfirm={() => {
+            const cb = dialog.onConfirm
+            setDialog({ open: false })
+            cb?.()
           }}
         />
       </div>

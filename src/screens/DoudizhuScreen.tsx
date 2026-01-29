@@ -399,6 +399,9 @@ export default function DoudizhuScreen() {
     localStorage.setItem('mina_hide_status_bar', 'true')
     // 触发 storage 事件让 PhoneShell 更新（同页面需要手动派发）
     window.dispatchEvent(new StorageEvent('storage', { key: 'mina_hide_status_bar', newValue: 'true' }))
+    // 触发一次 resize，保证旋转布局能拿到最新尺寸（开关状态栏会改变可用高度）
+    window.setTimeout(() => window.dispatchEvent(new Event('resize')), 0)
+    window.setTimeout(() => window.dispatchEvent(new Event('resize')), 120)
     
     return () => {
       // 退出时恢复原来的设置
@@ -408,6 +411,7 @@ export default function DoudizhuScreen() {
         localStorage.setItem('mina_hide_status_bar', originalValue)
       }
       window.dispatchEvent(new StorageEvent('storage', { key: 'mina_hide_status_bar', newValue: originalValue }))
+      window.setTimeout(() => window.dispatchEvent(new Event('resize')), 0)
     }
   }, [])
   
@@ -1296,11 +1300,21 @@ export default function DoudizhuScreen() {
     }
     updateSize()
     window.addEventListener('resize', updateSize)
+
+    // 监听父容器尺寸变化（比如顶部状态栏显示/隐藏导致高度变化）
+    let ro: ResizeObserver | null = null
+    const parent = containerRef.current?.parentElement
+    if (parent && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => updateSize())
+      ro.observe(parent)
+    }
+
     // 延迟再次更新，确保布局稳定
-    const timer = setTimeout(updateSize, 100)
+    const timer = window.setTimeout(updateSize, 120)
     return () => {
       window.removeEventListener('resize', updateSize)
-      clearTimeout(timer)
+      if (ro) ro.disconnect()
+      window.clearTimeout(timer)
     }
   }, [])
 
