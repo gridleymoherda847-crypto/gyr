@@ -27,6 +27,24 @@ const MANUAL_TEXT = `
 - 私聊如何让 AI 回复：点击右下角的播放按钮
 - 群聊生成回复：点击消息列表右下角的生成按钮
 
+【卡顿/性能问题】
+设备/浏览器方面：
+- 推荐使用 Chrome 浏览器，国产浏览器可能卡
+- 关闭浏览器的省电模式
+- 清理浏览器缓存（先备份数据）
+- 关闭后台不用的 App，释放内存
+- 设备存储空间不足会卡顿
+- 老旧设备性能不够
+
+小手机数据方面：
+- 聊天记录太多（几千条以上）会卡：清空聊天记录，重要内容存到长期记忆
+- 上传的图片/表情包太多：删除不用的
+- 角色数量太多（几十个以上）：删除不用的角色
+- 浏览器存储满了：导出备份 → 清除网站数据 → 重新导入
+- 世界书/预设太长：精简人设内容
+
+终极方案：先导出备份 → 清除浏览器网站数据 → 重新导入
+
 【API 消耗详解】
 消耗 API 的操作：
 - 私聊点击播放按钮触发回复
@@ -397,6 +415,72 @@ ${MANUAL_TEXT}
               <br />• API 服务商返回数据格式异常
               <br />• 中转站处理响应时出错
               <br /><strong>解决方案：</strong>更换 API 服务商，选择稳定可靠的服务
+            </p>
+          </div>
+          
+          <h4 className="font-bold text-lg mt-6">📈 卡顿/性能问题</h4>
+          
+          <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200">
+            <p className="text-sm text-orange-700 mb-2">
+              <strong>如果小手机用着很卡，可以从以下两个方面排查：</strong>
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">🔹 方面一：设备/浏览器问题</h4>
+            <p className="text-sm text-gray-600">
+              <strong>1. 浏览器问题</strong>
+              <br />• 推荐使用 Chrome 浏览器，部分国产浏览器性能较差
+              <br />• 关闭浏览器的"省电模式"或"低性能模式"
+              <br />• 清理浏览器缓存：设置 → 隐私 → 清除浏览数据（注意先备份小手机数据！）
+              <br />
+              <br /><strong>2. 手机/电脑问题</strong>
+              <br />• 关闭后台不用的 App，释放内存
+              <br />• 设备存储空间不足也会导致卡顿
+              <br />• 老旧设备（如 iPhone 7 以下）可能性能不够
+              <br />• 尝试重启设备
+              <br />
+              <br /><strong>3. 网络问题</strong>
+              <br />• 网络不稳定会导致 AI 回复慢（但不会让界面卡）
+              <br />• 如果界面本身卡顿，通常不是网络问题
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">🔹 方面二：小手机数据问题</h4>
+            <p className="text-sm text-gray-600">
+              <strong>1. 聊天记录太多</strong>
+              <br />• 单个角色聊天记录过多（几千条以上）会变卡
+              <br />• 解决：进入角色聊天 → 右上角三个点 → 滑到底部「清空聊天记录」
+              <br />• 建议：重要内容手动总结到「长期记忆」后再清空
+              <br />
+              <br /><strong>2. 上传的图片/文件太多</strong>
+              <br />• 表情包、头像、壁纸等图片会占用浏览器存储
+              <br />• 发送的图片消息也会累积
+              <br />• 解决：删除不用的表情包，或清理带图片的聊天记录
+              <br />
+              <br /><strong>3. 创建了太多角色</strong>
+              <br />• 角色数量过多（几十个以上）可能影响性能
+              <br />• 解决：删除不用的角色
+              <br />
+              <br /><strong>4. 浏览器存储满了</strong>
+              <br />• 浏览器对每个网站的存储有上限（通常 50-100MB）
+              <br />• 解决：导出备份 → 清除网站数据 → 重新导入
+              <br />
+              <br /><strong>5. 世界书/预设太长</strong>
+              <br />• 过长的人设或世界书会增加每次请求的计算量
+              <br />• 解决：精简人设内容，删除冗余描述
+            </p>
+          </div>
+          
+          <div className="p-4 bg-green-50 rounded-2xl border border-green-200">
+            <h4 className="font-bold text-green-700 mb-2">✅ 终极解决方案</h4>
+            <p className="text-sm text-green-600">
+              如果以上方法都不行，可以尝试"重置大法"：
+              <br />1. 先在设置里<strong>导出数据备份</strong>
+              <br />2. 清除浏览器的网站数据（或换个浏览器）
+              <br />3. 重新打开小手机，导入备份
+              <br />4. 这相当于"重装"，通常能解决大部分问题
             </p>
           </div>
           
