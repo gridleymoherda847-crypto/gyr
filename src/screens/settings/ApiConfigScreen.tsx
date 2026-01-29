@@ -100,6 +100,11 @@ export default function ApiConfigScreen() {
   // 板块折叠状态
   const [showTTSSection, setShowTTSSection] = useState(false)
   
+  // 密钥可见性状态
+  const [showApiKey, setShowApiKey] = useState(false)
+  const [showTtsApiKey, setShowTtsApiKey] = useState(false)
+  const [showEditApiKey, setShowEditApiKey] = useState(false)
+  
   // 高级选项展开状态
   const [showAdvanced, setShowAdvanced] = useState(false)
   
@@ -612,14 +617,24 @@ export default function ApiConfigScreen() {
 
             <div className="space-y-2">
               <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Key</label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-xxxxxxxx"
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-                style={{ color: fontColor.value }}
-              />
+              <div className="relative">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-xxxxxxxx"
+                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-12 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+                  style={{ color: fontColor.value }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs opacity-50 hover:opacity-80 transition-opacity"
+                  style={{ color: fontColor.value }}
+                >
+                  {showApiKey ? '隐藏' : '查看'}
+                </button>
+              </div>
             </div>
 
             <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
@@ -861,14 +876,24 @@ export default function ApiConfigScreen() {
                 
                 <div className="space-y-2">
                   <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>MiniMax API Key</label>
-                  <input
-                    type="password"
-                    value={ttsApiKey}
-                    onChange={(e) => setTtsApiKey(e.target.value)}
-                    placeholder="从 MiniMax 控制台复制"
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
-                    style={{ color: fontColor.value }}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showTtsApiKey ? "text" : "password"}
+                      value={ttsApiKey}
+                      onChange={(e) => setTtsApiKey(e.target.value)}
+                      placeholder="从 MiniMax 控制台复制"
+                      className="w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-12 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
+                      style={{ color: fontColor.value }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowTtsApiKey(!showTtsApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs opacity-50 hover:opacity-80 transition-opacity"
+                      style={{ color: fontColor.value }}
+                    >
+                      {showTtsApiKey ? '隐藏' : '查看'}
+                    </button>
+                  </div>
                 </div>
                 
                 {/* 音色选择 - 简化版 */}
@@ -1246,14 +1271,24 @@ export default function ApiConfigScreen() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs opacity-60" style={{ color: fontColor.value }}>API Key</label>
-                <input
-                  type="password"
-                  value={editApiKey}
-                  onChange={(e) => setEditApiKey(e.target.value)}
-                  placeholder="sk-xxxx"
-                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-black/10 text-[13px] outline-none"
-                  style={{ color: fontColor.value }}
-                />
+                <div className="relative">
+                  <input
+                    type={showEditApiKey ? "text" : "password"}
+                    value={editApiKey}
+                    onChange={(e) => setEditApiKey(e.target.value)}
+                    placeholder="sk-xxxx"
+                    className="w-full px-3 py-2.5 pr-12 rounded-xl bg-white border border-black/10 text-[13px] outline-none"
+                    style={{ color: fontColor.value }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditApiKey(!showEditApiKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs opacity-50 hover:opacity-80 transition-opacity"
+                    style={{ color: fontColor.value }}
+                  >
+                    {showEditApiKey ? '隐藏' : '查看'}
+                  </button>
+                </div>
               </div>
 
               <button

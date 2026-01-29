@@ -1181,7 +1181,8 @@ export const getLorebooks = (): Lorebook[] => {
 // 获取角色适用的世界书条目
 export const getLorebookEntriesForCharacter = (characterId: string, context: string): string => {
   const lorebooks = getLorebooks()
-  const entries: LorebookEntry[] = []
+  // 记录条目及其触发方式
+  const entries: Array<{ entry: LorebookEntry; triggeredBy: string | null }> = []
   
   for (const lorebook of lorebooks) {
     // 检查是否适用于该角色
@@ -1199,27 +1200,27 @@ export const getLorebookEntriesForCharacter = (characterId: string, context: str
       
       // 始终激活的条目
       if (entry.alwaysActive) {
-        entries.push(entry)
+        entries.push({ entry, triggeredBy: null })
         continue
       }
       
       // 检查触发词
       if (entry.keywords.length > 0) {
         const contextLower = context.toLowerCase()
-        const triggered = entry.keywords.some(keyword => 
+        const matchedKeyword = entry.keywords.find(keyword => 
           contextLower.includes(keyword.toLowerCase())
         )
-        if (triggered) {
-          entries.push(entry)
+        if (matchedKeyword) {
+          entries.push({ entry, triggeredBy: matchedKeyword })
         }
       }
     }
   }
   
-  // 按优先级排序
+  // 按优先级排序（高优先级排前面）
   entries.sort((a, b) => {
     const priorityOrder = { high: 0, medium: 1, low: 2 }
-    return priorityOrder[a.priority] - priorityOrder[b.priority]
+    return priorityOrder[a.entry.priority] - priorityOrder[b.entry.priority]
   })
   
   // 限制最多注入 5 个条目
@@ -1227,7 +1228,58 @@ export const getLorebookEntriesForCharacter = (characterId: string, context: str
   
   if (limitedEntries.length === 0) return ''
   
-  return `【世界书】\n${limitedEntries.map(e => `[${e.name}]\n${e.content}`).join('\n\n')}`
+  // 根据优先级和触发方式添加标记
+  const formatEntry = (item: { entry: LorebookEntry; triggeredBy: string | null }) => {
+    const e = item.entry
+    const triggerHint = item.triggeredBy ? `（因提到"${item.triggeredBy}"触发，请在本次回复中体现）` : ''
+    
+    if (e.priority === 'high') {
+      return `【重要设定】${e.name}${triggerHint}\n${e.content}`
+    } else {
+      return `[${e.name}]${triggerHint}\n${e.content}`
+    }
+  }
+  
+  // 分离：关键词触发的条目 vs 始终激活的条目
+  const triggered = limitedEntries.filter(item => item.triggeredBy !== null)
+  const alwaysActive = limitedEntries.filter(item => item.triggeredBy === null)
+  
+  // 高优先级条目
+  const highPriorityTriggered = triggered.filter(item => item.entry.priority === 'high')
+  const highPriorityAlways = alwaysActive.filter(item => item.entry.priority === 'high')
+  const otherTriggered = triggered.filter(item => item.entry.priority !== 'high')
+  const otherAlways = alwaysActive.filter(item => item.entry.priority !== 'high')
+  
+  let result = '【世界书】\n'
+  
+  // 高优先级触发的条目放最前面，强调必须立即应用
+  if (highPriorityTriggered.length > 0) {
+    result += '⚠️ 以下设定被当前对话触发，必须在本次回复中严格体现：\n'
+    result += highPriorityTriggered.map(formatEntry).join('\n\n')
+    result += '\n\n'
+  }
+  
+  // 其他触发的条目
+  if (otherTriggered.length > 0) {
+    result += '以下设定被当前对话触发，请在回复中体现：\n'
+    result += otherTriggered.map(formatEntry).join('\n\n')
+    result += '\n\n'
+  }
+  
+  // 高优先级始终激活的条目
+  if (highPriorityAlways.length > 0) {
+    result += '以下是核心设定，必须严格遵守：\n'
+    result += highPriorityAlways.map(formatEntry).join('\n\n')
+    result += '\n\n'
+  }
+  
+  // 其他始终激活的条目
+  if (otherAlways.length > 0) {
+    result += '补充设定：\n'
+    result += otherAlways.map(formatEntry).join('\n\n')
+  }
+  
+  return result.trim()
 }
 
 // 获取高级参数
