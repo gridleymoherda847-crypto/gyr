@@ -1228,6 +1228,24 @@ export function OSProvider({ children }: PropsWithChildren) {
         throw new Error('返回数据格式错误')
       }
     } catch (error) {
+      // 同域转发兜底：解决 CORS / 部分机型“Failed to fetch”
+      try {
+        const proxyRes = await fetch('/api/llm/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiBaseUrl: override?.apiBaseUrl ?? llmConfig.apiBaseUrl, apiKey: key }),
+        })
+        if (!proxyRes.ok) {
+          const errData = await proxyRes.json().catch(() => ({}))
+          throw new Error(errData?.error?.message || `请求失败: ${proxyRes.status}`)
+        }
+        const data = await proxyRes.json().catch(() => ({}))
+        if (data.data && Array.isArray(data.data)) {
+          return data.data.map((m: any) => m.id).filter(Boolean)
+        }
+      } catch {
+        // ignore: fallthrough to original error
+      }
       throw error
     }
   }
@@ -1301,6 +1319,47 @@ export function OSProvider({ children }: PropsWithChildren) {
       if (error?.name === 'AbortError') {
         throw new Error('请求超时：模型响应太慢（可尝试换模型/减少上下文/稍后重试）')
       }
+
+      // 同域转发兜底：仅在“网络失败”场景启用（CORS/混合内容/部分机型网络）
+      try {
+        const msg = String(error?.message || '')
+        const isNetworkFail =
+          error instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(msg)
+        if (isNetworkFail) {
+          const proxyRes = await fetch('/api/llm/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              apiBaseUrl: llmConfig.apiBaseUrl,
+              apiKey: key,
+              payload: {
+                model: selectedModel,
+                messages: messages,
+                temperature: options?.temperature ?? 0.7,
+                max_tokens: options?.maxTokens ?? 500,
+              },
+            }),
+          })
+          if (!proxyRes.ok) {
+            const errData = await proxyRes.json().catch(() => ({}))
+            throw new Error(errData?.error?.message || `请求失败: ${proxyRes.status}`)
+          }
+          const data = await proxyRes.json().catch(() => ({}))
+          const content =
+            data?.choices?.[0]?.message?.content ??
+            data?.choices?.[0]?.text ??
+            data?.message?.content ??
+            data?.content
+          const finalText = typeof content === 'string' ? content.trim() : ''
+          if (finalText) return finalText
+          throw new Error(data?.error?.message || '模型返回空内容（同域转发）')
+        }
+      } catch (e2: any) {
+        // 如果同域转发也失败：优先展示更可读的原因（而不是静默）
+        const msg2 = String(e2?.message || '')
+        if (msg2) throw new Error(msg2)
+      }
+
       // 浏览器常见网络错误：多数不会给出更细的错误码，只会是 Failed to fetch / NetworkError
       // 这里补充可读提示，方便定位“少部分手机连不上”的真实原因
       const msg = String(error?.message || '')
