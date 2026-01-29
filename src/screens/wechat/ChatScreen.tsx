@@ -231,9 +231,6 @@ export default function ChatScreen() {
     y: number
     placement: 'top' | 'bottom'
   }>({ open: false, msg: null, x: 0, y: 0, placement: 'top' })
-  const longPressTimerRef = useRef<number | null>(null)
-  const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
-  const longPressTriggeredRef = useRef(false)
   
   // 查手机功能状态
   const [showPhonePeek, setShowPhonePeek] = useState(false)
@@ -3719,6 +3716,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       // 图片消息：适配气泡样式，限制最大宽度，圆角与气泡一致
       return (
         <img 
+          data-primary-click="1"
           src={msg.content} 
           alt="图片" 
           className="max-w-[180px] max-h-[240px] rounded-xl object-cover cursor-pointer active:scale-[0.98]"
@@ -3921,6 +3919,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       
       return (
         <div 
+          data-primary-click="1"
           className={`min-w-[160px] rounded-lg overflow-hidden ${canClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
           style={{ background: isRefunded ? '#f5f5f5' : '#FA9D3B' }}
           onClick={() => canClick && setTransferActionMsg(msg)}
@@ -4400,7 +4399,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
   const closeMsgActionMenu = useCallback(() => {
     setMsgActionMenu({ open: false, msg: null, x: 0, y: 0, placement: 'top' })
-    longPressTriggeredRef.current = false
   }, [])
 
   const openMsgActionMenu = useCallback((msg: typeof messages[0], el: HTMLElement) => {
@@ -4411,40 +4409,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     const placement: 'top' | 'bottom' = rect.top > 90 ? 'top' : 'bottom'
     const y = placement === 'top' ? rect.top : rect.bottom
     setMsgActionMenu({ open: true, msg, x, y, placement })
-  }, [])
-
-  // 线上模式长按：按住 420ms 触发；移动超过阈值取消
-  const onMsgPressStart = useCallback((e: React.PointerEvent, msg: typeof messages[0]) => {
-    if (editMode) return
-    if (character?.offlineMode) return // 线下模式不动
-    // 只处理左键/触摸
-    if (e.pointerType === 'mouse' && (e as any).button !== 0) return
-
-    longPressTriggeredRef.current = false
-    longPressStartRef.current = { x: e.clientX, y: e.clientY }
-    if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current)
-    const el = e.currentTarget as HTMLElement
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressTriggeredRef.current = true
-      openMsgActionMenu(msg, el)
-    }, 420)
-  }, [character?.offlineMode, editMode, openMsgActionMenu])
-
-  const onMsgPressMove = useCallback((e: React.PointerEvent) => {
-    if (!longPressTimerRef.current || !longPressStartRef.current) return
-    const dx = e.clientX - longPressStartRef.current.x
-    const dy = e.clientY - longPressStartRef.current.y
-    if (Math.hypot(dx, dy) > 10) {
-      window.clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-      longPressStartRef.current = null
-    }
-  }, [])
-
-  const onMsgPressEnd = useCallback(() => {
-    if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current)
-    longPressTimerRef.current = null
-    longPressStartRef.current = null
   }, [])
 
   // 菜单打开时：滚动/窗口变化关闭，避免菜单漂移
@@ -4927,17 +4891,17 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                         : 'text-gray-800 rounded-2xl rounded-tl-md'}`
                 }`}
                 style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' || msg.type === 'chat_forward' ? undefined : bubbleStyle as any}
-                onPointerDown={(e) => onMsgPressStart(e, msg)}
-                onPointerMove={onMsgPressMove}
-                onPointerUp={onMsgPressEnd}
-                onPointerCancel={onMsgPressEnd}
-                onClickCapture={(e) => {
-                  // 长按已触发时：阻止“点开图片/卡片”等点击副作用
-                  if (longPressTriggeredRef.current) {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    longPressTriggeredRef.current = false
-                  }
+                onClick={(e) => {
+                  if (editMode) return
+                  if (character?.offlineMode) return // 线下模式不动
+                  const target = e.target as HTMLElement | null
+                  // 允许“图片打开/转账卡片收款”等原始点击行为：标记为 primary-click 的元素不弹菜单
+                  if (target?.closest?.('[data-primary-click="1"]')) return
+                  // 对于内部按钮/输入等交互，不抢点击
+                  if (target?.closest?.('button,a,input,textarea,select')) return
+                  e.preventDefault()
+                  e.stopPropagation()
+                  openMsgActionMenu(msg, e.currentTarget as HTMLElement)
                 }}
                 onContextMenu={(e) => {
                   if (editMode) return
@@ -5046,9 +5010,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     selectedPersona?.avatar,
     selectedPersona?.name,
     bubbleStyles,
-    onMsgPressStart,
-    onMsgPressMove,
-    onMsgPressEnd,
     openMsgActionMenu,
   ])
 
