@@ -32,6 +32,17 @@ if (isIOS) {
   })
 }
 
+// 尝试申请“持久化存储”（尽量避免浏览器回收 IndexedDB 导致数据丢失）
+// 说明：不同浏览器支持程度不同；失败时静默忽略。
+try {
+  const navAny = navigator as any
+  if (navAny?.storage?.persist) {
+    void navAny.storage.persist()
+  }
+} catch {
+  // ignore
+}
+
 // 应用用户保存的屏幕边距设置
 const savedPaddingTop = localStorage.getItem('mina_screen_padding_top')
 const savedPaddingBottom = localStorage.getItem('mina_screen_padding_bottom')

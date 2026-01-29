@@ -33,6 +33,7 @@ export default function ApiConfigScreen() {
   const navigate = useNavigate()
   const { llmConfig, setLLMConfig, ttsConfig, setTTSConfig, textToSpeech, fontColor, fetchAvailableModels } = useOS()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const isHttpsPage = typeof window !== 'undefined' && window.location?.protocol === 'https:'
   
   // API 配置条目类型
   type ApiConfigItem = {
@@ -613,6 +614,12 @@ export default function ApiConfigScreen() {
                 className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
                 style={{ color: fontColor.value }}
               />
+              {isHttpsPage && baseUrl.trim().toLowerCase().startsWith('http://') && (
+                <div className="text-xs text-orange-600 bg-orange-50/60 px-3 py-2 rounded-2xl border border-orange-200 whitespace-pre-wrap">
+                  你当前是 HTTPS 页面。Base URL 如果用 http://，浏览器通常会拦截（混合内容），表现为“少部分手机怎么都连不上/请求失败”。
+                  建议改成 https:// 的中转地址。
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -1268,6 +1275,11 @@ export default function ApiConfigScreen() {
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-black/10 text-[13px] outline-none"
                   style={{ color: fontColor.value }}
                 />
+                {isHttpsPage && editBaseUrl.trim().toLowerCase().startsWith('http://') && (
+                  <div className="text-xs text-orange-600 bg-orange-50 px-3 py-2 rounded-xl border border-orange-200 whitespace-pre-wrap">
+                    提示：HTTPS 页面下使用 http:// Base URL 可能会被浏览器拦截（混合内容）。
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs opacity-60" style={{ color: fontColor.value }}>API Key</label>

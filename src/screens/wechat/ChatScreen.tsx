@@ -1435,18 +1435,23 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         // 依次发送回复（首条更快；每条<=5秒）
         let totalDelay = 0
         const parseTransferCommand = (text: string) => {
-          // 支持 [] / 【】 / 中英文冒号 / 多段备注
-          const m = text.match(/[【\[]\s*转账\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*([^】\]]+)\s*[】\]]/)
+          // 目标：强制生成“转账卡片”
+          // - 允许用户/模型写错一点（如 [转账888] / 【转账：888】），我们也尽量识别成卡片
+          // - 允许同一行夹带少量文字：会拆分为“先转账卡片，再发剩余文字”
+          // - 必须包含方括号/中文括号【】来避免误触发
+          const tokenRe = /[【\[]\s*转账\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(?:[:：]\s*([^】\]]+))?\s*[】\]]/
+          const m = text.match(tokenRe)
           if (!m) return null
           const amount = parseFloat(m[1])
-          const rawNote = (m[2] || '').trim()
+          const rawNote = String(m[2] || '转账').trim() || '转账'
           if (!Number.isFinite(amount) || amount <= 0) return null
           const status =
             /已领取|已收款|received/.test(rawNote) ? 'received' :
             /已退还|已退款|refunded/.test(rawNote) ? 'refunded' :
             'pending'
-          const note = rawNote.replace(/[:：]\s*(received|refunded)\s*$/i, '').trim()
-          return { amount, note, status: status as 'pending' | 'received' | 'refunded' }
+          const note = rawNote.replace(/[:：]\s*(received|refunded)\s*$/i, '').trim() || '转账'
+          const rest = text.replace(m[0], '').trim()
+          return { amount, note, status: status as 'pending' | 'received' | 'refunded', rest }
         }
         const parseMusicCommand = (text: string) => {
           // 兼容：
@@ -1552,11 +1557,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           
           const trimmedContent = content.trim()
           
-          const transferCmd = parseTransferCommand(trimmedContent) || (() => {
-            const m = trimmedContent.match(/\[转账:(\d+(?:\.\d+)?):(.+?)\]/)
-            if (!m) return null
-            return { amount: parseFloat(m[1]), note: (m[2] || '').trim(), status: 'pending' as const }
-          })()
+          const transferCmd = parseTransferCommand(trimmedContent)
           const musicCmd = suppressAiMusicInvite ? null : parseMusicCommand(trimmedContent)
           const tweetCmd = parseTweetCommand(trimmedContent)
           const xProfileCmd = parseXProfileCommand(trimmedContent)
@@ -1587,6 +1588,18 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 transferNote: note,
                 transferStatus: transferCmd.status || 'pending',
               })
+              // 如果同一行夹带了其他文字，则拆成下一条普通消息（避免“[转账xxx]”出戏）
+              if ((transferCmd as any).rest) {
+                const rest = String((transferCmd as any).rest || '').trim()
+                if (rest) {
+                  addMessage({
+                    characterId: character.id,
+                    content: rest,
+                    isUser: false,
+                    type: 'text',
+                  })
+                }
+              }
             } else if (musicCmd) {
               // AI发音乐邀请 - 验证歌曲是否在曲库中
               const songTitle = musicCmd.title
@@ -2766,13 +2779,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           const msgDelay = delay
           const trimmedLine = line.trim()
           
-          // 检查是否是转账消息（必须整行只有转账格式，防止AI在聊天中随便提到格式时误触发）
-          const transferMatch = trimmedLine.match(/^\[转账:(\d+(?:\.\d+)?):(.+?)\]$/)
-          const transferAltMatch = trimmedLine.match(/^[【\[]\s*转账\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*([^】\]]+)\s*[】\]]$/)
-          if (transferMatch || transferAltMatch) {
-            const m = transferMatch || transferAltMatch!
-            const amount = parseFloat(m[1])
-            const note = (m[2] || '').trim()
+          // 转账：允许轻微写错，也尽量转成“转账卡片”，避免显示成出戏的文字
+          const transferTokenRe = /[【\[]\s*转账\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(?:[:：]\s*([^】\]]+))?\s*[】\]]/
+          const tm = trimmedLine.match(transferTokenRe)
+          if (tm) {
+            const amount = parseFloat(tm[1])
+            const rawNote = String(tm[2] || '转账').trim() || '转账'
+            const note = rawNote.replace(/[:：]\s*(received|refunded)\s*$/i, '').trim() || '转账'
+            const rest = trimmedLine.replace(tm[0], '').trim()
             safeTimeoutEx(() => {
               addMessage({
                 characterId: character.id,
@@ -2783,6 +2797,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 transferNote: note || '转账',
                 transferStatus: /已领取|已收款|received/i.test(note) ? 'received' : /已退还|已退款|refunded/i.test(note) ? 'refunded' : 'pending',
               })
+              if (rest) {
+                addMessage({
+                  characterId: character.id,
+                  content: rest,
+                  isUser: false,
+                  type: 'text',
+                })
+              }
             }, msgDelay, { background: true })
           } else {
             safeTimeoutEx(() => {

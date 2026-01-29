@@ -5,7 +5,7 @@ import { useOS } from '../../context/OSContext'
 import WeChatLayout from './WeChatLayout'
 import WeChatDialog from './components/WeChatDialog'
 import { compressImageFileToDataUrl } from '../../utils/image'
-import { getGlobalPresets, getLorebookEntriesForCharacter } from '../PresetScreen'
+import { getGlobalPresets, getLorebookEntriesByLorebookId, getLorebookEntriesForCharacter, getLorebooks } from '../PresetScreen'
 
 export default function GroupChatScreen() {
   const navigate = useNavigate()
@@ -85,6 +85,17 @@ export default function GroupChatScreen() {
   const [inputText, setInputText] = useState('')
   const [aiTyping, setAiTyping] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  // 群聊绑定世界书（来自创作工坊）
+  const lorebooks = useMemo(() => {
+    try {
+      return getLorebooks().slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-CN'))
+    } catch {
+      return []
+    }
+  }, [])
+  const [lorebookBindDialogOpen, setLorebookBindDialogOpen] = useState(false)
+  const [pendingLorebookId, setPendingLorebookId] = useState<string | null>(null)
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   
@@ -297,7 +308,10 @@ export default function GroupChatScreen() {
     
     // 3. 世界书（基于所有成员和最近上下文）
     const recentContext = messages.slice(-10).map(m => m.content).join(' ')
-    const lorebookEntries = members.map(m => getLorebookEntriesForCharacter(m.id, recentContext)).filter(Boolean).join('\n\n')
+    const memberLore = members.map(m => getLorebookEntriesForCharacter(m.id, recentContext)).filter(Boolean).join('\n\n')
+    const boundLore = group.lorebookId ? getLorebookEntriesByLorebookId(group.lorebookId, recentContext) : ''
+    // 优先级：如果群聊绑定了世界书，则优先读取群聊世界书（覆盖成员各自绑定的世界书），避免“双重世界书”冲突
+    const lorebookEntries = (group.lorebookId ? boundLore : memberLore).trim()
     
     // 4. 群聊上下文（包含引用信息）
     const recentMessages = messages.slice(-30).map(m => {
@@ -1556,6 +1570,34 @@ ${history}`
                     <input ref={bgInputRef} type="file" accept="image/*" className="hidden" onChange={handleChangeBg} />
                     {group.chatBackground && <button type="button" onClick={() => updateGroup(group.id, { chatBackground: undefined })} className="text-sm text-red-500">清除背景</button>}
                   </div>
+
+                  {/* 绑定世界书 */}
+                  <div className="py-3 border-t border-gray-100">
+                    <div className="text-sm text-gray-800 mb-1">绑定世界书</div>
+                    <div className="text-xs text-gray-400 mb-2">来自「创作工坊 → 世界书」，会额外注入到群聊 AI 提示词</div>
+                    <select
+                      value={group.lorebookId || ''}
+                      onChange={(e) => {
+                        const v = e.target.value || ''
+                        if (!v) {
+                          // 解绑：直接生效
+                          updateGroup(group.id, { lorebookId: undefined })
+                          return
+                        }
+                        // 绑定：弹提示确认（避免用户没意识到覆盖优先级）
+                        setPendingLorebookId(v)
+                        setLorebookBindDialogOpen(true)
+                      }}
+                      className="w-full px-3 py-2 rounded-lg bg-gray-100 text-sm outline-none"
+                    >
+                      <option value="">不绑定</option>
+                      {lorebooks.map(lb => (
+                        <option key={lb.id} value={lb.id}>
+                          {lb.isGlobal ? `🌍 ${lb.name}` : `📚 ${lb.name}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   
                   {/* 记忆功能（可折叠） */}
                   <div className="border-t border-gray-100">
@@ -1979,6 +2021,27 @@ ${history}`
       
       <WeChatDialog open={showClearConfirm} title="清空聊天记录" message="确定要清空所有聊天记录吗？" confirmText="清空" cancelText="取消" danger onConfirm={handleClearMessages} onCancel={() => setShowClearConfirm(false)} />
       <WeChatDialog open={showDeleteConfirm} title="解散群聊" message="确定要解散这个群聊吗？所有聊天记录将被删除。" confirmText="解散" cancelText="取消" danger onConfirm={handleDeleteGroup} onCancel={() => setShowDeleteConfirm(false)} />
+      <WeChatDialog
+        open={lorebookBindDialogOpen}
+        title="绑定世界书（群聊全局）"
+        message={
+          '提示：这个世界书是【绑定群聊全局】的。\n' +
+          '当群聊绑定了世界书时，会【优先读取群聊世界书】；即使群成员已经绑定过其他世界书，也会被群聊世界书覆盖。\n\n' +
+          '双重世界书可能会冲突：你可以选择性解绑其中一个（群聊解绑 或 成员各自解绑）。'
+        }
+        confirmText="继续绑定"
+        cancelText="取消"
+        onCancel={() => {
+          setLorebookBindDialogOpen(false)
+          setPendingLorebookId(null)
+        }}
+        onConfirm={() => {
+          const v = pendingLorebookId
+          setLorebookBindDialogOpen(false)
+          setPendingLorebookId(null)
+          if (v) updateGroup(group.id, { lorebookId: v })
+        }}
+      />
       <WeChatDialog open={infoDialog.open} title={infoDialog.title} message={infoDialog.message} confirmText="好的" onConfirm={() => setInfoDialog({ open: false, title: '', message: '' })} onCancel={() => setInfoDialog({ open: false, title: '', message: '' })} />
     </WeChatLayout>
   )

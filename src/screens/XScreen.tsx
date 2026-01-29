@@ -420,7 +420,37 @@ export default function XScreen() {
       undefined,
       { maxTokens, timeoutMs: 600000, temperature: 0.9 }
     )
-    return tryParseJsonBlock(res) || {}
+    const parsed = tryParseJsonBlock(res)
+    if (parsed) return parsed
+
+    // 关键修复点：X 这边强依赖 JSON 输出；部分模型/中转会夹解释/Markdown，导致解析失败。
+    // 我们尝试用一次“JSON 修复”把原始输出转成严格 JSON，再解析（大幅降低“刷新不出东西但没报错”的概率）。
+    const repairedRaw = await callLLM(
+      [
+        {
+          role: 'system',
+          content:
+            '你是一个严格的 JSON 修复器。\n' +
+            '- 你会收到一段可能包含解释/Markdown/代码块的文本，其中夹着 JSON。\n' +
+            '- 你的任务是：提取并修复为【合法 JSON 对象】（必须以 { 开头，以 } 结尾）。\n' +
+            '- 只输出 JSON，不要任何解释、不要代码块标记、不要多余字符。\n' +
+            '- 如果无法修复，请输出：{"error":"invalid_json"}',
+        },
+        { role: 'user', content: String(res || '') },
+      ],
+      undefined,
+      { maxTokens: Math.min(1200, Math.max(260, maxTokens)), timeoutMs: 600000, temperature: 0.2 }
+    )
+    const repaired = tryParseJsonBlock(repairedRaw)
+    if (repaired && !(repaired as any)?.error) return repaired
+
+    const snippet = (res || '').trim().slice(0, 220)
+    throw new Error(
+      '模型没有按要求输出 JSON（因此无法生成推文内容）。\n' +
+        '常见原因：模型不擅长严格 JSON / 中转自动加了前后缀 / 全局预设与“只输出JSON”冲突。\n' +
+        '建议：换一个更听话的模型（如更强的模型）、关闭可能干扰输出格式的全局预设、或更换 OpenAI 兼容中转。\n' +
+        `模型原始输出片段：${snippet || '（空）'}`
+    )
   }
 
   const refreshHome = async () => {

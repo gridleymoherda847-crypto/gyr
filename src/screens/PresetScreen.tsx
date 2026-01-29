@@ -1178,6 +1178,73 @@ export const getLorebooks = (): Lorebook[] => {
   return []
 }
 
+// 获取指定世界书适用的条目（用于群聊绑定世界书）
+export const getLorebookEntriesByLorebookId = (lorebookId: string, context: string): string => {
+  const lorebooks = getLorebooks()
+  const lorebook = lorebooks.find(l => l.id === lorebookId)
+  if (!lorebook) return ''
+
+  const entries: Array<{ entry: LorebookEntry; triggeredBy: string | null }> = []
+
+  for (const entry of lorebook.entries) {
+    if (!entry.enabled) continue
+    if (entry.alwaysActive) {
+      entries.push({ entry, triggeredBy: null })
+      continue
+    }
+    if (entry.keywords.length > 0) {
+      const contextLower = (context || '').toLowerCase()
+      const matchedKeyword = entry.keywords.find(keyword => contextLower.includes(String(keyword || '').toLowerCase()))
+      if (matchedKeyword) entries.push({ entry, triggeredBy: matchedKeyword })
+    }
+  }
+
+  entries.sort((a, b) => {
+    const priorityOrder = { high: 0, medium: 1, low: 2 } as const
+    return priorityOrder[a.entry.priority] - priorityOrder[b.entry.priority]
+  })
+
+  const limitedEntries = entries.slice(0, 5)
+  if (limitedEntries.length === 0) return ''
+
+  const formatEntry = (item: { entry: LorebookEntry; triggeredBy: string | null }) => {
+    const e = item.entry
+    const triggerHint = item.triggeredBy ? `（因提到"${item.triggeredBy}"触发，请在本次回复中体现）` : ''
+    if (e.priority === 'high') return `【重要设定】${e.name}${triggerHint}\n${e.content}`
+    return `[${e.name}]${triggerHint}\n${e.content}`
+  }
+
+  const triggered = limitedEntries.filter(item => item.triggeredBy !== null)
+  const alwaysActive = limitedEntries.filter(item => item.triggeredBy === null)
+  const highPriorityTriggered = triggered.filter(item => item.entry.priority === 'high')
+  const highPriorityAlways = alwaysActive.filter(item => item.entry.priority === 'high')
+  const otherTriggered = triggered.filter(item => item.entry.priority !== 'high')
+  const otherAlways = alwaysActive.filter(item => item.entry.priority !== 'high')
+
+  let result = `【群聊绑定世界书：${lorebook.name}】\n`
+  if (highPriorityTriggered.length > 0) {
+    result += '⚠️ 以下设定被当前对话触发，必须在本次回复中严格体现：\n'
+    result += highPriorityTriggered.map(formatEntry).join('\n\n')
+    result += '\n\n'
+  }
+  if (otherTriggered.length > 0) {
+    result += '以下设定被当前对话触发，请在回复中体现：\n'
+    result += otherTriggered.map(formatEntry).join('\n\n')
+    result += '\n\n'
+  }
+  if (highPriorityAlways.length > 0) {
+    result += '以下是核心设定，必须严格遵守：\n'
+    result += highPriorityAlways.map(formatEntry).join('\n\n')
+    result += '\n\n'
+  }
+  if (otherAlways.length > 0) {
+    result += '补充设定：\n'
+    result += otherAlways.map(formatEntry).join('\n\n')
+  }
+
+  return result.trim()
+}
+
 // 获取角色适用的世界书条目
 export const getLorebookEntriesForCharacter = (characterId: string, context: string): string => {
   const lorebooks = getLorebooks()

@@ -227,6 +227,7 @@ export type GroupChat = {
   lastMessageAt: number
   // 群设置
   chatBackground?: string // 聊天背景
+  lorebookId?: string // 绑定的世界书ID（来自创作工坊）
   offlineMode?: boolean // 离线模式（手动模式）
   memoryEnabled?: boolean // 记忆功能
   memorySummary?: string // 长期记忆摘要
