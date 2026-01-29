@@ -536,6 +536,26 @@ export function OSProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<CustomFont[]>(STORAGE_KEYS.customFonts, []),
       ])
 
+      // 兜底：如果 IndexedDB 的 userProfile 丢失（回到默认），尝试从 localStorage 备份恢复
+      let finalUserProfile = nextUserProfile
+      try {
+        const rawInKv = await kvGet(STORAGE_KEYS.userProfile)
+        const hasKv = !!rawInKv
+        if (!hasKv) {
+          const backup = localStorage.getItem(STORAGE_KEYS.userProfile + '_backup')
+          if (backup) {
+            const parsed = JSON.parse(backup)
+            if (parsed && typeof parsed === 'object') {
+              finalUserProfile = parsed as UserProfile
+              await kvSetJSON(STORAGE_KEYS.userProfile, finalUserProfile)
+              console.warn('[LittlePhone] 已从 localStorage 备份恢复 userProfile')
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
       // 音乐：读取已保存的列表
       // 优先从 IndexedDB 读取，如果失败则从 localStorage 备份恢复
       let nextPlaylist = await kvGetJSONDeep<Song[]>(MUSIC_STORAGE_KEY, null as any)
@@ -637,7 +657,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         setWaterCount(0)
         setWaterDate(today)
       }
-      if (nextUserProfile) setUserProfileState(nextUserProfile)
+      if (finalUserProfile) setUserProfileState(finalUserProfile)
       if (nextIconTheme) setIconThemeState(nextIconTheme)
       if (Array.isArray(nextAnniversaries)) setAnniversaries(nextAnniversaries)
       if (nextMemo) setMemoState({ ...defaultMemo, ...nextMemo, todos: nextMemo.todos || [] })
@@ -684,6 +704,15 @@ export function OSProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.waterCount, waterCount) }, [waterCount, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.waterDate, waterDate) }, [waterDate, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.userProfile, userProfile) }, [userProfile, isHydrated])
+  // 关键：我的资料也备份到 localStorage（防止 IndexedDB 被系统清理导致“我的资料/人设”丢失）
+  useEffect(() => {
+    if (!canPersist()) return
+    try {
+      localStorage.setItem(STORAGE_KEYS.userProfile + '_backup', JSON.stringify(userProfile))
+    } catch {
+      // ignore quota errors
+    }
+  }, [userProfile, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.iconTheme, iconTheme) }, [iconTheme, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.anniversaries, anniversaries) }, [anniversaries, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.memo, memo) }, [memo, isHydrated])

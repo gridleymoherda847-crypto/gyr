@@ -860,18 +860,78 @@ export function WeChatProvider({ children }: PropsWithChildren) {
           console.warn('[LittlePhone] 可能原因：私密浏览模式、浏览器清除数据、存储空间被清理')
           console.warn('[LittlePhone] 私密模式检测:', isPrivateMode ? '是' : '否')
           
-          // 尝试从 localStorage 备份恢复
-          const backupChars = localStorage.getItem(STORAGE_KEYS.characters + '_backup')
-          const backupMsgs = localStorage.getItem(STORAGE_KEYS.messages + '_backup')
-          
-          if (backupChars || backupMsgs) {
-            console.warn('[LittlePhone] 发现 localStorage 备份，但备份数据不完整，无法自动恢复')
-            // 显示用户提示
+          // 尝试从 localStorage 备份恢复（可恢复的：最近消息/我的人设/钱包等；角色备份是精简版，无法完全恢复人设）
+          const safeParse = <T,>(raw: string | null, fallback: T): T => {
+            try {
+              if (!raw) return fallback
+              return JSON.parse(raw) as T
+            } catch {
+              return fallback
+            }
+          }
+          const backupMsgs = safeParse<WeChatMessage[]>(
+            localStorage.getItem(STORAGE_KEYS.messages + '_backup'),
+            []
+          )
+          const backupPersonas = safeParse<UserPersona[]>(
+            localStorage.getItem(STORAGE_KEYS.userPersonas + '_backup'),
+            []
+          )
+          const backupWallet = safeParse<{ balance: number; initialized: boolean; bills: WalletBill[] } | null>(
+            localStorage.getItem('wechat_wallet_backup'),
+            null
+          )
+
+          let restoredSomething = false
+          // 最近消息（可恢复）
+          if (Array.isArray(backupMsgs) && backupMsgs.length > 0) {
+            try {
+              await kvSetJSON(STORAGE_KEYS.messages, backupMsgs)
+              restoredSomething = true
+              console.warn('[LittlePhone] 已从 localStorage 备份恢复最近消息:', backupMsgs.length)
+            } catch {
+              // ignore
+            }
+          }
+          // 我的人设（可恢复）
+          if (Array.isArray(backupPersonas) && backupPersonas.length > 0) {
+            try {
+              await kvSetJSON(STORAGE_KEYS.userPersonas, backupPersonas)
+              restoredSomething = true
+              console.warn('[LittlePhone] 已从 localStorage 备份恢复我的人设:', backupPersonas.length)
+            } catch {
+              // ignore
+            }
+          }
+          // 钱包（可恢复）
+          if (backupWallet && typeof backupWallet === 'object') {
+            try {
+              await kvSetJSON(STORAGE_KEYS.walletBalance, Number(backupWallet.balance || 0))
+              await kvSetJSON(STORAGE_KEYS.walletInitialized, !!backupWallet.initialized)
+              await kvSetJSON(STORAGE_KEYS.walletBills, Array.isArray(backupWallet.bills) ? backupWallet.bills : [])
+              restoredSomething = true
+              console.warn('[LittlePhone] 已从 localStorage 备份恢复钱包')
+            } catch {
+              // ignore
+            }
+          }
+
+          // 显示用户提示（说明可能只恢复了部分数据）
+          if (restoredSomething) {
+            setTimeout(() => {
+              const privateWarning = isPrivateMode ? '\n\n⚠️ 检测到可能是私密浏览模式，私密模式下数据无法持久保存！' : ''
+              alert(
+                `⚠️ 数据异常提醒\n\n检测到站点数据可能被系统清理（IndexedDB 为空）。\n\n我已尝试从本地备份恢复：\n• 最近聊天记录（最多200条/每条截断）\n• 我的角色人设（我的人设）\n• 钱包/账单\n\n如果仍有缺失：建议尽快「设置→导出数据」做一次备份。${privateWarning}`
+              )
+            }, 600)
+          } else {
             setTimeout(() => {
               const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
               const privateWarning = isPrivateMode ? '\n\n⚠️ 检测到可能是私密浏览模式，私密模式下数据无法持久保存！' : ''
-              alert(`⚠️ 数据异常提醒\n\n检测到您之前有 ${backupCount} 个角色，但当前数据为空。\n\n可能原因：\n• 使用了私密浏览模式\n• 浏览器清除了网站数据\n• ${isIOS ? 'iOS 自动清理了存储空间' : '存储空间被清理'}\n\n建议：\n• 定期使用「设置→导出数据」备份\n• 避免使用私密浏览模式${privateWarning}`)
-            }, 1000)
+              alert(
+                `⚠️ 数据异常提醒\n\n检测到您之前有 ${backupCount} 个角色，但当前数据为空。\n\n可能原因：\n• 使用了私密浏览模式\n• 浏览器清除了网站数据\n• ${isIOS ? 'iOS 自动清理了存储空间' : '存储空间被清理'}\n\n建议：\n• 定期使用「设置→导出数据」备份\n• 避免使用私密浏览模式${privateWarning}`
+              )
+            }, 800)
           }
         }
 
@@ -993,6 +1053,22 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       } catch { /* ignore quota errors */ }
     }
   }, [messages, isHydrated])
+  // 关键：我的人设与钱包也做 localStorage 备份（这两项是用户最敏感的资产/设定）
+  useEffect(() => {
+    if (!canPersist()) return
+    try {
+      localStorage.setItem(STORAGE_KEYS.userPersonas + '_backup', JSON.stringify(userPersonas))
+    } catch { /* ignore quota errors */ }
+  }, [userPersonas, isHydrated])
+  useEffect(() => {
+    if (!canPersist()) return
+    try {
+      localStorage.setItem(
+        'wechat_wallet_backup',
+        JSON.stringify({ balance: walletBalance, initialized: walletInitialized, bills: walletBills })
+      )
+    } catch { /* ignore quota errors */ }
+  }, [walletBalance, walletInitialized, walletBills, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.stickers, stickers) }, [stickers, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.favoriteDiaries, favoriteDiaries) }, [favoriteDiaries, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.myDiaries, myDiaries) }, [myDiaries, isHydrated])
