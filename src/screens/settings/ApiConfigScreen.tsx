@@ -151,8 +151,13 @@ export default function ApiConfigScreen() {
     try {
       const modelList = await fetchAvailableModels({ apiBaseUrl: baseUrl, apiKey })
       setModels(modelList)
-    } catch {
-      setError('获取模型失败（请检查网络或服务状态），已加载默认列表')
+    } catch (err: any) {
+      const raw = String(err?.message || err || '')
+      const hint =
+        isHttpsPage && baseUrl.trim().toLowerCase().startsWith('http://')
+          ? '\n\n提示：当前是 HTTPS 页面，Base URL 用 http:// 会被浏览器拦截（混合内容）。'
+          : ''
+      setError(`获取模型失败（已加载默认列表）。\n${raw}${hint}`.trim())
       setModels(['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'claude-3-opus', 'claude-3-sonnet'])
     } finally { setLoading(false) }
   }
@@ -181,8 +186,13 @@ export default function ApiConfigScreen() {
       if (editSelectedModel && !modelList.includes(editSelectedModel)) {
         setEditSelectedModel('')
       }
-    } catch {
-      setEditError('获取模型失败（请检查网络或服务状态）')
+    } catch (err: any) {
+      const raw = String(err?.message || err || '')
+      const hint =
+        isHttpsPage && editBaseUrl.trim().toLowerCase().startsWith('http://')
+          ? '\n\n提示：HTTPS 页面下使用 http:// Base URL 可能会被浏览器拦截（混合内容）。'
+          : ''
+      setEditError(`获取模型失败。\n${raw}${hint}`.trim())
     } finally {
       setEditLoading(false)
     }

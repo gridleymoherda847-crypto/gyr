@@ -343,10 +343,25 @@ export const MINIMAL_ICONS: Record<string, string> = {
 }
 
 function normalizeApiBaseUrl(input: string): string {
-  const trimmed = (input || '').trim().replace(/\/+$/, '')
+  let trimmed = (input || '').trim()
   if (!trimmed) return ''
-  // 兼容用户填 https://xxx 或 https://xxx/v1
-  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`
+  // 去掉结尾的多余斜杠
+  trimmed = trimmed.replace(/\/+$/, '')
+
+  // 用户常见误填：直接填到了具体接口（/chat/completions 或 /models）
+  // 统一裁剪回“base(/v1)”级别，避免拼接出 /v1/chat/completions/v1 这种路径
+  trimmed = trimmed.replace(/\/chat\/completions\/?$/i, '')
+  trimmed = trimmed.replace(/\/models\/?$/i, '')
+
+  // 若 URL 中间已经包含 /v1（如 https://xxx/openai/v1），则裁剪到该 /v1 结尾
+  const v1Index = trimmed.toLowerCase().indexOf('/v1')
+  if (v1Index >= 0) {
+    const prefix = trimmed.slice(0, v1Index)
+    return `${prefix}/v1`
+  }
+
+  // 兼容用户填 https://xxx
+  return `${trimmed}/v1`
 }
 const seedCharacters: VirtualCharacter[] = [
   { id: 'char-01', name: '青禾', avatar: 'https://i.pravatar.cc/150?img=5', prompt: '温柔的生活助手', intimacy: 68 },
@@ -1285,6 +1300,22 @@ export function OSProvider({ children }: PropsWithChildren) {
     } catch (error: any) {
       if (error?.name === 'AbortError') {
         throw new Error('请求超时：模型响应太慢（可尝试换模型/减少上下文/稍后重试）')
+      }
+      // 浏览器常见网络错误：多数不会给出更细的错误码，只会是 Failed to fetch / NetworkError
+      // 这里补充可读提示，方便定位“少部分手机连不上”的真实原因
+      const msg = String(error?.message || '')
+      if (
+        error instanceof TypeError ||
+        /failed to fetch|networkerror|load failed/i.test(msg)
+      ) {
+        throw new Error(
+          '网络请求失败（浏览器拦截或无法连接）。常见原因：\n' +
+            '1) 你当前是 HTTPS 页面，但 Base URL 用了 http://（混合内容会被拦截）\n' +
+            '2) API 服务端未开启 CORS（浏览器不允许跨域调用；Postman/后端能用但网页不能用）\n' +
+            '3) 证书/域名问题（证书链不完整、被运营商拦截、DNS 解析异常）\n' +
+            '4) 网络环境限制（公司网/校园网/代理/VPN）\n\n' +
+            `原始错误：${msg || 'TypeError'}`
+        )
       }
       throw error
     }
