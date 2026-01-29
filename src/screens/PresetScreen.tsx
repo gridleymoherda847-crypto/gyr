@@ -200,6 +200,43 @@ export default function PresetScreen() {
     const file = e.target.files?.[0]
     if (!file) return
     
+    const normalizeImportedLorebook = (lb: any): Lorebook | null => {
+      const name = String(lb?.name || '').trim()
+      const entriesRaw = Array.isArray(lb?.entries) ? lb.entries : []
+      if (!name || entriesRaw.length === 0) return null
+      const isGlobal = lb?.isGlobal === false ? false : true
+      const characterIds = Array.isArray(lb?.characterIds) ? lb.characterIds.filter((x: any) => typeof x === 'string') : []
+      const entries: LorebookEntry[] = entriesRaw
+        .map((e2: any) => {
+          const ename = String(e2?.name || '').trim()
+          const content = String(e2?.content || '').trim()
+          if (!ename || !content) return null
+          const priorityRaw = String(e2?.priority || 'medium')
+          const priority = priorityRaw === 'high' || priorityRaw === 'low' ? (priorityRaw as any) : 'medium'
+          return {
+            id: String(e2?.id || `entry_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+            name: ename,
+            keywords: Array.isArray(e2?.keywords) ? e2.keywords.map((k: any) => String(k || '').trim()).filter(Boolean) : [],
+            content,
+            priority,
+            alwaysActive: e2?.alwaysActive === true,
+            // 关键：兼容旧格式，enabled 缺省视为 true
+            enabled: e2?.enabled === false ? false : true,
+          } as LorebookEntry
+        })
+        .filter(Boolean) as LorebookEntry[]
+      if (entries.length === 0) return null
+      return {
+        id: String(lb?.id || `lorebook_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+        name,
+        description: String(lb?.description || ''),
+        isGlobal,
+        characterIds: isGlobal ? [] : characterIds,
+        entries,
+        createdAt: typeof lb?.createdAt === 'number' ? lb.createdAt : Date.now(),
+      }
+    }
+
     const reader = new FileReader()
     reader.onload = (event) => {
       try {
@@ -210,10 +247,11 @@ export default function PresetScreen() {
           // 批量导入
           let importCount = 0
           for (const lb of data.lorebooks) {
-            if (lb.id && lb.name && Array.isArray(lb.entries)) {
-              // 生成新ID避免冲突
-              const newLorebook = {
-                ...lb,
+            const normalized = normalizeImportedLorebook(lb)
+            if (normalized) {
+              // 生成新ID避免冲突（导入永远新建）
+              const newLorebook: Lorebook = {
+                ...normalized,
                 id: `lorebook_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
               }
               setConfig(prev => ({
@@ -227,16 +265,17 @@ export default function PresetScreen() {
         } else if (data.type === 'mina_lorebook' && data.lorebook) {
           // 单个导入
           const lb = data.lorebook
-          if (lb.name && Array.isArray(lb.entries)) {
-            const newLorebook = {
-              ...lb,
+          const normalized = normalizeImportedLorebook(lb)
+          if (normalized) {
+            const newLorebook: Lorebook = {
+              ...normalized,
               id: `lorebook_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             }
             setConfig(prev => ({
               ...prev,
               lorebooks: [...prev.lorebooks, newLorebook]
             }))
-            alert(`成功导入世界书：${lb.name}`)
+            alert(`成功导入世界书：${normalized.name}`)
           } else {
             alert('世界书格式不正确')
           }
@@ -1186,22 +1225,31 @@ export const getLorebookEntriesByLorebookId = (lorebookId: string, context: stri
 
   const entries: Array<{ entry: LorebookEntry; triggeredBy: string | null }> = []
 
-  for (const entry of lorebook.entries) {
-    if (!entry.enabled) continue
-    if (entry.alwaysActive) {
+  const lorebookEntries = Array.isArray((lorebook as any).entries) ? (lorebook as any).entries : []
+  for (const entryRaw of lorebookEntries) {
+    const entry = entryRaw as any as LorebookEntry
+    // 关键：兼容旧格式，enabled 缺省视为 true
+    if ((entry as any).enabled === false) continue
+    const alwaysActive = (entry as any).alwaysActive === true
+    const keywords: string[] = Array.isArray((entry as any).keywords) ? (entry as any).keywords : []
+    if (alwaysActive) {
       entries.push({ entry, triggeredBy: null })
       continue
     }
-    if (entry.keywords.length > 0) {
+    if (keywords.length > 0) {
       const contextLower = (context || '').toLowerCase()
-      const matchedKeyword = entry.keywords.find(keyword => contextLower.includes(String(keyword || '').toLowerCase()))
+      const matchedKeyword = keywords.find(keyword => contextLower.includes(String(keyword || '').toLowerCase()))
       if (matchedKeyword) entries.push({ entry, triggeredBy: matchedKeyword })
     }
   }
 
   entries.sort((a, b) => {
     const priorityOrder = { high: 0, medium: 1, low: 2 } as const
-    return priorityOrder[a.entry.priority] - priorityOrder[b.entry.priority]
+    const pa: 'high' | 'medium' | 'low' =
+      (a.entry as any).priority === 'high' || (a.entry as any).priority === 'low' ? (a.entry as any).priority : 'medium'
+    const pb: 'high' | 'medium' | 'low' =
+      (b.entry as any).priority === 'high' || (b.entry as any).priority === 'low' ? (b.entry as any).priority : 'medium'
+    return priorityOrder[pa] - priorityOrder[pb]
   })
 
   const limitedEntries = entries.slice(0, 5)
@@ -1252,31 +1300,34 @@ export const getLorebookEntriesForCharacter = (characterId: string, context: str
   const entries: Array<{ entry: LorebookEntry; triggeredBy: string | null }> = []
   
   for (const lorebook of lorebooks) {
+    const characterIds: string[] = Array.isArray((lorebook as any).characterIds) ? (lorebook as any).characterIds : []
     // 检查是否适用于该角色
     // 1. 全局世界书（isGlobal=true 或旧数据 isGlobal=undefined 且 characterIds 为空）→ 对所有角色生效
     // 2. 局部世界书（isGlobal=false 或旧数据有 characterIds）→ 必须包含该角色ID
-    const isGlobal = lorebook.isGlobal === true || (lorebook.isGlobal === undefined && lorebook.characterIds.length === 0)
+    const isGlobal = (lorebook as any).isGlobal === true || ((lorebook as any).isGlobal === undefined && characterIds.length === 0)
     
-    if (!isGlobal && !lorebook.characterIds.includes(characterId)) {
+    if (!isGlobal && !characterIds.includes(characterId)) {
       continue // 局部世界书但没有绑定该角色，跳过
     }
     
     // 全局世界书或已绑定的局部世界书，处理条目
-    for (const entry of lorebook.entries) {
-      if (!entry.enabled) continue
+    const lorebookEntries = Array.isArray((lorebook as any).entries) ? (lorebook as any).entries : []
+    for (const entryRaw of lorebookEntries) {
+      const entry = entryRaw as any as LorebookEntry
+      // 关键：兼容旧格式，enabled 缺省视为 true
+      if ((entry as any).enabled === false) continue
       
       // 始终激活的条目
-      if (entry.alwaysActive) {
+      if ((entry as any).alwaysActive === true) {
         entries.push({ entry, triggeredBy: null })
         continue
       }
       
       // 检查触发词
-      if (entry.keywords.length > 0) {
-        const contextLower = context.toLowerCase()
-        const matchedKeyword = entry.keywords.find(keyword => 
-          contextLower.includes(keyword.toLowerCase())
-        )
+      const keywords: string[] = Array.isArray((entry as any).keywords) ? (entry as any).keywords : []
+      if (keywords.length > 0) {
+        const contextLower = (context || '').toLowerCase()
+        const matchedKeyword = keywords.find((keyword) => contextLower.includes(String(keyword || '').toLowerCase()))
         if (matchedKeyword) {
           entries.push({ entry, triggeredBy: matchedKeyword })
         }
@@ -1286,8 +1337,12 @@ export const getLorebookEntriesForCharacter = (characterId: string, context: str
   
   // 按优先级排序（高优先级排前面）
   entries.sort((a, b) => {
-    const priorityOrder = { high: 0, medium: 1, low: 2 }
-    return priorityOrder[a.entry.priority] - priorityOrder[b.entry.priority]
+    const priorityOrder = { high: 0, medium: 1, low: 2 } as const
+    const pa: 'high' | 'medium' | 'low' =
+      (a.entry as any).priority === 'high' || (a.entry as any).priority === 'low' ? (a.entry as any).priority : 'medium'
+    const pb: 'high' | 'medium' | 'low' =
+      (b.entry as any).priority === 'high' || (b.entry as any).priority === 'low' ? (b.entry as any).priority : 'medium'
+    return priorityOrder[pa] - priorityOrder[pb]
   })
   
   // 限制最多注入 5 个条目
