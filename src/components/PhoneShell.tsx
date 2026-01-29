@@ -9,6 +9,13 @@ export default function PhoneShell({ children }: PropsWithChildren) {
     return localStorage.getItem('mina_hide_status_bar') === 'true'
   })
   
+  // 同步壁纸到安全区域背景（iOS 开关开启时可延伸）
+  useEffect(() => {
+    const isImageUrl = wallpaper.startsWith('data:') || wallpaper.startsWith('http') || wallpaper.startsWith('blob') || wallpaper.startsWith('/')
+    const safeAreaBg = isImageUrl ? `url("${wallpaper}")` : wallpaper
+    document.documentElement.style.setProperty('--safe-area-bg', safeAreaBg)
+  }, [wallpaper])
+
   // 监听 localStorage 变化以响应设置更改
   useEffect(() => {
     const checkHideStatusBar = () => {

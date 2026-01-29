@@ -1710,7 +1710,7 @@ export default function DoudizhuScreen() {
       
       {/* 结算界面 - 紧凑版 */}
       {phase === 'ended' && gameResult && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 px-4 py-2">
+        <div className="flex-1 flex flex-col items-center gap-2 px-3 py-2 overflow-y-auto min-h-0">
           <div className="flex items-center gap-2">
             <span className="text-3xl">{gameResult.isWin ? '🎉' : '😢'}</span>
             <h2 className="text-white text-xl font-bold">{gameResult.isWin ? '恭喜你赢了！' : '很遗憾，你输了'}</h2>
@@ -1758,7 +1758,7 @@ export default function DoudizhuScreen() {
             </div>
           </div>
           
-          <div className="flex gap-2 mt-1">
+          <div className="flex flex-wrap justify-center gap-2 mt-1 max-w-[90vw]">
             <button onClick={() => setShowShareDialog(true)} className="px-4 py-2 bg-green-500 text-white font-bold rounded-full text-sm shadow-lg active:scale-95">📤 分享战绩</button>
             <button onClick={() => setPhase('selectBase')} className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-full text-sm shadow-lg active:scale-95">再来一局</button>
             <button onClick={() => navigate(-1)} className="px-4 py-2 bg-white/10 text-white font-medium rounded-full text-sm active:scale-95">返回</button>
