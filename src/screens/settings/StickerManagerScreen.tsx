@@ -164,10 +164,37 @@ export default function StickerManagerScreen() {
     URL.revokeObjectURL(url)
   }
 
-  // 批量从多个URL导入
+  // 批量从多个URL导入（支持 "备注：链接" 或 "备注:链接" 格式）
   const importMultipleUrls = async (urls: string, categoryName: string) => {
-    const lines = urls.split(/[\n,]/).map(s => s.trim()).filter(s => s.startsWith('http'))
-    if (lines.length === 0) {
+    const lines = urls.split(/\n/).map(s => s.trim()).filter(s => s.length > 0)
+    
+    // 解析每一行，支持 "备注：链接" 或 "备注:链接" 或纯链接
+    const parsed: { keyword: string; url: string }[] = []
+    
+    for (const line of lines) {
+      // 尝试匹配 "备注：链接" 或 "备注:链接" 格式（中文冒号或英文冒号）
+      const match = line.match(/^(.+?)[：:](\s*)(https?:\/\/.+)$/i)
+      if (match) {
+        const keyword = safeName(match[1]) || '表情'
+        const url = match[3].trim()
+        parsed.push({ keyword, url })
+      } else if (line.startsWith('http://') || line.startsWith('https://')) {
+        // 纯链接，从 URL 提取文件名作为 keyword
+        let keyword = '表情'
+        try {
+          const urlObj = new URL(line)
+          const filename = urlObj.pathname.split('/').pop() || ''
+          const nameWithoutExt = filename.replace(/\.[^/.]+$/, '')
+          if (nameWithoutExt) keyword = safeName(nameWithoutExt) || '表情'
+        } catch {
+          // ignore
+        }
+        parsed.push({ keyword, url: line })
+      }
+      // 其他格式的行忽略
+    }
+    
+    if (parsed.length === 0) {
       setToast('未找到有效的图片链接')
       window.setTimeout(() => setToast(null), 2000)
       return
@@ -184,23 +211,13 @@ export default function StickerManagerScreen() {
     const targetId = targetCharacterId
     let count = 0
     
-    for (const url of lines.slice(0, 100)) { // 限制最多100张
-      let keyword = '表情'
-      try {
-        const urlObj = new URL(url)
-        const pathname = urlObj.pathname
-        const filename = pathname.split('/').pop() || ''
-        const nameWithoutExt = filename.replace(/\.[^/.]+$/, '')
-        if (nameWithoutExt) keyword = safeName(nameWithoutExt) || '表情'
-      } catch {
-        // ignore
-      }
-      
+    for (const { keyword, url } of parsed.slice(0, 100)) { // 限制最多100张
       addSticker({
         characterId: targetId,
         keyword,
         imageUrl: url,
         category: cat,
+        description: keyword, // 备注也存到 description
       })
       count++
     }
@@ -691,8 +708,8 @@ export default function StickerManagerScreen() {
                 <textarea
                   value={urlImportInput}
                   onChange={(e) => setUrlImportInput(e.target.value)}
-                  placeholder="粘贴图片URL，每行一个或用逗号分隔&#10;例如：&#10;https://example.com/sticker1.png&#10;https://example.com/sticker2.gif"
-                  className="w-full h-20 px-3 py-2 rounded-lg bg-white/90 border border-blue-200 outline-none text-[11px] text-[#111] resize-none placeholder:text-gray-400"
+                  placeholder="支持两种格式，每行一个：&#10;&#10;格式1（带备注）：&#10;嘬嘬嘬：https://xxx.png&#10;&#10;格式2（纯链接）：&#10;https://xxx.png"
+                  className="w-full h-24 px-3 py-2 rounded-lg bg-white/90 border border-blue-200 outline-none text-[11px] text-[#111] resize-none placeholder:text-gray-400"
                 />
                 <button
                   type="button"
