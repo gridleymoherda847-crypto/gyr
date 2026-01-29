@@ -712,13 +712,33 @@ export default function ChatScreen() {
           for (const s of out) {
             if (merged.length === 0) { merged.push(s); continue }
             const last = merged[merged.length - 1]
-            if (!keepCmd(s) && !keepCmd(last) && (last.length < 10 || s.length < 8)) {
+            // 合并策略要保守：避免把所有句子都糊成一大段，导致“永远只发1条”
+            if (!keepCmd(s) && !keepCmd(last) && (last.length + s.length <= 14)) {
               merged[merged.length - 1] = `${last}${s}`
             } else {
               merged.push(s)
             }
           }
-          return merged.filter(Boolean).slice(0, 15)
+          let final = merged.filter(Boolean).slice(0, 15)
+          // 兜底：如果仍然只剩 1 条（且不是指令类），尝试用逗号/顿号/分号再拆一次
+          if (final.length === 1 && !keepCmd(final[0])) {
+            const one = final[0]
+            const chunks = one.split(/[，,、;；]+/).map(s => s.trim()).filter(Boolean)
+            if (chunks.length >= 2) {
+              const recombined: string[] = []
+              let buf = ''
+              for (const c of chunks) {
+                if (!buf) { buf = c; continue }
+                // 太短就先拼一下，避免碎片
+                if (buf.length < 8) buf = `${buf}，${c}`
+                else { recombined.push(buf); buf = c }
+                if (recombined.length >= 15) break
+              }
+              if (buf && recombined.length < 15) recombined.push(buf)
+              if (recombined.length >= 2) final = recombined.slice(0, 15)
+            }
+          }
+          return final
         }
         // 构建对话历史（尽量不“失忆”：按“回合”+字符预算截取；转账/图片等用简短标记，避免塞超长URL）
         const buildChatHistory = (all: typeof messages, maxRounds: number, maxChars: number) => {
@@ -1066,7 +1086,7 @@ ${recentTimeline || '（无）'}
 - 用自然、口语化的语气回复，像真人微信聊天
 - 你可以很短：只发“？”、“。”、“嗯”、“行”、“…”都可以；也可以很长，随情绪
 - 不要强行每条都很完整/很礼貌，允许有自己的心情与小情绪
-- 根据对话情绪和内容，回复消息（${(character as any).language !== 'zh' ? '非中文语言时建议 1-5 条，避免太多' : '1-15 条都可以'}），每条消息用换行分隔（数量可少可多，随心情）
+- 根据对话情绪和内容，回复消息（${(character as any).language !== 'zh' ? '非中文语言时建议 2-5 条，避免太多' : '2-15 条都可以'}），每条消息用换行分隔（数量可少可多，随心情；除非用户只发一个字/标点，否则不要只回1条）
 - 如果想给对方转账，单独一行写：[转账:金额:备注]
 `
 
@@ -2684,7 +2704,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 对方${context}
 
 【回复要求】
-1. 根据情境和你的性格，回复1-15条消息
+1. 根据情境和你的性格，回复至少2条、最多15条消息（除非用户只发一个字/标点这种极敷衍输入）
 2. 每条消息用换行分隔
 3. 要有情感，不要机械化
 4. 可以表达惊喜、感动、开心等情绪
