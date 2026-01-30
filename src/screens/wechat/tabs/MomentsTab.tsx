@@ -161,7 +161,9 @@ ${replyTo ? `【你要回复的评论】\n@${replyTo.authorName}：${replyTo.con
 
 【任务】
 请写1条朋友圈评论：
-- 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
+- 【语言强规则】只用「${langName}」输出
+- 【翻译规则】如果不是中文，必须在后面加括号写简体中文翻译，格式：原文（中文翻译）
+  例如：That's so cool!（太酷了！）
 - 你认识发朋友圈的人（${target.authorName}），要基于你们的关系和聊天记忆来评论
 - 口语化、短（<=30字）
 - 不要动作描写/旁白
@@ -337,7 +339,9 @@ ${otherFriendNames.slice(0, 10).join('、') || '（无）'}
 
 【任务】
 请写1条朋友圈评论：
-- 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
+- 【语言强规则】只用「${langName}」输出
+- 【翻译规则】如果不是中文，必须在后面加括号写简体中文翻译，格式：原文（中文翻译）
+  例如：That's so cool!（太酷了！）
 - 如果截图里有你和TA的聊天记录，你可以认出来并回应（比如"这不是我吗""我说的话被发出来了"）
 - 你认识发朋友圈的人，要基于你们的关系和聊天记忆来评论
 - 口语化、短（<=30字）
@@ -412,7 +416,8 @@ ${otherFriendNames.slice(0, 10).join('、') || '（无）'}
 
 【任务】
 写1条回复「${targetComment.friendName}」的评论（<=20字）：
-- 只输出评论内容，不要加引号、@符号`
+- 只输出评论内容，不要加引号、@符号
+- 【翻译规则】如果不是中文，必须在后面加括号写简体中文翻译，格式：原文（中文翻译）`
               
               const replyText = await callLLM([{ role: 'user', content: replyPrompt }], undefined, { maxTokens: 60, timeoutMs: 600000 })
               const cleanReply = replyText.trim()
@@ -467,7 +472,9 @@ ${params.userText}
 
 【任务】
 请写1条回复：
-- 【语言强规则】只用「${langName}」输出；若不是中文，严禁出现中文字符
+- 【语言强规则】只用「${langName}」输出
+- 【翻译规则】如果不是中文，必须在后面加括号写简体中文翻译，格式：原文（中文翻译）
+  例如：That's so cool!（太酷了！）
 - 你认识对方，要基于你们的关系来回复
 - 口语化、短（<=30字）
 - 不要动作描写/旁白
@@ -694,8 +701,8 @@ ${params.userText}
                         </div>
                       )}
                       {moment.comments.length > 0 && (
-                        <div className="space-y-1">
-                          {moment.comments.slice(-5).map(c => (
+                        <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                          {moment.comments.map(c => (
                             <div
                               key={c.id}
                               className="flex items-start gap-1"

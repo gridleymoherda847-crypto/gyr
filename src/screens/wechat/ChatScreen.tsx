@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
 import WeChatLayout from './WeChatLayout'
@@ -10,8 +10,10 @@ import { xEnsureUser, xLoad, xNewPost, xSave, xAddFollow, xRemoveFollow, xIsFoll
 
 export default function ChatScreen() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, pauseMusic, ttsConfig, getAllFontOptions, currentFont } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
+  const highlightMsgId = searchParams.get('highlightMsg') // 从搜索结果跳转时高亮的消息ID
   const { 
     getCharacter, getMessagesByCharacter, getMessagesPage, addMessage, updateMessage, deleteMessage, deleteMessagesByIds,
     getStickersByCharacter,clearMessages,
@@ -91,6 +93,7 @@ export default function ChatScreen() {
   // 分页渲染窗口：只渲染最近 N 条，上拉再加载更早的
   const PAGE_SIZE = 15
   const [startIndex, setStartIndex] = useState(0)
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null) // 高亮的消息ID（搜索跳转用）
   const tailModeRef = useRef(true) // 是否处在“看最新消息”模式
   const loadingMoreRef = useRef(false)
   const prevScrollHeightRef = useRef<number | null>(null)
@@ -454,6 +457,35 @@ export default function ChatScreen() {
     }
   }, [messages])
 
+  // 处理从搜索结果跳转过来的高亮消息
+  useEffect(() => {
+    if (!highlightMsgId || !messages.length) return
+    // 找到消息在数组中的索引
+    const msgIndex = messages.findIndex(m => m.id === highlightMsgId)
+    if (msgIndex < 0) return
+    
+    // 调整 startIndex 使该消息可见
+    const targetStart = Math.max(0, msgIndex - 5) // 让目标消息在视口中间偏上
+    setStartIndex(targetStart)
+    tailModeRef.current = false
+    
+    // 设置高亮并在渲染后滚动到该消息
+    setHighlightedMsgId(highlightMsgId)
+    
+    // 清除 URL 参数
+    setSearchParams({})
+    
+    // 延迟滚动到该消息并清除高亮
+    setTimeout(() => {
+      const el = document.querySelector(`[data-msg-id="${highlightMsgId}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      // 3秒后清除高亮
+      setTimeout(() => setHighlightedMsgId(null), 3000)
+    }, 100)
+  }, [highlightMsgId, messages, setSearchParams])
+
   // 进入/切换聊天：从数据源头只取最近 PAGE_SIZE 条渲染
   useEffect(() => {
     const cid = characterId || ''
@@ -478,8 +510,8 @@ export default function ChatScreen() {
     return messages.slice(startIndex)
   }, [messages, startIndex])
 
-  // 上拉加载更多：保持滚动位置不跳
-  useEffect(() => {
+  // 上拉加载更多：保持滚动位置不跳（使用 useLayoutEffect 避免闪烁）
+  useLayoutEffect(() => {
     if (!loadingMoreRef.current) return
     const el = messagesContainerRef.current
     if (!el) return
@@ -4971,8 +5003,10 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       return (
         <div
           key={msg.id}
+          data-msg-id={msg.id}
           // 性能优化：聊天长列表在移动端非常吃力；content-visibility 可显著减少重绘/布局开销
           style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 140px' }}
+          className={highlightedMsgId === msg.id ? 'animate-pulse bg-yellow-100 rounded-xl transition-colors duration-1000' : ''}
         >
           <div className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
             {/* 编辑模式：可勾选双方消息 */}

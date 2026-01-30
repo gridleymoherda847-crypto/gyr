@@ -40,9 +40,10 @@ type Props = {
 export default function ChatsTab({ onBack }: Props) {
   const navigate = useNavigate()
   const { fontColor } = useOS()
-  const { characters, groups, getLastMessage, togglePinned, hideFromChat, clearMessages, createGroup, getGroupMessages, addCharacter } = useWeChat()
+  const { characters, groups, getLastMessage, togglePinned, hideFromChat, clearMessages, createGroup, getGroupMessages, addCharacter, messages } = useWeChat()
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  const [searchMode, setSearchMode] = useState<'contacts' | 'messages'>('contacts') // 搜索模式
   const [swipedId, setSwipedId] = useState<string | null>(null)
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [showGroupCreate, setShowGroupCreate] = useState(false)
@@ -146,14 +147,25 @@ export default function ChatsTab({ onBack }: Props) {
     })
   }, [groups])
 
-  // 搜索过滤
-  const filteredCharacters = searchQuery
+  // 搜索过滤（联系人模式）
+  const filteredCharacters = searchQuery && searchMode === 'contacts'
     ? sortedCharacters.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : sortedCharacters
   
-  const filteredGroups = searchQuery
+  const filteredGroups = searchQuery && searchMode === 'contacts'
     ? sortedGroups.filter(g => g.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : sortedGroups
+
+  // 搜索聊天记录（消息模式）
+  const searchedMessages = useMemo(() => {
+    if (!searchQuery || searchMode !== 'messages') return []
+    const q = searchQuery.toLowerCase()
+    // 只搜索文本消息
+    return messages
+      .filter(m => m.type === 'text' && m.content && m.content.toLowerCase().includes(q))
+      .sort((a, b) => b.timestamp - a.timestamp) // 最新的在前
+      .slice(0, 50) // 最多显示50条
+  }, [messages, searchQuery, searchMode])
   
   // 合并私聊和群聊列表
   type ChatItem = { type: 'private'; data: typeof sortedCharacters[0] } | { type: 'group'; data: typeof sortedGroups[0] }
@@ -306,10 +318,27 @@ export default function ChatsTab({ onBack }: Props) {
       {/* 搜索框 */}
       {showSearch && (
         <div className="px-3 pb-1 bg-transparent">
+          {/* 搜索模式切换 */}
+          <div className="flex gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => setSearchMode('contacts')}
+              className={`px-3 py-1 rounded-full text-xs ${searchMode === 'contacts' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'}`}
+            >
+              联系人
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchMode('messages')}
+              className={`px-3 py-1 rounded-full text-xs ${searchMode === 'messages' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'}`}
+            >
+              聊天记录
+            </button>
+          </div>
           <div className="relative">
             <input
               type="text"
-              placeholder="搜索联系人..."
+              placeholder={searchMode === 'contacts' ? '搜索联系人...' : '搜索聊天记录...'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full px-4 py-2 pl-9 rounded-lg text-sm bg-white border-none outline-none"
@@ -327,11 +356,72 @@ export default function ChatsTab({ onBack }: Props) {
         </div>
       )}
 
-      {/* 聊天列表 */}
+      {/* 聊天记录搜索结果 */}
+      {showSearch && searchMode === 'messages' && searchQuery && (
+        <div className="flex-1 overflow-y-auto bg-transparent">
+          {searchedMessages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-gray-400 text-sm">
+              <span>未找到相关聊天记录</span>
+            </div>
+          ) : (
+            searchedMessages.map(msg => {
+              const char = characters.find(c => c.id === msg.characterId)
+              if (!char) return null
+              const time = new Date(msg.timestamp)
+              const timeStr = `${time.getMonth() + 1}/${time.getDate()} ${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`
+              // 高亮搜索词
+              const content = msg.content || ''
+              const q = searchQuery.toLowerCase()
+              const idx = content.toLowerCase().indexOf(q)
+              const before = content.slice(Math.max(0, idx - 15), idx)
+              const match = content.slice(idx, idx + searchQuery.length)
+              const after = content.slice(idx + searchQuery.length, idx + searchQuery.length + 30)
+              
+              return (
+                <div
+                  key={msg.id}
+                  onClick={() => {
+                    // 跳转到聊天并定位到该消息
+                    navigate(`/apps/wechat/chat/${encodeURIComponent(char.id)}?highlightMsg=${msg.id}`)
+                  }}
+                  className="flex items-start gap-3 px-4 py-3 border-b border-gray-100 active:bg-gray-50 cursor-pointer"
+                >
+                  {/* 头像 */}
+                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+                    {char.avatar ? (
+                      <img src={char.avatar} alt={char.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-pink-400 to-pink-500 flex items-center justify-center text-white text-sm font-medium">
+                        {char.name.slice(0, 1)}
+                      </div>
+                    )}
+                  </div>
+                  {/* 内容 */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-[#000] text-sm">{char.name}</span>
+                      <span className="text-xs text-gray-400">{timeStr}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1 truncate">
+                      {msg.isUser ? '我: ' : ''}
+                      {before && <span>...{before}</span>}
+                      <span className="bg-yellow-200 text-yellow-800 px-0.5 rounded">{match}</span>
+                      {after && <span>{after}...</span>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
+
+      {/* 聊天列表（仅在联系人搜索模式或无搜索时显示） */}
+      {(!showSearch || searchMode === 'contacts' || !searchQuery) && (
       <div className="flex-1 overflow-y-auto bg-transparent">
         {allChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm">
-            {searchQuery ? (
+            {searchQuery && searchMode === 'contacts' ? (
               <span>未找到联系人</span>
             ) : (
               <>
@@ -530,6 +620,7 @@ export default function ChatsTab({ onBack }: Props) {
           })
         )}
       </div>
+      )}
       
       {/* 提示 */}
       <div className="px-3 py-1 text-center text-[10px] text-gray-400 bg-transparent">
