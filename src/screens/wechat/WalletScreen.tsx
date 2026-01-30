@@ -165,7 +165,7 @@ export default function WalletScreen({ onBack }: Props) {
   return (
     <div className="absolute inset-0 bg-gray-100 z-50 flex flex-col">
       {/* 头部 - 仿微信绿色 */}
-      <div className="bg-[#2aae67] text-white pt-3">
+      <div className="bg-[#2aae67] text-white pt-6">
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={onBack} className="text-white">
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

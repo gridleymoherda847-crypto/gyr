@@ -6320,7 +6320,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 </div>
                 
                 {/* 表情包网格 */}
-                <div className="p-2 max-h-48 overflow-y-auto">
+                <div className="p-2 max-h-72 overflow-y-auto">
                   {currentTabStickers.length === 0 ? (
                     <div className="text-center text-gray-400 text-sm py-6">
                       {stickerTab === 'recent' ? (

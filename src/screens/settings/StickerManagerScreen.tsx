@@ -252,7 +252,7 @@ export default function StickerManagerScreen() {
     const targetId = targetCharacterId
     let count = 0
     
-    for (const { keyword, url } of parsed.slice(0, 100)) { // 限制最多100张
+    for (const { keyword, url } of parsed.slice(0, 500)) { // 限制最多500张
       addSticker({
         characterId: targetId,
         keyword,
@@ -717,22 +717,11 @@ export default function StickerManagerScreen() {
                           <div className="text-sm text-gray-400">这个分类还没有表情包</div>
                         ) : (
                           <div className="grid grid-cols-3 gap-2">
-                            {list.slice(0, 60).map(s => (
+                            {list.map(s => (
                               <div key={s.id} className="rounded-xl bg-white/80 border border-black/10 p-2">
                                 <div className="w-full aspect-square rounded-lg overflow-hidden bg-gray-100">
                                   <img src={s.imageUrl} alt="" className="w-full h-full object-cover" />
                                 </div>
-                                <input
-                                  type="text"
-                                  value={s.keyword || ''}
-                                  onChange={(e) => updateSticker(s.id, { keyword: e.target.value })}
-                                  onBlur={(e) => {
-                                    const v = (e.target.value || '').trim().replace(/\s+/g, ' ').slice(0, 20)
-                                    updateSticker(s.id, { keyword: v || '表情' })
-                                  }}
-                                  placeholder="关键词（如：生气）"
-                                  className="mt-1 w-full px-1.5 py-1 rounded bg-gray-50 border border-gray-200 outline-none text-[10px] text-gray-700"
-                                />
                                 <input
                                   type="text"
                                   value={s.description || ''}

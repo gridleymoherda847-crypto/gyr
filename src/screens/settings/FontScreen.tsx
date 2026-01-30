@@ -12,7 +12,10 @@ export default function FontScreen() {
   const [showUploadDialog, setShowUploadDialog] = useState(false)
   const [uploadFontName, setUploadFontName] = useState('')
   const [uploadFontFile, setUploadFontFile] = useState<File | null>(null)
+  const [uploadFontUrl, setUploadFontUrl] = useState('')
+  const [uploadMode, setUploadMode] = useState<'file' | 'url'>('file')
   const [uploadError, setUploadError] = useState('')
+  const [uploading, setUploading] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
 
   const handleFontSelect = (font: FontOption) => setCurrentFont(font)
@@ -44,23 +47,73 @@ export default function FontScreen() {
   }
   
   const handleUploadFont = async () => {
-    if (!uploadFontFile || !uploadFontName.trim()) {
-      setUploadError('请选择字体文件并输入字体名称')
+    if (!uploadFontName.trim()) {
+      setUploadError('请输入字体名称')
       return
     }
     
-    try {
-      // 读取文件为 base64
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string
-        // 生成唯一的 fontFamily 名称
+    if (uploadMode === 'file') {
+      if (!uploadFontFile) {
+        setUploadError('请选择字体文件')
+        return
+      }
+      
+      try {
+        // 读取文件为 base64
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const dataUrl = e.target?.result as string
+          // 生成唯一的 fontFamily 名称
+          const fontFamily = `CustomFont_${Date.now()}`
+          
+          const newFont = addCustomFont({
+            name: uploadFontName.trim(),
+            fontFamily,
+            dataUrl,
+          })
+          
+          // 自动选中新上传的字体
+          setCurrentFont({
+            id: newFont.id,
+            name: newFont.name,
+            fontFamily: `"${newFont.fontFamily}", sans-serif`,
+            preview: '自定义字体 ABC 123',
+          })
+          
+          // 关闭弹窗并重置状态
+          resetUploadDialog()
+        }
+        reader.onerror = () => {
+          setUploadError('读取字体文件失败，请重试')
+        }
+        reader.readAsDataURL(uploadFontFile)
+      } catch {
+        setUploadError('上传失败，请重试')
+      }
+    } else {
+      // 链接导入模式
+      if (!uploadFontUrl.trim()) {
+        setUploadError('请输入字体链接')
+        return
+      }
+      
+      const url = uploadFontUrl.trim()
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        setUploadError('请输入有效的 http/https 链接')
+        return
+      }
+      
+      setUploading(true)
+      setUploadError('')
+      
+      try {
+        // 直接使用 URL 作为字体源
         const fontFamily = `CustomFont_${Date.now()}`
         
         const newFont = addCustomFont({
           name: uploadFontName.trim(),
           fontFamily,
-          dataUrl,
+          dataUrl: url, // 直接存储 URL
         })
         
         // 自动选中新上传的字体
@@ -71,20 +124,24 @@ export default function FontScreen() {
           preview: '自定义字体 ABC 123',
         })
         
-        // 关闭弹窗并重置状态
-        setShowUploadDialog(false)
-        setUploadFontName('')
-        setUploadFontFile(null)
-        setUploadError('')
-        if (fileInputRef.current) fileInputRef.current.value = ''
+        resetUploadDialog()
+      } catch {
+        setUploadError('导入失败，请检查链接是否正确')
+      } finally {
+        setUploading(false)
       }
-      reader.onerror = () => {
-        setUploadError('读取字体文件失败，请重试')
-      }
-      reader.readAsDataURL(uploadFontFile)
-    } catch (err) {
-      setUploadError('上传失败，请重试')
     }
+  }
+  
+  const resetUploadDialog = () => {
+    setShowUploadDialog(false)
+    setUploadFontName('')
+    setUploadFontFile(null)
+    setUploadFontUrl('')
+    setUploadMode('file')
+    setUploadError('')
+    setUploading(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
   
   const handleDeleteFont = (id: string) => {
@@ -207,9 +264,35 @@ export default function FontScreen() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
             <div className="px-4 py-3 border-b border-gray-100">
-              <div className="text-[15px] font-semibold text-center text-gray-800">上传自定义字体</div>
+              <div className="text-[15px] font-semibold text-center text-gray-800">导入自定义字体</div>
             </div>
             <div className="p-4 space-y-4">
+              {/* 导入模式切换 */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setUploadMode('file')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    uploadMode === 'file'
+                      ? 'bg-pink-500 text-white'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  📁 文件上传
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUploadMode('url')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    uploadMode === 'url'
+                      ? 'bg-pink-500 text-white'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  🔗 链接导入
+                </button>
+              </div>
+              
               {/* 字体名称输入 */}
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">字体名称</label>
@@ -222,28 +305,43 @@ export default function FontScreen() {
                 />
               </div>
               
-              {/* 文件选择 */}
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">字体文件</label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".ttf,.otf,.woff,.woff2"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full px-3 py-3 rounded-xl bg-gray-50 border border-dashed border-gray-300 text-sm text-gray-500 hover:border-pink-300 transition-colors"
-                >
-                  {uploadFontFile ? (
-                    <span className="text-gray-800">{uploadFontFile.name}</span>
-                  ) : (
-                    <span>点击选择字体文件</span>
-                  )}
-                </button>
-              </div>
+              {uploadMode === 'file' ? (
+                /* 文件选择 */
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">字体文件</label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".ttf,.otf,.woff,.woff2"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full px-3 py-3 rounded-xl bg-gray-50 border border-dashed border-gray-300 text-sm text-gray-500 hover:border-pink-300 transition-colors"
+                  >
+                    {uploadFontFile ? (
+                      <span className="text-gray-800">{uploadFontFile.name}</span>
+                    ) : (
+                      <span>点击选择字体文件</span>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                /* 链接输入 */
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">字体链接</label>
+                  <input
+                    type="text"
+                    value={uploadFontUrl}
+                    onChange={(e) => setUploadFontUrl(e.target.value)}
+                    placeholder="https://example.com/font.ttf"
+                    className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-sm outline-none focus:border-pink-300"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">支持 TTF、OTF、WOFF、WOFF2 格式的直链</p>
+                </div>
+              )}
               
               {/* 错误提示 */}
               {uploadError && (
@@ -253,13 +351,7 @@ export default function FontScreen() {
             <div className="flex border-t border-gray-100">
               <button
                 type="button"
-                onClick={() => {
-                  setShowUploadDialog(false)
-                  setUploadFontName('')
-                  setUploadFontFile(null)
-                  setUploadError('')
-                  if (fileInputRef.current) fileInputRef.current.value = ''
-                }}
+                onClick={resetUploadDialog}
                 className="flex-1 py-3 text-gray-600 text-[15px] border-r border-gray-100"
               >
                 取消
@@ -267,9 +359,10 @@ export default function FontScreen() {
               <button
                 type="button"
                 onClick={handleUploadFont}
-                className="flex-1 py-3 text-pink-500 font-medium text-[15px]"
+                disabled={uploading}
+                className="flex-1 py-3 text-pink-500 font-medium text-[15px] disabled:text-gray-300"
               >
-                上传
+                {uploading ? '导入中...' : '确定'}
               </button>
             </div>
           </div>
