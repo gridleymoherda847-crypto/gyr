@@ -333,7 +333,7 @@ export type IconTheme = 'custom' | 'minimal'
 // 简洁主题图标映射
 export const MINIMAL_ICONS: Record<string, string> = {
   wechat: '/icons/minimal/wechat.svg',
-  doudizhu: '/icons/minimal/doudizhu.svg',
+  gameCenter: '/icons/minimal/game-center.svg',
   diaryVault: '/icons/minimal/diary.svg',
   x: '/icons/minimal/x.svg',
   music: '/icons/minimal/music.svg',
