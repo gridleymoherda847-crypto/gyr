@@ -287,6 +287,89 @@ export default function HomeScreen() {
             </div>
           </div>
         </div>
+
+        {/* 游戏大厅悬浮窗 */}
+        {showGameCenter && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+            {/* 背景遮罩 */}
+            <div 
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setShowGameCenter(false)}
+            />
+            {/* 悬浮窗内容 */}
+            <div className="relative w-full max-w-[320px] bg-white rounded-3xl shadow-2xl overflow-hidden animate-scale-in">
+              {/* 头部 */}
+              <div className="bg-gradient-to-r from-purple-500 to-pink-500 px-5 py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🎮</span>
+                    <span className="text-white font-bold text-lg">游戏大厅</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowGameCenter(false)}
+                    className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-white/80 text-xs mt-1">和好友一起玩游戏吧~</p>
+              </div>
+              
+              {/* 游戏列表 */}
+              <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto">
+                {GAME_LIST.map((game) => (
+                  <Link
+                    key={game.id}
+                    to={game.disabled ? '#' : game.route}
+                    onClick={(e) => {
+                      if (game.disabled) {
+                        e.preventDefault()
+                      } else {
+                        setShowGameCenter(false)
+                      }
+                    }}
+                    className={`flex items-center gap-4 p-4 rounded-2xl transition-all ${
+                      game.disabled 
+                        ? 'bg-gray-100 opacity-60 cursor-not-allowed' 
+                        : 'bg-gradient-to-r from-gray-50 to-gray-100 active:scale-[0.98] hover:shadow-md'
+                    }`}
+                  >
+                    {/* 游戏图标 */}
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl ${
+                      game.disabled ? 'bg-gray-200' : 'bg-gradient-to-br from-purple-100 to-pink-100'
+                    }`}>
+                      {game.icon}
+                    </div>
+                    {/* 游戏信息 */}
+                    <div className="flex-1">
+                      <div className="font-bold text-gray-800">{game.name}</div>
+                      <div className={`text-xs mt-0.5 ${game.disabled ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {game.desc}
+                      </div>
+                    </div>
+                    {/* 箭头 */}
+                    {!game.disabled && (
+                      <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+                    )}
+                    {game.disabled && (
+                      <span className="text-xs text-gray-400 bg-gray-200 px-2 py-1 rounded-full">敬请期待</span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+              
+              {/* 底部提示 */}
+              <div className="px-4 py-3 bg-gray-50 border-t border-gray-100">
+                <p className="text-center text-xs text-gray-400">更多游戏，敬请期待~</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
