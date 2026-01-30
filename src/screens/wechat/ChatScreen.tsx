@@ -877,8 +877,16 @@ export default function ChatScreen() {
               const amt = (m.transferAmount ?? 0).toFixed(2)
               const note = (m.transferNote || '转账').replace(/\s+/g, ' ').slice(0, 30)
               const st = m.transferStatus || 'pending'
-              const stText = st === 'received' ? '已领取' : st === 'refunded' ? '已退还' : '待处理'
-              content = `[发送了转账：¥${amt}，备注"${note}"，${stText}]`
+              // 明确标注转账方向：谁发起的转账，谁是收款方
+              if (m.isUser) {
+                // 用户发起的转账 → 角色是收款方
+                const stText = st === 'received' ? '你已领取' : st === 'refunded' ? '已退还给用户' : '待你领取'
+                content = `[用户给你转账：¥${amt}，备注"${note}"，${stText}]`
+              } else {
+                // 角色发起的转账 → 用户是收款方
+                const stText = st === 'received' ? '用户已领取' : st === 'refunded' ? '已退还给你' : '待用户领取'
+                content = `[你给用户转账：¥${amt}，备注"${note}"，${stText}]`
+              }
               used += content.length
             }
             else if (m.type === 'music') {
@@ -1093,8 +1101,9 @@ export default function ChatScreen() {
           if (m.type === 'transfer') {
             const amt = typeof m.transferAmount === 'number' ? `¥${m.transferAmount.toFixed(2)}` : '¥0.00'
             const st = m.transferStatus || 'pending'
-            const note = (m.transferNote || '转账').replace(/\s+/g, ' ').slice(0, 18)
-            return `转账 ${amt}（${st}｜${note}）`
+            const stText = st === 'received' ? '已领取' : st === 'refunded' ? '已退还' : '待领取'
+            const direction = m.isUser ? '用户→你' : '你→用户'
+            return `转账${amt}（${direction}，${stText}）`
           }
           if (m.type === 'music') {
             const title = (m.musicTitle || '音乐').replace(/\s+/g, ' ').slice(0, 18)
@@ -1546,9 +1555,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           })
         }
 
-        // 根据线下模式字数范围调整 maxTokens
+        // 根据线下模式字数范围调整 maxTokens（线上模式提高到600避免截断）
         const offlineMaxLen = character.offlineMaxLength || 300
-        const dynamicMaxTokens = character.offlineMode ? Math.max(420, Math.ceil(offlineMaxLen * 1.5)) : 420
+        const dynamicMaxTokens = character.offlineMode ? Math.max(600, Math.ceil(offlineMaxLen * 1.5)) : 600
 
         let response = await callLLM(llmMessages, undefined, { maxTokens: dynamicMaxTokens, timeoutMs: 600000 })
         
@@ -1596,7 +1605,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             response = await callLLM(
               [...llmMessages, { role: 'user', content: fixPrompt }],
               undefined,
-              { maxTokens: 420, timeoutMs: 600000 }
+              { maxTokens: 600, timeoutMs: 600000 }
             )
           }
         }
@@ -1616,7 +1625,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             response = await callLLM(
               [...llmMessages, { role: 'user', content: fixLangPrompt }],
               undefined,
-              { maxTokens: 420, timeoutMs: 600000 }
+              { maxTokens: 600, timeoutMs: 600000 }
             )
           }
         }
