@@ -213,7 +213,7 @@ ${MANUAL_TEXT}
         <div className="space-y-4">
           <div className="p-4 bg-gradient-to-r from-pink-100 to-rose-100 rounded-2xl border-2 border-pink-300">
             <h4 className="font-bold text-pink-700 mb-3 text-center text-lg">📱 作者唯一媒体账号</h4>
-            <p className="text-center text-pink-800 font-bold text-xl mb-2">小红书 @米莉亚</p>
+            <p className="text-center text-pink-800 font-bold text-xl mb-2">小红书 @米莉亚Mina</p>
           </div>
           
           <div className="p-4 bg-red-50 rounded-2xl border border-red-200">
