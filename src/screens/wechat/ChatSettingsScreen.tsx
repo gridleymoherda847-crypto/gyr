@@ -125,6 +125,7 @@ export default function ChatSettingsScreen() {
   const [offlineUserColorDraft, setOfflineUserColorDraft] = useState(character?.offlineUserColor || '#2563eb')
   const [offlineCharColorDraft, setOfflineCharColorDraft] = useState(character?.offlineCharColor || '#7c3aed')
   const [offlineDialogColorDraft, setOfflineDialogColorDraft] = useState(character?.offlineDialogColor || '#111827')
+  const [offlineTextBgOpacityDraft, setOfflineTextBgOpacityDraft] = useState(character?.offlineTextBgOpacity ?? 85)
   const [offlineMinLengthDraft, setOfflineMinLengthDraft] = useState(character?.offlineMinLength || 50)
   const [offlineMaxLengthDraft, setOfflineMaxLengthDraft] = useState(character?.offlineMaxLength || 300)
   const [offlineFontIdDraft, setOfflineFontIdDraft] = useState(character?.offlineFontId || '')
@@ -972,6 +973,31 @@ export default function ChatSettingsScreen() {
                         ))}
                       </select>
                       <div className="text-[11px] text-gray-400">设置线下模式的叙事文字字体，留空则使用全局设置</div>
+                    </div>
+                    
+                    {/* 文字底图透明度 */}
+                    <div className="space-y-2 pt-2 border-t border-gray-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500 font-medium">文字底图透明度</span>
+                        <span className="text-xs text-gray-400">{offlineTextBgOpacityDraft}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={offlineTextBgOpacityDraft}
+                        onChange={(e) => {
+                          const val = Number(e.target.value)
+                          setOfflineTextBgOpacityDraft(val)
+                          updateCharacter(character.id, { offlineTextBgOpacity: val })
+                        }}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-500"
+                      />
+                      <div className="flex justify-between text-[10px] text-gray-400">
+                        <span>透明</span>
+                        <span>不透明</span>
+                      </div>
+                      <div className="text-[11px] text-gray-400">调整线下模式聊天文字下方白色底图的透明度</div>
                     </div>
                     
                     {/* 输出字数范围 */}

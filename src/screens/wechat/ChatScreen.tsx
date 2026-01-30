@@ -990,6 +990,32 @@ export default function ChatScreen() {
                 used += 25
               }
             }
+            // 扫雷战绩分享
+            else if (m.type === 'minesweeper_share') {
+              try {
+                const data = JSON.parse(m.content)
+                const won = data.won
+                const difficulty = data.difficulty || '初级'
+                const time = data.time || 0
+                const mins = Math.floor(time / 60)
+                const secs = time % 60
+                const timeStr = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`
+                
+                if (won) {
+                  content = `<MINESWEEPER_RESULT won="true" difficulty="${difficulty}" time="${timeStr}">` +
+                    `用户扫雷通关了！难度【${difficulty}】，用时${timeStr}。` +
+                    `</MINESWEEPER_RESULT>`
+                } else {
+                  content = `<MINESWEEPER_RESULT won="false" difficulty="${difficulty}" time="${timeStr}">` +
+                    `用户扫雷踩到地雷了...难度【${difficulty}】，坚持了${timeStr}。` +
+                    `</MINESWEEPER_RESULT>`
+                }
+                used += content.length
+              } catch {
+                content = '<MINESWEEPER_RESULT />'
+                used += 25
+              }
+            }
             // 基金持仓分享
             else if (m.type === 'fund_share') {
               try {
@@ -4382,6 +4408,52 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       }
     }
 
+    // 扫雷战绩分享卡片
+    if (msg.type === 'minesweeper_share') {
+      try {
+        const data = JSON.parse(msg.content)
+        const won = data.won
+        const winGradient = 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+        const loseGradient = 'linear-gradient(135deg, #636e72 0%, #2d3436 100%)'
+        
+        const formatTime = (s: number) => {
+          const m = Math.floor(s / 60)
+          const sec = s % 60
+          return m > 0 ? `${m}分${sec}秒` : `${sec}秒`
+        }
+        
+        return (
+          <div className="min-w-[140px] max-w-[170px] rounded-xl overflow-hidden shadow-lg">
+            <div 
+              className="p-3 text-white relative"
+              style={{ background: won ? winGradient : loseGradient }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] opacity-80">💣 扫雷</span>
+                <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">{data.difficulty}</span>
+              </div>
+              
+              <div className="text-center py-1">
+                <div className="text-2xl mb-1">{won ? '🏆' : '💥'}</div>
+                <div className="text-base font-bold">{won ? '胜利！' : '踩雷了'}</div>
+                <div className="text-[10px] opacity-80 mt-1">
+                  {data.rows}×{data.cols} · {data.mines}颗雷
+                </div>
+              </div>
+            </div>
+            
+            <div className="px-3 py-2 bg-gray-50 text-center">
+              <div className="text-xs text-gray-600">
+                ⏱️ {formatTime(data.time || 0)}
+              </div>
+            </div>
+          </div>
+        )
+      } catch {
+        return <span>{msg.content}</span>
+      }
+    }
+
     // 基金持仓分享卡片
     if (msg.type === 'fund_share') {
       try {
@@ -5074,7 +5146,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 color: msg.isUser ? offlineUserColor : offlineCharColor,
                 fontFamily: offlineFontFamily,
                 fontStyle: msg.isUser ? 'italic' : 'normal',
-                backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                backgroundColor: `rgba(255, 255, 255, ${(character.offlineTextBgOpacity ?? 85) / 100})`,
               }}
             >
               {renderOfflineContent(msg.content)}

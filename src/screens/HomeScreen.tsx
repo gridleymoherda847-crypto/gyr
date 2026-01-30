@@ -16,8 +16,8 @@ const MAIN_APPS = [
 const GAME_LIST = [
   { id: 'doudizhu', name: '斗地主', route: '/apps/doudizhu', icon: '🃏', desc: '经典纸牌游戏' },
   { id: 'scratchCard', name: '刮刮乐', route: '/apps/scratch-card', icon: '🎫', desc: '试试手气' },
+  { id: 'minesweeper', name: '扫雷', route: '/apps/minesweeper', icon: '💣', desc: '经典益智' },
   { id: 'gacha', name: '扭蛋机', route: '/apps/gacha', icon: '🎰', desc: '即将上线', disabled: true },
-  { id: 'rps', name: '石头剪刀布', route: '/apps/rps', icon: '✊', desc: '即将上线', disabled: true },
 ]
 
 // 跳动的爱心组件 - 黑色填充，无边框

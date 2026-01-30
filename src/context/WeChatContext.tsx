@@ -69,6 +69,7 @@ export type WeChatCharacter = {
   offlineMinLength?: number // 最小输出字数
   offlineMaxLength?: number // 最大输出字数
   offlineFontId?: string // 线下模式字体ID（留空则跟随全局）
+  offlineTextBgOpacity?: number // 线下模式文字底图透明度 0-100，默认85
   // 记忆功能
   memoryRounds: number // 每次回复附带的历史“回合”数量（按用户发言回合计）
   memorySummary: string // 长期记忆摘要（用户可编辑），每次回复必读
@@ -102,7 +103,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice' | 'pat' | 'fund_share' | 'chat_forward' | 'scratch_share'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice' | 'pat' | 'fund_share' | 'chat_forward' | 'scratch_share' | 'minesweeper_share'
   // 群聊相关
   groupId?: string // 群ID（有值=群消息，无值=私聊）
   groupSenderId?: string // 群消息发送者（角色ID）
