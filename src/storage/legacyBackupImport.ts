@@ -88,6 +88,7 @@ const ALLOW_KEYS_EXACT = new Set<string>([
 
   // Game
   'doudizhu_stats',
+  'scratch_card_stats', // 刮刮乐统计
 
   // X (推特)
   'littlephone_x_v1', // X全部数据（用户、推文、私信、关注等）
@@ -221,11 +222,18 @@ export async function importLegacyBackupJsonText(text: string): Promise<LegacyIm
         skipped.push(key)
         continue
       }
+      // 同时写入 IndexedDB 和 localStorage（兼容不同模块的读取方式）
       tasks.push(
         kvSet(key, value).then(() => {
           written++
         })
       )
+      // 同时写入 localStorage（某些模块如创作工坊/世界书从 localStorage 读取）
+      try {
+        localStorage.setItem(key, value)
+      } catch {
+        // localStorage 可能已满，忽略
+      }
     }
     await Promise.all(tasks)
   }
@@ -236,14 +244,46 @@ export async function importLegacyBackupJsonText(text: string): Promise<LegacyIm
 
 export async function exportCurrentBackupJsonText(): Promise<string> {
   const data: Record<string, any> = {}
+  
+  // 1. 从 IndexedDB (kv) 读取数据
   const keys = await kvKeys()
   for (const k of keys) {
     if (!shouldImportKey(k)) continue
     const v = await kvGet(k)
     if (v == null) continue
-    // 保持“旧格式”：value 全部是 string（多数是 JSON 字符串），便于跨版本兼容
+    // 保持"旧格式"：value 全部是 string（多数是 JSON 字符串），便于跨版本兼容
     data[k] = v
   }
+  
+  // 2. 从 localStorage 读取数据（兼容旧版存储方式）
+  // 某些模块（如创作工坊/世界书）仍然使用 localStorage
+  for (const allowedKey of ALLOW_KEYS_EXACT) {
+    if (data[allowedKey]) continue // 已从 IndexedDB 读取过
+    try {
+      const v = localStorage.getItem(allowedKey)
+      if (v != null) {
+        data[allowedKey] = v
+      }
+    } catch {
+      // ignore
+    }
+  }
+  
+  // 3. 从 localStorage 读取前缀匹配的数据
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key || data[key]) continue
+    if (!shouldImportKey(key)) continue
+    try {
+      const v = localStorage.getItem(key)
+      if (v != null) {
+        data[key] = v
+      }
+    } catch {
+      // ignore
+    }
+  }
+  
   return JSON.stringify(
     {
       version: '3.0.0',
@@ -254,4 +294,3 @@ export async function exportCurrentBackupJsonText(): Promise<string> {
     2
   )
 }
-

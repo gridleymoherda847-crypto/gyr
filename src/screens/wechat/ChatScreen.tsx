@@ -1617,6 +1617,16 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         // 最终输出前：线上模式强制剥离思维链（即使模型不听话也不展示）
         if (!character.offlineMode) {
           response = stripThoughtForOnline(response)
+        } else {
+          // 线下模式：清理可能的系统标记（模型有时会输出[线下模式]等标记）
+          response = response
+            .replace(/\[线下模式\]/gi, '')
+            .replace(/【线下模式】/gi, '')
+            .replace(/\(线下模式\)/gi, '')
+            .replace(/（线下模式）/gi, '')
+            .replace(/\[offline\s*mode\]/gi, '')
+            .replace(/---+\s*线下模式\s*---+/gi, '')
+            .trim()
         }
 
         // 分割回复为多条消息（最多15条；即便模型只回一大段也能拆成多条）
@@ -3054,7 +3064,20 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       ], undefined, { maxTokens: dynamicMaxTokens, timeoutMs: 600000 })
       
       if (result) {
-        const lines = splitToReplies(result)
+        // 线下模式：清理可能的系统标记
+        let cleanedResult = result
+        if (character.offlineMode) {
+          cleanedResult = result
+            .replace(/\[线下模式\]/gi, '')
+            .replace(/【线下模式】/gi, '')
+            .replace(/\(线下模式\)/gi, '')
+            .replace(/（线下模式）/gi, '')
+            .replace(/\[offline\s*mode\]/gi, '')
+            .replace(/---+\s*线下模式\s*---+/gi, '')
+            .trim()
+        }
+        
+        const lines = splitToReplies(cleanedResult)
         let delay = 0
         
         for (const line of lines.slice(0, 15)) {

@@ -10,7 +10,7 @@ export default function MusicScreen() {
     playSong, toggleMusic, nextSong, prevSong, seekMusic, toggleFavorite, isFavorite,
     addSong, removeSong
   } = useOS()
-  const [activeTab, setActiveTab] = useState<'recommend' | 'playlist' | 'favorites'>('recommend')
+  const [activeTab, setActiveTab] = useState<'recommend' | 'playlist' | 'favorites' | 'online'>('recommend')
   const [searchQuery, setSearchQuery] = useState('')
   const [showPlayer, setShowPlayer] = useState(false)
   
@@ -182,16 +182,29 @@ export default function MusicScreen() {
             >
               我喜欢
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('online')}
+              className={`text-sm font-medium pb-2 border-b-2 transition-all ${
+                activeTab === 'online' 
+                  ? 'text-[#ff3a3a] border-[#ff3a3a]' 
+                  : 'text-white/60 border-transparent'
+              }`}
+            >
+              🎵 在线
+            </button>
           </div>
           
-          {/* 导入按钮 - 只支持链接导入 */}
-          <button
-            type="button"
-            onClick={() => setShowUrlInput(true)}
-            className="px-3 py-1.5 rounded-full bg-[#31c27c] text-white text-xs font-medium active:opacity-80"
-          >
-            🔗 导入链接
-          </button>
+          {/* 导入按钮 - 只支持链接导入（在线模式下隐藏） */}
+          {activeTab !== 'online' && (
+            <button
+              type="button"
+              onClick={() => setShowUrlInput(true)}
+              className="px-3 py-1.5 rounded-full bg-[#31c27c] text-white text-xs font-medium active:opacity-80"
+            >
+              🔗 导入链接
+            </button>
+          )}
         </div>
 
         {/* 主内容区 */}
@@ -226,41 +239,63 @@ export default function MusicScreen() {
             </>
           )}
 
-          {/* 歌曲列表 */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-white font-medium">
-                {activeTab === 'favorites' ? '我喜欢的音乐' : '全部歌曲'}
-              </span>
-              <span className="text-white/50 text-xs">{displayedSongs.length}首</span>
+          {/* 在线音乐 - QQ音乐嵌入 */}
+          {activeTab === 'online' ? (
+            <div className="h-full flex flex-col -mx-4 -my-3">
+              <div className="bg-gradient-to-r from-green-500 to-green-600 px-4 py-2 flex items-center gap-2">
+                <span className="text-white text-sm font-medium">🎵 QQ音乐</span>
+                <span className="text-white/70 text-xs">登录你的账号即可畅听</span>
+              </div>
+              <iframe
+                src="https://y.qq.com/"
+                className="flex-1 w-full border-0"
+                allow="autoplay; encrypted-media"
+                referrerPolicy="no-referrer"
+                title="QQ音乐"
+              />
+              <div className="bg-gray-900 px-4 py-2 text-center">
+                <p className="text-white/50 text-[10px]">
+                  提示：登录后可听VIP歌曲（需要你自己的VIP账号）
+                </p>
+              </div>
             </div>
-            
-            {displayedSongs.length === 0 ? (
-              <div className="text-center py-10 text-white/40 text-sm">
-                {searchQuery 
-                  ? '没有找到匹配的歌曲~' 
-                  : activeTab === 'favorites' 
-                    ? '还没有喜欢的歌曲' 
-                    : '点击右上角 + 导入音乐'}
+          ) : (
+            /* 歌曲列表 */
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-white font-medium">
+                  {activeTab === 'favorites' ? '我喜欢的音乐' : '全部歌曲'}
+                </span>
+                <span className="text-white/50 text-xs">{displayedSongs.length}首</span>
               </div>
-            ) : (
-              <div className="space-y-1">
-                {displayedSongs.map((song, index) => (
-                  <SongItem 
-                    key={song.id} 
-                    song={song}
-                    index={index + 1}
-                    isPlaying={currentSong?.id === song.id && musicPlaying}
-                    isCurrent={currentSong?.id === song.id}
-                    onPlay={() => playSong(song)}
-                    onToggleFavorite={() => toggleFavorite(song.id)}
-                    onDelete={() => removeSong(song.id)}
-                    isFavorite={isFavorite(song.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+              
+              {displayedSongs.length === 0 ? (
+                <div className="text-center py-10 text-white/40 text-sm">
+                  {searchQuery 
+                    ? '没有找到匹配的歌曲~' 
+                    : activeTab === 'favorites' 
+                      ? '还没有喜欢的歌曲' 
+                      : '点击右上角 + 导入音乐'}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {displayedSongs.map((song, index) => (
+                    <SongItem 
+                      key={song.id} 
+                      song={song}
+                      index={index + 1}
+                      isPlaying={currentSong?.id === song.id && musicPlaying}
+                      isCurrent={currentSong?.id === song.id}
+                      onPlay={() => playSong(song)}
+                      onToggleFavorite={() => toggleFavorite(song.id)}
+                      onDelete={() => removeSong(song.id)}
+                      isFavorite={isFavorite(song.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 底部迷你播放器 - QQ音乐风格 */}
