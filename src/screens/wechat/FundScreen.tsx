@@ -695,7 +695,7 @@ export default function FundScreen({ onBack }: Props) {
             <div className="px-4 py-3 border-b font-medium text-center">游戏规则</div>
             <div className="p-4 text-sm text-gray-600 space-y-2">
               <p>📊 <strong>行情刷新</strong>：每10分钟可刷新一次</p>
-              <p>📉 <strong>涨跌概率</strong>：约35%涨，65%跌</p>
+              <p>📉 <strong>涨跌概率</strong>：约50%涨，50%跌</p>
               <p>💸 <strong>手续费</strong>：买入卖出各收1.5%</p>
               <p>⚠️ <strong>风险等级</strong>：星越多波动越大</p>
               <p>🎯 <strong>温馨提示</strong>：这是娱乐功能，模拟基金涨跌规律，请勿当真～</p>

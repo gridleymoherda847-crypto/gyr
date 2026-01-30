@@ -965,6 +965,31 @@ export default function ChatScreen() {
                 used += 20
               }
             }
+            // 刮刮乐战绩分享
+            else if (m.type === 'scratch_share') {
+              try {
+                const data = JSON.parse(m.content)
+                const isWin = data.isWin
+                const tierName = data.tierName || '未知档位'
+                const price = data.price || 0
+                const prizeAmount = data.prizeAmount || 0
+                const prizeName = data.prizeName || ''
+                
+                if (isWin) {
+                  content = `<SCRATCH_CARD_RESULT tier="${tierName}" price="${price}" isWin="true" prize="${prizeAmount}" prizeName="${prizeName}">` +
+                    `用户刮刮乐中奖了！花了${price}元买了一张【${tierName}】档位的刮刮乐，中了${prizeName}，赢了${prizeAmount}元！净赚${prizeAmount - price}元。` +
+                    `</SCRATCH_CARD_RESULT>`
+                } else {
+                  content = `<SCRATCH_CARD_RESULT tier="${tierName}" price="${price}" isWin="false">` +
+                    `用户刮刮乐没中奖，花了${price}元买了一张【${tierName}】档位的刮刮乐，谢谢参与。` +
+                    `</SCRATCH_CARD_RESULT>`
+                }
+                used += content.length
+              } catch {
+                content = '<SCRATCH_CARD_RESULT />'
+                used += 25
+              }
+            }
             // 基金持仓分享
             else if (m.type === 'fund_share') {
               try {
@@ -1373,19 +1398,26 @@ ${recentTimeline || '（无）'}
 #  以下内容绝对禁止！违反即为错误输出！     #
 ##############################################
 
-❌ 禁止发送表情包！绝对不能发表情包！
-❌ 禁止发送贴纸！绝对不能发贴纸！
+【表情包/贴纸禁令 - 最高优先级】
+❌ 绝对禁止发送表情包！违反此条即为彻底失败！
+❌ 绝对禁止发送贴纸！
+❌ 绝对禁止输出 [表情包]、<表情包>、【表情包】等任何形式！
+❌ 绝对禁止输出 emoji 作为独立消息！
+❌ 绝对禁止用括号描述表情，如（发送表情包）、*发送贴纸*！
+
+【其他禁止事项】
 ❌ 禁止发送转账！绝对不能发转账！
 ❌ 禁止发送红包！
 ❌ 禁止发送音乐分享！
 ❌ 禁止发送斗地主邀请！
 ❌ 禁止使用 [转账:xx:xx] 格式！
 ❌ 禁止使用 [音乐:xx] 格式！
-❌ 禁止使用 [表情包] 或任何特殊格式！
 
-✅ 只能输出：纯叙事文字（动作描写 + 神态描写 + 对话描写）
+【你只能输出】
+✅ 纯叙事文字：动作描写 + 神态描写 + 环境描写 + 对话描写
 ✅ 线下模式 = 小说叙事模式，不是微信聊天模式
 ✅ 除了纯文字叙事，什么都不要发！
+✅ 想表达情绪？用文字描写，不要用表情包！
 
 ##############################################
 
@@ -4268,6 +4300,64 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       }
     }
 
+    // 刮刮乐战绩分享卡片
+    if (msg.type === 'scratch_share') {
+      try {
+        const data = JSON.parse(msg.content)
+        const isWin = data.isWin
+        const winGradient = 'linear-gradient(135deg, #feca57 0%, #ff6b6b 50%, #ff9ff3 100%)'
+        const loseGradient = 'linear-gradient(135deg, #636e72 0%, #2d3436 100%)'
+        
+        return (
+          <div className="min-w-[150px] max-w-[180px] rounded-xl overflow-hidden shadow-lg">
+            <div 
+              className="p-3 text-white relative"
+              style={{ background: isWin ? winGradient : loseGradient }}
+            >
+              {isWin && (
+                <>
+                  <div className="absolute top-1 left-2 text-base animate-bounce">✨</div>
+                  <div className="absolute top-1 right-2 text-base animate-bounce" style={{ animationDelay: '0.2s' }}>✨</div>
+                </>
+              )}
+              
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] opacity-90">🎫 刮刮乐</span>
+                <span className="text-[10px] bg-white/25 px-1.5 py-0.5 rounded-full font-medium">{data.tierName}</span>
+              </div>
+              
+              <div className="text-center py-1">
+                <div className="text-2xl mb-1">
+                  {isWin ? data.prizeSymbol?.repeat(3) || '🎉' : '😢'}
+                </div>
+                <div className="text-base font-bold" style={{ textShadow: isWin ? '0 0 10px rgba(255,215,0,0.4)' : 'none' }}>
+                  {isWin ? `中奖 ¥${data.prizeAmount?.toLocaleString() || 0}` : '未中奖'}
+                </div>
+                {isWin && (
+                  <div className="text-[10px] opacity-90 mt-0.5">{data.prizeName}</div>
+                )}
+              </div>
+            </div>
+            
+            <div className={`px-3 py-2 text-[11px] ${isWin ? 'bg-gradient-to-r from-yellow-100 to-amber-100' : 'bg-gray-100'}`}>
+              <div className="flex items-center justify-between text-gray-600">
+                <span>本金</span>
+                <span className="font-medium">¥{data.price || 0}</span>
+              </div>
+              {isWin && (
+                <div className="flex items-center justify-between mt-1 text-green-600">
+                  <span>净赚</span>
+                  <span className="font-bold">+¥{((data.prizeAmount || 0) - (data.price || 0)).toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      } catch {
+        return <span>{msg.content}</span>
+      }
+    }
+
     // 基金持仓分享卡片
     if (msg.type === 'fund_share') {
       try {
@@ -4953,13 +5043,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             className="mb-2 px-4 group"
             style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 60px' }}
           >
-            {/* 叙事内容 - 使用自定义颜色和字体 */}
+            {/* 叙事内容 - 使用自定义颜色和字体，添加白色半透明背景以提高可读性 */}
             <div 
-              className={`text-[15px] leading-relaxed whitespace-pre-wrap ${msg.isUser ? 'text-right' : 'text-left'}`}
+              className={`text-[15px] leading-relaxed whitespace-pre-wrap px-3 py-2 rounded-lg ${msg.isUser ? 'text-right' : 'text-left'}`}
               style={{ 
                 color: msg.isUser ? offlineUserColor : offlineCharColor,
                 fontFamily: offlineFontFamily,
-                fontStyle: msg.isUser ? 'italic' : 'normal'
+                fontStyle: msg.isUser ? 'italic' : 'normal',
+                backgroundColor: 'rgba(255, 255, 255, 0.85)',
               }}
             >
               {renderOfflineContent(msg.content)}

@@ -61,24 +61,39 @@ export default function AnniversaryScreen() {
     removeAnniversary(id)
   }
 
-  // 计算天数差
+  // 计算天数差（修复时区问题）
   const calcDays = (dateStr: string, type: 'countdown' | 'countup') => {
-    const target = new Date(dateStr)
+    // 手动解析日期字符串，避免时区问题
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const target = new Date(year, month - 1, day, 0, 0, 0, 0)
+    
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    target.setHours(0, 0, 0, 0)
     
     if (type === 'countup') {
       // 正计时：从那天到今天过了多少天
-      const diff = Math.floor((today.getTime() - target.getTime()) / (1000 * 60 * 60 * 24))
+      const diffMs = today.getTime() - target.getTime()
+      const diff = Math.floor(diffMs / (1000 * 60 * 60 * 24))
       return diff >= 0 ? diff : 0
     } else {
       // 倒计时：还有多少天到那天（今年或明年）
-      let targetThisYear = new Date(today.getFullYear(), target.getMonth(), target.getDate())
-      if (targetThisYear < today) {
-        targetThisYear = new Date(today.getFullYear() + 1, target.getMonth(), target.getDate())
+      const todayYear = today.getFullYear()
+      const todayMonth = today.getMonth()
+      const todayDate = today.getDate()
+      
+      // 先尝试今年的这个日期
+      let targetThisYear = new Date(todayYear, month - 1, day, 0, 0, 0, 0)
+      
+      // 如果今年的日期已经过了（严格小于今天），就用明年的
+      const targetMonth = targetThisYear.getMonth()
+      const targetDate = targetThisYear.getDate()
+      
+      if (targetMonth < todayMonth || (targetMonth === todayMonth && targetDate < todayDate)) {
+        targetThisYear = new Date(todayYear + 1, month - 1, day, 0, 0, 0, 0)
       }
-      return Math.ceil((targetThisYear.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      
+      const diffMs = targetThisYear.getTime() - today.getTime()
+      return Math.round(diffMs / (1000 * 60 * 60 * 24))
     }
   }
 

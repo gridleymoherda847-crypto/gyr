@@ -29,6 +29,7 @@ const SmsScreen = lazy(() => import('./screens/SmsScreen'))
 const MusicScreen = lazy(() => import('./screens/MusicScreen'))
 const PresetScreen = lazy(() => import('./screens/PresetScreen'))
 const DoudizhuScreen = lazy(() => import('./screens/DoudizhuScreen'))
+const ScratchCardScreen = lazy(() => import('./screens/ScratchCardScreen'))
 const XScreen = lazy(() => import('./screens/XScreen'))
 const ManualScreen = lazy(() => import('./screens/ManualScreen'))
 const AnniversaryScreen = lazy(() => import('./screens/AnniversaryScreen'))
@@ -152,6 +153,7 @@ function InnerApp() {
             <Route path="/apps/music" element={<MusicScreen />} />
             <Route path="/apps/preset" element={<PresetScreen />} />
             <Route path="/apps/doudizhu" element={<DoudizhuScreen />} />
+            <Route path="/apps/scratch-card" element={<ScratchCardScreen />} />
             <Route path="/apps/x" element={<XScreen />} />
             <Route path="/apps/manual" element={<ManualScreen />} />
             <Route path="/apps/anniversary" element={<AnniversaryScreen />} />

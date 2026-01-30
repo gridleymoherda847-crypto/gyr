@@ -102,7 +102,7 @@ export type WeChatMessage = {
   content: string
   isUser: boolean
   timestamp: number
-  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice' | 'pat' | 'fund_share' | 'chat_forward'
+  type: 'text' | 'image' | 'sticker' | 'transfer' | 'music' | 'diary' | 'tweet_share' | 'x_profile_share' | 'couple' | 'period' | 'system' | 'doudizhu_share' | 'doudizhu_invite' | 'location' | 'location_request' | 'voice' | 'pat' | 'fund_share' | 'chat_forward' | 'scratch_share'
   // 群聊相关
   groupId?: string // 群ID（有值=群消息，无值=私聊）
   groupSenderId?: string // 群消息发送者（角色ID）
@@ -644,15 +644,14 @@ function refreshFundPrice(fund: Fund): Fund {
 
   const [upMin, upMax, downMin, downMax] = riskVolatility[fund.riskLevel]
   
-  // 基础概率：35%涨，65%跌
-  let upChance = 0.35
+  // 基础概率：50%涨，50%跌
+  let upChance = 0.50
   
-  // 连续下跌后给个假反弹（诱多）
-  if (fund.consecutiveDrops >= 4) {
-    upChance = 0.75 // 连跌4次后，75%概率反弹
-  } else if (fund.consecutiveDrops >= 2) {
-    // 跌后更容易继续跌
-    upChance = 0.25
+  // 连续下跌后给个反弹机会
+  if (fund.consecutiveDrops >= 3) {
+    upChance = 0.65 // 连跌3次后，65%概率反弹
+  } else if (fund.consecutiveDrops >= 5) {
+    upChance = 0.80 // 连跌5次后，80%概率反弹
   }
   
   const isUp = Math.random() < upChance
