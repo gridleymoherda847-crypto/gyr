@@ -399,7 +399,7 @@ export default function ChatsTab({ onBack }: Props) {
                   {/* 内容 */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className="font-medium text-[#000] text-sm">{char.name}</span>
+                      <span className="font-medium text-[#000] text-sm">{char.nickname || char.name}</span>
                       <span className="text-xs text-gray-400">{timeStr}</span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1 truncate">
@@ -599,7 +599,7 @@ export default function ChatsTab({ onBack }: Props) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1">
-                        <span className="font-medium text-[#000] truncate">{character.name}</span>
+                        <span className="font-medium text-[#000] truncate">{character.nickname || character.name}</span>
                         {character.isPinned && (
                           <svg className="w-3 h-3 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z"/>

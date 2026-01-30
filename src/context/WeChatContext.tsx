@@ -37,6 +37,7 @@ export type CharacterLanguage = 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'
 export type WeChatCharacter = {
   id: string
   name: string
+  nickname?: string // 用户自定义备注名（仅显示用，不影响AI读取的人设）
   avatar: string
   gender: 'male' | 'female' | 'other'
   prompt: string

@@ -617,7 +617,12 @@ export default function ChatSettingsScreen() {
                 }}
               />
               <div className="flex-1">
-                <div className="font-semibold text-lg text-[#000]">{character.name}</div>
+                <div className="font-semibold text-lg text-[#000]">
+                  {character.nickname || character.name}
+                  {character.nickname && (
+                    <span className="text-xs text-gray-400 font-normal ml-1">（{character.name}）</span>
+                  )}
+                </div>
                 <div className="text-sm text-gray-500 mt-0.5">
                   {character.gender === 'male' ? '男' : character.gender === 'female' ? '女' : '其他'}
                   {character.relationship && ` · ${character.relationship}`}
@@ -633,6 +638,21 @@ export default function ChatSettingsScreen() {
               </button>
             </div>
             
+            {/* 设置备注 */}
+            <div className="mt-3 w-full px-3 py-3 rounded-xl bg-white/70 border border-black/10">
+              <div className="flex items-center justify-between">
+                <div className="text-[#000] font-medium">设置备注</div>
+                <span className="text-[10px] text-gray-400">仅你可见，不影响AI</span>
+              </div>
+              <input
+                type="text"
+                value={character.nickname || ''}
+                onChange={(e) => updateCharacter(character.id, { nickname: e.target.value || undefined })}
+                placeholder="给TA起个备注名..."
+                className="mt-2 w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 text-sm outline-none focus:ring-2 focus:ring-green-400/50"
+              />
+            </div>
+
             {/* 角色人设入口（避免在此处展示长文本） */}
             <button
               type="button"

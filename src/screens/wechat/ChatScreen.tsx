@@ -1428,8 +1428,15 @@ ${recentTimeline || '（无）'}
 【线下模式要求】
 - 每次只输出一段完整的叙事，不要分成多条消息
 - 包含：神态描写 + 动作描写 + 语言描写（如果有）
-- 保持你的人设性格，用第三人称叙事方式展现
+- 保持你的人设性格
 - 仔细阅读上面的对话历史，确保回复与上下文相关
+
+【人称视角 - 必须遵守】
+- 叙事部分必须使用第三人称：用「${character.name}」和「${selectedPersona?.name || '对方'}」的名字来描写
+- ❌ 禁止在叙事中使用"我"、"你"！
+- ❌ 错误示例："我看着你微笑"、"你的眼神让我心动"
+- ✅ 正确示例："${character.name}看着${selectedPersona?.name || '对方'}微笑"、"${selectedPersona?.name || '对方'}的眼神让${character.name}心动"
+- 对话内容（引号内）仍然使用第一人称，如："${character.name}轻声说道：「我喜欢你。」"
 
 ##############################################
 #  【线下模式 - 绝对禁止事项】              #
@@ -5545,7 +5552,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 <span className="text-[13px] font-medium">返回</span>
               </button>
               <div className="flex flex-col items-center">
-                <span className="font-semibold text-[#000]">{character.name}</span>
+                <span className="font-semibold text-[#000]">{character.nickname || character.name}</span>
                 {showTyping && (
                   <span className="text-[10px] text-gray-500 mt-0.5">
                     对方正在输入中...
