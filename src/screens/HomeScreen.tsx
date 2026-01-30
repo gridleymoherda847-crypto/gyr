@@ -53,44 +53,29 @@ export default function HomeScreen() {
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [showGameCenter, setShowGameCenter] = useState(false) // 游戏大厅悬浮窗
   
-  // 新手引导相关状态
+  // 免责声明状态
   const [showDisclaimer, setShowDisclaimer] = useState(() => {
     return localStorage.getItem('mina_disclaimer_agreed') !== 'true'
   })
-  const [showNewUserGuide, setShowNewUserGuide] = useState(false)
-  const [showVeteranMessage, setShowVeteranMessage] = useState(false)
-  const [showTutorialLink, setShowTutorialLink] = useState(false)
   
-  // 新手教程文档链接
-  const tutorialDocUrl = 'https://ucn6kusdy9lu.feishu.cn/wiki/BCdbw0VipiOIWYkll5vcDtX7nYf?from=from_copylink'
+  // 首次打开提醒弹窗状态
+  const [showWelcomeTip, setShowWelcomeTip] = useState(() => {
+    return localStorage.getItem('mina_welcome_tip_dismissed') !== 'true'
+  })
+  const [dontShowAgain, setDontShowAgain] = useState(false)
   
   // 同意免责声明
   const handleAgreeDisclaimer = () => {
     localStorage.setItem('mina_disclaimer_agreed', 'true')
     setShowDisclaimer(false)
-    if (localStorage.getItem('mina_tutorial_completed') !== 'true') {
-      setShowNewUserGuide(true)
+  }
+  
+  // 关闭首次提醒弹窗
+  const handleCloseWelcomeTip = () => {
+    if (dontShowAgain) {
+      localStorage.setItem('mina_welcome_tip_dismissed', 'true')
     }
-  }
-  
-  // 选择新玩家 - 显示教程文档链接
-  const handleNewPlayer = () => {
-    setShowNewUserGuide(false)
-    localStorage.setItem('mina_tutorial_completed', 'true')
-    setShowTutorialLink(true)
-  }
-  
-  // 选择老玩家
-  const handleVeteranPlayer = () => {
-    setShowNewUserGuide(false)
-    localStorage.setItem('mina_tutorial_completed', 'true')
-    setShowVeteranMessage(true)
-  }
-  
-  // 复制链接
-  const copyTutorialLink = () => {
-    navigator.clipboard.writeText(tutorialDocUrl)
-    alert('链接已复制！')
+    setShowWelcomeTip(false)
   }
   
   const now = new Date()
@@ -813,91 +798,51 @@ export default function HomeScreen() {
         </div>
       )}
       
-      {/* 新手引导询问弹窗 */}
-      {showNewUserGuide && (
+      {/* 首次打开提醒弹窗 */}
+      {showWelcomeTip && !showDisclaimer && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-6 text-center">
-              <div className="text-5xl mb-4">🎮</div>
-              <h2 className="text-xl font-bold text-gray-800 mb-2">你好呀！</h2>
-              <p className="text-sm text-gray-500 mb-6">请问你是第一次使用小手机吗？</p>
+          <div className="w-full max-w-[340px] bg-white rounded-2xl overflow-hidden shadow-xl">
+            <div className="p-5">
+              <div className="text-center mb-4">
+                <div className="text-4xl mb-2">📱</div>
+                <h2 className="text-lg font-bold text-gray-800">欢迎使用小手机</h2>
+              </div>
+              
               <div className="space-y-3">
-                <button
-                  onClick={handleNewPlayer}
-                  className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98] shadow-lg"
-                >
-                  🌱 我是小手机新玩家
-                </button>
-                <button
-                  onClick={handleVeteranPlayer}
-                  className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl text-[15px] active:scale-[0.98]"
-                >
-                  🏆 我是小手机老玩家
-                </button>
+                <div className="p-3 bg-blue-50 rounded-xl">
+                  <p className="text-[13px] text-blue-800 font-medium">📖 使用手册</p>
+                  <p className="text-[12px] text-blue-600 mt-1">
+                    遇到问题请查阅主页的「使用手册」，里面有「智能搜索」功能，可以快速找到答案
+                  </p>
+                </div>
+                
+                <div className="p-3 bg-orange-50 rounded-xl">
+                  <p className="text-[13px] text-orange-800 font-medium">🔑 关于API</p>
+                  <p className="text-[12px] text-orange-600 mt-1">
+                    API相关问题请自行解决，可在某鱼、某书搜索购买，作者不提供解答服务
+                  </p>
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* 老玩家提示弹窗 */}
-      {showVeteranMessage && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-6 text-center">
-              <div className="text-5xl mb-4">👑</div>
-              <h2 className="text-xl font-bold text-gray-800 mb-2">原来是元老级别的！</h2>
-              <p className="text-sm text-gray-500 mb-4">
-                好勒，那我溜了～
-              </p>
-              <div className="p-3 bg-purple-50 rounded-xl mb-4">
-                <p className="text-xs text-purple-700">
-                  💡 对了对了，如果遇到不会使用的问题，告诉你一个宝典：
-                </p>
-                <p className="text-sm text-purple-800 font-medium mt-1">
-                  在主页「使用手册」里有个「问答百科」智能搜索功能，超好用的！
-                </p>
+              
+              <div className="mt-4 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="dontShowAgain"
+                  checked={dontShowAgain}
+                  onChange={(e) => setDontShowAgain(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-green-500 focus:ring-green-500"
+                />
+                <label htmlFor="dontShowAgain" className="text-[12px] text-gray-500">
+                  不再显示此提醒
+                </label>
               </div>
+              
               <button
-                onClick={() => setShowVeteranMessage(false)}
-                className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98]"
+                onClick={handleCloseWelcomeTip}
+                className="mt-4 w-full py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold rounded-xl text-[14px] active:scale-[0.98]"
               >
-                好嘞，知道了
+                我知道了
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* 新手教程文档链接弹窗 */}
-      {showTutorialLink && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-6 text-center">
-              <div className="text-5xl mb-4">📚</div>
-              <h2 className="text-xl font-bold text-gray-800 mb-2">新手教程</h2>
-              <p className="text-sm text-gray-500 mb-4">
-                请复制下方链接，在浏览器中打开查看详细教程
-              </p>
-              <div className="p-3 bg-gray-100 rounded-xl mb-4">
-                <p className="text-xs text-gray-600 break-all select-all">
-                  {tutorialDocUrl}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <button
-                  onClick={copyTutorialLink}
-                  className="w-full py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98]"
-                >
-                  📋 复制链接
-                </button>
-                <button
-                  onClick={() => setShowTutorialLink(false)}
-                  className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl text-[15px] active:scale-[0.98]"
-                >
-                  我知道了
-                </button>
-              </div>
             </div>
           </div>
         </div>

@@ -122,14 +122,6 @@ export default function ManualScreen() {
     return localStorage.getItem('mina_disclaimer_agreed') !== 'true'
   })
   
-  // 新手引导相关状态
-  const [showNewUserGuide, setShowNewUserGuide] = useState(false)
-  const [showVeteranMessage, setShowVeteranMessage] = useState(false)
-  const [showTutorialLink, setShowTutorialLink] = useState(false)
-  
-  // 新手教程文档链接
-  const tutorialDocUrl = 'https://ucn6kusdy9lu.feishu.cn/wiki/BCdbw0VipiOIWYkll5vcDtX7nYf?from=from_copylink'
-  
   // 问答搜索相关状态
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearchConfirm, setShowSearchConfirm] = useState(false)
@@ -141,30 +133,6 @@ export default function ManualScreen() {
   const handleAgreeDisclaimer = () => {
     localStorage.setItem('mina_disclaimer_agreed', 'true')
     setShowDisclaimer(false)
-    // 检查是否需要显示新手引导（首次使用）
-    if (localStorage.getItem('mina_tutorial_completed') !== 'true') {
-      setShowNewUserGuide(true)
-    }
-  }
-  
-  // 选择新玩家 - 显示教程文档链接
-  const handleNewPlayer = () => {
-    setShowNewUserGuide(false)
-    localStorage.setItem('mina_tutorial_completed', 'true')
-    setShowTutorialLink(true)
-  }
-  
-  // 选择老玩家
-  const handleVeteranPlayer = () => {
-    setShowNewUserGuide(false)
-    localStorage.setItem('mina_tutorial_completed', 'true')
-    setShowVeteranMessage(true)
-  }
-  
-  // 复制链接
-  const copyTutorialLink = () => {
-    navigator.clipboard.writeText(tutorialDocUrl)
-    alert('链接已复制！')
   }
   
   // 执行问答搜索
@@ -257,26 +225,6 @@ ${MANUAL_TEXT}
               <br />路径：设置 → 导出数据
               <br />小手机没有云端数据库，数据存在浏览器本地，清除浏览器数据会导致全部丢失！
             </p>
-          </div>
-          
-          {/* 新手基础教程链接 */}
-          <div className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-2xl border border-blue-200">
-            <h4 className="font-bold text-blue-700 mb-2">📚 新手基础教程链接</h4>
-            <p className="text-sm text-blue-600 mb-3">复制链接到浏览器打开，查看详细的新手教程文档</p>
-            <div className="p-2 bg-white/60 rounded-xl mb-3">
-              <p className="text-xs text-gray-600 break-all select-all">
-                https://ucn6kusdy9lu.feishu.cn/wiki/BCdbw0VipiOIWYkll5vcDtX7nYf?from=from_copylink
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText('https://ucn6kusdy9lu.feishu.cn/wiki/BCdbw0VipiOIWYkll5vcDtX7nYf?from=from_copylink')
-                alert('链接已复制！')
-              }}
-              className="w-full py-2.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-xl text-sm active:scale-[0.98]"
-            >
-              📋 复制链接
-            </button>
           </div>
           
           <h4 className="font-bold text-lg">📱 屏幕适配问题</h4>
@@ -1202,95 +1150,6 @@ ${MANUAL_TEXT}
           </div>
         )}
         
-        {/* 新手引导询问弹窗 */}
-        {showNewUserGuide && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-6 text-center">
-                <div className="text-5xl mb-4">🎮</div>
-                <h2 className="text-xl font-bold text-gray-800 mb-2">你好呀！</h2>
-                <p className="text-sm text-gray-500 mb-6">请问你是第一次使用小手机吗？</p>
-                <div className="space-y-3">
-                  <button
-                    onClick={handleNewPlayer}
-                    className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98] shadow-lg"
-                  >
-                    🌱 我是小手机新玩家
-                  </button>
-                  <button
-                    onClick={handleVeteranPlayer}
-                    className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl text-[15px] active:scale-[0.98]"
-                  >
-                    🏆 我是小手机老玩家
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {/* 老玩家提示弹窗 */}
-        {showVeteranMessage && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-6 text-center">
-                <div className="text-5xl mb-4">👑</div>
-                <h2 className="text-xl font-bold text-gray-800 mb-2">原来是元老级别的！</h2>
-                <p className="text-sm text-gray-500 mb-4">
-                  好勒，那我溜了～
-                </p>
-                <div className="p-3 bg-purple-50 rounded-xl mb-4">
-                  <p className="text-xs text-purple-700">
-                    💡 对了对了，如果遇到不会使用的问题，告诉你一个宝典：
-                  </p>
-                  <p className="text-sm text-purple-800 font-medium mt-1">
-                    在主页「使用手册」里有个「问答百科」智能搜索功能，超好用的！
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowVeteranMessage(false)}
-                  className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98]"
-                >
-                  好嘞，知道了
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {/* 新手教程文档链接弹窗 */}
-        {showTutorialLink && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-6 text-center">
-                <div className="text-5xl mb-4">📚</div>
-                <h2 className="text-xl font-bold text-gray-800 mb-2">新手教程</h2>
-                <p className="text-sm text-gray-500 mb-4">
-                  请复制下方链接，在浏览器中打开查看详细教程
-                </p>
-                <div className="p-3 bg-gray-100 rounded-xl mb-4">
-                  <p className="text-xs text-gray-600 break-all select-all">
-                    {tutorialDocUrl}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <button
-                    onClick={copyTutorialLink}
-                    className="w-full py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-xl text-[15px] active:scale-[0.98]"
-                  >
-                    📋 复制链接
-                  </button>
-                  <button
-                    onClick={() => setShowTutorialLink(false)}
-                    className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl text-[15px] active:scale-[0.98]"
-                  >
-                    我知道了
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </PageContainer>
   )
