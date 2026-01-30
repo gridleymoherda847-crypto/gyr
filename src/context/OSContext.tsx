@@ -1347,6 +1347,16 @@ export function OSProvider({ children }: PropsWithChildren) {
         )
       }
 
+      // 处理“上游返回了错误文案但被当作正常回复”的情况（极窄匹配，避免误伤）
+      // 例：This version of Antigravity is no longer Supported.Please update to receive the latest features!
+      if (/This version of Antigravity is no longer Supported\.?Please update to receive the latest features!?/i.test(finalText)) {
+        throw new Error(
+          '接口返回了上游错误提示（Antigravity 版本不支持），并非模型正常回复。\n' +
+            '这通常意味着：你使用的中转/网关服务端返回了“升级提示页/错误文案”，但仍然用 200 返回。\n' +
+            '建议：更换一个 OpenAI 兼容中转、或让对方升级/修复该网关服务。'
+        )
+      }
+
       // 兜底：Gemini 2.5 / 部分中转容易 length 截断（话说一半）
       // 如果看到 finish_reason=length，自动走一次“继续输出”的补全（同域转发更稳定且无 CORS）
       const finishReason =
