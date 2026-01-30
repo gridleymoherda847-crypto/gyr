@@ -4421,7 +4421,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               }
             }}
             disabled={!hasUrl}
-            className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all active:scale-[0.98] ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-transform active:scale-[0.98] ${
               msg.isUser 
                 ? 'bg-green-500 text-white' 
                 : 'bg-white text-gray-800 shadow-sm border border-gray-100'
@@ -5006,7 +5006,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           data-msg-id={msg.id}
           // 性能优化：聊天长列表在移动端非常吃力；content-visibility 可显著减少重绘/布局开销
           style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 140px' }}
-          className={highlightedMsgId === msg.id ? 'animate-pulse bg-yellow-100 rounded-xl transition-colors duration-1000' : ''}
+          className={highlightedMsgId === msg.id ? 'bg-yellow-100 rounded-xl' : ''}
         >
           <div className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
             {/* 编辑模式：可勾选双方消息 */}
@@ -5359,23 +5359,28 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         <div
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto px-3 py-4"
-          style={{ contain: 'content', willChange: 'transform', WebkitOverflowScrolling: 'touch' }}
-          onScroll={() => {
-            const el = messagesContainerRef.current
-            if (!el) return
-            // 触顶：加载更早消息
-            if (el.scrollTop < 80 && startIndex > 0 && !loadingMoreRef.current) {
-              loadingMoreRef.current = true
-              tailModeRef.current = false
-              prevScrollHeightRef.current = el.scrollHeight
-              prevScrollTopRef.current = el.scrollTop
-              setStartIndex((prev) => Math.max(0, prev - PAGE_SIZE))
-            }
-            const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-            nearBottomRef.current = distanceToBottom < 140
-            if (nearBottomRef.current) {
-              tailModeRef.current = true
-            }
+          style={{ contain: 'strict', willChange: 'scroll-position', WebkitOverflowScrolling: 'touch', transform: 'translateZ(0)' }}
+          onScroll={(e) => {
+            // 性能优化：使用 requestAnimationFrame 节流滚动处理
+            if ((e.target as any)._scrollRafId) return
+            (e.target as any)._scrollRafId = requestAnimationFrame(() => {
+              (e.target as any)._scrollRafId = null
+              const el = messagesContainerRef.current
+              if (!el) return
+              // 触顶：加载更早消息
+              if (el.scrollTop < 80 && startIndex > 0 && !loadingMoreRef.current) {
+                loadingMoreRef.current = true
+                tailModeRef.current = false
+                prevScrollHeightRef.current = el.scrollHeight
+                prevScrollTopRef.current = el.scrollTop
+                setStartIndex((prev) => Math.max(0, prev - PAGE_SIZE))
+              }
+              const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+              nearBottomRef.current = distanceToBottom < 140
+              if (nearBottomRef.current) {
+                tailModeRef.current = true
+              }
+            })
           }}
         >
           {messages.length === 0 ? (
@@ -5428,7 +5433,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               <button
                 type="button"
                 onClick={handleRegenerate}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/80 shadow-sm text-xs text-gray-500 hover:bg-white active:scale-95 transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/80 shadow-sm text-xs text-gray-500 hover:bg-white active:scale-95 transition-transform"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
