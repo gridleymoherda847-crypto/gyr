@@ -750,6 +750,29 @@ export default function ChatScreen() {
           t = t.replace(/<think[\s\S]*?<\/think>/gi, '')
           t = t.replace(/<analysis[\s\S]*?<\/analysis>/gi, '')
 
+          // 【重要】过滤 AI 错误输出的系统标记（如 <STICKER/>、<STIVKER/>、<FUND_SHARE/> 等）
+          // 这些是上下文中用于标记消息类型的，AI 不应该在回复中输出
+          t = t.replace(/<\s*STICKER\s*\/?>/gi, '')
+          t = t.replace(/<\s*STIVKER\s*\/?>/gi, '') // 常见拼写错误
+          t = t.replace(/<\s*FUND_SHARE\s*\/?>/gi, '')
+          t = t.replace(/<\s*IMAGE\s*\/?>/gi, '')
+          t = t.replace(/<\s*VOICE\s*\/?>/gi, '')
+          t = t.replace(/<\s*TRANSFER\s*\/?>/gi, '')
+          t = t.replace(/<\s*LOCATION\s*\/?>/gi, '')
+          t = t.replace(/<\s*MUSIC\s*\/?>/gi, '')
+          t = t.replace(/<\s*PAT\s*\/?>/gi, '')
+          // 通用兜底：任何 <XXXX/> 或 <XXXX /> 格式的标记（全大写字母+下划线）
+          t = t.replace(/<[A-Z_]+\s*\/?>/g, '')
+
+          // 【重要】过滤 AI 错误输出的拍一拍格式（应由系统处理，AI 不应输出）
+          // 包括：[拍一拍：xxx]、[拍了拍xxx]、*拍一拍*、（拍一拍）等
+          t = t.replace(/\[拍一拍[：:][^\]]*\]/g, '')
+          t = t.replace(/\[拍了拍[^\]]*\]/g, '')
+          t = t.replace(/\[拍一拍\]/g, '')
+          t = t.replace(/[*＊]拍一拍[^\n*＊]*[*＊]/g, '')
+          t = t.replace(/（拍一拍[^）]*）/g, '')
+          t = t.replace(/\(拍一拍[^)]*\)/g, '')
+
           // 如果模型输出了“Final/Answer/正文/最终回复”等分隔符，取后半段
           const marker = t.match(/(?:^|\n)\s*(最终回复|最终答案|正文|回复|Final|Answer)\s*[:：]\s*/i)
           if (marker && marker.index != null) {
@@ -2988,18 +3011,34 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         // 用户主动发送：强制滚到底部
         forceScrollRef.current = true
         nearBottomRef.current = true
-        const newMsg = addMessage({
-          characterId: character.id,
-          content: base64, // base64格式，可被AI识别
-          isUser: true,
-          type: 'image',
-        })
-        messagesRef.current = [...messagesRef.current, newMsg]
-        setShowPlusMenu(false)
-        setActivePanel(null)
         
-        // 用AI生成真人式回复（遵守自动/手动模式）
-        generateHumanLikeReplies('给你发了一张图片')
+        // 线下模式：图片以特殊格式发送，不弹出气泡和头像
+        if (character.offlineMode) {
+          const newMsg = addMessage({
+            characterId: character.id,
+            content: base64,
+            isUser: true,
+            type: 'image',
+            isOffline: true, // 标记为线下模式消息
+          })
+          messagesRef.current = [...messagesRef.current, newMsg]
+          setShowPlusMenu(false)
+          setActivePanel(null)
+          // 线下模式：手动触发才回复
+        } else {
+          const newMsg = addMessage({
+            characterId: character.id,
+            content: base64, // base64格式，可被AI识别
+            isUser: true,
+            type: 'image',
+          })
+          messagesRef.current = [...messagesRef.current, newMsg]
+          setShowPlusMenu(false)
+          setActivePanel(null)
+          
+          // 用AI生成真人式回复（遵守自动/手动模式）
+          generateHumanLikeReplies('给你发了一张图片')
+        }
       }
       reader.readAsDataURL(file)
     }
@@ -4811,7 +4850,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         !msg.isUser && character.isBlocked && character.blockedAt && msg.timestamp > character.blockedAt
 
       // 线下模式消息的特殊渲染（不显示头像和气泡，使用叙事风格）
-      if (msg.isOffline && msg.type === 'text') {
+      if (msg.isOffline && (msg.type === 'text' || msg.type === 'image')) {
         // 获取自定义颜色设置
         const offlineUserColor = character.offlineUserColor || '#2563eb'
         const offlineCharColor = character.offlineCharColor || '#7c3aed'
@@ -4843,6 +4882,37 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             // 普通叙述文字：使用叙述颜色
             return <span key={i}>{part}</span>
           })
+        }
+        
+        // 线下模式图片特殊渲染
+        if (msg.type === 'image') {
+          return (
+            <div
+              key={msg.id}
+              className="mb-2 px-4 group"
+              style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 200px' }}
+            >
+              {/* 图片：居中显示，点击可放大 */}
+              <div className={`${msg.isUser ? 'text-right' : 'text-left'}`}>
+                <img
+                  src={msg.content}
+                  alt="图片"
+                  className="inline-block max-w-[200px] max-h-[280px] rounded-lg object-cover cursor-pointer active:scale-[0.98] border border-gray-200"
+                  onClick={() => window.open(msg.content, '_blank')}
+                />
+              </div>
+              {/* 操作按钮：删除 */}
+              <div className={`mt-1.5 flex gap-3 ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
+                <button
+                  type="button"
+                  onClick={() => deleteMessage(msg.id)}
+                  className="text-xs text-gray-300 hover:text-red-500 active:opacity-70"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          )
         }
         
         return (
@@ -5437,24 +5507,20 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               {!activePanel ? (
                 <div className="grid grid-cols-4 gap-4">
                   {/* === 第一行：实用功能 === */}
-                  {/* 相册 - 线下模式禁用 */}
+                  {/* 相册 - 线下模式也可用 */}
                   <button 
                     type="button" 
                     onClick={() => {
-                      if (character.offlineMode) {
-                        setInfoDialog({ open: true, title: '线下模式', message: '线下模式暂不支持此功能' })
-                        return
-                      }
                       imageInputRef.current?.click()
                     }} 
                     className="flex flex-col items-center gap-1"
                   >
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${character.offlineMode ? 'bg-gray-100 opacity-40' : 'bg-white/60'}`}>
-                      <svg className={`w-6 h-6 ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-sm bg-white/60">
+                      <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
                       </svg>
                     </div>
-                    <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>相册</span>
+                    <span className="text-xs text-gray-600">相册</span>
                   </button>
                   <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleSendImage} />
                   
