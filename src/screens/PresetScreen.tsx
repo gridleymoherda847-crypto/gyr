@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useOS } from '../context/OSContext'
 import { useWeChat } from '../context/WeChatContext'
 import PageContainer from '../components/PageContainer'
+import { saveBlobAsFile } from '../utils/saveFile'
 
 // ============ 类型定义 ============
 
@@ -170,12 +171,14 @@ export default function PresetScreen() {
       exportedAt: Date.now(),
     }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `世界书备份_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    const filename = `世界书备份_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.json`
+    saveBlobAsFile(blob, filename, { title: '世界书备份', hintText: '导出世界书（iOS 可选择“存储到文件”）' })
+      .then((method) => {
+        if (method !== 'download') {
+          alert('iOS 浏览器可能不支持直接下载：请在弹出的分享菜单选择“存储到文件”。')
+        }
+      })
+      .catch(() => {})
   }
   
   // 导出单个世界书
@@ -187,12 +190,14 @@ export default function PresetScreen() {
       exportedAt: Date.now(),
     }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `世界书_${lorebook.name}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    const filename = `世界书_${lorebook.name}.json`
+    saveBlobAsFile(blob, filename, { title: '世界书导出', hintText: '导出世界书（iOS 可选择“存储到文件”）' })
+      .then((method) => {
+        if (method !== 'download') {
+          alert('iOS 浏览器可能不支持直接下载：请在弹出的分享菜单选择“存储到文件”。')
+        }
+      })
+      .catch(() => {})
   }
   
   // 导入世界书

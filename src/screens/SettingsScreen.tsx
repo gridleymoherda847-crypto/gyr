@@ -7,6 +7,7 @@ import PageContainer from '../components/PageContainer'
 import { SettingsGroup, SettingsItem } from '../components/SettingsGroup'
 import { exportCurrentBackupJsonText, importLegacyBackupJsonText } from '../storage/legacyBackupImport'
 import { kvClear } from '../storage/kv'
+import { saveBlobAsFile } from '../utils/saveFile'
 
 export default function SettingsScreen() {
   const navigate = useNavigate()
@@ -18,6 +19,7 @@ export default function SettingsScreen() {
   const [showExportNameDialog, setShowExportNameDialog] = useState(false)
   const [exportFileName, setExportFileName] = useState('')
   const [showExportSuccess, setShowExportSuccess] = useState(false)
+  const [exportSuccessMessage, setExportSuccessMessage] = useState('备份文件已保存到下载目录。')
   const [showImportConfirm, setShowImportConfirm] = useState(false)
   const [showImportSuccess, setShowImportSuccess] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
@@ -113,15 +115,16 @@ export default function SettingsScreen() {
       const json = await exportCurrentBackupJsonText()
       const fileName = exportFileName.trim() || `Mina_backup_${new Date().toISOString().slice(0, 10)}`
       const blob = new Blob([json], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${fileName}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const method = await saveBlobAsFile(blob, `${fileName}.json`, {
+        title: '小手机备份',
+        hintText: '导出备份文件（iOS 可选择“存储到文件”）',
+      })
       setShowExportNameDialog(false)
+      setExportSuccessMessage(
+        method === 'download'
+          ? '备份文件已保存到下载目录。'
+          : 'iOS 浏览器可能不支持直接下载：已打开/弹出分享。请在分享菜单选择“存储到文件”。'
+      )
       setShowExportSuccess(true)
     } catch (e) {
       console.error('导出失败:', e)
@@ -497,7 +500,7 @@ export default function SettingsScreen() {
               <div className="text-center">
                 <div className="text-4xl mb-2">✅</div>
                 <div className="text-[15px] font-semibold text-[#111]">导出成功</div>
-                <div className="mt-2 text-[13px] text-[#333]">备份文件已保存到下载目录。</div>
+                <div className="mt-2 text-[13px] text-[#333]">{exportSuccessMessage}</div>
               </div>
               <div className="mt-4">
                 <button

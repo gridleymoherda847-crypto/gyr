@@ -5,6 +5,7 @@ import { useOS } from '../../context/OSContext'
 import WeChatLayout from './WeChatLayout'
 import WeChatDialog from './components/WeChatDialog'
 import { compressImageFileToDataUrl } from '../../utils/image'
+import { saveBlobAsFile } from '../../utils/saveFile'
 
 export default function ChatSettingsScreen() {
   const navigate = useNavigate()
@@ -521,12 +522,21 @@ export default function ChatSettingsScreen() {
   const downloadCharacterCard = () => {
     if (!character || !exportCardData) return
     const blob = new Blob([exportCardData], { type: 'application/json;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${character.name}_角色卡_${Date.now()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    const filename = `${character.name}_角色卡_${Date.now()}.json`
+    saveBlobAsFile(blob, filename, { title: '角色卡导出', hintText: '导出角色卡（iOS 可选择“存储到文件”）' })
+      .then((method) => {
+        if (method !== 'download') {
+          // iOS 上提示一下，避免用户以为“没下载”
+          setDialog({
+            open: true,
+            title: '导出提示',
+            message: 'iOS 浏览器可能不支持直接下载：已弹出分享/打开新页。请在分享菜单选择“存储到文件”。',
+            confirmText: '知道了',
+            onConfirm: () => setDialog({ open: false }),
+          })
+        }
+      })
+      .catch(() => {})
   }
   
   const copyCharacterCard = async () => {

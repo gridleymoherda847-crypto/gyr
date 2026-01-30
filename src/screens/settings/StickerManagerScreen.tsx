@@ -4,6 +4,7 @@ import PageContainer from '../../components/PageContainer'
 import AppHeader from '../../components/AppHeader'
 import { useWeChat } from '../../context/WeChatContext'
 import WeChatDialog from '../wechat/components/WeChatDialog'
+import { saveTextAsFile } from '../../utils/saveFile'
 
 type StickerPackV1 = {
   schemaVersion: 1
@@ -217,13 +218,17 @@ export default function StickerManagerScreen() {
   }
 
   const downloadText = (filename: string, content: string) => {
-    const blob = new Blob([content], { type: 'application/json;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
+    saveTextAsFile(content, filename, 'application/json;charset=utf-8', {
+      title: '表情包导出',
+      hintText: '导出表情包包（iOS 可选择“存储到文件”）',
+    })
+      .then((method) => {
+        if (method !== 'download') {
+          setToast('iOS 浏览器可能不支持直接下载：请在分享菜单选择“存储到文件”。')
+          window.setTimeout(() => setToast(null), 2200)
+        }
+      })
+      .catch(() => {})
   }
 
   // 批量从多个URL导入（支持 "备注：链接" 或 "备注:链接" 格式）
