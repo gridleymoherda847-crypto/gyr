@@ -1252,8 +1252,25 @@ export const getLorebookEntriesByLorebookId = (lorebookId: string, context: stri
     return priorityOrder[pa] - priorityOrder[pb]
   })
 
-  const limitedEntries = entries.slice(0, 5)
-  if (limitedEntries.length === 0) return ''
+  // 触发词可能很多：固定只取 5 条会导致“多触发词读不全”
+  // 策略：优先保证高优先级 + 尽量覆盖触发条目（上限稍微放宽，但仍做总量限制避免 prompt 爆炸）
+  const MAX_TOTAL = 12
+  const highTriggeredAll = entries.filter(item => item.triggeredBy !== null && item.entry.priority === 'high')
+  const highAlwaysAll = entries.filter(item => item.triggeredBy === null && item.entry.priority === 'high')
+  const otherTriggeredAll = entries.filter(item => item.triggeredBy !== null && item.entry.priority !== 'high')
+  const otherAlwaysAll = entries.filter(item => item.triggeredBy === null && item.entry.priority !== 'high')
+  const selectedEntries: Array<{ entry: LorebookEntry; triggeredBy: string | null }> = []
+  const pushUntil = (arr: typeof entries) => {
+    for (const x of arr) {
+      if (selectedEntries.length >= MAX_TOTAL) break
+      selectedEntries.push(x)
+    }
+  }
+  pushUntil(highTriggeredAll)
+  pushUntil(highAlwaysAll)
+  pushUntil(otherTriggeredAll)
+  pushUntil(otherAlwaysAll)
+  if (selectedEntries.length === 0) return ''
 
   const formatEntry = (item: { entry: LorebookEntry; triggeredBy: string | null }) => {
     const e = item.entry
@@ -1262,8 +1279,8 @@ export const getLorebookEntriesByLorebookId = (lorebookId: string, context: stri
     return `[${e.name}]${triggerHint}\n${e.content}`
   }
 
-  const triggered = limitedEntries.filter(item => item.triggeredBy !== null)
-  const alwaysActive = limitedEntries.filter(item => item.triggeredBy === null)
+  const triggered = selectedEntries.filter(item => item.triggeredBy !== null)
+  const alwaysActive = selectedEntries.filter(item => item.triggeredBy === null)
   const highPriorityTriggered = triggered.filter(item => item.entry.priority === 'high')
   const highPriorityAlways = alwaysActive.filter(item => item.entry.priority === 'high')
   const otherTriggered = triggered.filter(item => item.entry.priority !== 'high')
@@ -1345,10 +1362,25 @@ export const getLorebookEntriesForCharacter = (characterId: string, context: str
     return priorityOrder[pa] - priorityOrder[pb]
   })
   
-  // 限制最多注入 5 个条目
-  const limitedEntries = entries.slice(0, 5)
-  
-  if (limitedEntries.length === 0) return ''
+  // 触发词可能很多：固定只取 5 条会导致“多触发词读不全”
+  // 策略：优先保证高优先级 + 尽量覆盖触发条目（上限稍微放宽，但仍做总量限制避免 prompt 爆炸）
+  const MAX_TOTAL = 12
+  const highTriggeredAll = entries.filter(item => item.triggeredBy !== null && item.entry.priority === 'high')
+  const highAlwaysAll = entries.filter(item => item.triggeredBy === null && item.entry.priority === 'high')
+  const otherTriggeredAll = entries.filter(item => item.triggeredBy !== null && item.entry.priority !== 'high')
+  const otherAlwaysAll = entries.filter(item => item.triggeredBy === null && item.entry.priority !== 'high')
+  const selectedEntries: Array<{ entry: LorebookEntry; triggeredBy: string | null }> = []
+  const pushUntil = (arr: typeof entries) => {
+    for (const x of arr) {
+      if (selectedEntries.length >= MAX_TOTAL) break
+      selectedEntries.push(x)
+    }
+  }
+  pushUntil(highTriggeredAll)
+  pushUntil(highAlwaysAll)
+  pushUntil(otherTriggeredAll)
+  pushUntil(otherAlwaysAll)
+  if (selectedEntries.length === 0) return ''
   
   // 根据优先级和触发方式添加标记
   const formatEntry = (item: { entry: LorebookEntry; triggeredBy: string | null }) => {
@@ -1363,8 +1395,8 @@ export const getLorebookEntriesForCharacter = (characterId: string, context: str
   }
   
   // 分离：关键词触发的条目 vs 始终激活的条目
-  const triggered = limitedEntries.filter(item => item.triggeredBy !== null)
-  const alwaysActive = limitedEntries.filter(item => item.triggeredBy === null)
+  const triggered = selectedEntries.filter(item => item.triggeredBy !== null)
+  const alwaysActive = selectedEntries.filter(item => item.triggeredBy === null)
   
   // 高优先级条目
   const highPriorityTriggered = triggered.filter(item => item.entry.priority === 'high')

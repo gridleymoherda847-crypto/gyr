@@ -740,6 +740,50 @@ export default function ChatScreen() {
           }
           return final
         }
+
+        // 线上模式：强制剥离“思维链/分析段落”，避免少数模型/中转仍然输出思考内容
+        const stripThoughtForOnline = (raw: string) => {
+          let t = String(raw || '')
+          if (!t.trim()) return ''
+          // 显式 tag（常见）
+          t = t.replace(/```(?:think|analysis)[\s\S]*?```/gi, '')
+          t = t.replace(/<think[\s\S]*?<\/think>/gi, '')
+          t = t.replace(/<analysis[\s\S]*?<\/analysis>/gi, '')
+
+          // 如果模型输出了“Final/Answer/正文/最终回复”等分隔符，取后半段
+          const marker = t.match(/(?:^|\n)\s*(最终回复|最终答案|正文|回复|Final|Answer)\s*[:：]\s*/i)
+          if (marker && marker.index != null) {
+            t = t.slice(marker.index + marker[0].length)
+          }
+
+          const lines = t.split('\n')
+          const out: string[] = []
+          let skipping = false
+          const startRe = /^\s*(思考|分析|推理|推断|reasoning|thoughts?|chain of thought|cot)\s*[:：]/i
+          const bracketStartRe = /^\s*[【\[]\s*(思考|分析|推理|reasoning)\s*[】\]]\s*[:：]?/i
+          const endRe = /^\s*(最终回复|正文|回复|Final|Answer)\s*[:：]/i
+          for (const line of lines) {
+            const s = line || ''
+            if (!skipping && (startRe.test(s) || bracketStartRe.test(s) || /^\s*Let's think step by step/i.test(s))) {
+              skipping = true
+              continue
+            }
+            if (skipping) {
+              // 遇到明确的“正文/回复”标记：停止跳过，但不输出标记行
+              if (endRe.test(s)) {
+                skipping = false
+                continue
+              }
+              // 空行：通常是思维链段落结束
+              if (!s.trim()) {
+                skipping = false
+              }
+              continue
+            }
+            out.push(s)
+          }
+          return out.join('\n').trim()
+        }
         // 构建对话历史（尽量不“失忆”：按“回合”+字符预算截取；转账/图片等用简短标记，避免塞超长URL）
         const buildChatHistory = (all: typeof messages, maxRounds: number, maxChars: number) => {
           let used = 0
@@ -1445,6 +1489,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           }
         }
         
+        // 最终输出前：线上模式强制剥离思维链（即使模型不听话也不展示）
+        if (!character.offlineMode) {
+          response = stripThoughtForOnline(response)
+        }
+
         // 分割回复为多条消息（最多15条；即便模型只回一大段也能拆成多条）
         const replies = splitToReplies(response)
 
