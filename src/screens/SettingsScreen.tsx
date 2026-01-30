@@ -191,6 +191,7 @@ export default function SettingsScreen() {
 
           <SettingsGroup title="个性化">
             <SettingsItem label="壁纸设置" to="/apps/settings/wallpaper" />
+            <SettingsItem label="图标管理" to="/apps/settings/icons" />
             <SettingsItem label="字体设置" value={currentFont.name} to="/apps/settings/font" />
             <SettingsItem label="字体颜色" value={fontColor.name} to="/apps/settings/color" />
             <SettingsItem label="表情包管理" to="/apps/settings/stickers" />
