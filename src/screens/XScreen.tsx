@@ -154,6 +154,52 @@ export default function XScreen() {
   const persona = useMemo(() => getCurrentPersona(), [getCurrentPersona])
   const meNameBase = persona?.name || '我'
 
+  // ====== 文本翻译工具（用于帖子/评论：非中文内容后面强制带“（翻译）”） ======
+  const hasCJK = (s: string) => /[\u4e00-\u9fff]/.test(String(s || ''))
+  const hasInlineZhParen = (s: string) =>
+    /（[^）]*[\u4e00-\u9fff][^）]*）/.test(String(s || '')) || /\([^)]*[\u4e00-\u9fff][^)]*\)/.test(String(s || ''))
+  const looksNonZh = (s: string) =>
+    /[A-Za-z]/.test(s) ||
+    /[ぁ-ゟ゠-ヿ]/.test(s) || // 日语假名
+    /[가-힣]/.test(s) || // 韩文
+    /[А-Яа-я]/.test(s) // 西里尔
+  const needsInlineZh = (s: string) => {
+    const t = String(s || '').trim()
+    if (!t) return false
+    if (hasCJK(t)) return false
+    if (hasInlineZhParen(t)) return false
+    return looksNonZh(t)
+  }
+  const translateBatchToZh = async (items: string[]) => {
+    const list = (items || []).map((x) => String(x || '').trim().slice(0, 220)).filter(Boolean)
+    if (list.length === 0) return [] as string[]
+    try {
+      const sys =
+        `你是一个翻译器。把我给你的 texts 数组逐条翻译成“简体中文”。\n` +
+        `要求：\n` +
+        `- 只输出严格 JSON\n` +
+        `- 格式：{"translations":["译文1","译文2",...]}\n` +
+        `- translations 的长度必须与输入 texts 完全一致\n` +
+        `- 每个译文只输出简体中文翻译，不要解释，不要引号，不要括号前后缀\n` +
+        `- 保留人名/专有名词原样\n`
+      const user = JSON.stringify({ texts: list })
+      const res = await callLLM(
+        [
+          { role: 'system', content: sys },
+          { role: 'user', content: user },
+        ],
+        undefined,
+        { maxTokens: 700, timeoutMs: 60000, temperature: 0.1 }
+      )
+      const parsed = tryParseJsonBlock(res) as any
+      const arr = Array.isArray(parsed?.translations) ? parsed.translations : []
+      if (arr.length !== list.length) return []
+      return arr.map((x: any) => String(x || '').trim())
+    } catch {
+      return []
+    }
+  }
+
   const [data, setData] = useState<XDataV1 | null>(null)
   const meName = data?.meDisplayName || meNameBase
   const [tab, setTab] = useState<MainTab>('home')
@@ -477,6 +523,9 @@ export default function XScreen() {
         `- 可以带情绪与脏话，但严禁辱女/性羞辱词汇\n` +
         `- 不要出现违法内容、未成年人性内容、极端仇恨\n` +
         `- 作者名字必须多样：至少 30% 非中文（英文/日文/韩文/混合都可以）\n` +
+        // 关键：非中文内容强制带翻译（展示为“原文（中文）”）
+        `- 【翻译强制】如果某条 text 不是中文（或主要为外语），必须输出为：外语原文（简体中文翻译）\n` +
+        `  - 括号内必须是简体中文翻译，不能是繁体，不能加“翻译：”前缀\n` +
         `- 可选字段：hashtags（0~3 个话题，不要每条都堆）；imageDesc（可选，用一句话描述“配图”，像真的配图说明）\n` +
         `- 只输出 JSON，不要解释\n` +
         `\n` +
@@ -492,10 +541,28 @@ export default function XScreen() {
 
       let next = data
       const newPosts: XPost[] = []
-      for (const p of raw.slice(0, want)) {
-        const authorName = String(p?.authorName || '').trim()
-        const text = String(p?.text || '').trim()
-        if (!text) continue
+      const picked = raw.slice(0, want).map((p: any) => ({
+        authorName: String(p?.authorName || '').trim(),
+        text: String(p?.text || '').trim(),
+        hashtags: Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 6).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : [],
+        imageDesc: typeof p?.imageDesc === 'string' ? p.imageDesc.trim().slice(0, 260) : '',
+      })).filter((x: any) => !!x.text)
+
+      // 兜底：模型偶尔不按要求输出括号翻译时，批量补一次（只处理非中文且未带括号翻译的）
+      const idxs = picked.map((x: any, i: number) => (needsInlineZh(x.text) ? i : -1)).filter((i: number) => i >= 0)
+      if (idxs.length > 0) {
+        const zhs = await translateBatchToZh(idxs.map((i: number) => picked[i].text))
+        if (zhs.length === idxs.length) {
+          idxs.forEach((i: number, j: number) => {
+            const zh = (zhs[j] || '').trim()
+            if (zh) picked[i].text = `${picked[i].text}（${zh}）`
+          })
+        }
+      }
+
+      for (const p of picked) {
+        const authorName = String(p.authorName || '').trim()
+        const text = String(p.text || '').trim()
         const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
         next = d2
         const u = next.users.find((x) => x.id === userId)
@@ -508,8 +575,8 @@ export default function XScreen() {
         const post = xNewPost(ensured.id, ensured.name, text)
         post.authorHandle = ensured.handle
         post.authorColor = ensured.color
-        post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 6).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
-        post.imageDesc = typeof p?.imageDesc === 'string' ? p.imageDesc.trim().slice(0, 260) : ''
+        post.hashtags = p.hashtags
+        post.imageDesc = p.imageDesc
         // 随机一点互动数（不追求真实算法）
         post.likeCount = Math.floor(Math.random() * 800)
         post.repostCount = Math.floor(Math.random() * 180)
@@ -558,6 +625,7 @@ export default function XScreen() {
         `【X搜索（三标签）】搜索：${key}\n` + charInfo +
         `一次生成三类：hot(热门路人热议${wantPerTab}条)、latest(最新路人刚发${wantPerTab}条)、user(${hasUser ? matchedCharacter!.name + '本人发' + wantPerTab + '条' : '空[]'})\n` +
         `要求：与"${key}"强相关；禁辱女/性羞辱/违法/未成年性/极端仇恨；作者名多样30%+非中文；只输出JSON\n` +
+        `【翻译强制】如果某条 text 不是中文（或主要为外语），必须输出为：外语原文（简体中文翻译），括号内只能是简体中文\n` +
         `格式：{"hot":[{"authorName":"名","text":"<=140字","hashtags":[]}],"latest":[...],"user":[{"text":"","hashtags":[]}]}`
       /* 旧代码已删除 */
       if (false as boolean) { const want = 0; void want; (() => {
@@ -616,8 +684,35 @@ export default function XScreen() {
       const hotIds: string[] = [], latestIds: string[] = [], userIds: string[] = []
       const newPosts: XPost[] = []
 
+      // 先把三组内容收集出来，做一次批量“括号翻译兜底”，避免分多次调用
+      const hotRaw = (Array.isArray((parsed as any).hot) ? (parsed as any).hot : []).slice(0, wantPerTab + 2)
+      const latestRaw = (Array.isArray((parsed as any).latest) ? (parsed as any).latest : []).slice(0, wantPerTab + 2)
+      const userRaw = (Array.isArray((parsed as any).user) ? (parsed as any).user : []).slice(0, wantPerTab + 2)
+      const allTexts: string[] = []
+      const allPtrs: Array<{ get: () => string; set: (v: string) => void }> = []
+      const pushPtr = (obj: any, keyName: 'text') => {
+        const get = () => String(obj?.[keyName] || '').trim()
+        const set = (v: string) => { obj[keyName] = v }
+        allPtrs.push({ get, set })
+        allTexts.push(get())
+      }
+      for (const p of hotRaw) pushPtr(p, 'text')
+      for (const p of latestRaw) pushPtr(p, 'text')
+      for (const p of userRaw) pushPtr(p, 'text')
+      const needIdx = allTexts.map((t, i) => (needsInlineZh(t) ? i : -1)).filter((i) => i >= 0)
+      if (needIdx.length > 0) {
+        const zhs = await translateBatchToZh(needIdx.map((i) => allTexts[i]))
+        if (zhs.length === needIdx.length) {
+          needIdx.forEach((idx, j) => {
+            const orig = allTexts[idx]
+            const zh = (zhs[j] || '').trim()
+            if (orig && zh) allPtrs[idx].set(`${orig}（${zh}）`)
+          })
+        }
+      }
+
       // 处理热门帖子
-      for (const p of (Array.isArray((parsed as any).hot) ? (parsed as any).hot : []).slice(0, wantPerTab + 2)) {
+      for (const p of hotRaw) {
         const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
         if (!text) continue
         const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
@@ -634,7 +729,7 @@ export default function XScreen() {
       }
 
       // 处理最新帖子
-      for (const p of (Array.isArray((parsed as any).latest) ? (parsed as any).latest : []).slice(0, wantPerTab + 2)) {
+      for (const p of latestRaw) {
         const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
         if (!text) continue
         const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
@@ -652,7 +747,7 @@ export default function XScreen() {
 
       // 处理用户帖子（如果有匹配角色）
       if (matchedCharacter) {
-        for (const p of (Array.isArray((parsed as any).user) ? (parsed as any).user : []).slice(0, wantPerTab + 2)) {
+        for (const p of userRaw) {
           const text = String(p?.text || '').trim()
           if (!text) continue
           const identity = getCharacterIdentity(matchedCharacter, true)
@@ -776,6 +871,7 @@ ${chatFriendList}
         `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
         `- 不要出现违法内容、未成年人性内容、极端仇恨\n` +
         `- 每条 <= 120 字\n` +
+        `- 【翻译强制】如果某条评论 text 不是中文（或主要为外语），必须写成：外语原文（简体中文翻译）\n` +
         `- 只输出 JSON，不要解释\n` +
         `\n` +
         `JSON 格式：\n` +
@@ -789,6 +885,26 @@ ${chatFriendList}
 
       let next = data
       const newReplies: XReply[] = []
+
+      // 兜底：批量给“非中文且没带括号翻译”的评论补翻译
+      const all = [
+        ...raw.slice(0, want).map((r: any) => ({ kind: 'reply' as const, obj: r, field: 'text' as const })),
+        ...friendRaw.slice(0, friendsToInclude.length).map((r: any) => ({ kind: 'friend' as const, obj: r, field: 'text' as const })),
+      ]
+      const need = all
+        .map((x, i) => ({ i, t: String((x.obj as any)?.text || '').trim() }))
+        .filter((x) => needsInlineZh(x.t))
+      if (need.length > 0) {
+        const zhs = await translateBatchToZh(need.map((x) => x.t))
+        if (zhs.length === need.length) {
+          need.forEach((x, j) => {
+            const zh = (zhs[j] || '').trim()
+            if (!zh) return
+            const cur = String((all[x.i].obj as any).text || '').trim()
+            if (cur) (all[x.i].obj as any).text = `${cur}（${zh}）`
+          })
+        }
+      }
       
       // 处理路人评论
       for (const r of raw.slice(0, want)) {
@@ -909,12 +1025,30 @@ ${chatFriendList}
           `- 不要动作描写/旁白\n` +
           `- 不要说“我们一起玩/我们聊天”这种强绑定微信的句子，像 X 评论区即可\n` +
           `- 允许一点情绪/吐槽，但禁止辱女/性羞辱\n` +
+          `- 【翻译强制】如果某条评论 text 不是中文（或主要为外语），必须写成：外语原文（简体中文翻译）\n` +
           `- 只输出 JSON，不要解释\n` +
           `JSON：{ "comments": [ { "characterId": "...", "text": "..." } ] }\n`
 
         const parsed = await callJson(sys, '现在生成 comments。', 360)
         const raw = Array.isArray((parsed as any)?.comments) ? (parsed as any).comments : []
         if (raw.length === 0) return
+
+        // 兜底：批量补翻译（只处理非中文且未带括号翻译的）
+        const need: Array<{ i: number; t: string }> = raw
+          .slice(0, picked.length)
+          .map((it: any, i: number) => ({ i, t: String(it?.text || '').trim() }))
+          .filter((x: { i: number; t: string }) => needsInlineZh(x.t))
+        if (need.length > 0) {
+          const zhs = await translateBatchToZh(need.map((x: { i: number; t: string }) => x.t))
+          if (zhs.length === need.length) {
+            need.forEach((x: { i: number; t: string }, j: number) => {
+              const zh = (zhs[j] || '').trim()
+              if (!zh) return
+              const cur = String(raw[x.i]?.text || '').trim()
+              if (cur) raw[x.i].text = `${cur}（${zh}）`
+            })
+          }
+        }
 
         let next2 = next
         const newReplies: XReply[] = []

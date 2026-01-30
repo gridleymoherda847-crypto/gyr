@@ -118,6 +118,14 @@ html.ios-safe-area #root {
   overflow: hidden !important;
 }
 
+/* iOS 输入框聚焦自动放大（常见于 Safari/壳浏览器，如 Via/雨见等）：
+ * 只要 input 字号 < 16px，iOS 可能会自动缩放页面。
+ * 我们只针对聊天输入框做兜底，避免影响其它 UI。
+ */
+html.ios-safe-area .lp-chat-input {
+  font-size: 16px !important;
+}
+
 body {
   min-height: 100vh;
   min-height: 100dvh; /* 动态视口高度，适配移动端地址栏 */

@@ -1839,13 +1839,16 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 
                 // 判断是否是中文（用于决定是否需要翻译）
                 const isChinese = characterLanguage === 'zh' || /[\u4e00-\u9fa5]/.test(textContent.slice(0, 20))
+                const dualZh = dual?.zh ? String(dual.zh).trim() : ''
                 
                 const voiceMsg = addMessage({
                   characterId: character.id,
                   content: '[语音消息]',
                   isUser: false,
                   type: 'voice',
-                  voiceText: isChinese ? textContent : textContent, // 先显示原文
+                  // 显示给用户的“转文字”：如果模型已按 “外语 ||| 中文” 返回，直接用中文翻译（避免再额外发一次翻译请求）
+                  // 目标格式：外语原文（中文翻译）
+                  voiceText: isChinese ? textContent : (dualZh ? `${textContent}（${dualZh}）` : textContent),
                   voiceOriginalText: textContent, // 原文（用于TTS朗读）
                   voiceDuration: voiceDuration,
                   voiceUrl: '', // 先为空，异步填充
@@ -1861,14 +1864,38 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 })()
                 
                 // 如果是外文，异步翻译并更新显示文字（无论是否开启翻译模式，语音转文字都带中文翻译）
-                if (!isChinese) {
+                // 若 dual 已经提供中文翻译，就不需要再翻译
+                if (!isChinese && !dualZh) {
                   ;(async () => {
                     try {
-                      const transResult = await callLLM([
-                        { role: 'system', content: '你是一个翻译器。把用户给你的内容翻译成简体中文。只输出翻译结果，不要解释，不要加引号。' },
-                        { role: 'user', content: textContent }
-                      ], undefined, { maxTokens: 200, timeoutMs: 30000 })
-                      const zhText = transResult.trim()
+                      const sys =
+                        `你是一个翻译器。把用户给你的内容翻译成"简体中文"（不是繁体中文！）。\n` +
+                        `要求：\n` +
+                        `- 只输出简体中文翻译，严禁繁体字\n` +
+                        `- 保留人名/歌名/专有名词原样\n` +
+                        `- 不要添加引号/括号/前后缀\n`
+                      const transResult = await callLLM(
+                        [
+                          { role: 'system', content: sys },
+                          { role: 'user', content: textContent },
+                        ],
+                        undefined,
+                        { maxTokens: 420, timeoutMs: 60000, temperature: 0.2 }
+                      )
+                      let zhText = (transResult || '').trim()
+                      // 少数模型会不听话仍输出外语：检测不到中文就再强制一次
+                      if (zhText && !/[\u4e00-\u9fff]/.test(zhText)) {
+                        const force = await callLLM(
+                          [
+                            { role: 'system', content: '只输出“简体中文翻译”，禁止任何外语、禁止解释。' },
+                            { role: 'user', content: textContent },
+                          ],
+                          undefined,
+                          { maxTokens: 420, timeoutMs: 60000, temperature: 0.1 }
+                        )
+                        zhText = (force || '').trim()
+                      }
+
                       if (zhText) {
                         // 格式：原文（中文翻译）
                         updateMessage(voiceMsg.id, { voiceText: `${textContent}（${zhText}）` })
@@ -5372,7 +5399,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              className="flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/90 md:bg-white/80 md:backdrop-blur outline-none text-gray-800 text-sm"
+              // iOS（部分壳浏览器）会对 <16px 的输入框自动“放大页面”
+              // 通过专用 class 在 iOS 上强制到 16px，避免“点输入框界面突然放大”
+              className="lp-chat-input flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/90 md:bg-white/80 md:backdrop-blur outline-none text-gray-800 text-sm"
             />
             
             {/* 手动：触发回复按钮（随时可按，可连续点继续生成） */}
