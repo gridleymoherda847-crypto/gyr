@@ -83,8 +83,26 @@ export default function SettingsScreen() {
     }
   }, [])
 
+  // 检测是否是 iOS 设备
+  const isIOS = () => {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  }
+  
+  // 检测是否已经是 PWA 模式（从主屏幕启动）
+  const isStandalone = () => {
+    return (window.navigator as any).standalone === true || 
+           window.matchMedia('(display-mode: standalone)').matches
+  }
+
   // 切换全屏模式
   const toggleFullscreen = async () => {
+    // iOS 设备且不是 PWA 模式，显示引导
+    if (isIOS() && !isStandalone()) {
+      setFullscreenUnsupported(true)
+      return
+    }
+    
     try {
       if (!getFullscreenElement()) {
         // 进入全屏
@@ -95,9 +113,8 @@ export default function SettingsScreen() {
       }
     } catch (error) {
       console.error('全屏切换失败:', error)
-      // iOS Safari 不支持全屏 API，显示提示
+      // 其他不支持全屏的情况，也显示引导
       setFullscreenUnsupported(true)
-      setTimeout(() => setFullscreenUnsupported(false), 3000)
     }
   }
 
@@ -316,11 +333,62 @@ export default function SettingsScreen() {
             />
           </SettingsGroup>
           
-          {/* 全屏不支持提示 */}
+          {/* iOS 全屏引导弹窗 */}
           {fullscreenUnsupported && (
-            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/80 text-white px-6 py-4 rounded-2xl text-center z-50 max-w-[280px]">
-              <div className="text-base font-medium mb-2">iOS 不支持网页全屏</div>
-              <div className="text-sm text-gray-300">请使用「添加到主屏幕」功能，以 PWA 方式打开获得全屏体验</div>
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6">
+              <div className="bg-white rounded-2xl w-full max-w-[320px] overflow-hidden shadow-2xl">
+                {/* 头部 */}
+                <div className="bg-gradient-to-r from-blue-500 to-purple-500 px-5 py-4 text-white text-center">
+                  <div className="text-2xl mb-1">📱</div>
+                  <div className="text-lg font-bold">iOS 全屏体验指南</div>
+                </div>
+                
+                {/* 步骤说明 */}
+                <div className="p-5 space-y-4">
+                  <div className="text-sm text-gray-600 text-center mb-3">
+                    iOS Safari 不支持网页全屏，请按以下步骤操作：
+                  </div>
+                  
+                  <div className="flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold flex-shrink-0">1</div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-800">点击底部分享按钮</div>
+                      <div className="text-xs text-gray-500 mt-0.5">Safari 底部中间的 <span className="inline-block px-1 bg-gray-100 rounded">⬆️</span> 图标</div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold flex-shrink-0">2</div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-800">选择「添加到主屏幕」</div>
+                      <div className="text-xs text-gray-500 mt-0.5">向下滑动找到这个选项</div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold flex-shrink-0">3</div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-800">从主屏幕图标打开</div>
+                      <div className="text-xs text-gray-500 mt-0.5">这样就能获得沉浸式全屏体验啦~</div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 p-3 bg-amber-50 rounded-xl text-xs text-amber-700">
+                    <span className="font-medium">💡 提示：</span> 必须使用 Safari 浏览器，其他浏览器不支持此功能
+                  </div>
+                </div>
+                
+                {/* 关闭按钮 */}
+                <div className="px-5 pb-5">
+                  <button
+                    type="button"
+                    onClick={() => setFullscreenUnsupported(false)}
+                    className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl font-medium active:scale-[0.98]"
+                  >
+                    我知道了
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
