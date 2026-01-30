@@ -824,18 +824,24 @@ export default function HomeScreen() {
                 </div>
               </div>
               
-              <div className="mt-4 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="dontShowAgain"
-                  checked={dontShowAgain}
-                  onChange={(e) => setDontShowAgain(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-green-500 focus:ring-green-500"
-                />
-                <label htmlFor="dontShowAgain" className="text-[12px] text-gray-500">
-                  不再显示此提醒
-                </label>
-              </div>
+              <button
+                type="button"
+                onClick={() => setDontShowAgain(!dontShowAgain)}
+                className="mt-4 flex items-center gap-2 w-full py-2 active:bg-gray-50 rounded-lg"
+              >
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                  dontShowAgain 
+                    ? 'bg-green-500 border-green-500' 
+                    : 'border-gray-300 bg-white'
+                }`}>
+                  {dontShowAgain && (
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+                <span className="text-[12px] text-gray-500">不再显示此提醒</span>
+              </button>
               
               <button
                 onClick={handleCloseWelcomeTip}
