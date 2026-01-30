@@ -464,18 +464,34 @@ export default function HomeScreen() {
             <div className="flex-1 bg-white/40 backdrop-blur-sm rounded-xl p-1.5 border border-white/50 shadow-sm">
               <div className="grid grid-cols-2 gap-1 h-full">
                 {MAIN_APPS.map(app => (
-                  <Link
-                    key={app.id}
-                    to={app.route}
-                    className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-white/60 p-1 active:scale-95 transition-transform"
-                  >
-                    <img 
-                      src={getAppIcon(app.id, app.icon)} 
-                      alt={app.name} 
-                      className="w-6 h-6 object-contain"
-                    />
-                    <span className="text-[8px] text-gray-600 truncate">{app.name}</span>
-                  </Link>
+                  app.id === 'gameCenter' ? (
+                    <button
+                      key={app.id}
+                      type="button"
+                      onClick={() => setShowGameCenter(true)}
+                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-white/60 p-1 active:scale-95 transition-transform"
+                    >
+                      <img 
+                        src={getAppIcon(app.id, app.icon)} 
+                        alt={app.name} 
+                        className="w-6 h-6 object-contain"
+                      />
+                      <span className="text-[8px] text-gray-600 truncate">{app.name}</span>
+                    </button>
+                  ) : (
+                    <Link
+                      key={app.id}
+                      to={app.route}
+                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-white/60 p-1 active:scale-95 transition-transform"
+                    >
+                      <img 
+                        src={getAppIcon(app.id, app.icon)} 
+                        alt={app.name} 
+                        className="w-6 h-6 object-contain"
+                      />
+                      <span className="text-[8px] text-gray-600 truncate">{app.name}</span>
+                    </Link>
+                  )
                 ))}
               </div>
             </div>
