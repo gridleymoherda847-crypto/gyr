@@ -678,17 +678,15 @@ ${params.userText}
                         <span>{moment.likes.includes('user') ? '❤️' : '🤍'}</span>
                         {moment.likes.length > 0 && <span>{moment.likes.length}</span>}
                       </button>
-                      {moment.authorId === 'user' && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDeleteId(moment.id)
-                          }}
-                          className="text-gray-400 text-xs"
-                        >
-                          删除
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteId(moment.id)
+                        }}
+                        className="text-gray-400 text-xs"
+                      >
+                        删除
+                      </button>
                     </div>
                   </div>
 

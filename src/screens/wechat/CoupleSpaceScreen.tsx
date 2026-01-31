@@ -486,7 +486,7 @@ export default function CoupleSpaceScreen() {
     // 写入聊天记录（系统分割线风格）
     addMessage({
       characterId: character.id,
-      content: `——${character.name}已解绑了情侣空间——`,
+      content: `——${userName}解绑了情侣空间——`,
       isUser: false,
       type: 'system',
     })
