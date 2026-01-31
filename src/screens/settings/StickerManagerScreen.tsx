@@ -451,28 +451,68 @@ export default function StickerManagerScreen() {
         try {
           const text = await jf.text()
           const pack: LooseStickerPack = JSON.parse(text)
-          const rawStickers = pack.stickers || pack.images || pack.data || []
-          
-          if (Array.isArray(rawStickers)) {
-            const items = rawStickers
-              .map(s => ({
-                keyword: safeName(s.keyword || s.name || '') || '表情',
-                imageUrl: s.imageUrl || s.url || s.image || '',
-                description: s.description || s.desc || '',
-              }))
-              .filter(s => s.imageUrl.startsWith('data:image/') || s.imageUrl.startsWith('http'))
-              .slice(0, 300)
-            
-            for (const s of items) {
-              addSticker({
-                characterId: targetId,
-                keyword: s.keyword,
-                imageUrl: s.imageUrl,
-                category: cat,
-                description: s.description,
-              })
-              importedCount++
+          const rawStickers: any =
+            (pack as any).stickers ||
+            (pack as any).images ||
+            (pack as any).data ||
+            (pack as any).items ||
+            (pack as any).list ||
+            []
+
+          const normalizeUrl = (u: string) => {
+            const url = String(u || '').trim()
+            if (!url) return ''
+            // 兼容协议相对链接：//xx.com/a.png
+            if (url.startsWith('//')) return `https:${url}`
+            return url
+          }
+
+          const isValidUrl = (u: string) => {
+            const url = normalizeUrl(u)
+            return url.startsWith('data:image/') || url.startsWith('http://') || url.startsWith('https://')
+          }
+
+          const toItem = (s: any) => {
+            // 1) 直接是字符串数组：["https://...", "data:image/..."]
+            if (typeof s === 'string') {
+              return { keyword: '表情', imageUrl: normalizeUrl(s), description: '' }
             }
+            // 2) 键值对象：{"生气":"https://..."}
+            if (s && typeof s === 'object' && !Array.isArray(s)) {
+              const kw = safeName(s.keyword || s.name || s.title || s.key || '') || '表情'
+              const url = normalizeUrl(s.imageUrl || s.url || s.image || s.src || s.img || s.cover || '')
+              const desc = String(s.description || s.desc || s.note || '').trim()
+              return { keyword: kw, imageUrl: url, description: desc }
+            }
+            return null
+          }
+
+          let items: { keyword: string; imageUrl: string; description: string }[] = []
+
+          if (Array.isArray(rawStickers)) {
+            items = rawStickers.map(toItem).filter(Boolean) as any
+          } else if (rawStickers && typeof rawStickers === 'object') {
+            // 3) 对象映射：{ "keyword1": "url1", "keyword2": "url2" }
+            items = Object.entries(rawStickers).map(([k, v]) => ({
+              keyword: safeName(k) || '表情',
+              imageUrl: normalizeUrl(String(v || '')),
+              description: '',
+            }))
+          }
+
+          items = items
+            .filter(s => isValidUrl(s.imageUrl))
+            .slice(0, 300)
+
+          for (const s of items) {
+            addSticker({
+              characterId: targetId,
+              keyword: s.keyword,
+              imageUrl: s.imageUrl,
+              category: cat,
+              description: s.description,
+            })
+            importedCount++
           }
         } catch {
           // 单个 JSON 文件解析失败，继续处理其他
