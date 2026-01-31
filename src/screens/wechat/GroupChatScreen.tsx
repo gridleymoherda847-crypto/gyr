@@ -27,6 +27,47 @@ export default function GroupChatScreen() {
   
   const selectedPersona = getCurrentPersona()
   getCurrentPeriod() // 调用以保持依赖
+
+  // 群聊识图：缓存图片描述，避免同一张图反复 OCR
+  const imageDescCacheRef = useRef<Record<string, string>>({})
+  const getImageDescription = async (imageUrl: string): Promise<string> => {
+    const key = String(imageUrl || '').trim()
+    if (!key) return '（空图片）'
+    if (imageDescCacheRef.current[key]) return imageDescCacheRef.current[key]
+    try {
+      const res = await callLLM(
+        [
+          {
+            role: 'system',
+            content:
+              '你是“图片识别/截图文字提取器”。只输出简体中文，不要加引号，不要换行。\n' +
+              '要求：\n' +
+              '- 如果是聊天截图/页面截图：优先提取截图里可见的关键文字（人名、金额、按钮文案、对话内容、时间等），并做一句话总结。\n' +
+              '- 如果是普通照片：描述你看到的主体/场景/动作/情绪。\n' +
+              '- 输出尽量精炼（<=80字）。\n' +
+              '- 如果无法识别，就输出：无法识别图片内容',
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: '请识别这张图片的内容：' },
+              // 兼容：OpenAI-compat
+              { type: 'image_url', image_url: { url: key } },
+            ],
+          },
+        ],
+        undefined,
+        { maxTokens: 200, timeoutMs: 600000, temperature: 0.2 }
+      )
+      const text = (res || '').trim()
+      const finalText = text.slice(0, 120) || '无法识别图片内容'
+      imageDescCacheRef.current[key] = finalText
+      return finalText
+    } catch {
+      imageDescCacheRef.current[key] = '无法识别图片内容'
+      return '无法识别图片内容'
+    }
+  }
   
   // 获取所有表情包（全局 + 群成员的）
   const allStickersWithInfo = useMemo(() => {
@@ -296,7 +337,7 @@ export default function GroupChatScreen() {
   }
   
   // 构建系统提示（参考私聊：人设 → 世界书 → 上下文）
-  const buildSystemPrompt = () => {
+  const buildSystemPrompt = (params: { recentContext: string; recentMessages: string }) => {
     // 1. 全局预设
     const globalPresets = getGlobalPresets()
     
@@ -308,49 +349,11 @@ export default function GroupChatScreen() {
 - 关系：${m.relationship || '朋友'}`
     }).join('\n\n')
     
-    const summarizeForContext = (m: any) => {
-      if (!m) return ''
-      if (m.type === 'image') return '<图片>'
-      if (m.type === 'sticker') return '<表情包>'
-      if (m.type === 'voice') return '<语音>'
-      if (m.type === 'transfer') return '<转账>'
-      if (m.type === 'location') return '<位置>'
-      if (m.type === 'period') return '<经期记录>'
-      if (m.type === 'doudizhu_share') return '<斗地主战绩>'
-      const text = String(m.content || '').trim()
-      // 避免把 base64/长链接塞进上下文导致模型“看不到”图片
-      if (/^data:image\//i.test(text)) return '<图片>'
-      return text
-    }
-
     // 3. 世界书（基于所有成员和最近上下文）
-    const recentContext = messages.slice(-10).map(m => summarizeForContext(m)).join(' ')
-    const memberLore = members.map(m => getLorebookEntriesForCharacter(m.id, recentContext)).filter(Boolean).join('\n\n')
-    const boundLore = group.lorebookId ? getLorebookEntriesByLorebookId(group.lorebookId, recentContext) : ''
+    const memberLore = members.map(m => getLorebookEntriesForCharacter(m.id, params.recentContext)).filter(Boolean).join('\n\n')
+    const boundLore = group.lorebookId ? getLorebookEntriesByLorebookId(group.lorebookId, params.recentContext) : ''
     // 优先级：如果群聊绑定了世界书，则优先读取群聊世界书（覆盖成员各自绑定的世界书），避免“双重世界书”冲突
     const lorebookEntries = (group.lorebookId ? boundLore : memberLore).trim()
-    
-    // 4. 群聊上下文（包含引用信息）
-    const recentMessages = messages.slice(-30).map(m => {
-      const sender = m.isUser 
-        ? (selectedPersona?.name || '用户')
-        : characters.find(c => c.id === m.groupSenderId)?.name || '未知'
-      
-      // 如果有引用消息，添加引用信息
-      let replyInfo = ''
-      if (m.replyToMessageId) {
-        const replyTo = messages.find(rm => rm.id === m.replyToMessageId)
-        if (replyTo) {
-          const replyToSender = replyTo.isUser 
-            ? (selectedPersona?.name || '用户')
-            : characters.find(c => c.id === replyTo.groupSenderId)?.name || '未知'
-          const replyPreview = String(summarizeForContext(replyTo)).slice(0, 20)
-          replyInfo = `[回复${replyToSender}："${replyPreview}${replyPreview.length >= 20 ? '...' : ''}"] `
-        }
-      }
-      
-      return `${sender}: ${replyInfo}${summarizeForContext(m)}`
-    }).join('\n')
     
     // 5. 关系网（必读）
     const relationsText = (group.relations || []).length > 0 ? (group.relations || []).map(rel => {
@@ -382,7 +385,7 @@ ${getCurrentTimeStr()}
 7. 注意消息中的[回复XXX]标记，表示该消息是在回复/引用XXX说的话，回复时要理解这个上下文关系
 
 【群聊上下文】
-${recentMessages || '（暂无消息）'}`
+${params.recentMessages || '（暂无消息）'}`
     
     // 记忆功能
     if (group.memoryEnabled && group.memorySummary) {
@@ -447,7 +450,60 @@ ${recentMessages || '（暂无消息）'}`
       }
       
       const uniqueNames = [...new Set(targetMemberNames)]
-      const systemPrompt = buildSystemPrompt()
+      
+      // ========= 群聊识图：把最近图片转成可读文本，写进上下文 =========
+      const userName = selectedPersona?.name || '用户'
+      const senderNameOf = (m: any) =>
+        m.isUser ? userName : characters.find(c => c.id === m.groupSenderId)?.name || '未知'
+      
+      // 只识别最近少量图片，避免一次生成耗费过多 API
+      const recentForVision = messages.slice(-30)
+      const imageUrls = Array.from(
+        new Set(
+          recentForVision
+            .filter(m => m.type === 'image' && typeof m.content === 'string' && String(m.content || '').trim())
+            .map(m => String(m.content || '').trim())
+        )
+      ).slice(0, 3)
+      
+      if (imageUrls.length > 0) {
+        await Promise.all(imageUrls.map(async (u) => void (await getImageDescription(u))))
+      }
+      
+      const summarizeForContext = (m: any) => {
+        if (!m) return ''
+        if (m.type === 'image') {
+          const u = String(m.content || '').trim()
+          const desc = u ? (imageDescCacheRef.current[u] || '无法识别图片内容') : '无法识别图片内容'
+          return `【图片内容：${desc}】`
+        }
+        if (m.type === 'sticker') return '<表情包>'
+        if (m.type === 'voice') return '<语音>'
+        if (m.type === 'transfer') return '<转账>'
+        if (m.type === 'location') return '<位置>'
+        if (m.type === 'period') return '<经期记录>'
+        if (m.type === 'doudizhu_share') return '<斗地主战绩>'
+        const text = String(m.content || '').trim()
+        if (/^data:image\//i.test(text)) return '<图片>'
+        return text
+      }
+      
+      const recentContextText = messages.slice(-10).map(m => summarizeForContext(m)).join(' ')
+      const recentMessagesText = messages.slice(-30).map(m => {
+        // 如果有引用消息，添加引用信息
+        let replyInfo = ''
+        if (m.replyToMessageId) {
+          const replyTo = messages.find(rm => rm.id === m.replyToMessageId)
+          if (replyTo) {
+            const replyToSender = senderNameOf(replyTo)
+            const replyPreview = String(summarizeForContext(replyTo)).slice(0, 20)
+            replyInfo = `[回复${replyToSender}："${replyPreview}${replyPreview.length >= 20 ? '...' : ''}"] `
+          }
+        }
+        return `${senderNameOf(m)}: ${replyInfo}${summarizeForContext(m)}`
+      }).join('\n')
+      
+      const systemPrompt = buildSystemPrompt({ recentContext: recentContextText, recentMessages: recentMessagesText })
       
       const userPrompt = `请模拟以下成员的群聊回复（总共约${replyCount}条，每人可发多条）：
 ${uniqueNames.join('、')}
