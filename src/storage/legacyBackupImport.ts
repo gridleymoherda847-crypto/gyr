@@ -203,7 +203,6 @@ export async function importLegacyBackupJsonText(text: string): Promise<LegacyIm
   const entries = Object.entries(data)
   if (entries.length === 0) throw new Error('备份文件里没有任何数据')
 
-  ;(window as any).__LP_IMPORTING__ = true
   const skipped: string[] = []
   let written = 0
 
@@ -238,7 +237,10 @@ export async function importLegacyBackupJsonText(text: string): Promise<LegacyIm
     await Promise.all(tasks)
   }
 
-  ;(window as any).__LP_IMPORTING__ = false
+  // 注意：导入完成后不要在这里把 __LP_IMPORTING__ 改回 false。
+  // 因为 App 的 WeChat/OS 会在 isHydrated 后自动持久化当前“内存态”，
+  // 如果此时还没重启，内存里往往仍是“空白/旧数据”，会把刚导入的数据覆盖回去（部分机型更容易触发）。
+  // importing 的生命周期应由调用方（设置页导入流程）控制：成功后直接重启页面即可自然清空 flag。
   return { written, skipped }
 }
 

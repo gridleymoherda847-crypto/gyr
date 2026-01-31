@@ -166,6 +166,9 @@ export default function SettingsScreen() {
         // 导入严格要求：只写入硬盘，不触碰 Context；完成后强制刷新页面重新初始化
         ;(window as any).__LP_IMPORTING__ = true
         const res = await importLegacyBackupJsonText(content)
+        if (!res || typeof res.written !== 'number' || res.written <= 0) {
+          throw new Error('导入失败：未写入任何数据（请确认备份文件正确）')
+        }
         setImportSummary({ written: res.written, skipped: res.skipped.length })
         setShowImportSuccess(true)
         setTimeout(() => window.location.reload(), 400)
