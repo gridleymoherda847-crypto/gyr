@@ -20,6 +20,9 @@ export default function SettingsScreen() {
   const [exportFileName, setExportFileName] = useState('')
   const [showExportSuccess, setShowExportSuccess] = useState(false)
   const [exportSuccessMessage, setExportSuccessMessage] = useState('备份文件已保存到下载目录。')
+  const [exportMethod, setExportMethod] = useState<'download' | 'share' | 'open'>('download')
+  const [exportedJsonText, setExportedJsonText] = useState<string>('')
+  const [exportCopied, setExportCopied] = useState(false)
   const [showImportConfirm, setShowImportConfirm] = useState(false)
   const [showImportSuccess, setShowImportSuccess] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
@@ -136,11 +139,14 @@ export default function SettingsScreen() {
         title: '小手机备份',
         hintText: '导出备份文件（iOS 可选择“存储到文件”）',
       })
+      setExportMethod(method)
+      setExportedJsonText(json)
+      setExportCopied(false)
       setShowExportNameDialog(false)
       setExportSuccessMessage(
         method === 'download'
           ? '备份文件已保存到下载目录。'
-          : 'iOS 浏览器可能不支持直接下载：已打开/弹出分享。请在分享菜单选择“存储到文件”。'
+          : 'iOS 上部分浏览器会提示“下载失败”，这是系统限制。\n已尝试打开/弹出分享：请在分享菜单选择“存储到文件”。\n如果仍失败，可点击下方“复制备份文本”保存到备忘录/文件（建议用 Safari 打开）。'
       )
       setShowExportSuccess(true)
     } catch (e) {
@@ -568,10 +574,27 @@ export default function SettingsScreen() {
             <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/85 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
               <div className="text-center">
                 <div className="text-4xl mb-2">✅</div>
-                <div className="text-[15px] font-semibold text-[#111]">导出成功</div>
+                <div className="text-[15px] font-semibold text-[#111]">{exportMethod === 'download' ? '导出成功' : '备份已生成'}</div>
                 <div className="mt-2 text-[13px] text-[#333]">{exportSuccessMessage}</div>
               </div>
-              <div className="mt-4">
+              <div className="mt-4 space-y-2">
+                {exportMethod !== 'download' && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(exportedJsonText || '')
+                        setExportCopied(true)
+                      } catch {
+                        // ignore
+                        setExportCopied(false)
+                      }
+                    }}
+                    className="w-full rounded-full border border-black/10 bg-white/70 px-4 py-2 text-[13px] font-semibold text-[#333] active:scale-[0.98]"
+                  >
+                    {exportCopied ? '已复制备份文本' : '复制备份文本'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowExportSuccess(false)}

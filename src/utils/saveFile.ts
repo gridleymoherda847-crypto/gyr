@@ -33,7 +33,10 @@ export async function saveBlobAsFile(
   // iOS：优先分享（更符合系统习惯，并且 Via / WebView 也更容易工作）
   if (isIOSLike()) {
     try {
-      const file = new File([blob], name, { type: (blob as any).type || 'application/octet-stream' })
+      // iOS 对 application/json 的文件分享/保存兼容性不稳定，统一用 octet-stream 更稳
+      const rawType = (blob as any).type || ''
+      const safeType = rawType && rawType !== 'application/json' ? rawType : 'application/octet-stream'
+      const file = new File([blob], name, { type: safeType })
       if (nav?.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
         await nav.share({
           files: [file],
@@ -49,7 +52,9 @@ export async function saveBlobAsFile(
     // 最终兜底：打开新页（用户可用系统分享/“存储到文件”）
     const url = URL.createObjectURL(blob)
     try {
-      window.open(url, '_blank')
+      const w = window.open(url, '_blank')
+      // 某些壳浏览器会拦截 window.open（返回 null）；这种情况下只能提示用户手动复制/换 Safari
+      void w
     } finally {
       // 不能立刻 revoke，否则新页可能拿不到；延迟回收
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
