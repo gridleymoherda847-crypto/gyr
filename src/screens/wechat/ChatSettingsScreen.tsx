@@ -1505,22 +1505,37 @@ export default function ChatSettingsScreen() {
                     const open = !!publicGroupsExpanded[cat]
                     return (
                       <div key={cat} className="bg-gray-50 rounded-xl overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() => setPublicGroupsExpanded(prev => ({ ...prev, [cat]: !prev[cat] }))}
-                          className="w-full px-4 py-3 flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-full px-4 py-3 flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={() => setPublicGroupsExpanded(prev => ({ ...prev, [cat]: !prev[cat] }))}
+                            className="flex items-center gap-2 min-w-0"
+                          >
                             <span className="text-sm font-medium text-[#000] truncate">{cat}</span>
                             <span className="text-[11px] text-gray-400">{list.length} 个</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-gray-400">{open ? '收起' : '展开'}</span>
+                            <span className="text-[11px] text-gray-400 ml-1">{open ? '收起' : '展开'}</span>
                             <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                             </svg>
-                          </div>
-                        </button>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={list.length === 0}
+                            onClick={() => {
+                              // 一键导入：把公共库该分类全部同步到本角色（publicOnlyStickers 已去重）
+                              for (const s of list) addStickerToCharacter(s.id, character.id)
+                              setDialog({
+                                open: true,
+                                title: '已一键导入',
+                                message: `已将「${cat}」分类的 ${list.length} 个表情包添加到本角色。`,
+                                confirmText: '好',
+                              })
+                            }}
+                            className="flex-shrink-0 px-3 py-1.5 rounded-full bg-[#07C160]/10 text-[#07C160] text-[11px] font-semibold disabled:opacity-40"
+                          >
+                            一键导入
+                          </button>
+                        </div>
                         {open && (
                           <div className="px-4 pb-3 space-y-2">
                             {list.map(sticker => (

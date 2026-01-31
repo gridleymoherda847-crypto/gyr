@@ -554,9 +554,9 @@ export default function ApiConfigScreen() {
                       <button
                         type="button"
                         onClick={() => loadConfig(config)}
-                        className="flex-1 text-left"
+                        className="flex-1 min-w-0 text-left"
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
                             currentConfigId === config.id ? 'border-green-500 bg-green-500' : 'border-gray-300'
                           }`}>
@@ -564,7 +564,7 @@ export default function ApiConfigScreen() {
                               <span className="text-white text-xs">✓</span>
                             )}
                           </span>
-                          <span className="text-sm font-medium" style={{ color: fontColor.value }}>
+                          <span className="text-sm font-medium truncate" style={{ color: fontColor.value }}>
                             {config.name}
                           </span>
                         </div>
@@ -575,14 +575,14 @@ export default function ApiConfigScreen() {
                       <button
                         type="button"
                         onClick={() => openEditConfig(config)}
-                        className="text-blue-500 text-xs px-2 py-1 hover:text-blue-700"
+                        className="flex-shrink-0 whitespace-nowrap text-blue-500 text-xs px-2 py-1 hover:text-blue-700"
                       >
                         编辑
                       </button>
                       <button
                         type="button"
                         onClick={() => deleteConfig(config.id)}
-                        className="text-red-400 text-xs px-2 py-1 hover:text-red-600"
+                        className="flex-shrink-0 whitespace-nowrap text-red-400 text-xs px-2 py-1 hover:text-red-600"
                       >
                         删除
                       </button>

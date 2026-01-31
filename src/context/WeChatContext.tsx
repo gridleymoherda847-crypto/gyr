@@ -1342,6 +1342,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         imageUrl: sticker.imageUrl,
         keyword: sticker.keyword,
         category: sticker.category,
+        description: sticker.description,
       })
     }
   }
