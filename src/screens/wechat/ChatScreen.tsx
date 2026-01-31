@@ -720,59 +720,50 @@ export default function ChatScreen() {
             return [text]
           }
           
-          // 线上模式：按换行和标点分割
+          // 线上模式：只在“完整句末标点/换行”处拆分，避免把一句话硬拆成半句
+          const keepCmd = (s: string) =>
+            /\|\|\|/.test(s) ||
+            /\[转账:/.test(s) ||
+            /[【\[]\s*转账\s*[:：]/.test(s) ||
+            /\[推文[:：]/.test(s) ||
+            /[【\[]\s*推文\s*[:：]/.test(s) ||
+            /\[推特主页[:：\]]/.test(s) ||
+            /[【\[]\s*(推特主页|X主页)\s*[:：\]]/.test(s)
+
+          const isSentenceEnd = (s: string) => {
+            const t = (s || '').trim()
+            if (!t) return true
+            // 允许句末带引号/括号
+            return /[。！？!?…~～](?:["'”’）)\]]*)?$/.test(t)
+          }
+
           const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
-      const keepCmd = (s: string) =>
-        /\|\|\|/.test(s) ||
-        /\[转账:/.test(s) ||
-        /[【\[]\s*转账\s*[:：]/.test(s) ||
-        /\[推文[:：]/.test(s) ||
-        /[【\[]\s*推文\s*[:：]/.test(s) ||
-        /\[推特主页[:：\]]/.test(s) ||
-        /[【\[]\s*(推特主页|X主页)\s*[:：\]]/.test(s)
-          const out: string[] = []
+          const rawParts: string[] = []
           for (const line of byLine) {
-            if (keepCmd(line)) { out.push(line); continue }
-            // 如果只有一行或一行太长，再按句号/问号/感叹号拆
-            const parts = line.match(/[^。！？!?]+[。！？!?]?/g) || [line]
+            if (keepCmd(line)) { rawParts.push(line); continue }
+            // 先按句末标点拆（不按逗号/顿号拆）
+            const parts = line.match(/[^。！？!?…~～]+[。！？!?…~～]?/g) || [line]
             for (const p of parts) {
               const t = (p || '').trim()
               if (!t) continue
-              out.push(t)
+              rawParts.push(t)
             }
           }
-          // 去掉过短碎片，并合并很短的
+
+          // 合并被“换行/分段”切断的句子：前一段不以句末标点结束，则优先拼到下一段
           const merged: string[] = []
-          for (const s of out) {
-            if (merged.length === 0) { merged.push(s); continue }
+          for (const cur of rawParts) {
+            if (!cur) continue
+            if (merged.length === 0) { merged.push(cur); continue }
             const last = merged[merged.length - 1]
-            // 合并策略要保守：避免把所有句子都糊成一大段，导致“永远只发1条”
-            if (!keepCmd(s) && !keepCmd(last) && (last.length + s.length <= 14)) {
-              merged[merged.length - 1] = `${last}${s}`
+            if (!keepCmd(last) && !keepCmd(cur) && !isSentenceEnd(last) && (last.length + cur.length <= 120)) {
+              merged[merged.length - 1] = `${last}${cur}`
             } else {
-              merged.push(s)
+              merged.push(cur)
             }
           }
-          let final = merged.filter(Boolean).slice(0, 15)
-          // 兜底：如果仍然只剩 1 条（且不是指令类），尝试用逗号/顿号/分号再拆一次
-          if (final.length === 1 && !keepCmd(final[0])) {
-            const one = final[0]
-            const chunks = one.split(/[，,、;；]+/).map(s => s.trim()).filter(Boolean)
-            if (chunks.length >= 2) {
-              const recombined: string[] = []
-              let buf = ''
-              for (const c of chunks) {
-                if (!buf) { buf = c; continue }
-                // 太短就先拼一下，避免碎片
-                if (buf.length < 8) buf = `${buf}，${c}`
-                else { recombined.push(buf); buf = c }
-                if (recombined.length >= 15) break
-              }
-              if (buf && recombined.length < 15) recombined.push(buf)
-              if (recombined.length >= 2) final = recombined.slice(0, 15)
-            }
-          }
-          return final
+
+          return merged.filter(Boolean).slice(0, 15)
         }
 
         // 线上模式：强制剥离“思维链/分析段落”，避免少数模型/中转仍然输出思考内容
@@ -1348,7 +1339,8 @@ ${recentTimeline || '（无）'}
 
 【回复长度与条数（线上模式必须遵守）】
 - 你必须输出 3~15 句（每句就是一句完整的聊天句子）
-- 建议用换行分隔每句（像微信连续发多条），但禁止超过 15 句
+- 强烈建议：每句单独一行（像微信连续发多条）
+- 强烈建议：每句尽量以“。/！/？/…/～”结尾，避免半句被误拆
 `
         }
 
@@ -2960,22 +2952,42 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}` : ''}
           return [text]
         }
         
-        const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
         const keepCmd = (s: string) =>
           /\|\|\|/.test(s) ||
           /\[(转账|音乐|推文|推特主页|X主页):/.test(s) ||
           /[【\[]\s*(转账|音乐|推文|推特主页|X主页)\s*[:：]/.test(s)
-        const out: string[] = []
+
+        const isSentenceEnd = (s: string) => {
+          const t = (s || '').trim()
+          if (!t) return true
+          return /[。！？!?…~～](?:["'”’）)\]]*)?$/.test(t)
+        }
+
+        const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
+        const rawParts: string[] = []
         for (const line of byLine) {
-          if (keepCmd(line)) { out.push(line); continue }
-          const parts = line.match(/[^。！？!?]+[。！？!?]?/g) || [line]
+          if (keepCmd(line)) { rawParts.push(line); continue }
+          const parts = line.match(/[^。！？!?…~～]+[。！？!?…~～]?/g) || [line]
           for (const p of parts) {
             const t = (p || '').trim()
             if (!t) continue
-            out.push(t)
+            rawParts.push(t)
           }
         }
-        return out.filter(Boolean).slice(0, 15)
+
+        const merged: string[] = []
+        for (const cur of rawParts) {
+          if (!cur) continue
+          if (merged.length === 0) { merged.push(cur); continue }
+          const last = merged[merged.length - 1]
+          if (!keepCmd(last) && !keepCmd(cur) && !isSentenceEnd(last) && (last.length + cur.length <= 120)) {
+            merged[merged.length - 1] = `${last}${cur}`
+          } else {
+            merged.push(cur)
+          }
+        }
+
+        return merged.filter(Boolean).slice(0, 15)
       }
       // 获取全局预设
       const globalPresets = getGlobalPresets()
