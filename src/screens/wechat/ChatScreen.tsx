@@ -86,6 +86,8 @@ export default function ChatScreen() {
   // 表情包：不按情绪匹配，随机使用本角色已配置的
   
   const [inputText, setInputText] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const composingRef = useRef(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
@@ -2439,14 +2441,17 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
   // （已移除本地回复：所有回复必须走API）
 
   const handleSend = () => {
-    if (!inputText.trim()) return
+    // 重要：Android Chrome + 中文输入法可能出现 onChange/state 延迟
+    // 发送时优先读取 DOM 实际值，避免“发送后变成上一句”
+    const raw = (inputRef.current?.value ?? inputText) || ''
+    if (!raw.trim()) return
 
     // 用户主动发送：强制滚到底部
     forceScrollRef.current = true
     nearBottomRef.current = true
 
     // 检查是否是转账格式：[转账:金额:备注] 或 【转账：金额：备注】
-    const transferMatch = inputText.trim().match(/[【\[]\s*转账\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*([^】\]]*)\s*[】\]]/)
+    const transferMatch = raw.trim().match(/[【\[]\s*转账\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*([^】\]]*)\s*[】\]]/)
     if (transferMatch) {
       const amount = parseFloat(transferMatch[1])
       const note = (transferMatch[2] || '转账').trim() || '转账'
@@ -2490,13 +2495,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         })
         
         setInputText('')
+        if (inputRef.current) inputRef.current.value = ''
         setPendingCount(prev => prev + 1)
         return
       }
     }
 
     // 检查是否是位置格式：[位置:名称:地址:城市]
-    const locationMatch = inputText.trim().match(/[【\[]\s*位置\s*[:：]\s*([^:：\]】]+)\s*(?:[:：]\s*([^:：\]】]*))?\s*(?:[:：]\s*([^\]】]*))?\s*[】\]]/)
+    const locationMatch = raw.trim().match(/[【\[]\s*位置\s*[:：]\s*([^:：\]】]+)\s*(?:[:：]\s*([^:：\]】]*))?\s*(?:[:：]\s*([^\]】]*))?\s*[】\]]/)
     if (locationMatch) {
       const name = (locationMatch[1] || '').trim()
       if (name) {
@@ -2516,13 +2522,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         messagesRef.current = [...messagesRef.current, locationMsg]
         
         setInputText('')
+        if (inputRef.current) inputRef.current.value = ''
         setPendingCount(prev => prev + 1)
         return
       }
     }
 
     // 检查是否是音乐格式：[音乐:歌名:歌手]
-    const musicMatch = inputText.trim().match(/[【\[]\s*音乐\s*[:：]\s*([^\]】]+)\s*[】\]]/)
+    const musicMatch = raw.trim().match(/[【\[]\s*音乐\s*[:：]\s*([^\]】]+)\s*[】\]]/)
     if (musicMatch) {
       const body = (musicMatch[1] || '').trim()
       if (body) {
@@ -2551,6 +2558,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           messagesRef.current = [...messagesRef.current, musicMsg]
           
           setInputText('')
+          if (inputRef.current) inputRef.current.value = ''
           setPendingCount(prev => prev + 1)
           return
         }
@@ -2570,7 +2578,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
     const newMsg = addMessage({
       characterId: character.id,
-      content: inputText,
+      content: raw,
       isUser: true,
       type: 'text',
       replyTo: replyTo,
@@ -2580,6 +2588,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     messagesRef.current = [...messagesRef.current, newMsg]
 
     setInputText('')
+    if (inputRef.current) inputRef.current.value = ''
     setReplyingToMessageId(null) // 清除引用
     // 统一手动：累计待回复数量（点击箭头触发）
     setPendingCount(prev => prev + 1)
@@ -5747,11 +5756,19 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             </button>
             
             <input
+              ref={inputRef}
               type="text"
               placeholder="输入消息..."
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              onCompositionStart={() => { composingRef.current = true }}
+              onCompositionEnd={() => { composingRef.current = false }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                // 合成输入期间禁止 Enter 发送（否则会取到上一句 state）
+                if (composingRef.current) return
+                handleSend()
+              }}
               // iOS（部分壳浏览器）会对 <16px 的输入框自动“放大页面”
               // 通过专用 class 在 iOS 上强制到 16px，避免“点输入框界面突然放大”
               className="lp-chat-input flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/90 md:bg-white/80 md:backdrop-blur outline-none text-gray-800 text-sm"
