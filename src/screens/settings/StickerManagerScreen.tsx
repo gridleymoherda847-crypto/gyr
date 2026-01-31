@@ -415,6 +415,7 @@ export default function StickerManagerScreen() {
     const fileList = Array.from(files)
     const imageFiles: File[] = []
     const jsonFiles: File[] = []
+    const textFiles: File[] = []
     
     // 分类文件
     for (const f of fileList) {
@@ -425,6 +426,8 @@ export default function StickerManagerScreen() {
         imageFiles.push(f)
       } else if (type === 'application/json' || ext === 'json') {
         jsonFiles.push(f)
+      } else if (type.startsWith('text/') || ['txt', 'md', 'csv'].includes(ext)) {
+        textFiles.push(f)
       }
     }
     
@@ -516,6 +519,26 @@ export default function StickerManagerScreen() {
           }
         } catch {
           // 单个 JSON 文件解析失败，继续处理其他
+        }
+      }
+
+      // 处理文本文件（关键词：链接 / 纯链接）
+      for (const tf of textFiles.slice(0, 10)) {
+        try {
+          const text = await tf.text()
+          const entries = extractStickerUrlEntries(text)
+          if (entries.length === 0) continue
+          for (const e of entries.slice(0, 500)) {
+            addSticker({
+              characterId: targetId,
+              keyword: safeName(e.keyword) || '表情',
+              imageUrl: e.url,
+              category: cat,
+            })
+            importedCount++
+          }
+        } catch {
+          // ignore
         }
       }
       
@@ -821,7 +844,7 @@ export default function StickerManagerScreen() {
         <input
           ref={quickImportRef}
           type="file"
-          accept="image/*,.json,application/json"
+          accept="image/*,.json,application/json,.txt,.md,.csv,text/plain,text/markdown,text/csv"
           multiple
           className="hidden"
           onChange={(e) => {
