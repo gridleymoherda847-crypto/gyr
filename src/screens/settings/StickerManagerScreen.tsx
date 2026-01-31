@@ -5,6 +5,7 @@ import AppHeader from '../../components/AppHeader'
 import { useWeChat } from '../../context/WeChatContext'
 import WeChatDialog from '../wechat/components/WeChatDialog'
 import { saveTextAsFile } from '../../utils/saveFile'
+import mammoth from 'mammoth'
 
 type StickerPackV1 = {
   schemaVersion: 1
@@ -123,6 +124,12 @@ const normalizeStickerUrlImportText = (raw: string) => {
   if (entries.length === 0) return String(raw || '')
   // 强制整理成“每行一个：备注：链接”
   return entries.map(e => `${e.keyword}：${e.url}`).join('\n')
+}
+
+const docxToText = async (file: File): Promise<string> => {
+  const buf = await file.arrayBuffer()
+  const res = await mammoth.extractRawText({ arrayBuffer: buf })
+  return String(res?.value || '').trim()
 }
 
 export default function StickerManagerScreen() {
@@ -398,7 +405,7 @@ export default function StickerManagerScreen() {
     setNewCategoryName('')
   }
   
-  // 快速导入：支持图片和 JSON 文件混合
+  // 快速导入：支持图片、JSON、文本、DOCX 文件混合
   const handleQuickImport = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     
@@ -416,6 +423,7 @@ export default function StickerManagerScreen() {
     const imageFiles: File[] = []
     const jsonFiles: File[] = []
     const textFiles: File[] = []
+    const docxFiles: File[] = []
     
     // 分类文件
     for (const f of fileList) {
@@ -428,6 +436,11 @@ export default function StickerManagerScreen() {
         jsonFiles.push(f)
       } else if (type.startsWith('text/') || ['txt', 'md', 'csv'].includes(ext)) {
         textFiles.push(f)
+      } else if (
+        ext === 'docx' ||
+        type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ) {
+        docxFiles.push(f)
       }
     }
     
@@ -529,6 +542,26 @@ export default function StickerManagerScreen() {
           const entries = extractStickerUrlEntries(text)
           if (entries.length === 0) continue
           for (const e of entries.slice(0, 500)) {
+            addSticker({
+              characterId: targetId,
+              keyword: safeName(e.keyword) || '表情',
+              imageUrl: e.url,
+              category: cat,
+            })
+            importedCount++
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // 处理 DOCX 文件：提取纯文本后按“关键词：链接”导入
+      for (const df of docxFiles.slice(0, 3)) {
+        try {
+          const text = await docxToText(df)
+          const entries = extractStickerUrlEntries(text)
+          if (entries.length === 0) continue
+          for (const e of entries.slice(0, 800)) {
             addSticker({
               characterId: targetId,
               keyword: safeName(e.keyword) || '表情',
@@ -828,15 +861,41 @@ export default function StickerManagerScreen() {
         <input
           ref={packInputRef}
           type="file"
-          accept="application/json,.json"
+          accept="application/json,.json,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           className="hidden"
           onChange={async (e) => {
             const f = e.target.files?.[0]
             if (!f) return
-            const text = await f.text()
+            let text = ''
+            const ext = f.name.toLowerCase().split('.').pop() || ''
+            const type = f.type.toLowerCase()
+            try {
+              if (
+                ext === 'docx' ||
+                type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              ) {
+                text = await docxToText(f)
+              } else {
+                text = await f.text()
+              }
+            } catch {
+              text = ''
+            }
+            if (!text.trim()) {
+              setToast('导入失败：未能从文件中读取到可用内容（docx 请确认为纯文本链接列表）')
+              window.setTimeout(() => setToast(null), 2600)
+              e.currentTarget.value = ''
+              return
+            }
             setImportPackText(text)
             const cat = pendingImportCategoryRef.current
-            await importPack(text, cat)
+            // docx 更常见是“关键词：链接”文本：优先走链接导入
+            const entries = extractStickerUrlEntries(text)
+            if (entries.length > 0) {
+              await importMultipleUrls(text, cat)
+            } else {
+              await importPack(text, cat)
+            }
             e.currentTarget.value = ''
           }}
         />
@@ -844,7 +903,7 @@ export default function StickerManagerScreen() {
         <input
           ref={quickImportRef}
           type="file"
-          accept="image/*,.json,application/json,.txt,.md,.csv,text/plain,text/markdown,text/csv"
+          accept="image/*,.json,application/json,.txt,.md,.csv,text/plain,text/markdown,text/csv,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           multiple
           className="hidden"
           onChange={(e) => {
