@@ -882,7 +882,17 @@ export default function ChatScreen() {
               // 明确标注转账方向 + “已领取=已被接收/已收入”（避免模型把收款当成付款）
               const userName = selectedPersona?.name || '用户'
               const stText = st === 'received' ? '已领取（=收款方已收入）' : st === 'refunded' ? '已退还' : '待领取'
-              if (m.isUser) {
+              // 关键：用户点“收款/退还”后会生成一条 isUser=true 的“已收款/已退还”美化框（收款确认），
+              // 但它并不代表“用户发起转账”。否则模型会把“收款”误认为“转账支出”。
+              const isReceiptLike =
+                !!m.isUser &&
+                typeof m.content === 'string' &&
+                /^\s*已(收款|领取|退还|退款)\b/.test(m.content.trim())
+
+              if (isReceiptLike) {
+                // 收款确认（仍属于：角色→用户）
+                content = `[收款确认：${character.name}→${userName} ¥${amt} 备注"${note}" 状态:${stText}]`
+              } else if (m.isUser) {
                 // 用户发起 → 角色收款
                 content = `[转账：${userName}→${character.name} ¥${amt} 备注"${note}" 状态:${stText}]`
               } else {
@@ -1103,10 +1113,16 @@ export default function ChatScreen() {
           if (m.type === 'transfer') {
             const amt = typeof m.transferAmount === 'number' ? `¥${m.transferAmount.toFixed(2)}` : '¥0.00'
             const st = m.transferStatus || 'pending'
-            const stText = st === 'received' ? '已领取' : st === 'refunded' ? '已退还' : '待领取'
+            const stText = st === 'received' ? '已领取（=收款方已收入）' : st === 'refunded' ? '已退还' : '待领取'
             const userName = selectedPersona?.name || '用户'
-            const direction = m.isUser ? `${userName}→${character.name}` : `${character.name}→${userName}`
-            return `转账${amt}（${direction}，${stText}）`
+            const isReceiptLike =
+              !!m.isUser &&
+              typeof m.content === 'string' &&
+              /^\s*已(收款|领取|退还|退款)\b/.test(m.content.trim())
+            const direction = isReceiptLike
+              ? `${character.name}→${userName}`
+              : (m.isUser ? `${userName}→${character.name}` : `${character.name}→${userName}`)
+            return `${isReceiptLike ? '收款确认' : '转账'}${amt}（${direction}，${stText}）`
           }
           if (m.type === 'music') {
             const title = (m.musicTitle || '音乐').replace(/\s+/g, ' ').slice(0, 18)
