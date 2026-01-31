@@ -308,8 +308,23 @@ export default function GroupChatScreen() {
 - 关系：${m.relationship || '朋友'}`
     }).join('\n\n')
     
+    const summarizeForContext = (m: any) => {
+      if (!m) return ''
+      if (m.type === 'image') return '<图片>'
+      if (m.type === 'sticker') return '<表情包>'
+      if (m.type === 'voice') return '<语音>'
+      if (m.type === 'transfer') return '<转账>'
+      if (m.type === 'location') return '<位置>'
+      if (m.type === 'period') return '<经期记录>'
+      if (m.type === 'doudizhu_share') return '<斗地主战绩>'
+      const text = String(m.content || '').trim()
+      // 避免把 base64/长链接塞进上下文导致模型“看不到”图片
+      if (/^data:image\//i.test(text)) return '<图片>'
+      return text
+    }
+
     // 3. 世界书（基于所有成员和最近上下文）
-    const recentContext = messages.slice(-10).map(m => m.content).join(' ')
+    const recentContext = messages.slice(-10).map(m => summarizeForContext(m)).join(' ')
     const memberLore = members.map(m => getLorebookEntriesForCharacter(m.id, recentContext)).filter(Boolean).join('\n\n')
     const boundLore = group.lorebookId ? getLorebookEntriesByLorebookId(group.lorebookId, recentContext) : ''
     // 优先级：如果群聊绑定了世界书，则优先读取群聊世界书（覆盖成员各自绑定的世界书），避免“双重世界书”冲突
@@ -329,11 +344,12 @@ export default function GroupChatScreen() {
           const replyToSender = replyTo.isUser 
             ? (selectedPersona?.name || '用户')
             : characters.find(c => c.id === replyTo.groupSenderId)?.name || '未知'
-          replyInfo = `[回复${replyToSender}："${replyTo.content?.slice(0, 20)}${(replyTo.content?.length || 0) > 20 ? '...' : ''}"] `
+          const replyPreview = String(summarizeForContext(replyTo)).slice(0, 20)
+          replyInfo = `[回复${replyToSender}："${replyPreview}${replyPreview.length >= 20 ? '...' : ''}"] `
         }
       }
       
-      return `${sender}: ${replyInfo}${m.content}`
+      return `${sender}: ${replyInfo}${summarizeForContext(m)}`
     }).join('\n')
     
     // 5. 关系网（必读）

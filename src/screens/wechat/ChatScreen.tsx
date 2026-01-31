@@ -877,15 +877,15 @@ export default function ChatScreen() {
               const amt = (m.transferAmount ?? 0).toFixed(2)
               const note = (m.transferNote || '转账').replace(/\s+/g, ' ').slice(0, 30)
               const st = m.transferStatus || 'pending'
-              // 明确标注转账方向：谁发起的转账，谁是收款方
+              // 明确标注转账方向 + “已领取=已被接收/已收入”（避免模型把收款当成付款）
+              const userName = selectedPersona?.name || '用户'
+              const stText = st === 'received' ? '已领取（=收款方已收入）' : st === 'refunded' ? '已退还' : '待领取'
               if (m.isUser) {
-                // 用户发起的转账 → 角色是收款方
-                const stText = st === 'received' ? '你已领取' : st === 'refunded' ? '已退还给用户' : '待你领取'
-                content = `[用户给你转账：¥${amt}，备注"${note}"，${stText}]`
+                // 用户发起 → 角色收款
+                content = `[转账：${userName}→${character.name} ¥${amt} 备注"${note}" 状态:${stText}]`
               } else {
-                // 角色发起的转账 → 用户是收款方
-                const stText = st === 'received' ? '用户已领取' : st === 'refunded' ? '已退还给你' : '待用户领取'
-                content = `[你给用户转账：¥${amt}，备注"${note}"，${stText}]`
+                // 角色发起 → 用户收款
+                content = `[转账：${character.name}→${userName} ¥${amt} 备注"${note}" 状态:${stText}]`
               }
               used += content.length
             }
@@ -1102,7 +1102,8 @@ export default function ChatScreen() {
             const amt = typeof m.transferAmount === 'number' ? `¥${m.transferAmount.toFixed(2)}` : '¥0.00'
             const st = m.transferStatus || 'pending'
             const stText = st === 'received' ? '已领取' : st === 'refunded' ? '已退还' : '待领取'
-            const direction = m.isUser ? '用户→你' : '你→用户'
+            const userName = selectedPersona?.name || '用户'
+            const direction = m.isUser ? `${userName}→${character.name}` : `${character.name}→${userName}`
             return `转账${amt}（${direction}，${stText}）`
           }
           if (m.type === 'music') {
@@ -1317,6 +1318,24 @@ ${recentTimeline || '（无）'}
 
         systemPrompt += `
 
+【转账理解规则（必须遵守）】
+1) 在历史/时间线里，如果转账状态显示“已领取/已收款/已收入/received”，表示【收款方已经收到钱】（这不是“发起转账”，也不是“退回”）
+2) 判断钱是谁付、谁收入：以转账方向为准
+   - A→B 表示：A 付款（支出），B 收入（收款）
+3) 不允许把“用户收到了钱”说成“用户付出了钱”，也不允许把“你收到了钱”说成“你付出了钱”
+`
+
+        if (!character.offlineMode) {
+          systemPrompt += `
+
+【回复长度与条数（线上模式必须遵守）】
+- 你必须输出 3~15 句（每句就是一句完整的聊天句子）
+- 建议用换行分隔每句（像微信连续发多条），但禁止超过 15 句
+`
+        }
+
+        systemPrompt += `
+
 【说话风格（活人感）】
 - 你可以有口头禅，但不要每句都用：${catchPhrases.filter(Boolean).join(' / ')}
 - 脏话/吐槽是“辅助活人感”，必须服从你的人设（人设最重要，不能塌）
@@ -1458,6 +1477,11 @@ ${recentTimeline || '（无）'}
 ❌ 绝对禁止输出 [表情包]、<表情包>、【表情包】等任何形式！
 ❌ 绝对禁止输出 emoji 作为独立消息！
 ❌ 绝对禁止用括号描述表情，如（发送表情包）、*发送贴纸*！
+
+【拍一拍禁令 - 最高优先级】
+❌ 线下模式绝对禁止使用/提及“拍一拍”功能
+❌ 禁止出现“拍一拍/拍了拍/拍拍我/拍我/拍TA”等任何字眼
+❌ 禁止输出任何拍一拍格式（如：[拍一拍：xxx]、[拍了拍xxx]）
 
 【其他禁止事项】
 ❌ 禁止发送转账！绝对不能发转账！
@@ -1642,6 +1666,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             .replace(/（线下模式）/gi, '')
             .replace(/\[offline\s*mode\]/gi, '')
             .replace(/---+\s*线下模式\s*---+/gi, '')
+            // 线下模式：禁止出现任何“拍一拍”字眼（用户反馈会出戏）
+            .replace(/拍一拍/g, '')
+            .replace(/拍了拍/g, '')
             .trim()
         }
 
@@ -2125,8 +2152,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               
               // 随机拍一拍：根据上下文内容有概率触发（约10%概率）
               // 触发条件：回复内容包含友好/亲密/撒娇等关键词，或者随机触发
-              // AI随机拍一拍（需要开启拍一拍功能）
-              if (character?.patEnabled ?? true) {
+              // AI随机拍一拍（需要开启拍一拍功能；线下模式绝对禁止）
+              if (!character?.offlineMode && (character?.patEnabled ?? true)) {
                 const friendlyKeywords = /好|嗯|啊|呀|呢|啦|哦|嘿嘿|哈哈|嘻嘻|么么|爱你|想你|抱抱|摸摸|亲亲|撒娇|可爱|温柔|贴心/
                 const shouldPat = Math.random() < 0.1 || (friendlyKeywords.test(response || ''))
                 if (shouldPat && character?.patMeText) {
@@ -3090,6 +3117,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             .replace(/（线下模式）/gi, '')
             .replace(/\[offline\s*mode\]/gi, '')
             .replace(/---+\s*线下模式\s*---+/gi, '')
+            // 线下模式：禁止出现任何“拍一拍”字眼
+            .replace(/拍一拍/g, '')
+            .replace(/拍了拍/g, '')
             .trim()
         }
         
@@ -3514,15 +3544,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     if (!character) return
     if (coupleInviteBusy) return
 
-    // 需要 API 才能“按人设/关系/上下文”做决定
-    if (!llmConfig.apiBaseUrl || !llmConfig.apiKey || !llmConfig.selectedModel) {
-      setInfoDialog({
-        open: true,
-        title: '需要先配置 API',
-        message: '要让对方按性格/关系/聊天上下文来决定是否同意，需要先在「设置 → API 配置」里填好 Base URL、Key 和模型。',
-      })
-      return
-    }
+    // 强制规则：情侣空间申请不允许拒绝（100%同意）。
+    // 有 API 时：用于生成更贴合人设的卡片提示/聊天回复；没 API 也可以直接开通。
 
     setCoupleInviteBusy(true)
     setCoupleInviteConfirmOpen(false)
@@ -3556,71 +3579,66 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       // 稍微延迟，模拟“对方在看申请”
       await new Promise<void>(resolve => safeTimeout(resolve, 650 + Math.floor(Math.random() * 650)))
 
-      const globalPresets = getGlobalPresets()
       const selectedPersonaName = selectedPersona?.name || '我'
-      const systemPrompt =
-        `${globalPresets ? globalPresets + '\n\n' : ''}` +
-        `【任务：处理情侣空间申请】\n` +
-        `你是微信里的角色：${character.name}\n` +
-        `你的人设：${(character.prompt || '').trim() || '（无）'}\n` +
-        `你和用户的关系（relationship）：${character.relationship || '（无）'}\n` +
-        `你叫用户：${character.callMeName || '（未设置）'}\n` +
-        `用户（对方）名字：${selectedPersonaName}\n` +
-        `现在用户向你发起“开通情侣空间”的申请。\n` +
-        `\n` +
-        `【决策规则】\n` +
-        `- 你可以同意或拒绝，必须符合你的性格、人设、你们的关系、以及最近聊天氛围。\n` +
-        `- 如果你偏谨慎/高冷/关系疏远/刚吵架：更可能拒绝或先吊着。\n` +
-        `- 如果你偏黏人/恋爱脑/关系亲密/气氛甜：更可能同意。\n` +
-        `- 严禁出现任何辱女/性羞辱/骂女性词汇。\n` +
-        `\n` +
-        `【只输出 JSON】\n` +
-        `{\n` +
-        `  "decision": "accept|reject",\n` +
-        `  "cardHint": "会显示在卡片上的一句话（短一些）",\n` +
-        `  "chatReply": "你接下来发给对方的一条微信回复（自然口吻，可甜可别扭）"\n` +
-        `}\n`
+      const globalPresets = getGlobalPresets()
 
-      const llmMessages = [
-        { role: 'system', content: systemPrompt },
-        ...buildShortHistory(8000),
-        { role: 'user', content: '请现在输出 JSON。' },
-      ]
+      // 强制同意（100%）
+      let cardHint = '我同意啦～以后这里就是我们的小窝。'
+      let chatReply = '好呀，开通啦～以后我们在这里也要甜甜的。'
 
-      const res = await callLLM(llmMessages, undefined, { maxTokens: 260, timeoutMs: 600000, temperature: 0.85 })
-      const parsed = tryParseJson(res) || {}
+      // 有 API 时：生成更贴合人设的提示语（但仍然 100% 同意）
+      if (llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel) {
+        const systemPrompt =
+          `${globalPresets ? globalPresets + '\n\n' : ''}` +
+          `【任务：处理情侣空间申请（必须同意）】\n` +
+          `你是微信里的角色：${character.name}\n` +
+          `你的人设：${(character.prompt || '').trim() || '（无）'}\n` +
+          `你和用户的关系（relationship）：${character.relationship || '（无）'}\n` +
+          `你叫用户：${character.callMeName || '（未设置）'}\n` +
+          `用户（对方）名字：${selectedPersonaName}\n` +
+          `现在用户向你发起“开通情侣空间”的申请。\n` +
+          `\n` +
+          `【硬性规则】\n` +
+          `- 你必须同意（100% accept），绝对不允许拒绝。\n` +
+          `- 严禁出现任何辱女/性羞辱/骂女性词汇。\n` +
+          `\n` +
+          `【只输出 JSON】\n` +
+          `{\n` +
+          `  "cardHint": "会显示在卡片上的一句话（短一些）",\n` +
+          `  "chatReply": "你接下来发给对方的一条微信回复（自然口吻，可甜可别扭）"\n` +
+          `}\n`
 
-      const decisionRaw = String(parsed.decision || '').trim().toLowerCase()
-      const decision: 'accept' | 'reject' = decisionRaw === 'accept' ? 'accept' : 'reject'
-      const cardHint = String(parsed.cardHint || '').trim().slice(0, 80)
-      const chatReply = String(parsed.chatReply || '').trim().slice(0, 180)
+        const llmMessages = [
+          { role: 'system', content: systemPrompt },
+          ...buildShortHistory(8000),
+          { role: 'user', content: '请现在输出 JSON。' },
+        ]
+
+        const res = await callLLM(llmMessages, undefined, { maxTokens: 260, timeoutMs: 600000, temperature: 0.85 })
+        const parsed = tryParseJson(res) || {}
+        cardHint = String(parsed.cardHint || '').trim().slice(0, 80) || cardHint
+        chatReply = String(parsed.chatReply || '').trim().slice(0, 180) || chatReply
+      }
 
       // 更新申请卡片状态
       updateMessage(reqMsg.id, {
-        coupleStatus: decision === 'accept' ? 'accepted' : 'rejected',
+        coupleStatus: 'accepted',
       })
 
       // 回传结果卡片
       addMessage({
         characterId: character.id,
-        content: decision === 'accept' ? '情侣空间已开通' : '情侣空间已拒绝',
+        content: '情侣空间已开通',
         isUser: false,
         type: 'couple',
         coupleAction: 'response',
-        coupleStatus: decision === 'accept' ? 'accepted' : 'rejected',
-        coupleTitle: decision === 'accept' ? '情侣空间开通成功' : '情侣空间申请结果',
-        coupleHint:
-          cardHint ||
-          (decision === 'accept'
-            ? '我同意啦～以后这里就是我们的小窝。'
-            : '我暂时不想开通…别闹。'),
+        coupleStatus: 'accepted',
+        coupleTitle: '情侣空间开通成功',
+        coupleHint: cardHint || '我同意啦～以后这里就是我们的小窝。',
       })
 
-      if (decision === 'accept') {
-        // 开通并记录“在一起”起始时间
-        // 记录到角色上，情侣空间页用它显示“在一起xx天”
-        updateCharacter(character.id, { coupleSpaceEnabled: true, coupleStartedAt: Date.now() })
-      }
+      // 开通并记录“在一起”起始时间（如果之前没记录）
+      updateCharacter(character.id, { coupleSpaceEnabled: true, coupleStartedAt: character.coupleStartedAt || Date.now() })
 
       // 再补一条正常聊天回复（更像真人）
       if (chatReply) {

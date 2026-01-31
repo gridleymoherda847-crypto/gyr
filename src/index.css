@@ -57,7 +57,8 @@ html.ios-pwa body {
   overflow: hidden !important;
   overscroll-behavior: none !important;
   -webkit-overflow-scrolling: auto !important;
-  touch-action: pan-x pan-y !important;
+  /* 禁止“拖拽整页/像电脑模式一样能移动”，同时保留正常点击与内部滚动 */
+  touch-action: manipulation !important;
 }
 
 html.ios-pwa body {

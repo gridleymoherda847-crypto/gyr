@@ -172,7 +172,7 @@ export default function CoupleSpaceScreen() {
   const navigate = useNavigate()
   const { characterId } = useParams<{ characterId: string }>()
   const { callLLM } = useOS()
-  const { getCharacter, getMessagesByCharacter, getUserPersona, getCurrentPersona } = useWeChat()
+  const { getCharacter, getMessagesByCharacter, getUserPersona, getCurrentPersona, updateCharacter, addMessage } = useWeChat()
 
   const character = getCharacter(characterId || '')
   const now = Date.now()
@@ -211,6 +211,7 @@ export default function CoupleSpaceScreen() {
     onConfirm?: () => void
     onCancel?: () => void
   }>({ open: false })
+  const [unbindConfirmOpen, setUnbindConfirmOpen] = useState(false)
 
   const [pickMoodOpen, setPickMoodOpen] = useState(false)
   const [pickMoodDay, setPickMoodDay] = useState<string | null>(null)
@@ -471,6 +472,27 @@ export default function CoupleSpaceScreen() {
     navigate(-1)
   }
 
+  const handleUnbind = () => {
+    if (!character) return
+    setUnbindConfirmOpen(false)
+    // 清空情侣空间开通状态（允许后续重新申请）
+    updateCharacter(character.id, { coupleSpaceEnabled: false, coupleStartedAt: null })
+    // 清掉本地情侣空间数据（避免下次开通仍显示旧内容）
+    try {
+      localStorage.removeItem(STORAGE_KEY(character.id))
+    } catch {
+      // ignore
+    }
+    // 写入聊天记录（系统分割线风格）
+    addMessage({
+      characterId: character.id,
+      content: `——${character.name}已解绑了情侣空间——`,
+      isUser: false,
+      type: 'system',
+    })
+    navigate(-1)
+  }
+
   const pickMood = (day: string, mood: MoodId) => {
     if (!data) return
     const prev = data.checkIns[day] || {}
@@ -677,21 +699,31 @@ export default function CoupleSpaceScreen() {
             </svg>
           </button>
           <span className="font-semibold text-pink-600">情侣空间</span>
-          <button
-            type="button"
-            className="w-9 h-9 rounded-full bg-white/55 border border-white/40 backdrop-blur flex items-center justify-center active:scale-[0.98]"
-            onClick={() => setSettingsOpen(true)}
-            title="更换背景"
-          >
-            <svg className="w-5 h-5 text-pink-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-full bg-white/60 border border-white/45 backdrop-blur text-[11px] font-semibold text-red-500 active:scale-[0.98]"
+              onClick={() => setUnbindConfirmOpen(true)}
+              title="解绑"
+            >
+              解绑
+            </button>
+            <button
+              type="button"
+              className="w-9 h-9 rounded-full bg-white/55 border border-white/40 backdrop-blur flex items-center justify-center active:scale-[0.98]"
+              onClick={() => setSettingsOpen(true)}
+              title="更换背景"
+            >
+              <svg className="w-5 h-5 text-pink-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* 内容 */}
@@ -1088,6 +1120,18 @@ export default function CoupleSpaceScreen() {
           danger={dialog.danger}
           onConfirm={() => dialog.onConfirm?.()}
           onCancel={() => (dialog.onCancel ? dialog.onCancel() : setDialog({ open: false }))}
+        />
+
+        {/* 解绑确认 */}
+        <WeChatDialog
+          open={unbindConfirmOpen}
+          title="解绑情侣空间？"
+          message="解绑后会退出情侣空间，并在聊天记录里生成一条系统提示。之后仍可重新申请开通。"
+          confirmText="确认解绑"
+          cancelText="取消"
+          danger
+          onConfirm={handleUnbind}
+          onCancel={() => setUnbindConfirmOpen(false)}
         />
       </div>
     </WeChatLayout>

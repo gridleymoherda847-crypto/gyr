@@ -30,6 +30,17 @@ if (isIOS) {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) window.setTimeout(setAppHeight, 80)
   })
+
+  // iOS：禁用双指缩放/页面手势（避免“像电脑模式一样能拖动/缩放导致点击错位”）
+  const preventGesture = (e: Event) => {
+    // Safari 的 gesture 事件是可 cancel 的
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ev: any = e as any
+    if (typeof ev?.preventDefault === 'function') ev.preventDefault()
+  }
+  document.addEventListener('gesturestart', preventGesture as any, { passive: false } as any)
+  document.addEventListener('gesturechange', preventGesture as any, { passive: false } as any)
+  document.addEventListener('gestureend', preventGesture as any, { passive: false } as any)
 }
 
 // 尝试申请“持久化存储”（尽量避免浏览器回收 IndexedDB 导致数据丢失）
