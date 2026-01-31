@@ -466,7 +466,32 @@ export default function StickerManagerScreen() {
       for (const jf of jsonFiles.slice(0, 10)) {
         try {
           const text = await jf.text()
-          const pack: LooseStickerPack = JSON.parse(text)
+          // 有些“json 文件”其实是纯文本（备注：链接），或 JSON 含注释/不规范导致 parse 失败
+          let pack: LooseStickerPack | null = null
+          try {
+            pack = JSON.parse(text)
+          } catch {
+            pack = null
+          }
+
+          // 兜底：如果不是标准 JSON，按“备注：链接”文本导入
+          if (!pack) {
+            const entries = extractStickerUrlEntries(text)
+            if (entries.length > 0) {
+              for (const e of entries.slice(0, 800)) {
+                addSticker({
+                  characterId: targetId,
+                  keyword: safeName(e.keyword) || '表情',
+                  imageUrl: e.url,
+                  category: cat,
+                  description: safeName(e.keyword) || '',
+                })
+                importedCount++
+              }
+            }
+            continue
+          }
+
           const rawStickers: any =
             (pack as any).stickers ||
             (pack as any).images ||
@@ -547,6 +572,7 @@ export default function StickerManagerScreen() {
               keyword: safeName(e.keyword) || '表情',
               imageUrl: e.url,
               category: cat,
+              description: safeName(e.keyword) || '',
             })
             importedCount++
           }
@@ -567,6 +593,7 @@ export default function StickerManagerScreen() {
               keyword: safeName(e.keyword) || '表情',
               imageUrl: e.url,
               category: cat,
+              description: safeName(e.keyword) || '',
             })
             importedCount++
           }
