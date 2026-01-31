@@ -883,6 +883,33 @@ ${uniqueNames.join('、')}
     try {
       const history = buildHistoryForSummary(messages, summaryRoundsDraft)
       const prev = (memorySummaryDraft || '').trim()
+
+      const mergeMemorySummary = (prevRaw: string, nextRaw: string) => {
+        const prev = String(prevRaw || '').trim()
+        const next = String(nextRaw || '').trim()
+        if (!next) return prev
+        if (!prev) return next
+        if (prev === next) return prev
+        if (prev.includes(next)) return prev
+        if (next.includes(prev)) return next
+
+        const prevLines = prev.split('\n').map(s => s.trim()).filter(Boolean)
+        const nextLines = next.split('\n').map(s => s.trim()).filter(Boolean)
+        const allPrevBullet = prevLines.length > 0 && prevLines.every(l => l.startsWith('-'))
+        const allNextBullet = nextLines.length > 0 && nextLines.every(l => l.startsWith('-'))
+        if (allPrevBullet && allNextBullet) {
+          const set = new Set(prevLines)
+          for (const l of nextLines) {
+            if (!set.has(l)) prevLines.push(l)
+          }
+          return prevLines.join('\n')
+        }
+
+        const d = new Date()
+        const pad2 = (n: number) => String(n).padStart(2, '0')
+        const stamp = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+        return `${prev}\n\n—— 新增记忆总结（${stamp}）——\n${next}`
+      }
       
       const prompt = `你是"群聊记忆整理器"。请把"最近群聊对话"总结为可长期使用的记忆条目，用中文，尽量精简但信息密度高。
 
@@ -903,7 +930,7 @@ ${history}`
         { role: 'user', content: prompt }
       ], undefined, { maxTokens: 500 })
       
-      setMemorySummaryDraft(response.trim())
+      setMemorySummaryDraft(prevDraft => mergeMemorySummary(prevDraft, response))
     } catch (err) {
       console.error('生成记忆失败:', err)
     } finally {

@@ -427,6 +427,33 @@ export default function ChatSettingsScreen() {
   const hasApiConfig = llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel
 
   // 生成“长期记忆摘要”：把最近 N 回合总结为精简记忆，并与旧摘要合并（用户可编辑）
+  const mergeMemorySummary = (prevRaw: string, nextRaw: string) => {
+    const prev = String(prevRaw || '').trim()
+    const next = String(nextRaw || '').trim()
+    if (!next) return prev
+    if (!prev) return next
+    if (prev === next) return prev
+    if (prev.includes(next)) return prev
+    if (next.includes(prev)) return next
+
+    const prevLines = prev.split('\n').map(s => s.trim()).filter(Boolean)
+    const nextLines = next.split('\n').map(s => s.trim()).filter(Boolean)
+    const allPrevBullet = prevLines.length > 0 && prevLines.every(l => l.startsWith('-'))
+    const allNextBullet = nextLines.length > 0 && nextLines.every(l => l.startsWith('-'))
+    if (allPrevBullet && allNextBullet) {
+      const set = new Set(prevLines)
+      for (const l of nextLines) {
+        if (!set.has(l)) prevLines.push(l)
+      }
+      return prevLines.join('\n')
+    }
+
+    const d = new Date()
+    const pad2 = (n: number) => String(n).padStart(2, '0')
+    const stamp = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+    return `${prev}\n\n—— 新增记忆总结（${stamp}）——\n${next}`
+  }
+
   const buildHistoryForSummary = (all: any[], rounds: number) => {
     const maxRounds = Math.min(1000, Math.max(1, Math.floor(rounds || 1)))
     let userRounds = 0
@@ -1946,7 +1973,7 @@ ${history}`
                         undefined,
                         { maxTokens: 450, timeoutMs: 600000 }
                       )
-                      setMemorySummaryDraft(summary.trim())
+                      setMemorySummaryDraft(prevDraft => mergeMemorySummary(prevDraft, summary))
                     } catch (e: any) {
                       setDialog({
                         open: true,
