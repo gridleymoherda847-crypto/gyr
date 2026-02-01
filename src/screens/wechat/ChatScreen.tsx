@@ -875,20 +875,26 @@ export default function ChatScreen() {
               const stText = st === 'received' ? '已领取（=收款方已收入）' : st === 'refunded' ? '已退还' : '待领取'
               // 关键：用户点“收款/退还”后会生成一条 isUser=true 的“已收款/已退还”美化框（收款确认），
               // 但它并不代表“用户发起转账”。否则模型会把“收款”误认为“转账支出”。
-              const isReceiptLike =
-                !!m.isUser &&
+              // 判断是否是"收款/退款确认"消息：content 以"已收款/已退还/已领取/已退款"开头
+              const isReceiptConfirm =
                 typeof m.content === 'string' &&
                 /^\s*已(收款|领取|退还|退款)\b/.test(m.content.trim())
 
-              if (isReceiptLike) {
-                // 收款确认（仍属于：角色→用户）
-                content = `[收款确认：${character.name}→${userName} ¥${amt} 备注"${note}" 状态:${stText}]`
+              if (isReceiptConfirm) {
+                // 收款确认消息（不是发起转账）：
+                // - isUser=true（用户发的"已收款"）：用户确认收到了【角色→用户】的转账
+                // - isUser=false（角色发的"已收款"）：角色确认收到了【用户→角色】的转账
+                if (m.isUser) {
+                  content = `[收款确认：${userName}收到了${character.name}转的¥${amt}，备注"${note}"]`
+                } else {
+                  content = `[收款确认：${character.name}收到了${userName}转的¥${amt}，备注"${note}"]`
+                }
               } else if (m.isUser) {
-                // 用户发起 → 角色收款
-                content = `[转账：${userName}→${character.name} ¥${amt} 备注"${note}" 状态:${stText}]`
+                // 用户发起转账 → 转给角色
+                content = `[${userName}发起转账给${character.name}：¥${amt}，备注"${note}"，${stText}]`
               } else {
-                // 角色发起 → 用户收款
-                content = `[转账：${character.name}→${userName} ¥${amt} 备注"${note}" 状态:${stText}]`
+                // 角色发起转账 → 转给用户
+                content = `[${character.name}发起转账给${userName}：¥${amt}，备注"${note}"，${stText}]`
               }
               used += content.length
             }
@@ -1106,14 +1112,15 @@ export default function ChatScreen() {
             const st = m.transferStatus || 'pending'
             const stText = st === 'received' ? '已领取（=收款方已收入）' : st === 'refunded' ? '已退还' : '待领取'
             const userName = selectedPersona?.name || '用户'
-            const isReceiptLike =
-              !!m.isUser &&
+            // 判断是否是收款确认消息
+            const isReceiptConfirm =
               typeof m.content === 'string' &&
               /^\s*已(收款|领取|退还|退款)\b/.test(m.content.trim())
-            const direction = isReceiptLike
-              ? `${character.name}→${userName}`
-              : (m.isUser ? `${userName}→${character.name}` : `${character.name}→${userName}`)
-            return `${isReceiptLike ? '收款确认' : '转账'}${amt}（${direction}，${stText}）`
+            // 收款确认时，要根据谁发的确认来判断方向
+            const direction = isReceiptConfirm
+              ? (m.isUser ? `${userName}收到${character.name}的转账` : `${character.name}收到${userName}的转账`)
+              : (m.isUser ? `${userName}转给${character.name}` : `${character.name}转给${userName}`)
+            return `${isReceiptConfirm ? '收款确认' : '转账发起'}${amt}（${direction}，${stText}）`
           }
           if (m.type === 'music') {
             const title = (m.musicTitle || '音乐').replace(/\s+/g, ' ').slice(0, 18)
@@ -2653,8 +2660,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     setPhonePeekSelectedChat(null)
 
     try {
-      // 获取其他角色（排除自己和当前用户）
-      const otherCharacters = characters.filter(c => c.id !== character.id).slice(0, 6)
+      // 获取同一世界书的其他角色（只有绑定了相同 lorebookId 的角色才能在"查手机"中出现）
+      // 避免串戏：不同世界观/世界书的角色不应该互相认识
+      const sameWorldCharacters = character.lorebookId
+        ? characters.filter(c => c.id !== character.id && c.lorebookId === character.lorebookId).slice(0, 6)
+        : [] // 如果当前角色没有绑定世界书，则不参考任何已有角色（让AI自由编造）
+      const otherCharacters = sameWorldCharacters
       
       // 获取世界书和预设
       const recentContext = messages.slice(-10).map(m => m.content).join(' ')
@@ -2771,8 +2782,10 @@ ${languageRule}
   "recentPhotos": ["用中文描述照片1", "用中文描述照片2"]
 }
 
-${otherCharacters.length > 0 ? `可参考的已有角色：
-${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}` : ''}
+${otherCharacters.length > 0 ? `【同一世界书的已有角色 - 可以出现在聊天记录中】
+${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
+（上面这些角色和${character.name}在同一个世界观里，可以作为朋友/认识的人出现）` : `【重要】该角色没有绑定世界书，或没有同世界书的其他角色。
+请完全根据角色人设自由编造TA的社交圈（朋友、家人、同事等），不要使用任何用户创建的其他角色名字！`}
 
 世界书：${lorebookText}`
 
