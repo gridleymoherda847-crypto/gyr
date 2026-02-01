@@ -533,11 +533,6 @@ ${params.userText}
             e.preventDefault()
             onBack()
           }}
-          onTouchEnd={(e) => {
-            e.stopPropagation()
-            e.preventDefault()
-            onBack()
-          }}
           className="absolute top-2 left-3 flex items-center gap-0.5 text-white drop-shadow-lg z-10"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

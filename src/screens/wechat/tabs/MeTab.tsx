@@ -100,7 +100,6 @@ export default function MeTab({ onBack }: Props) {
         <button
           type="button"
           onClick={handleBack}
-          onTouchEnd={handleBack}
           className="flex items-center gap-0.5 transition-opacity hover:opacity-70 relative z-10"
           style={{ color: fontColor.value }}
         >

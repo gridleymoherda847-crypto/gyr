@@ -15,6 +15,8 @@ export default function WeChatLayout({ children, className = '' }: Props) {
   
   // 使用自定义背景或默认背景
   const wechatBg = userSettings.wechatBackground || '/icons/wechat-bg.png'
+  const isImageBg =
+    wechatBg.startsWith('data:') || wechatBg.startsWith('http') || wechatBg.startsWith('blob') || wechatBg.startsWith('/')
   const [showListenPanel, setShowListenPanel] = useState(false)
 
   // 外部触发打开“一起听歌界面”（例如：聊天里确认后进入）
@@ -63,9 +65,10 @@ export default function WeChatLayout({ children, className = '' }: Props) {
     <div 
       className={`relative h-full w-full overflow-hidden ${className}`}
       style={{
-        backgroundImage: `url(${wechatBg})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
+        background: isImageBg ? undefined : wechatBg,
+        backgroundImage: isImageBg ? `url("${wechatBg}")` : undefined,
+        backgroundSize: isImageBg ? 'cover' : undefined,
+        backgroundPosition: isImageBg ? 'center' : undefined,
       }}
     >
       {/* 一起听歌全局浮窗 - 只要在一起听就显示（清新绿色配色，移除blur提升性能） */}

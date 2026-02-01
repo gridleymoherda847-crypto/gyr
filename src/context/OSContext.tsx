@@ -815,12 +815,6 @@ export function OSProvider({ children }: PropsWithChildren) {
       audioRef.current.addEventListener('ended', () => {
         // 若开启 loop（例如“一起听歌”），不要切下一首
         if (audioRef.current?.loop) {
-          try {
-            audioRef.current.currentTime = 0
-            void audioRef.current.play()
-          } catch {
-            // ignore
-          }
           return
         }
         // 自动播放下一首

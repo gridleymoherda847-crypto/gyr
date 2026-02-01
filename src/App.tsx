@@ -180,10 +180,10 @@ function InnerApp() {
 
 function WeChatWalletRoute() {
   const navigate = useNavigate()
-  return <WalletScreen onBack={() => navigate(-1)} />
+  return <WalletScreen onBack={() => navigate('/apps/wechat', { replace: true })} />
 }
 
 function WeChatFundRoute() {
   const navigate = useNavigate()
-  return <FundScreen onBack={() => navigate(-1)} />
+  return <FundScreen onBack={() => navigate('/apps/wechat', { replace: true })} />
 }

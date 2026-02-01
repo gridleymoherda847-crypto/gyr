@@ -50,6 +50,7 @@ export type WeChatCharacter = {
   coupleSpaceEnabled: boolean
   coupleStartedAt: number | null // 情侣空间开通/在一起开始时间（用于“在一起xx天”）
   chatBackground: string
+  lorebookId?: string // 绑定的世界书ID（来自创作工坊）
   createdAt: number
   isSpecialCare: boolean // 特别关心
   isPinned: boolean // 置顶

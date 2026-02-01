@@ -4,6 +4,11 @@ import VirtualStatusBar from './VirtualStatusBar'
 
 export default function PhoneShell({ children }: PropsWithChildren) {
   const { wallpaper, currentFont, fontColor, notifications, markNotificationRead } = useOS()
+  const isImageUrl =
+    wallpaper.startsWith('data:') ||
+    wallpaper.startsWith('http') ||
+    wallpaper.startsWith('blob') ||
+    wallpaper.startsWith('/')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [hideStatusBar, setHideStatusBar] = useState(() => {
     return localStorage.getItem('mina_hide_status_bar') === 'true'
@@ -79,9 +84,10 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           fontFamily: currentFont.fontFamily,
           fontSize: '17px',
           color: fontColor.value,
-          backgroundImage: `url(${wallpaper})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
+          background: isImageUrl ? undefined : wallpaper,
+          backgroundImage: isImageUrl ? `url("${wallpaper}")` : undefined,
+          backgroundSize: isImageUrl ? 'cover' : undefined,
+          backgroundPosition: isImageUrl ? 'center' : undefined,
           backgroundColor: '#fef7f0',
         }}
       >
@@ -142,9 +148,10 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           <div 
             className="relative w-full h-full rounded-[47px] overflow-hidden"
             style={{
-              backgroundImage: `url(${wallpaper})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
+              background: isImageUrl ? undefined : wallpaper,
+              backgroundImage: isImageUrl ? `url("${wallpaper}")` : undefined,
+              backgroundSize: isImageUrl ? 'cover' : undefined,
+              backgroundPosition: isImageUrl ? 'center' : undefined,
               backgroundColor: '#fef7f0',
             }}
           >

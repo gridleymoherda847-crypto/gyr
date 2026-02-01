@@ -26,7 +26,6 @@ export default function AppHeader({ title, onBack, showBack = true, rightElement
           <button
             type="button"
             onClick={handleBack}
-            onTouchEnd={handleBack}
             className="flex items-center gap-0.5 sm:gap-1 transition-opacity hover:opacity-70 press-effect relative z-10"
             style={{ color: fontColor.value }}
           >

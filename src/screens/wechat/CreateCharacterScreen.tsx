@@ -98,7 +98,6 @@ export default function CreateCharacterScreen() {
           <button 
             type="button" 
             onClick={handleBack}
-            onTouchEnd={handleBack}
             className="flex items-center gap-0.5 relative z-10"
             style={{ color: fontColor.value }}
           >
