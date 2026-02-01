@@ -2033,7 +2033,22 @@ ${history}`
                 </div>
                 <button
                   type="button"
-                  onClick={() => setTimeSyncEnabledDraft(v => !v)}
+                  onClick={() => {
+                    if (timeSyncEnabledDraft) {
+                      // 从开启切换到关闭时，弹出确认对话框
+                      setDialog({
+                        open: true,
+                        title: '关闭时间同步',
+                        message: `关闭后，${character.name}将失去时间感知，例如不会询问你"那么久去做什么了"`,
+                        confirmText: '确认关闭',
+                        cancelText: '取消',
+                        onConfirm: () => setTimeSyncEnabledDraft(false),
+                      })
+                    } else {
+                      // 从关闭切换到开启，直接开启
+                      setTimeSyncEnabledDraft(true)
+                    }
+                  }}
                   className={`w-12 h-7 rounded-full transition-colors ${timeSyncEnabledDraft ? 'bg-green-500' : 'bg-gray-300'}`}
                 >
                   <div className={`w-6 h-6 bg-white rounded-full shadow mt-0.5 transition-transform ${timeSyncEnabledDraft ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`} />
