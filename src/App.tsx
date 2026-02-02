@@ -31,6 +31,7 @@ const PresetScreen = lazy(() => import('./screens/PresetScreen'))
 const DoudizhuScreen = lazy(() => import('./screens/DoudizhuScreen'))
 const ScratchCardScreen = lazy(() => import('./screens/ScratchCardScreen'))
 const MinesweeperScreen = lazy(() => import('./screens/MinesweeperScreen'))
+const LiaoliaoYishengScreen = lazy(() => import('./screens/LiaoliaoYishengScreen'))
 const XScreen = lazy(() => import('./screens/XScreen'))
 const ManualScreen = lazy(() => import('./screens/ManualScreen'))
 const AnniversaryScreen = lazy(() => import('./screens/AnniversaryScreen'))
@@ -156,6 +157,7 @@ function InnerApp() {
             <Route path="/apps/doudizhu" element={<DoudizhuScreen />} />
             <Route path="/apps/scratch-card" element={<ScratchCardScreen />} />
             <Route path="/apps/minesweeper" element={<MinesweeperScreen />} />
+            <Route path="/apps/liaoliao-yisheng" element={<LiaoliaoYishengScreen />} />
             <Route path="/apps/x" element={<XScreen />} />
             <Route path="/apps/manual" element={<ManualScreen />} />
             <Route path="/apps/anniversary" element={<AnniversaryScreen />} />

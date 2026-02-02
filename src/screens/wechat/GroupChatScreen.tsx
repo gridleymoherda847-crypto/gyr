@@ -183,8 +183,6 @@ export default function GroupChatScreen() {
   const [showGenerateSelector, setShowGenerateSelector] = useState(false)
   const [generateSelectedMembers, setGenerateSelectedMembers] = useState<string[]>([])
   
-  // 记忆弹窗
-  const [showMemoryModal, setShowMemoryModal] = useState(false)
   const [memorySummaryDraft, setMemorySummaryDraft] = useState('')
   const [memoryGenerating, setMemoryGenerating] = useState(false)
   const [summaryRoundsDraft, setSummaryRoundsDraft] = useState(50)
@@ -260,16 +258,11 @@ export default function GroupChatScreen() {
   useEffect(() => {
     if (showSettings && group) {
       setGroupNameDraft(group.name)
-    }
-  }, [showSettings, group])
-  
-  // 打开记忆弹窗时初始化
-  useEffect(() => {
-    if (showMemoryModal && group) {
+      // 同步“已保存的长期记忆”到草稿（否则刷新后草稿为空，看起来像丢失）
       setMemorySummaryDraft(group.memorySummary || '')
       setSummaryRoundsDraft(50)
     }
-  }, [showMemoryModal, group])
+  }, [showSettings, group])
   
   // 打开时间同步弹窗时初始化
   useEffect(() => {
@@ -881,6 +874,11 @@ ${uniqueNames.join('、')}
     setMemoryGenerating(true)
     
     try {
+      if (!messages || messages.length === 0) {
+        setInfoDialog({ open: true, title: '无法总结', message: '群聊里还没有可总结的消息。先聊几句再生成记忆吧。' })
+        return
+      }
+
       const history = buildHistoryForSummary(messages, summaryRoundsDraft)
       const prev = (memorySummaryDraft || '').trim()
 
@@ -930,17 +928,31 @@ ${history}`
         { role: 'user', content: prompt }
       ], undefined, { maxTokens: 500 })
       
-      setMemorySummaryDraft(prevDraft => mergeMemorySummary(prevDraft, response))
+      const next = String(response || '').trim()
+      if (!next) {
+        setInfoDialog({ open: true, title: '总结失败', message: '这次没有生成出内容。你可以把“总结回合”调大一点，或先多聊几句再试。' })
+        return
+      }
+      setMemorySummaryDraft(prevDraft => mergeMemorySummary(prevDraft, next))
     } catch (err) {
       console.error('生成记忆失败:', err)
+      setInfoDialog({
+        open: true,
+        title: '总结失败',
+        message:
+          '可能原因：没有配置 API（Base URL / API Key / 模型）或网络异常。\n' +
+          '请先到：手机主屏 → 设置App → API 配置，填写后再试。',
+      })
     } finally {
       setMemoryGenerating(false)
     }
   }
   
   const handleSaveMemory = () => {
-    updateGroup(group.id, { memorySummary: memorySummaryDraft })
-    setShowMemoryModal(false)
+    const trimmed = String(memorySummaryDraft || '').trim()
+    updateGroup(group.id, { memorySummary: trimmed })
+    setMemorySummaryDraft(trimmed)
+    setInfoDialog({ open: true, title: '已保存', message: '群聊长期记忆已保存。后续群聊回复会读取这段记忆。' })
   }
   
   const handleSaveTimeSync = () => {
@@ -1702,8 +1714,24 @@ ${history}`
                   
                   {/* 记忆功能（可折叠） */}
                   <div className="border-t border-gray-100">
-                    <button type="button" onClick={() => setMemoryExpanded(!memoryExpanded)}
-                      className="w-full flex items-center justify-between py-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMemoryExpanded(prev => {
+                          const next = !prev
+                          // 展开时：如果草稿为空但群里有已保存记忆，则自动回填
+                          if (
+                            next &&
+                            !String(memorySummaryDraft || '').trim() &&
+                            String(group.memorySummary || '').trim()
+                          ) {
+                            setMemorySummaryDraft(group.memorySummary || '')
+                          }
+                          return next
+                        })
+                      }}
+                      className="w-full flex items-center justify-between py-3 cursor-pointer select-none"
+                    >
                       <div className="flex items-center gap-2">
                         <div>
                           <div className="text-sm text-gray-800">记忆功能</div>
@@ -1711,10 +1739,22 @@ ${history}`
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button type="button" onClick={(e) => { e.stopPropagation(); updateGroup(group.id, { memoryEnabled: !group.memoryEnabled }) }}
-                          className={`w-12 h-7 rounded-full transition-colors ${group.memoryEnabled ? 'bg-green-500' : 'bg-gray-300'}`}>
+                        <div
+                          role="switch"
+                          aria-checked={!!group.memoryEnabled}
+                          tabIndex={0}
+                          onClick={(e) => { e.stopPropagation(); updateGroup(group.id, { memoryEnabled: !group.memoryEnabled }) }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              updateGroup(group.id, { memoryEnabled: !group.memoryEnabled })
+                            }
+                          }}
+                          className={`w-12 h-7 rounded-full transition-colors cursor-pointer ${group.memoryEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
+                        >
                           <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${group.memoryEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
+                        </div>
                         <svg className={`w-4 h-4 text-gray-400 transition-transform ${memoryExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                         </svg>

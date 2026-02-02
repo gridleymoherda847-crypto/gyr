@@ -875,6 +875,10 @@ export function WeChatProvider({ children }: PropsWithChildren) {
             localStorage.getItem(STORAGE_KEYS.messages + '_backup'),
             []
           )
+        const backupGroups = safeParse<GroupChat[]>(
+          localStorage.getItem(STORAGE_KEYS.groups),
+          []
+        )
           const backupPersonas = safeParse<UserPersona[]>(
             localStorage.getItem(STORAGE_KEYS.userPersonas + '_backup'),
             []
@@ -895,6 +899,16 @@ export function WeChatProvider({ children }: PropsWithChildren) {
               // ignore
             }
           }
+        // 群聊（可恢复）
+        if (Array.isArray(backupGroups) && backupGroups.length > 0) {
+          try {
+            await kvSetJSON(STORAGE_KEYS.groups, backupGroups)
+            restoredSomething = true
+            console.warn('[LittlePhone] 已从 localStorage 备份恢复群聊:', backupGroups.length)
+          } catch {
+            // ignore
+          }
+        }
           // 我的人设（可恢复）
           if (Array.isArray(backupPersonas) && backupPersonas.length > 0) {
             try {
@@ -1088,6 +1102,15 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.funds, funds) }, [funds, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fundHoldings, fundHoldings) }, [fundHoldings, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.groups, groups) }, [groups, isHydrated])
+  // 群聊额外备份到 localStorage（IndexedDB 可能在私密模式/iOS 下不稳定）
+  useEffect(() => {
+    if (!canPersist()) return
+    try {
+      localStorage.setItem(STORAGE_KEYS.groups, JSON.stringify(groups))
+    } catch {
+      // ignore quota / permission errors
+    }
+  }, [groups, isHydrated])
 
   // 清理“卡住的正在输入中”状态（防止重启后一直显示）
   useEffect(() => {
