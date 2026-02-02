@@ -1211,6 +1211,12 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}` : ''}
 【长期记忆摘要（每次回复必读，用户可手动编辑）】
 ${character.memorySummary ? character.memorySummary : '（暂无）'}
 
+【记忆使用规则（避免重复剧情/复读）】
+- 你看到的“长期记忆摘要 / 世界书 / 历史上下文”只是背景信息，不代表用户现在要你把旧剧情重新演一遍。
+- 除非用户明确提及、追问、或要求回顾，否则不要主动复述以前发生过的具体剧情细节，更不要逐字复刻你以前说过的段落/台词。
+- 如果需要引用过去，只允许用一句话“概括式提醒”（例如提到一个关键词/结论即可），不要写成大段情景复现。
+- 当用户没有提出相关话题时，你应该继续推进当前对话或换一个自然的新话题，而不是回放旧桥段。
+
 【当前时间（精确到秒）】
 ${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN', { hour12: false }) : (character.manualTime ? new Date(character.manualTime).toLocaleString('zh-CN', { hour12: false }) : new Date().toLocaleString('zh-CN', { hour12: false }))}
 
