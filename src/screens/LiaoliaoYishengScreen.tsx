@@ -207,6 +207,85 @@ function pickCity(rng: ReturnType<typeof makeRng>, tier?: CityTier) {
   return rng.pickOne(list)
 }
 
+function normalizeLoadedGame(raw: any): GameState | null {
+  if (!raw || typeof raw !== 'object') return null
+  if (raw.version !== 1) return null
+  const seed = typeof raw.seed === 'number' && Number.isFinite(raw.seed) ? raw.seed : (Date.now() ^ Math.floor(Math.random() * 1e9))
+  const rng = makeRng(seed + 2026)
+
+  const gender: 'male' | 'female' = raw.gender === 'female' ? 'female' : 'male'
+  const name = typeof raw.name === 'string' && raw.name ? raw.name : genName(rng, gender)
+
+  const birthCity: City = raw.birthCity?.name ? raw.birthCity : pickCity(rng)
+  const currentCity: City = raw.currentCity?.name ? raw.currentCity : birthCity
+  const familyWealth = typeof raw.familyWealth === 'number' ? clamp(raw.familyWealth, 0, 100) : clamp(rng.nextInt(15, 95) + rng.nextInt(-10, 10), 0, 100)
+
+  const stats: Stats = {
+    health: typeof raw.stats?.health === 'number' ? clamp(raw.stats.health, 0, 100) : rng.nextInt(40, 90),
+    beauty: typeof raw.stats?.beauty === 'number' ? clamp(raw.stats.beauty, 0, 100) : rng.nextInt(30, 90),
+    smarts: typeof raw.stats?.smarts === 'number' ? clamp(raw.stats.smarts, 0, 100) : rng.nextInt(30, 90),
+    social: typeof raw.stats?.social === 'number' ? clamp(raw.stats.social, 0, 100) : rng.nextInt(25, 90),
+    luck: typeof raw.stats?.luck === 'number' ? clamp(raw.stats.luck, 0, 100) : rng.nextInt(25, 90),
+  }
+
+  const edu: EducationState = raw.edu && typeof raw.edu === 'object'
+    ? {
+        stage: typeof raw.edu.stage === 'string' ? raw.edu.stage : 'none',
+        score: typeof raw.edu.score === 'number' ? clamp(raw.edu.score, 0, 100) : clamp(rng.nextInt(25, 80) + Math.floor(stats.smarts / 20) - 2, 0, 100),
+        yearsInStage: typeof raw.edu.yearsInStage === 'number' ? Math.max(0, Math.floor(raw.edu.yearsInStage)) : 0,
+      }
+    : { stage: 'none', score: clamp(rng.nextInt(25, 80) + Math.floor(stats.smarts / 20) - 2, 0, 100), yearsInStage: 0 }
+
+  const rent: RentState = raw.rent && typeof raw.rent === 'object'
+    ? {
+        tier: (raw.rent.tier === '1000' || raw.rent.tier === '2500' || raw.rent.tier === '5000') ? raw.rent.tier : 'none',
+        yearlyRent: typeof raw.rent.yearlyRent === 'number' ? Math.max(0, Math.floor(raw.rent.yearlyRent)) : 0,
+      }
+    : { tier: 'none', yearlyRent: 0 }
+
+  const yearFlags: YearFlags = {
+    plazaUsed: !!raw.yearFlags?.plazaUsed,
+    assetUsed: !!raw.yearFlags?.assetUsed,
+    schoolUsed: !!raw.yearFlags?.schoolUsed,
+  }
+
+  const house: HouseState = raw.house && typeof raw.house === 'object'
+    ? {
+        level: (raw.house.level === 'small' || raw.house.level === 'mid' || raw.house.level === 'big') ? raw.house.level : 'none',
+        mortgageLeft: typeof raw.house.mortgageLeft === 'number' ? Math.max(0, Math.floor(raw.house.mortgageLeft)) : 0,
+        yearlyPay: typeof raw.house.yearlyPay === 'number' ? Math.max(0, Math.floor(raw.house.yearlyPay)) : 0,
+        partnerShare: typeof raw.house.partnerShare === 'number' ? clamp(raw.house.partnerShare, 0, 100) : 0,
+      }
+    : { level: 'none', mortgageLeft: 0, yearlyPay: 0, partnerShare: 0 }
+
+  const out: GameState = {
+    version: 1,
+    seed,
+    name,
+    gender,
+    birthCity,
+    currentCity,
+    familyWealth,
+    age: typeof raw.age === 'number' ? Math.max(0, Math.floor(raw.age)) : 0,
+    year: typeof raw.year === 'number' ? Math.max(0, Math.floor(raw.year)) : 0,
+    alive: raw.alive !== false,
+    money: typeof raw.money === 'number' ? Math.floor(raw.money) : 0,
+    stats,
+    tags: Array.isArray(raw.tags) ? raw.tags.filter((x: any) => typeof x === 'string').slice(0, 50) : [],
+    logs: Array.isArray(raw.logs) ? raw.logs.filter((x: any) => typeof x === 'string').slice(-120) : [],
+    parents: Array.isArray(raw.parents) ? raw.parents : [],
+    friends: Array.isArray(raw.friends) ? raw.friends : [],
+    partner: raw.partner && typeof raw.partner === 'object' ? raw.partner : null,
+    children: Array.isArray(raw.children) ? raw.children : [],
+    edu,
+    rent,
+    house,
+    yearFlags,
+    currentEvent: raw.currentEvent && typeof raw.currentEvent === 'object' ? raw.currentEvent : null,
+  }
+  return out
+}
+
 function pushLog(g: GameState, text: string) {
   const line = `${g.age}岁：${text}`
   const next = g.logs.length > 120 ? g.logs.slice(-120) : g.logs.slice()
@@ -743,9 +822,16 @@ export default function LiaoliaoYishengScreen() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
-        const parsed = JSON.parse(raw) as GameState
-        if (parsed && parsed.version === 1) {
-          setGame(parsed)
+        const parsed = JSON.parse(raw)
+        const normalized = normalizeLoadedGame(parsed)
+        if (normalized) {
+          // 若存档缺字段，补齐后回写一次，避免后续再崩
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+          } catch {
+            // ignore
+          }
+          setGame(normalized)
           return
         }
       }
@@ -1036,8 +1122,8 @@ export default function LiaoliaoYishengScreen() {
                   {game.friends.length > 0 ? <span className="ml-2">朋友：{game.friends.length}</span> : null}
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
-                  城市：{game.currentCity.name}
-                  <span className="ml-2">预计成绩：{Math.round(game.edu.score)}</span>
+                  城市：{game.currentCity?.name || game.birthCity?.name || '（未知）'}
+                  <span className="ml-2">预计成绩：{Math.round(game.edu?.score ?? 0)}</span>
                 </div>
               </div>
               <div className="flex flex-wrap gap-1 justify-end max-w-[160px]">
