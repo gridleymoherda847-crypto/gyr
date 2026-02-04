@@ -1741,7 +1741,7 @@ function getEvents(): EventDef[] {
     {
       id: 'E012B_childhood_together_sect',
       title: '一起入宗门',
-      minAge: 6, maxAge: 6,
+      minAge: 8, maxAge: 8,
       condition: (g) => hasFlag(g, 'childhood_stayed') && !hasFlag(g, 'tested_root'),
       weight: () => 80,
       text: (g) => {
@@ -1762,7 +1762,7 @@ function getEvents(): EventDef[] {
     {
       id: 'E012C_childhood_help_sect',
       title: '青梅竹马的帮助',
-      minAge: 6, maxAge: 8,
+      minAge: 8, maxAge: 10,
       condition: (g) => {
         const childhood = g.relations.find(r => r.role === 'childhood' && r.status === 'alive')
         return hasFlag(g, 'is_loose_cultivator') && !!childhood && childhood.favor >= 30 && !hasFlag(g, 'childhood_helped_sect')
@@ -2080,11 +2080,11 @@ function getEvents(): EventDef[] {
       ],
     },
 
-    // ===== 6岁：测灵根入宗门 =====
+    // ===== 8岁：测灵根入宗门（必触发，类似“上学”） =====
     {
       id: 'E100_test_root',
       title: '测灵根',
-      minAge: 6, maxAge: 6,
+      minAge: 8, maxAge: 8,
       condition: (g) => !hasFlag(g, 'tested_root'),
       weight: () => 100,
       text: (g) => {
@@ -2163,7 +2163,7 @@ function getEvents(): EventDef[] {
     {
       id: 'E110_meet_senior',
       title: '初见师兄',
-      minAge: 6, maxAge: 10,
+      minAge: 8, maxAge: 12,
       condition: (g) => hasFlag(g, 'in_sect') && !hasFlag(g, 'met_senior'),
       weight: () => 50,
       text: (_g, rng) => {
@@ -4025,8 +4025,27 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
     }
   }
   
+  // 6) 8岁：必经节点——测灵根入宗门（类似“上学”，必须触发）
+  if (g.age === 8 && !hasFlag(g, 'tested_root')) {
+    const def = getEvents().find(e => e.id === 'E100_test_root')
+    if (def) {
+      const rawText = def.text(g, rng)
+      const options = def.options(g, rng)
+      const ce: CurrentEvent = {
+        id: def.id,
+        title: def.title,
+        rawText,
+        text: rawText.replace(/\[[^\]]+\]/g, ''),
+        options: options.map(o => ({ id: o.id, text: o.text, picked: false })),
+        resolved: false,
+      }
+      return { ...g, currentEvent: ce, lastEventId: ce.id }
+    }
+  }
+
   // 60%概率触发事件，或者有强制伏笔事件
-  const hasEvent = rng.chance(0.65) || g.age === 0 || g.age === 6
+  // 8岁固定触发“测灵根入宗门”，类似“上学”的必经节点
+  const hasEvent = rng.chance(0.65) || g.age === 0 || g.age === 8
   
   if (!hasEvent) {
     // 平淡的一年
