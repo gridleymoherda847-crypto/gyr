@@ -964,14 +964,30 @@ export default function ChatScreen() {
                 /^\s*已(收款|领取|退还|退款|拒绝)/.test(m.content.trim())
 
               if (isReceiptConfirm) {
-                // 收款确认消息（不是发起转账）：
-                // - isUser=true（用户发的"已收款"）：用户确认收到了【角色→用户】的转账
-                // - isUser=false（角色发的"已收款"）：角色确认收到了【用户→角色】的转账
-                if (m.isUser) {
-                  content = `[收款确认：${userName}收到了${character.name}转的¥${amt}，备注"${note}"]`
-                } else {
-                  content = `[收款确认：${character.name}收到了${userName}转的¥${amt}，备注"${note}"]`
-                }
+                // 转账结果卡片（不是发起转账）：
+                // - received：收款方收下了钱
+                // - refunded：收款方退还了钱（付款方未损失）
+                // - rejected：收款方拒绝领取（付款方未损失）
+                const raw = String(m.content || '').trim()
+                const action =
+                  st === 'received' || /^\s*已(收款|领取)/.test(raw)
+                    ? 'received'
+                    : st === 'refunded' || /^\s*已(退还|退款)/.test(raw)
+                      ? 'refunded'
+                      : st === 'rejected' || /^\s*已拒绝/.test(raw)
+                        ? 'rejected'
+                        : st
+                const actor = m.isUser ? userName : character.name
+                const other = m.isUser ? character.name : userName
+                const verb =
+                  action === 'received'
+                    ? '收下了'
+                    : action === 'refunded'
+                      ? '退还了'
+                      : action === 'rejected'
+                        ? '拒绝领取'
+                        : '处理了'
+                content = `[转账结果：${actor}${verb}${other}转的¥${amt}，备注"${note}"]`
               } else if (m.isUser) {
                 // 用户发起转账 → 转给角色
                 content = `[${userName}发起转账给${character.name}：¥${amt}，备注"${note}"，${stText}]`
@@ -1206,11 +1222,30 @@ export default function ChatScreen() {
             const isReceiptConfirm =
               typeof m.content === 'string' &&
               /^\s*已(收款|领取|退还|退款|拒绝)/.test(m.content.trim())
-            // 收款确认时，要根据谁发的确认来判断方向
-            const direction = isReceiptConfirm
-              ? (m.isUser ? `${userName}收到${character.name}的转账` : `${character.name}收到${userName}的转账`)
-              : (m.isUser ? `${userName}转给${character.name}` : `${character.name}转给${userName}`)
-            return `${isReceiptConfirm ? '收款确认' : '转账发起'}${amt}（${direction}，${stText}）`
+            if (isReceiptConfirm) {
+              const raw = String(m.content || '').trim()
+              const action =
+                st === 'received' || /^\s*已(收款|领取)/.test(raw)
+                  ? 'received'
+                  : st === 'refunded' || /^\s*已(退还|退款)/.test(raw)
+                    ? 'refunded'
+                    : st === 'rejected' || /^\s*已拒绝/.test(raw)
+                      ? 'rejected'
+                      : st
+              const actor = m.isUser ? userName : character.name
+              const other = m.isUser ? character.name : userName
+              const verb =
+                action === 'received'
+                  ? '收下了'
+                  : action === 'refunded'
+                    ? '退还了'
+                    : action === 'rejected'
+                      ? '拒绝领取'
+                      : '处理了'
+              return `转账结果${amt}（${actor}${verb}${other}的转账，${stText}）`
+            }
+            const direction = m.isUser ? `${userName}转给${character.name}` : `${character.name}转给${userName}`
+            return `转账发起${amt}（${direction}，${stText}）`
           }
           if (m.type === 'music') {
             const title = (m.musicTitle || '音乐').replace(/\s+/g, ' ').slice(0, 18)
@@ -1432,6 +1467,8 @@ ${recentTimeline || '（无）'}
 
 【转账理解规则（必须遵守）】
 1) 在历史/时间线里，如果转账状态显示“已领取/已收款/已收入/received”，表示【收款方已经收到钱】（这不是“发起转账”，也不是“退回”）
+1.5) 如果转账状态显示“已退还/refunded”，表示【收款方没有收钱，钱已经退回付款方】（付款方不损失）
+1.6) 如果转账状态显示“已拒绝/rejected”，表示【收款方拒绝领取，钱仍在付款方】（付款方不损失）
 2) 判断钱是谁付、谁收入：以转账方向为准
    - A→B 表示：A 付款（支出），B 收入（收款）
 3) 不允许把“用户收到了钱”说成“用户付出了钱”，也不允许把“你收到了钱”说成“你付出了钱”
