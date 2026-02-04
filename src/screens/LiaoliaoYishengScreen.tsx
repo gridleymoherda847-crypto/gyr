@@ -2337,7 +2337,7 @@ function getEvents(): EventDef[] {
         !hasFlag(g, 'loose_recruited') &&
         g.stats.root >= 80,
       weight: () => 80,
-      text: (g, rng) => {
+      text: (_g, rng) => {
         const where = rng.pickOne(['破庙檐下', '山路转角', '小城药摊前', '坊市外的石桥上'])
         return `你作为散修漂泊已久。\n在${where}，你遇到一位气息极深的修士。\n对方只看了你一眼，便淡淡道：\n「你的根骨，不该浪费在尘土里。」\n「愿不愿意，随我入宗门？」`
       },
@@ -3089,7 +3089,7 @@ function getEvents(): EventDef[] {
       minAge: 18, maxAge: 25,
       condition: (g) => !hasFlag(g, 'met_demon_king'),
       weight: (g) => 18 + Math.floor(g.stats.luck / 10),
-      text: (_g, rng) => {
+      text: (g, rng) => {
         const trait = rng.pickOne(BEAST_TRAITS)
         const app = `气势如山，眸色幽深（化形仍保留：${trait}）`
         const gender: 'male' | 'female' = pickEncounterGender(rng, g)
@@ -3593,7 +3593,7 @@ function getEvents(): EventDef[] {
       options: (g) => {
         const lover = g.relations.find(r => r.role === 'lover' && r.status === 'alive')
         const opts: { id: string; text: string; effect: (g: GameState, rng: ReturnType<typeof makeRng>) => GameState }[] = [
-          { id: 'ascend', text: '飞升', effect: (g2) => {
+          { id: 'ascend', text: '飞升', effect: (g2, rng) => {
             let next = { ...g2, realm: 'ascend' as Realm, alive: false }
             next = addFlag(next, 'ascended_end')
             next = { ...next, logs: pushLog(next, '你踏入仙门，回头看了一眼人间。\n从此，你成为了传说。\n【飞升结局】') }
