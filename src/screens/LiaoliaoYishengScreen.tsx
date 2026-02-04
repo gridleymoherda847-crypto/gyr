@@ -882,6 +882,7 @@ function genderLabel(g: Person['gender']) {
 function canNpcMarryOtherThisYear(_g: GameState, p: Person): { ok: boolean; p: number } {
   if (p.role === 'parent') return { ok: false, p: 0 }
   if (p.status !== 'alive') return { ok: false, p: 0 }
+  if (isSpecialCompanion(p)) return { ok: false, p: 0 } // 灵契不参与人间婚嫁线
   if (p.role === 'lover') return { ok: false, p: 0 } // 已与主角结为道侣
   if (isMarriedToOther(p)) return { ok: false, p: 0 }
   if (hasPersonFlag(p, 'immortal_emperor')) return { ok: false, p: 0 } // 仙帝不与旁人牵姻缘线
@@ -4278,6 +4279,7 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   // 1) “此心系君”（每局最多一次）
   if (!hasFlag(g, 'vow_used')) {
     const candidates = g.relations
+      .filter(r => !isSpecialCompanion(r)) // 灵契（未孵化/已孵化）不参与“誓言/等你”等人间剧情
       .filter(r => r.status === 'alive' && r.role !== 'parent' && isAdultForRomance(r) && !r.willWait && !isMarriedToOther(r) && r.role !== 'lover')
       // “等你/此心系君”必须高心动才触发，避免“心动很低也立誓”的违和
       .filter(r => (r.affection || 0) >= 90)
@@ -4301,6 +4303,7 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   // 1.5) 心动>50：每年20%概率表白（更早触发，不要求满好感）
   {
     const candidates = g.relations
+      .filter(r => !isSpecialCompanion(r)) // 灵契不参与表白线
       .filter(r => r.status === 'alive' && r.role !== 'parent' && isAdultForRomance(r))
       .filter(r => r.role !== 'lover' && !isMarriedToOther(r) && !r.affectionLocked)
       .filter(r => (r.affection || 0) > 50)
@@ -4327,6 +4330,7 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
 
   // 2) 满好感表白（每年20~40%）
   const fullFavor = g.relations
+    .filter(r => !isSpecialCompanion(r)) // 灵契不参与表白线
     .filter(r => r.status === 'alive' && r.role !== 'parent' && isAdultForRomance(r) && !isMarriedToOther(r) && r.role !== 'lover' && r.favor >= 100)
     .filter(r => g.age >= getConfessBlockUntil(r)) // 拒绝后至少3年才会再发起
   if (fullFavor.length > 0) {
@@ -4354,7 +4358,9 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   // 3) NPC与他人成婚（每年最多触发一次）
   {
     const candidates = rng.shuffle(
-      g.relations.filter(r => r.status === 'alive' && r.role !== 'parent' && !isMarriedToOther(r) && r.role !== 'lover' && isAdultForRomance(r))
+      g.relations
+        .filter(r => !isSpecialCompanion(r)) // 灵契不参与人间婚嫁线
+        .filter(r => r.status === 'alive' && r.role !== 'parent' && !isMarriedToOther(r) && r.role !== 'lover' && isAdultForRomance(r))
     )
     let chosen: Person | null = null
     for (const p of candidates) {
@@ -4385,6 +4391,7 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   // 4) NPC故事解锁（好感>=80：夜谈旧事/节后归途/微醺吐露）
   {
     const candidates = g.relations
+      .filter(r => !isSpecialCompanion(r)) // 灵契不讲“旧事/夜谈”，避免未孵化蛋也触发剧情
       .filter(r => r.status === 'alive' && r.role !== 'parent' && r.age >= 14 && r.favor >= 80 && !hasPersonFlag(r, 'story_told_1'))
     if (candidates.length > 0 && rng.chance(0.22)) {
       const p = rng.pickOne(candidates)
@@ -5668,6 +5675,62 @@ export default function LiaoliaoYishengScreen() {
     return updateRelation(g, pid, base)
   }
 
+  const describeHatch = (p: Person, g: GameState): { title: string; text: string } => {
+    const pron = ta(p)
+    const young = p.gender === 'female' ? '少女' : '少年'
+    const kind = p.companionKind
+    if (kind === 'sword_spirit') {
+      return {
+        title: '剑光化形',
+        text:
+          `你渡入的修为忽然在灵剑上开出一朵光。\n` +
+          `下一瞬，一束清冷的剑光冲天而起，像把夜色都劈开。\n\n` +
+          `光里走出一个${young}。\n` +
+          `${pron}白发如雪，蓝瞳清澈，眉眼像落了霜的星河。\n` +
+          `灵息与您齐平（境界：${REALM_NAMES[g.realm]}），却比风更安静。\n\n` +
+          `「我在。」${pron}低声道，像答应了你所有的孤独。\n` +
+          `（剑灵孵化完成：满好感/满心动，待遇同道侣）`,
+      }
+    }
+    if (kind === 'dragon_egg') {
+      return {
+        title: '龙息破壳',
+        text:
+          `蛋壳上浮起金纹，像有古老的呼吸从里面醒来。\n` +
+          `一声低低的龙吟压过风雪，光与雾在你掌心汇成形。\n\n` +
+          `光里走出一个${young}。\n` +
+          `${pron}银白长发，金色眼眸，目光冷静，却第一时间站到你身前。\n\n` +
+          `「从今往后，你的事就是我的事。」\n` +
+          `（龙裔孵化完成：满好感/满心动，待遇同道侣）`,
+      }
+    }
+    if (kind === 'phoenix_egg') {
+      return {
+        title: '凤火新生',
+        text:
+          `蛋壳裂开一道细线，温热的光像晨曦一样流出来。\n` +
+          `火焰没有灼你，反而像羽毛一样轻轻落在你指尖。\n\n` +
+          `光里走出一个${young}。\n` +
+          `${pron}红金长发，琥珀眼眸，笑意灼灼却温柔。\n\n` +
+          `「你把我叫醒了。」${pron}轻轻说。\n` +
+          `（凤鸣孵化完成：满好感/满心动，待遇同道侣）`,
+      }
+    }
+    if (kind === 'kirin_egg') {
+      return {
+        title: '麒麟瑞光',
+        text:
+          `蛋壳上浮起一圈圈瑞光，像云在你掌心缓缓旋转。\n` +
+          `一瞬间，风停了，连你的心跳都变得清晰。\n\n` +
+          `光里走出一个${young}。\n` +
+          `${pron}墨白长发，蓝灰眼眸，安静得像雪落无声。\n\n` +
+          `${pron}抬手轻轻覆住你的指尖：「我认主。」\n` +
+          `（云麒孵化完成：满好感/满心动，待遇同道侣）`,
+      }
+    }
+    return { title: '孵化', text: `你投入的修为终于开花。\n「${p.name}」孵化了。` }
+  }
+
   const handleFeedCompanion = (personId: string) => {
     if (!game) return
     const p = game.relations.find(r => r.id === personId)
@@ -5685,8 +5748,9 @@ export default function LiaoliaoYishengScreen() {
     next = hatchCompanionIfReady(next, personId)
     const after2 = getRelationById(next, personId) || after
     if (after2.companionStage === 'hatched' && p.companionStage !== 'hatched') {
-      next = { ...next, logs: pushLog(next, `「${after2.name}」孵化了。\nTA睁开眼，第一句话是：「我在。」`) }
-      next = appendPopup(next, '孵化', `你投入的修为终于开花。\n「${after2.name}」孵化了。\n\nTA的气息与您齐平（境界：${REALM_NAMES[next.realm]}）。`)
+      const hatch = describeHatch(after2, next)
+      next = { ...next, logs: pushLog(next, hatch.text) }
+      next = appendPopup(next, hatch.title, hatch.text)
     }
     shouldAutoScroll.current = true
     setGame(next)
