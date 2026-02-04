@@ -4613,6 +4613,7 @@ export default function LiaoliaoYishengScreen() {
   const [volumeOpen, setVolumeOpen] = useState(false)
   const prevVolumeRef = useRef<number | null>(null)
   const VOLUME_KEY = 'liaoliao_yisheng_bgm_volume'
+  const ENABLE_KEY = 'liaoliao_yisheng_bgm_enabled'
   const [bgmVolume, setBgmVolume] = useState<number>(() => {
     try {
       const raw = localStorage.getItem(VOLUME_KEY)
@@ -4623,10 +4624,19 @@ export default function LiaoliaoYishengScreen() {
       return 0.6
     }
   })
+  const [bgmEnabled, setBgmEnabled] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(ENABLE_KEY)
+      if (raw == null) return true
+      return raw === 'true'
+    } catch {
+      return true
+    }
+  })
   const themeSong = useMemo<Song>(() => {
     return {
       id: 'liaoliao-theme-kioku',
-      title: '記憶 (记忆)',
+      title: '-記憶-(ヨスガノソラ メインテーマ)',
       artist: '市川淳',
       cover: '/icons/music-cover.png',
       url: '/music/kioku.mp3',
@@ -4649,6 +4659,27 @@ export default function LiaoliaoYishengScreen() {
     }
   }, [bgmVolume, audioRef])
 
+  // 记住“是否开启背景音乐”
+  useEffect(() => {
+    try {
+      localStorage.setItem(ENABLE_KEY, String(!!bgmEnabled))
+    } catch {
+      // ignore
+    }
+    // 关闭时：如果当前正在放主题曲，直接暂停
+    if (!bgmEnabled) {
+      try {
+        const src = (audioRef.current?.src || '').toLowerCase()
+        if (src.includes('kioku.mp3')) {
+          pauseMusic()
+        }
+      } catch {
+        // ignore
+      }
+      setNeedTapToPlay(false)
+    }
+  }, [bgmEnabled, audioRef, pauseMusic])
+
   // 进入页面自动播放主题曲（若浏览器拦截自动播放，则给一个“点一下播放”的兜底）
   useEffect(() => {
     // 保存进入前的全局音量，离开时还原（避免影响别的 App 播放音量）
@@ -4657,6 +4688,19 @@ export default function LiaoliaoYishengScreen() {
         prevVolumeRef.current = audioRef.current?.volume ?? null
       } catch {
         prevVolumeRef.current = null
+      }
+    }
+
+    if (!bgmEnabled) {
+      return () => {
+        // 还原进入前音量
+        try {
+          if (audioRef.current && prevVolumeRef.current != null) {
+            audioRef.current.volume = clamp(prevVolumeRef.current, 0, 1)
+          }
+        } catch {
+          // ignore
+        }
       }
     }
 
@@ -4702,7 +4746,7 @@ export default function LiaoliaoYishengScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [bgmEnabled])
   
   useEffect(() => {
     try {
@@ -5348,27 +5392,38 @@ export default function LiaoliaoYishengScreen() {
     >
       {/* 统一背景遮罩：保证文字可读 */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/10 to-black/35" />
-      <AppHeader
-        title="寥寥一生·修仙"
-        rightElement={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setVolumeOpen(true)}
-              className="text-xs px-2 py-1 rounded-full bg-white/30 text-white/90"
-            >
-              音量
-            </button>
+      <div className="relative z-20 px-3 pt-2">
+        <AppHeader
+          title="寥寥一生·修仙"
+          rightElement={
             <button
               type="button"
               onClick={() => { localStorage.removeItem(STORAGE_KEY); setGame(null) }}
               className="text-xs px-2 py-1 rounded-full bg-white/30 text-white/90"
             >
-              重开
+              重生
             </button>
-          </div>
-        }
-      />
+          }
+        />
+      </div>
+
+      {/* 音量/开关：独立悬浮按钮，避免被 AppHeader 的 w-14 挤没 */}
+      <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setBgmEnabled((v) => !v)}
+          className="text-xs px-2 py-1 rounded-full bg-black/40 text-white/90 backdrop-blur border border-white/15 active:bg-black/50"
+        >
+          {bgmEnabled ? '关BGM' : '开BGM'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setVolumeOpen(true)}
+          className="text-xs px-2 py-1 rounded-full bg-black/40 text-white/90 backdrop-blur border border-white/15 active:bg-black/50"
+        >
+          音量
+        </button>
+      </div>
 
       {/* 音量调节弹窗 */}
       {volumeOpen && (
@@ -5381,6 +5436,18 @@ export default function LiaoliaoYishengScreen() {
               <div className="text-sm font-bold text-gray-800">背景音乐音量</div>
               <button type="button" onClick={() => setVolumeOpen(false)} className="text-sm text-gray-500">关闭</button>
             </div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs text-gray-600">背景音乐</div>
+              <button
+                type="button"
+                onClick={() => setBgmEnabled((v) => !v)}
+                className={`text-xs px-3 py-1 rounded-full border ${
+                  bgmEnabled ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'
+                }`}
+              >
+                {bgmEnabled ? '开启中' : '已关闭'}
+              </button>
+            </div>
             <div className="flex items-center gap-3">
               <div className="text-xs text-gray-600 w-10">0%</div>
               <input
@@ -5390,6 +5457,7 @@ export default function LiaoliaoYishengScreen() {
                 value={Math.round(clamp(bgmVolume, 0, 1) * 100)}
                 onChange={(e) => setBgmVolume(clamp(Number(e.target.value) / 100, 0, 1))}
                 className="flex-1"
+                disabled={!bgmEnabled}
               />
               <div className="text-xs text-gray-600 w-12 text-right">
                 {Math.round(clamp(bgmVolume, 0, 1) * 100)}%
@@ -5410,7 +5478,7 @@ export default function LiaoliaoYishengScreen() {
             onClick={() => { setNeedTapToPlay(false); playSong(themeSong) }}
             className="w-full rounded-2xl bg-black/40 text-white/90 text-xs font-semibold py-2 backdrop-blur border border-white/15 active:bg-black/50"
           >
-            点击播放主题曲：記憶（市川淳）
+            点击播放主题曲：{themeSong.title} - {themeSong.artist}
             <span className="ml-2 text-white/70 font-medium">（自动播放被系统拦截了）</span>
           </button>
         </div>
