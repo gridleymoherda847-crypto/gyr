@@ -17,7 +17,7 @@ const GAME_LIST = [
   { id: 'doudizhu', name: '斗地主', route: '/apps/doudizhu', icon: '🃏', desc: '经典纸牌游戏' },
   { id: 'scratchCard', name: '刮刮乐', route: '/apps/scratch-card', icon: '🎫', desc: '试试手气' },
   { id: 'minesweeper', name: '扫雷', route: '/apps/minesweeper', icon: '💣', desc: '经典益智' },
-  { id: 'liaoliaoYisheng', name: '寥寥一生', route: '/apps/liaoliao-yisheng', icon: '📜', desc: '即将上线', disabled: true },
+  { id: 'liaoliaoYisheng', name: '寥寥一生', route: '/apps/liaoliao-yisheng', icon: '📜', desc: '开始修仙人生' },
   { id: 'gacha', name: '扭蛋机', route: '/apps/gacha', icon: '🎰', desc: '即将上线', disabled: true },
 ]
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import AppHeader from '../components/AppHeader'
-import { useOS } from '../context/OSContext'
+import { useOS, type Song } from '../context/OSContext'
 
 // ============ 类型定义 ============
 
@@ -4575,7 +4575,7 @@ const STAT_COLORS: Record<StatKey, string> = {
 }
 
 export default function LiaoliaoYishengScreen() {
-  const { callLLM, llmConfig } = useOS()
+  const { callLLM, llmConfig, playSong, pauseMusic, audioRef } = useOS()
   const [game, setGame] = useState<GameState | null>(null)
   const [selectedGender, setSelectedGender] = useState<'male' | 'female'>('female')
   const [showInvite, setShowInvite] = useState(false)
@@ -4609,6 +4609,100 @@ export default function LiaoliaoYishengScreen() {
   
   const scrollRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(false)
+  const [needTapToPlay, setNeedTapToPlay] = useState(false)
+  const [volumeOpen, setVolumeOpen] = useState(false)
+  const prevVolumeRef = useRef<number | null>(null)
+  const VOLUME_KEY = 'liaoliao_yisheng_bgm_volume'
+  const [bgmVolume, setBgmVolume] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(VOLUME_KEY)
+      const v = raw == null ? NaN : Number(raw)
+      if (!Number.isFinite(v)) return 0.6
+      return clamp(v, 0, 1)
+    } catch {
+      return 0.6
+    }
+  })
+  const themeSong = useMemo<Song>(() => {
+    return {
+      id: 'liaoliao-theme-kioku',
+      title: '記憶 (记忆)',
+      artist: '市川淳',
+      cover: '/icons/music-cover.png',
+      url: '/music/kioku.mp3',
+      duration: 999,
+      source: 'builtin',
+    }
+  }, [])
+
+  // 同步音量到 audio 元素，并记住配置
+  useEffect(() => {
+    try {
+      if (audioRef.current) audioRef.current.volume = clamp(bgmVolume, 0, 1)
+    } catch {
+      // ignore
+    }
+    try {
+      localStorage.setItem(VOLUME_KEY, String(clamp(bgmVolume, 0, 1)))
+    } catch {
+      // ignore
+    }
+  }, [bgmVolume, audioRef])
+
+  // 进入页面自动播放主题曲（若浏览器拦截自动播放，则给一个“点一下播放”的兜底）
+  useEffect(() => {
+    // 保存进入前的全局音量，离开时还原（避免影响别的 App 播放音量）
+    if (prevVolumeRef.current == null) {
+      try {
+        prevVolumeRef.current = audioRef.current?.volume ?? null
+      } catch {
+        prevVolumeRef.current = null
+      }
+    }
+
+    // loop 仅作用于主题曲播放期间
+    const a = audioRef.current
+    if (a) {
+      a.loop = true
+      try {
+        a.volume = clamp(bgmVolume, 0, 1)
+      } catch {
+        // ignore
+      }
+    }
+    setNeedTapToPlay(false)
+    playSong(themeSong)
+
+    const t = window.setTimeout(() => {
+      const a2 = audioRef.current
+      // 仍处于暂停：大概率是自动播放策略拦截，需要用户再点一下
+      if (a2 && a2.paused) setNeedTapToPlay(true)
+    }, 800)
+
+    return () => {
+      window.clearTimeout(t)
+      const a3 = audioRef.current
+      if (a3) a3.loop = false
+      // 离开页面：如果当前播放的是主题曲，则暂停，避免“退回主页还在循环”
+      try {
+        const src = (audioRef.current?.src || '').toLowerCase()
+        if (src.includes('kioku.mp3')) {
+          pauseMusic()
+        }
+      } catch {
+        // ignore
+      }
+      // 还原进入前音量
+      try {
+        if (audioRef.current && prevVolumeRef.current != null) {
+          audioRef.current.volume = clamp(prevVolumeRef.current, 0, 1)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   
   useEffect(() => {
     try {
@@ -5243,21 +5337,86 @@ export default function LiaoliaoYishengScreen() {
   }, [game, aliveRelations, deadRelations])
   
   return (
-    <div className="h-full flex flex-col bg-gradient-to-b from-indigo-900/20 to-purple-900/20">
+    <div
+      className="relative h-full flex flex-col overflow-hidden"
+      style={{
+        backgroundImage: 'url(/icons/liaoliao-yisheng-bg.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
+      {/* 统一背景遮罩：保证文字可读 */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/10 to-black/35" />
       <AppHeader
         title="寥寥一生·修仙"
         rightElement={
-          <button
-            type="button"
-            onClick={() => { localStorage.removeItem(STORAGE_KEY); setGame(null) }}
-            className="text-xs px-2 py-1 rounded-full bg-white/30 text-white/80"
-          >
-            重开
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setVolumeOpen(true)}
+              className="text-xs px-2 py-1 rounded-full bg-white/30 text-white/90"
+            >
+              音量
+            </button>
+            <button
+              type="button"
+              onClick={() => { localStorage.removeItem(STORAGE_KEY); setGame(null) }}
+              className="text-xs px-2 py-1 rounded-full bg-white/30 text-white/90"
+            >
+              重开
+            </button>
+          </div>
         }
       />
+
+      {/* 音量调节弹窗 */}
+      {volumeOpen && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 p-3" onClick={() => setVolumeOpen(false)}>
+          <div
+            className="w-full max-w-[420px] rounded-3xl bg-white/90 backdrop-blur border border-white/60 shadow-2xl p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-bold text-gray-800">背景音乐音量</div>
+              <button type="button" onClick={() => setVolumeOpen(false)} className="text-sm text-gray-500">关闭</button>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-gray-600 w-10">0%</div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round(clamp(bgmVolume, 0, 1) * 100)}
+                onChange={(e) => setBgmVolume(clamp(Number(e.target.value) / 100, 0, 1))}
+                className="flex-1"
+              />
+              <div className="text-xs text-gray-600 w-12 text-right">
+                {Math.round(clamp(bgmVolume, 0, 1) * 100)}%
+              </div>
+            </div>
+            <div className="mt-3 text-[11px] text-gray-500">
+              提示：部分手机会拦截自动播放；若没声音，请先点一次页面中的“播放主题曲”按钮。
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 主题曲自动播放兜底：若被浏览器拦截，提示用户点一下 */}
+      {needTapToPlay && (
+        <div className="px-3 mt-1">
+          <button
+            type="button"
+            onClick={() => { setNeedTapToPlay(false); playSong(themeSong) }}
+            className="w-full rounded-2xl bg-black/40 text-white/90 text-xs font-semibold py-2 backdrop-blur border border-white/15 active:bg-black/50"
+          >
+            点击播放主题曲：記憶（市川淳）
+            <span className="ml-2 text-white/70 font-medium">（自动播放被系统拦截了）</span>
+          </button>
+        </div>
+      )}
       
-      <div className="flex-1 flex flex-col px-3 pb-3 min-h-0">
+      <div className="relative z-10 flex-1 flex flex-col px-3 pb-3 min-h-0">
         {!game ? (
           <div className="flex-1 flex flex-col items-center justify-center">
             <div className="w-full max-w-[360px] rounded-3xl bg-white/80 backdrop-blur border border-white/50 shadow-lg p-6">
