@@ -5379,8 +5379,31 @@ export default function LiaoliaoYishengScreen() {
               ? {
                 ...parsed.currentEvent,
                 rawText: parsed.currentEvent.rawText ?? parsed.currentEvent.text ?? '',
+                options: Array.isArray(parsed.currentEvent.options) ? parsed.currentEvent.options : [],
               }
               : null,
+          }
+          // 兼容旧存档：修复“带一位NPC一起飞升”二段事件 options 为空导致无法选择的问题
+          try {
+            const ce = migrated.currentEvent as any
+            if (ce && ce.id === 'S971_ascend_choose_companion' && (!Array.isArray(ce.options) || ce.options.length === 0) && migrated.alive && !migrated.yearFlags.popup) {
+              const def2 = getEvents().find((e) => e.id === 'S971_ascend_choose_companion')
+              if (def2) {
+                const seed2 = migrated.seed + migrated.age * 515 + (migrated.logs?.length || 0) + 971
+                const rng2 = makeRng(seed2)
+                const options = def2.options(migrated, rng2)
+                migrated.currentEvent = {
+                  ...migrated.currentEvent!,
+                  // 保留原引导文字（旧存档里通常已有）
+                  rawText: migrated.currentEvent!.rawText ?? migrated.currentEvent!.text ?? '',
+                  text: (migrated.currentEvent!.rawText ?? migrated.currentEvent!.text ?? '').replace(/\[[^\]]+\]/g, ''),
+                  options: options.map((o) => ({ id: o.id, text: o.text, picked: false })),
+                  resolved: false,
+                }
+              }
+            }
+          } catch {
+            // ignore
           }
           // 进入游戏时自动定位到日志最底部
           shouldAutoScroll.current = true
@@ -5391,6 +5414,33 @@ export default function LiaoliaoYishengScreen() {
     } catch { /* ignore */ }
     setGame(null)
   }, [])
+
+  // 运行时兜底：如果用户修复前已经进入该事件，且页面未刷新导致 options 仍为空，自动补齐一次
+  useEffect(() => {
+    if (!game?.alive) return
+    const ce = game.currentEvent
+    if (!ce) return
+    if (ce.id !== 'S971_ascend_choose_companion') return
+    if (Array.isArray(ce.options) && ce.options.length > 0) return
+    if (game.yearFlags.popup) return
+    const def2 = getEvents().find((e) => e.id === 'S971_ascend_choose_companion')
+    if (!def2) return
+    const seed2 = game.seed + game.age * 515 + (game.logs?.length || 0) + 971
+    const rng2 = makeRng(seed2)
+    const options = def2.options(game, rng2)
+    if (!options || options.length === 0) return
+    shouldAutoScroll.current = true
+    setGame({
+      ...game,
+      currentEvent: {
+        ...ce,
+        rawText: ce.rawText ?? ce.text ?? '',
+        text: (ce.rawText ?? ce.text ?? '').replace(/\[[^\]]+\]/g, ''),
+        options: options.map((o) => ({ id: o.id, text: o.text, picked: false })),
+        resolved: false,
+      },
+    })
+  }, [game?.currentEvent?.id])
   
   useEffect(() => {
     if (!game) return
