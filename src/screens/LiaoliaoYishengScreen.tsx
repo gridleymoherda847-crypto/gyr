@@ -497,6 +497,36 @@ function pickOneUnique(rng: ReturnType<typeof makeRng>, arr: string[], fallback:
 }
 
 function getChatText(rng: ReturnType<typeof makeRng>, g: GameState, p: Person): string {
+  // 灵契/剑灵专属台词（仅孵化后）
+  if (isHatchedCompanion(p)) {
+    if (p.companionKind === 'sword_spirit') {
+      const lines = [
+        '「主人。」TA的声音很轻，像落在你心口的一片雪，「我不问你要去哪里——我只问，我能不能跟着你。」',
+        '「你累了就靠我。」TA把你护在身后，语气温柔得近乎虔诚。',
+        'TA抬手替你拢好衣襟，像怕你受一点风。\n「我会一直在。」',
+        '「别人不懂你没关系。」TA的蓝瞳很安静，「我懂。」',
+        'TA低声道：「你叫我一声，我就会来。」像誓言，又像命令自己。',
+      ]
+      return rng.pickOne(lines)
+    }
+    const byKind: Record<string, string[]> = {
+      dragon_egg: [
+        'TA看你一眼，语气冷却笃定：「别逞强。我在。」',
+        '「谁敢伤你，我就让谁付出代价。」TA说得很平静，却让人心安。',
+      ],
+      phoenix_egg: [
+        'TA笑着靠近你：「今天也要一起变强呀。」',
+        '「你别难过。」TA的声音像火焰，暖得让人想哭。',
+      ],
+      kirin_egg: [
+        'TA安静地站在你身侧，像一盏不熄的灯。\n「我认你。」',
+        '「嗯。」TA点头，指尖轻轻碰了碰你手背，「我在这里。」',
+      ],
+    }
+    const pool = byKind[p.companionKind || ''] || ['TA望着你，眼神很专注。']
+    return rng.pickOne(pool)
+  }
+
   // 主角14岁前：除前世线外，一律按“小朋友”对待，杜绝暧昧
   if (g.age < 14 && !p.isPastLover) {
     const kidPool = CHILD_TREAT_AS_KID[p.role] || ['「……」']
@@ -828,6 +858,8 @@ function getPersonMaxLifespan(p: Person): number {
   const bonus = getPersonLifeBonusYears(p)
   const legacy = hasPersonFlag(p, 'life_extended_10') && bonus <= 0 ? 10 : 0
   const extra = bonus + legacy
+  // 神话灵契/剑灵：寿元随主，不因年龄自然死亡（只会在“以命续命”时牺牲）
+  if (isSpecialCompanion(p) && p.companionKind !== 'weak_beast') return 999999 + extra
   // 仙帝：不死（用于“容貌极高”的隐藏线）
   if (hasPersonFlag(p, 'immortal_emperor')) return 999999 + extra
   // 师父常常寿元极长：避免 300~600 岁直接“寿尽”
@@ -1188,22 +1220,35 @@ function makeDeathDetailText(g: GameState): string {
 }
 
 function killPlayer(g: GameState, reasonLine?: string, popupTitle: string = '人生落幕'): GameState {
-  // 神话灵契/剑灵：若你本该死去，会以命续你十年寿元（必触发，牺牲者必死）
+  // 神话灵契/剑灵：若你本该死去，会以命续你十年寿元（必触发；若有多个，随机牺牲一个）
   try {
-    const guardian = (g.relations || []).find(r => r.status === 'alive' && isHatchedCompanion(r))
-    if (guardian) {
+    const guardians = (g.relations || []).filter(r => r.status === 'alive' && isHatchedCompanion(r))
+    if (guardians.length > 0) {
+      const rng = makeRng(g.seed + g.age * 911 + (g.logs?.length || 0) * 7 + 13)
+      const guardian = rng.pickOne(guardians)
       let next: GameState = { ...g, currentEvent: null }
       if (reasonLine) next = { ...next, logs: pushLog(next, reasonLine) }
       // 牺牲者身死
       next = updateRelation(next, guardian.id, { status: 'dead' })
       // 玩家续命十年（不避意外）
       next = addPlayerLifeBonusYears(next, 10)
+      const who = guardian.name
+      const kindLine =
+        guardian.companionKind === 'sword_spirit'
+          ? `剑光碎成细雨，「${who}」把最后一点清冷的灵息都推向你。\n「主人别怕。」TA低声道，「我在……」`
+          : guardian.companionKind === 'dragon_egg'
+            ? `龙息如潮，「${who}」以身为盾，把你从死意里硬生生扯回。\nTA的眼神冷，却护你护得近乎偏执。`
+            : guardian.companionKind === 'phoenix_egg'
+              ? `凤火温热，「${who}」笑着把命交给你，像把新生塞回你掌心。\n火焰熄灭时，你听见TA轻轻说：「别哭。」`
+              : guardian.companionKind === 'kirin_egg'
+                ? `瑞光覆下，「${who}」安静地把寿元渡给你。\nTA没有多说一句，却把你从黑暗里抱了出来。`
+                : `「${who}」以命为誓，将自己的灵息尽数渡给你。`
       const msg =
         `你眼前发黑，几乎要坠入长夜。\n` +
         `却在那一瞬，有人替你按住了命灯。\n` +
-        `「${guardian.name}」以命为誓，将自己的灵息尽数渡给你。\n` +
+        `${kindLine}\n` +
         `你活了下来——但TA的气息，彻底断了。\n` +
-        `（寿元+10年；「${guardian.name}」身死道消）`
+        `（寿元+10年；「${who}」身死道消）`
       next = { ...next, logs: pushLog(next, msg) }
       next = appendPopup(next, '以命续命', msg)
       return next
@@ -6749,6 +6794,12 @@ export default function LiaoliaoYishengScreen() {
                         const hasPill = game.items.includes('剑灵养成丹')
                         const isUnboundBeast = c.companionKind === 'weak_beast' && hasPersonFlag(c, 'beast_unbound')
                         const isBoundBeast = c.companionKind === 'weak_beast' && hasPersonFlag(c, 'beast_contracted')
+                        const canInteract =
+                          !isEgg &&
+                          c.companionKind !== 'weak_beast' &&
+                          c.status === 'alive' &&
+                          !game.currentEvent &&
+                          !game.yearFlags.popup
                         const canWork =
                           c.companionKind === 'weak_beast' &&
                           c.status === 'alive' &&
@@ -6788,6 +6839,24 @@ export default function LiaoliaoYishengScreen() {
                                 </div>
                                 <div className="text-[10px] text-gray-600 w-16 text-right">{nurture}/2000</div>
                               </div>
+                            )}
+
+                            {!isEgg && c.companionKind !== 'weak_beast' && c.status !== 'dead' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowRelations(false)
+                                  setInteractTargetId(c.id)
+                                  setGiftTargetId(null)
+                                  setConfessTargetId(null)
+                                }}
+                                disabled={!canInteract}
+                                className={`mt-2 w-full py-2 rounded-xl text-xs font-bold ${
+                                  canInteract ? 'bg-purple-100 text-purple-700 active:bg-purple-200' : 'bg-gray-100 text-gray-400'
+                                }`}
+                              >
+                                聊一聊
+                              </button>
                             )}
 
                             {isEgg && c.status !== 'dead' && (
