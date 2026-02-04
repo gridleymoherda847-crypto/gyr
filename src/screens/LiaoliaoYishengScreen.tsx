@@ -1745,6 +1745,9 @@ function getCultivationPercent(g: GameState): number {
 
 function canBreakthrough(g: GameState): boolean {
   if (g.realm === 'ascend') return false
+  // 飞升是结局：元婴满修为后应走“飞升事件”，而不是再走“突破事件”
+  const next = getNextRealm(g.realm)
+  if (!next || next === 'ascend') return false
   return g.cultivation >= getCultivationNeed(g.realm)
 }
 
@@ -3563,12 +3566,17 @@ function getEvents(): EventDef[] {
       weight: () => 80,
       text: (g) => {
         const nextRealm = getNextRealm(g.realm)
+        // 兜底：避免旧存档/旧逻辑把“飞升”当成可突破境界
+        if (!nextRealm || nextRealm === 'ascend') {
+          return '你的修为已到达此界顶点。\n此后不再是“突破”，而是——飞升。'
+        }
         const rate = getBreakthroughRate(g)
         return `你感觉修为已经到了瓶颈。\n如果能突破到${REALM_NAMES[nextRealm!]}期，寿命和实力都会大涨。\n但突破有风险……失败可能受伤，甚至走火入魔。`
           + `\n\n【当前突破成功率】${Math.floor(rate * 100)}%（基础每突破一次-20%，境界越高越难，丹药可提升）`
       },
       options: (g) => {
-        const nextRealm = getNextRealm(g.realm)!
+        const nextRealm = getNextRealm(g.realm)
+        if (!nextRealm || nextRealm === 'ascend') return []
         const successRate = getBreakthroughRate(g)
         const lover = g.relations.find(r => r.role === 'lover' && r.status === 'alive')
         
@@ -3579,7 +3587,7 @@ function getEvents(): EventDef[] {
             const rate = clamp(successRate + (hasAuto ? 0.2 : 0), 0.05, 1)
 
             if (rng.chance(rate)) {
-              let next = { ...g2, realm: nextRealm, cultivation: 0, breakthroughDrops: g2.breakthroughDrops + 1 }
+              let next: GameState = { ...g2, realm: nextRealm, cultivation: 0, breakthroughDrops: g2.breakthroughDrops + 1 }
               next = maybeTriggerEarlyCoreGenius(rng, next, nextRealm)
               // 每突破一次基础-20%：通过breakthroughDrops体现
               return { ...next, logs: pushLog(next, `天降异象！你成功突破到了${REALM_NAMES[nextRealm]}期！\n（本局突破次数：${next.breakthroughDrops}）`) }
@@ -3676,7 +3684,7 @@ function getEvents(): EventDef[] {
             const hasAuto = g2.items.includes('破境丹')
             const rate = clamp(successRate + 0.15 + (hasAuto ? 0.2 : 0), 0.05, 1)
             if (rng.chance(rate)) {
-              let next = { ...g2, realm: nextRealm, cultivation: 0, breakthroughDrops: g2.breakthroughDrops + 1 }
+              let next: GameState = { ...g2, realm: nextRealm, cultivation: 0, breakthroughDrops: g2.breakthroughDrops + 1 }
               next = maybeTriggerEarlyCoreGenius(rng, next, nextRealm)
               next = updateRelation(next, lover.id, { favor: clamp(lover.favor + 8, 0, 100) })
               return { ...next, logs: pushLog(next, `有${lover.name}在身边，你心神安定。\n天降异象！你成功突破到了${REALM_NAMES[nextRealm]}期！`) }
@@ -5405,6 +5413,29 @@ export default function LiaoliaoYishengScreen() {
           } catch {
             // ignore
           }
+
+          // 兼容旧存档：修复“realm 被错误写成 ascend（飞升）”导致修为上限显示 Infinity、无法正常触发飞升结局
+          try {
+            if (migrated.alive && migrated.realm === 'ascend' && !hasFlag(migrated, 'fix_realm_ascend_stuck')) {
+              let next: GameState = addFlag({ ...migrated, realm: 'nascent' }, 'fix_realm_ascend_stuck')
+              next = {
+                ...next,
+                cultivation: clamp(
+                  typeof next.cultivation === 'number' && Number.isFinite(next.cultivation) ? next.cultivation : 0,
+                  0,
+                  getCultivationNeed('nascent'),
+                ),
+                currentEvent: null,
+                lastEventId: null,
+              }
+              next = { ...next, logs: pushLog(next, '【存档修复】检测到你的境界被错误写成“飞升”，已恢复为“元婴”。继续修炼后可手动飞升。') }
+              next = appendPopup(next, '存档已修复', '你的境界曾被错误标记为“飞升”，导致修为上限显示为 Infinity，从而无法正常触发飞升结局。\n\n现已恢复为“元婴”，请继续修炼至满修为后点击“飞升”。')
+              Object.assign(migrated, next)
+            }
+          } catch {
+            // ignore
+          }
+
           // 进入游戏时自动定位到日志最底部
           shouldAutoScroll.current = true
           setGame(migrated)
@@ -5441,6 +5472,28 @@ export default function LiaoliaoYishengScreen() {
       },
     })
   }, [game?.currentEvent?.id])
+
+  // 运行时兜底：若旧逻辑把 realm 误写为 ascend（飞升），会导致修为上限 Infinity 并卡死飞升
+  useEffect(() => {
+    if (!game?.alive) return
+    if (game.realm !== 'ascend') return
+    if (hasFlag(game, 'fix_realm_ascend_stuck')) return
+    let next: GameState = addFlag({ ...game, realm: 'nascent' }, 'fix_realm_ascend_stuck')
+    next = {
+      ...next,
+      cultivation: clamp(
+        typeof next.cultivation === 'number' && Number.isFinite(next.cultivation) ? next.cultivation : 0,
+        0,
+        getCultivationNeed('nascent'),
+      ),
+      currentEvent: null,
+      lastEventId: null,
+    }
+    next = { ...next, logs: pushLog(next, '【存档修复】检测到你的境界被错误写成“飞升”，已恢复为“元婴”。继续修炼后可手动飞升。') }
+    next = appendPopup(next, '存档已修复', '检测到你的境界被错误标记为“飞升”，导致修为上限显示为 Infinity。\n\n现已恢复为“元婴”，请继续修炼至满修为后点击“飞升”。')
+    shouldAutoScroll.current = true
+    setGame(next)
+  }, [game?.realm, game?.alive])
   
   useEffect(() => {
     if (!game) return
