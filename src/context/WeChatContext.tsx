@@ -113,7 +113,7 @@ export type WeChatMessage = {
   // 转账相关
   transferAmount?: number
   transferNote?: string
-  transferStatus?: 'pending' | 'received' | 'refunded' | 'processed' // 转账状态：待处理/已收款/已退还/已处理（防止重复）
+  transferStatus?: 'pending' | 'received' | 'refunded' | 'rejected' | 'processed' // 转账状态：待处理/已领取/已退还/已拒绝/已处理（防止重复）
   transferId?: string // 转账消息ID，用于关联
   // 音乐分享相关
   musicTitle?: string

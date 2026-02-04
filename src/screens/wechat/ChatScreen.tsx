@@ -947,14 +947,21 @@ export default function ChatScreen() {
               const st = m.transferStatus || 'pending'
               // 明确标注转账方向 + “已领取=已被接收/已收入”（避免模型把收款当成付款）
               const userName = selectedPersona?.name || '用户'
-              const stText = st === 'received' ? '已领取（=收款方已收入）' : st === 'refunded' ? '已退还' : '待领取'
+              const stText =
+                st === 'received'
+                  ? '已领取（=收款方已收入）'
+                  : st === 'refunded'
+                    ? '已退还'
+                    : st === 'rejected'
+                      ? '已拒绝'
+                      : '待领取'
               // 关键：用户点“收款/退还”后会生成一条 isUser=true 的“已收款/已退还”美化框（收款确认），
               // 但它并不代表“用户发起转账”。否则模型会把“收款”误认为“转账支出”。
               // 判断是否是"收款/退款确认"消息：content 以"已收款/已退还/已领取/已退款"开头
               const isReceiptConfirm =
                 typeof m.content === 'string' &&
                 // 注意：不要用 \b（对中文不可靠，会导致“已收款”偶发识别失败）
-                /^\s*已(收款|领取|退还|退款)/.test(m.content.trim())
+                /^\s*已(收款|领取|退还|退款|拒绝)/.test(m.content.trim())
 
               if (isReceiptConfirm) {
                 // 收款确认消息（不是发起转账）：
@@ -1186,12 +1193,19 @@ export default function ChatScreen() {
           if (m.type === 'transfer') {
             const amt = typeof m.transferAmount === 'number' ? `¥${m.transferAmount.toFixed(2)}` : '¥0.00'
             const st = m.transferStatus || 'pending'
-            const stText = st === 'received' ? '已领取（=收款方已收入）' : st === 'refunded' ? '已退还' : '待领取'
+            const stText =
+              st === 'received'
+                ? '已领取（=收款方已收入）'
+                : st === 'refunded'
+                  ? '已退还'
+                  : st === 'rejected'
+                    ? '已拒绝'
+                    : '待领取'
             const userName = selectedPersona?.name || '用户'
             // 判断是否是收款确认消息
             const isReceiptConfirm =
               typeof m.content === 'string' &&
-              /^\s*已(收款|领取|退还|退款)/.test(m.content.trim())
+              /^\s*已(收款|领取|退还|退款|拒绝)/.test(m.content.trim())
             // 收款确认时，要根据谁发的确认来判断方向
             const direction = isReceiptConfirm
               ? (m.isUser ? `${userName}收到${character.name}的转账` : `${character.name}收到${userName}的转账`)
@@ -1866,10 +1880,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           const status =
             /已领取|已收款|received/.test(rawNote) ? 'received' :
             /已退还|已退款|refunded/.test(rawNote) ? 'refunded' :
+            /已拒绝|rejected/.test(rawNote) ? 'rejected' :
             'pending'
-          const note = rawNote.replace(/[:：]\s*(received|refunded)\s*$/i, '').trim() || '转账'
+          const note = rawNote.replace(/[:：]\s*(received|refunded|rejected)\s*$/i, '').trim() || '转账'
           const rest = text.replace(m[0], '').trim()
-          return { amount, note, status: status as 'pending' | 'received' | 'refunded', rest }
+          return { amount, note, status: status as 'pending' | 'received' | 'refunded' | 'rejected', rest }
         }
         const parseMusicCommand = (text: string) => {
           // 兼容：
@@ -3301,7 +3316,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           if (tm) {
             const amount = parseFloat(tm[1])
             const rawNote = String(tm[2] || '转账').trim() || '转账'
-            const note = rawNote.replace(/[:：]\s*(received|refunded)\s*$/i, '').trim() || '转账'
+            const note = rawNote.replace(/[:：]\s*(received|refunded|rejected)\s*$/i, '').trim() || '转账'
             const rest = trimmedLine.replace(tm[0], '').trim()
             safeTimeoutEx(() => {
               addMessage({
@@ -3311,7 +3326,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 type: 'transfer',
                 transferAmount: amount,
                 transferNote: note || '转账',
-                transferStatus: /已领取|已收款|received/i.test(note) ? 'received' : /已退还|已退款|refunded/i.test(note) ? 'refunded' : 'pending',
+                transferStatus:
+                  /已领取|已收款|received/i.test(note)
+                    ? 'received'
+                    : /已退还|已退款|refunded/i.test(note)
+                      ? 'refunded'
+                      : /已拒绝|rejected/i.test(note)
+                        ? 'rejected'
+                        : 'pending',
               })
               if (rest) {
                 addMessage({
@@ -3424,14 +3446,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     messagesRef.current = [...messagesRef.current, transferMsg]
 
     updateWalletBalance(-amount)
-    // 立刻插入一条系统提示，避免“没扣钱”的错觉（并便于排查）
-    const sysMsg = addMessage({
-      characterId: character.id,
-      content: `钱包已扣除 ¥${amount.toFixed(2)}（当前余额约 ¥${Math.max(0, walletBalance - amount).toFixed(2)}）`,
-      isUser: true,
-      type: 'system',
-    })
-    messagesRef.current = [...messagesRef.current, sysMsg]
     addWalletBill({
       type: 'transfer_out',
       amount,
@@ -3455,8 +3469,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     setPendingCount(prev => prev + 1)
   }
 
-  // 处理收到的转账（用户收款或退还对方发来的转账）
-  const handleTransferAction = (action: 'receive' | 'refund') => {
+  // 处理收到的转账（用户收款或拒绝对方发来的转账）
+  const handleTransferAction = (action: 'receive' | 'reject') => {
     if (!transferActionMsg) return
     
     const amount = transferActionMsg.transferAmount || 0
@@ -3465,19 +3479,19 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     // 关键修复：
     // - 必须把原始“对方发给我的转账”标记为已处理，否则它会一直保持 pending、一直可点
     // - 用户第二天再点一次就会产生一个“新的已收款消息（timestamp=现在）”，导致时间感误判成“你刚刚才领”
-    updateMessage(transferActionMsg.id, { transferStatus: action === 'receive' ? 'received' : 'refunded' })
+    updateMessage(transferActionMsg.id, { transferStatus: action === 'receive' ? 'received' : 'rejected' })
 
     // 不修改原转账消息的展示外观（美化框A仍然是转账卡片），但状态要变
     // 用户生成一条新的转账消息显示收款/退款状态（美化框B）
     const receiptMsg = addMessage({
       characterId: character.id,
-      content: action === 'receive' ? `已收款 ¥${amount.toFixed(2)}` : `已退还 ¥${amount.toFixed(2)}`,
+      content: action === 'receive' ? `已收款 ¥${amount.toFixed(2)}` : `已拒绝 ¥${amount.toFixed(2)}`,
       isUser: true,
       type: 'transfer',
       transferAmount: amount,
       // 避免“已领取/已退还”与卡片底部状态重复显示
       transferNote: note,
-      transferStatus: action === 'receive' ? 'received' : 'refunded',
+      transferStatus: action === 'receive' ? 'received' : 'rejected',
     })
     // 立即同步 ref，避免用户立刻点箭头时拿到旧 messages（导致模型没看到“已收款”这一条）
     messagesRef.current = [...messagesRef.current, receiptMsg]
@@ -3500,7 +3514,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     generateHumanLikeReplies(
       action === 'receive' 
         ? `用户收下了你给TA的${amount}元转账（备注：${note}），你可以表达开心/满足` 
-        : `用户退还了你给TA的${amount}元转账（备注：${note}），你可以表达不解/失落`
+        : `用户拒绝领取你给TA的${amount}元转账（备注：${note}），你可以表达不解/失落`
     )
   }
 
@@ -4423,6 +4437,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       const status = msg.transferStatus || 'pending'
       const isReceived = status === 'received'
       const isRefunded = status === 'refunded'
+      const isRejected = status === 'rejected'
       const isPending = status === 'pending'
       // 对方发给我的待处理转账可以点击
       const canClick = !msg.isUser && isPending
@@ -4431,7 +4446,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         <div 
           data-primary-click="1"
           className={`min-w-[160px] rounded-lg overflow-hidden ${canClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
-          style={{ background: isRefunded ? '#f5f5f5' : '#FA9D3B' }}
+          style={{ background: (isRefunded || isRejected) ? '#f5f5f5' : '#FA9D3B' }}
           onClick={() => canClick && setTransferActionMsg(msg)}
         >
           <div className="px-3 py-2">
@@ -4442,8 +4457,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               {msg.transferNote || '转账'}
             </div>
           </div>
-          <div className={`px-3 py-1.5 text-[10px] ${isRefunded ? 'bg-gray-100 text-gray-400' : 'bg-[#E08A2E] text-white/70'}`}>
-            {isReceived ? '已领取' : isRefunded ? '已退还' : canClick ? '点击收款' : '微信转账'}
+          <div className={`px-3 py-1.5 text-[10px] ${(isRefunded || isRejected) ? 'bg-gray-100 text-gray-400' : 'bg-[#E08A2E] text-white/70'}`}>
+            {isReceived ? '已领取' : isRefunded ? '已退还' : isRejected ? '已拒绝' : canClick ? '点击收款' : '微信转账'}
           </div>
         </div>
       )
@@ -6928,10 +6943,10 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => handleTransferAction('refund')}
+                  onClick={() => handleTransferAction('reject')}
                   className="flex-1 py-2.5 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium"
                 >
-                  退还
+                  拒绝
                 </button>
                 <button
                   type="button"

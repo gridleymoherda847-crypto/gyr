@@ -5099,6 +5099,7 @@ export default function LiaoliaoYishengScreen() {
   const shouldAutoScroll = useRef(false)
   const [needTapToPlay, setNeedTapToPlay] = useState(false)
   const [volumeOpen, setVolumeOpen] = useState(false)
+  const [rebirthConfirmOpen, setRebirthConfirmOpen] = useState(false)
   const prevVolumeRef = useRef<number | null>(null)
   const VOLUME_KEY = 'liaoliao_yisheng_bgm_volume'
   const ENABLE_KEY = 'liaoliao_yisheng_bgm_enabled'
@@ -6409,7 +6410,7 @@ export default function LiaoliaoYishengScreen() {
           rightElement={
             <button
               type="button"
-              onClick={() => { localStorage.removeItem(STORAGE_KEY); setGame(null) }}
+              onClick={() => setRebirthConfirmOpen(true)}
               className="text-xs px-2 py-1 rounded-full bg-white/30 text-white/90"
             >
               重生
@@ -6417,6 +6418,39 @@ export default function LiaoliaoYishengScreen() {
           }
         />
       </div>
+
+      {/* 重生确认弹窗 */}
+      {rebirthConfirmOpen && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/45 p-3" onClick={() => setRebirthConfirmOpen(false)}>
+          <div
+            className="w-full max-w-[420px] rounded-3xl bg-white/95 backdrop-blur border border-white/60 shadow-2xl p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-sm font-bold text-gray-800">确认重生？</div>
+            <div className="text-xs text-gray-600 mt-2 leading-relaxed">
+              重生后，上次的剧本存档将会清空。
+              <br />
+              如果想留作纪念，可以在结局/死亡后用 AI 生成故事并保存下来。
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRebirthConfirmOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold active:bg-gray-200"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => { localStorage.removeItem(STORAGE_KEY); setGame(null); setRebirthConfirmOpen(false) }}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-xs font-bold active:opacity-95"
+              >
+                确认重生
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 音量/开关：独立悬浮按钮（下移避免挡住“重生”） */}
       <div className="absolute top-14 right-3 z-30 flex items-center gap-2">
