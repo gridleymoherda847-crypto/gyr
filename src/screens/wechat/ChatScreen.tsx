@@ -953,7 +953,8 @@ export default function ChatScreen() {
               // 判断是否是"收款/退款确认"消息：content 以"已收款/已退还/已领取/已退款"开头
               const isReceiptConfirm =
                 typeof m.content === 'string' &&
-                /^\s*已(收款|领取|退还|退款)\b/.test(m.content.trim())
+                // 注意：不要用 \b（对中文不可靠，会导致“已收款”偶发识别失败）
+                /^\s*已(收款|领取|退还|退款)/.test(m.content.trim())
 
               if (isReceiptConfirm) {
                 // 收款确认消息（不是发起转账）：
@@ -1190,7 +1191,7 @@ export default function ChatScreen() {
             // 判断是否是收款确认消息
             const isReceiptConfirm =
               typeof m.content === 'string' &&
-              /^\s*已(收款|领取|退还|退款)\b/.test(m.content.trim())
+              /^\s*已(收款|领取|退还|退款)/.test(m.content.trim())
             // 收款确认时，要根据谁发的确认来判断方向
             const direction = isReceiptConfirm
               ? (m.isUser ? `${userName}收到${character.name}的转账` : `${character.name}收到${userName}的转账`)
