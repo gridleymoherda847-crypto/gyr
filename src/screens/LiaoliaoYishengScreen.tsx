@@ -5426,8 +5426,8 @@ export default function LiaoliaoYishengScreen() {
         />
       </div>
 
-      {/* 音量/开关：独立悬浮按钮，避免被 AppHeader 的 w-14 挤没 */}
-      <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
+      {/* 音量/开关：独立悬浮按钮（下移避免挡住“重生”） */}
+      <div className="absolute top-14 right-3 z-30 flex items-center gap-2">
         <button
           type="button"
           onClick={() => setBgmEnabled((v) => !v)}
