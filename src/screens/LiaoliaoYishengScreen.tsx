@@ -508,6 +508,34 @@ function getChatText(rng: ReturnType<typeof makeRng>, g: GameState, p: Person): 
     return line
   }
 
+  // 仙帝专属台词：成为道侣后，每次聊天都走专属池
+  if (hasPersonFlag(p, 'immortal_emperor')) {
+    const isPartner = p.role === 'lover' && g.spouseId === p.id
+    const base = isPartner
+      ? [
+          '「过来。」TA抬手，把你从风里轻轻拢进怀里，「别冷。」',
+          '「你这一世走得太慢。」TA淡声道，却在你指尖停留很久，「我会陪你。」',
+          '「我见过万年孤寂。」TA垂眸看你，「所以我不许你一个人。」',
+          '「别怕。」TA贴近你耳侧，「你想要的境界，我替你铺路。」',
+          'TA望着你，像把星河都压进眼底：「我等你不是为了名分……是为了你。」',
+        ]
+      : [
+          '「人间太吵。」TA淡声道，「你若想躲，我可以带你走。」',
+          '「别把自己耗在尘泥里。」TA的目光很静，却像把你托起。',
+          '「你很漂亮。」TA语气平淡，像在陈述一条天道。',
+        ]
+    // 按性格加一点“心意差异”
+    const perAddon: Record<string, string[]> = {
+      '高冷禁欲': ['TA说完便不再解释，只把你挡在风里。', 'TA垂眸：「嗯。」却把你握得更紧。'],
+      '温柔体贴': ['TA替你拢好衣襟，像怕你受委屈。', 'TA笑得很轻：「别累着。」'],
+      '神秘莫测': ['TA的字像雾，却句句落在你心上。', 'TA轻笑：「你会懂的。」'],
+      '深情专一': ['「此生唯你。」TA低声道，像誓言落地。'],
+    }
+    const extra = rng.chance(0.5) ? rng.pickOne(perAddon[p.personality] || []) : ''
+    const merged = extra ? `${rng.pickOne(base)}\n${extra}` : (rng.pickOne(base) as string)
+    return applyGenderToLine(merged.replace(/TA/g, ta(p)), p)
+  }
+
   const stage = getChatStage(g, p)
   const favorLevel = p.favor >= 60 ? 'high' : p.favor >= 20 ? 'mid' : 'low'
   const rolePoolNeutral = ROLE_CHAT_NEUTRAL[p.role]?.[favorLevel] || ['「……」']
@@ -1517,8 +1545,19 @@ function addPersonFlag(g: GameState, id: string, flag: string): GameState {
   return updateRelation(g, id, { flags: [...(p.flags || []), flag] })
 }
 
+function removePersonFlag(g: GameState, id: string, flag: string): GameState {
+  const p = getRelationById(g, id)
+  if (!p) return g
+  const flags = (p.flags || []).filter((f) => f !== flag)
+  return updateRelation(g, id, { flags })
+}
+
 function addRelation(g: GameState, person: Person): GameState {
   return { ...g, relations: [...g.relations, person] }
+}
+
+function removeRelationById(g: GameState, id: string): GameState {
+  return { ...g, relations: (g.relations || []).filter((r) => r.id !== id) }
 }
 
 function isSpecialCompanion(p: Person | undefined): boolean {
@@ -4258,13 +4297,6 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
     resolved: false,
   }
 
-  // 修为满100：突破事件出现时额外弹窗确认（不替代选项，只提示“可以突破了”）
-  if (ce.id === 'E500_breakthrough' && g.cultivation >= 100) {
-    const tip = `你的修为已满（100/100）。\n是否现在突破？\n\n${ce.text}`
-    const g2 = appendPopup(g, '突破确认', tip)
-    return { ...g2, currentEvent: ce, lastEventId: ce.id }
-  }
-
   return { ...g, currentEvent: ce, lastEventId: ce.id }
 }
 
@@ -4878,23 +4910,6 @@ export default function LiaoliaoYishengScreen() {
     }
   }, [])
 
-  // 修为到达 100：立即提示“可以突破”（不必等点下一年）
-  useEffect(() => {
-    if (!game) return
-    if (!game.alive) return
-    if ((game.cultivation || 0) < 100) return
-    if (hasFlag(game, 'breakthrough_tip_shown')) return
-    // 避免打断“突破事件”本身的提示
-    if (game.currentEvent?.id === 'E500_breakthrough') return
-    const tip =
-      `你的修为已满（100/100）。\n` +
-      `现在可以尝试突破到更高境界：成功后寿元与实力都会大涨。\n` +
-      `提示：突破有风险，失败可能受伤；丹药可提升成功率。`
-    const next = addFlag(appendPopup(game, '突破提示', tip), 'breakthrough_tip_shown')
-    setGame(next)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game?.cultivation, game?.alive])
-
   // 同步音量到 audio 元素，并记住配置
   useEffect(() => {
     try {
@@ -5113,6 +5128,30 @@ export default function LiaoliaoYishengScreen() {
     setShowExplore(false)
   }
 
+  const handleManualBreakthrough = () => {
+    if (!game) return
+    if (!game.alive) return
+    if (game.currentEvent) return
+    if (game.yearFlags.popup) return
+    if (!canBreakthrough(game)) return
+
+    const rng = makeRng(game.seed + game.age * 515 + game.logs.length + 7)
+    const def = getEvents().find((e) => e.id === 'E500_breakthrough')
+    if (!def) return
+    const rawText = def.text(game, rng)
+    const options = def.options(game, rng)
+    const ce: CurrentEvent = {
+      id: def.id,
+      title: def.title,
+      rawText,
+      text: rawText.replace(/\[[^\]]+\]/g, ''),
+      options: options.map((o) => ({ id: o.id, text: o.text, picked: false })),
+      resolved: false,
+    }
+    shouldAutoScroll.current = true
+    setGame({ ...game, currentEvent: ce, lastEventId: ce.id })
+  }
+
   const handleOpenMarket = () => {
     if (!game) return
     if (!game.alive) return
@@ -5163,6 +5202,7 @@ export default function LiaoliaoYishengScreen() {
         appearance: isFox ? '雪白的小狐幼崽，尾巴蓬松，眼睛像宝石' : '小灵鹿幼崽，角还很短，跟着你不敢走远',
         personality: isFox ? '热情开朗' : '闷骚内敛',
         companionStage: 'hatched',
+        flags: ['beast_unbound'],
       }
     }
 
@@ -5231,7 +5271,11 @@ export default function LiaoliaoYishengScreen() {
       const person = createMarketCompanion(rng, def)
       next = addSpecialCompanionToFront(next, person)
       next = { ...next, logs: pushLog(next, `你在集市买下「${def.name}」，花了${cost}灵石。\n从此，你的关系里多了一位「${person.name}」。`) }
-      next = appendPopup(next, '购买成功', `已获得「${def.name}」。\n可在「关系 → 灵契」里查看。`)
+      if (person.companionKind === 'weak_beast') {
+        next = appendPopup(next, '购买成功', `已获得妖兽「${person.name}」。\n可在「关系 → 灵契」里选择：绑定契约 / 放生。`)
+      } else {
+        next = appendPopup(next, '购买成功', `已获得「${def.name}」。\n可在「关系 → 灵契」里查看。`)
+      }
     }
     shouldAutoScroll.current = true
     setGame(next)
@@ -5491,6 +5535,44 @@ export default function LiaoliaoYishengScreen() {
       next = { ...next, logs: pushLog(next, `你把「${p.name}」派出去打工。\n它在集市后街蹿来蹿去，最后叼回一个小包。\n你打开一看，竟是「${item}」。`) }
       next = appendPopup(next, '打工归来', `「${p.name}」带回「${item}」。\n可在「物品」里查看。`)
     }
+    shouldAutoScroll.current = true
+    setGame(next)
+  }
+
+  const handleBindBeastContract = (personId: string) => {
+    if (!game) return
+    const p = game.relations.find(r => r.id === personId)
+    if (!p || p.status !== 'alive') return
+    if (p.companionKind !== 'weak_beast') return
+    if (!hasPersonFlag(p, 'beast_unbound')) return
+    let next: GameState = game
+    next = removePersonFlag(next, personId, 'beast_unbound')
+    next = addPersonFlag(next, personId, 'beast_contracted')
+    next = { ...next, logs: pushLog(next, `你与「${p.name}」立下契约。\n它低低叫了一声，尾巴轻轻扫过你的手背，像在说：我会跟着你。`) }
+    next = appendPopup(next, '契约成立', `「${p.name}」已绑定契约。\n以后可在「关系 → 灵契」里派它每年打工一次。`)
+    shouldAutoScroll.current = true
+    setGame(next)
+  }
+
+  const handleReleaseBeast = (personId: string) => {
+    if (!game) return
+    const p = game.relations.find(r => r.id === personId)
+    if (!p || p.status !== 'alive') return
+    if (p.companionKind !== 'weak_beast') return
+    // 放生：100%送忘情水；小概率再送点别的
+    const rng = makeRng(game.seed + game.age * 997 + game.logs.length + personId.charCodeAt(0))
+    const extraPool = ['澄心露', '小福符', '聚灵丹', '回天破境丹', '启灵草']
+    const extra = rng.chance(0.35) ? rng.pickOne(extraPool) : null
+    let next: GameState = removeRelationById(game, personId)
+    next = { ...next, items: [...next.items, '忘情水', ...(extra ? [extra] : [])] }
+    const msg =
+      `你把「${p.name}」放生。\n` +
+      `它在你脚边转了两圈，像是犹豫，又像是在记你的气息。\n` +
+      `临走前，它把一个小瓷瓶轻轻放在你掌心。\n` +
+      `你低头一看：竟是「忘情水」。` +
+      (extra ? `\n以及「${extra}」。` : '')
+    next = { ...next, logs: pushLog(next, msg) }
+    next = appendPopup(next, '放生回礼', `你放生了「${p.name}」。\n获得「忘情水」${extra ? `与「${extra}」` : ''}。\n（可在「物品」里查看）`)
     shouldAutoScroll.current = true
     setGame(next)
   }
@@ -6194,7 +6276,19 @@ export default function LiaoliaoYishengScreen() {
                   <div className="h-full rounded-full bg-gradient-to-r from-blue-400 to-cyan-400" style={{ width: `${game.cultivation}%` }} />
                 </div>
                 <div className="text-[10px] text-gray-600">{game.cultivation}/100</div>
-                <div className="text-[10px] text-gray-500 whitespace-nowrap">突破{getBreakthroughRateLabel(game)}</div>
+                <button
+                  type="button"
+                  onClick={handleManualBreakthrough}
+                  disabled={!canBreakthrough(game) || !!game.currentEvent || !!game.yearFlags.popup}
+                  className={`text-[10px] whitespace-nowrap px-2 py-1 rounded-full border ${
+                    canBreakthrough(game) && !game.currentEvent && !game.yearFlags.popup
+                      ? 'bg-purple-50 text-purple-700 border-purple-200 active:bg-purple-100'
+                      : 'bg-gray-100 text-gray-400 border-gray-200'
+                  }`}
+                  title={canBreakthrough(game) ? '手动突破' : '修为满100后可突破'}
+                >
+                  突破{getBreakthroughRateLabel(game)}
+                </button>
               </div>
             </div>
             
@@ -6303,7 +6397,10 @@ export default function LiaoliaoYishengScreen() {
                 
                 <button
                   type="button"
-                  onClick={() => setShowRelations(true)}
+                  onClick={() => {
+                    if (specialCompanions.length > 0) setRelTab('companions')
+                    setShowRelations(true)
+                  }}
                   disabled={!game.alive}
                   className="py-2 rounded-xl bg-pink-500/80 text-white text-xs font-medium disabled:opacity-50"
                 >
@@ -6375,7 +6472,15 @@ export default function LiaoliaoYishengScreen() {
                         const isEgg = c.companionKind !== 'weak_beast' && c.companionStage !== 'hatched'
                         const isSword = c.companionKind === 'sword_spirit'
                         const hasPill = game.items.includes('剑灵养成丹')
-                        const canWork = c.companionKind === 'weak_beast' && c.status === 'alive' && !hasPersonFlag(c, `worked_year_${game.age}`) && !game.currentEvent && !game.yearFlags.popup
+                        const isUnboundBeast = c.companionKind === 'weak_beast' && hasPersonFlag(c, 'beast_unbound')
+                        const isBoundBeast = c.companionKind === 'weak_beast' && hasPersonFlag(c, 'beast_contracted')
+                        const canWork =
+                          c.companionKind === 'weak_beast' &&
+                          c.status === 'alive' &&
+                          isBoundBeast &&
+                          !hasPersonFlag(c, `worked_year_${game.age}`) &&
+                          !game.currentEvent &&
+                          !game.yearFlags.popup
                         return (
                           <div key={c.id} className={`rounded-2xl bg-white border ${c.status === 'dead' ? 'border-gray-200 opacity-60' : 'border-indigo-100'} p-3`}>
                             <div className="flex items-center justify-between">
@@ -6392,7 +6497,11 @@ export default function LiaoliaoYishengScreen() {
                                 </div>
                               </div>
                               <div className={`text-[11px] font-semibold ${isEgg ? 'text-indigo-700' : 'text-emerald-700'}`}>
-                                {c.companionKind === 'weak_beast' ? '可打工' : isEgg ? '未孵化' : '已孵化'}
+                                {c.companionKind === 'weak_beast'
+                                  ? (isUnboundBeast ? '未契约' : '可打工')
+                                  : isEgg
+                                    ? '未孵化'
+                                    : '已孵化'}
                               </div>
                             </div>
 
@@ -6439,16 +6548,38 @@ export default function LiaoliaoYishengScreen() {
                             )}
 
                             {c.companionKind === 'weak_beast' && c.status !== 'dead' && (
-                              <button
-                                type="button"
-                                onClick={() => handleBeastWork(c.id)}
-                                disabled={!canWork}
-                                className={`mt-2 w-full py-2 rounded-xl text-xs font-bold ${
-                                  canWork ? 'bg-amber-100 text-amber-800 active:bg-amber-200' : 'bg-gray-100 text-gray-400'
-                                }`}
-                              >
-                                {hasPersonFlag(c, `worked_year_${game.age}`) ? '今年已打工' : canWork ? '派出去打工' : '先处理事件/弹窗'}
-                              </button>
+                              <>
+                                {isUnboundBeast ? (
+                                  <div className="mt-2 grid grid-cols-2 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleBindBeastContract(c.id)}
+                                      className="py-2 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold active:bg-emerald-200"
+                                    >
+                                      绑定契约
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReleaseBeast(c.id)}
+                                      className="py-2 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold active:bg-slate-200"
+                                      title="放生：必送忘情水"
+                                    >
+                                      放生
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBeastWork(c.id)}
+                                    disabled={!canWork}
+                                    className={`mt-2 w-full py-2 rounded-xl text-xs font-bold ${
+                                      canWork ? 'bg-amber-100 text-amber-800 active:bg-amber-200' : 'bg-gray-100 text-gray-400'
+                                    }`}
+                                  >
+                                    {hasPersonFlag(c, `worked_year_${game.age}`) ? '今年已打工' : canWork ? '派出去打工' : '先处理事件/弹窗'}
+                                  </button>
+                                )}
+                              </>
                             )}
 
                             {!isEgg && c.companionKind !== 'weak_beast' && c.status !== 'dead' && (
