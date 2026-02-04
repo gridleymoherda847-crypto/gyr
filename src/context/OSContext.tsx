@@ -1228,10 +1228,33 @@ export function OSProvider({ children }: PropsWithChildren) {
     const base = normalizeApiBaseUrl(override?.apiBaseUrl ?? llmConfig.apiBaseUrl)
     const key = override?.apiKey ?? llmConfig.apiKey
     if (!base || !key) throw new Error('请先在「设置 -> API 配置」中填写 Base URL 和 API Key')
+
+    const fetchViaProxy = async (): Promise<string[]> => {
+      const proxyRes = await fetch('/api/llm/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiBaseUrl: override?.apiBaseUrl ?? llmConfig.apiBaseUrl, apiKey: key }),
+      })
+      const text = await proxyRes.text().catch(() => '')
+      let data: any = {}
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {
+        data = { error: { message: '同域转发返回非 JSON' }, raw: String(text || '').slice(0, 300) }
+      }
+      if (!proxyRes.ok) {
+        throw new Error(data?.error?.message || `请求失败: ${proxyRes.status}`)
+      }
+      if (data.data && Array.isArray(data.data)) {
+        return data.data.map((m: any) => m.id).filter(Boolean)
+      }
+      throw new Error(data?.error?.message || '返回数据格式错误（同域转发）')
+    }
+
     try {
-      // HTTPS 页面 + HTTP Base URL：浏览器会拦截混合内容，直接走同域转发
+      // HTTPS 页面 + HTTP Base URL：浏览器会拦截混合内容，必须走同域转发
       if (window.location.protocol === 'https:' && base.trim().toLowerCase().startsWith('http://')) {
-        throw new TypeError('Mixed content blocked')
+        return await fetchViaProxy()
       }
       const response = await fetch(`${base}/models`, {
         method: 'GET',
@@ -1257,21 +1280,10 @@ export function OSProvider({ children }: PropsWithChildren) {
     } catch (error) {
       // 同域转发兜底：解决 CORS / 部分机型“Failed to fetch”
       try {
-        const proxyRes = await fetch('/api/llm/models', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiBaseUrl: override?.apiBaseUrl ?? llmConfig.apiBaseUrl, apiKey: key }),
-        })
-        if (!proxyRes.ok) {
-          const errData = await proxyRes.json().catch(() => ({}))
-          throw new Error(errData?.error?.message || `请求失败: ${proxyRes.status}`)
-        }
-        const data = await proxyRes.json().catch(() => ({}))
-        if (data.data && Array.isArray(data.data)) {
-          return data.data.map((m: any) => m.id).filter(Boolean)
-        }
-      } catch {
-        // ignore: fallthrough to original error
+        return await fetchViaProxy()
+      } catch (e2: any) {
+        const msg2 = String(e2?.message || '')
+        if (msg2) throw new Error(msg2)
       }
       throw error
     }
