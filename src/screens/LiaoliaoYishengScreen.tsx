@@ -193,6 +193,20 @@ type GameState = {
   breakthroughDrops: number // 已突破次数（用于基础成功率每次-20%）
   breakthroughBonus: number // 突破额外成功率加成（丹药等，0~100）
   pendingRescue: { id: string; cause: string }[] // 待处理的“濒死救人”队列（可连续弹出）
+  brothel?: {
+    decade: number
+    people: BrothelPerson[]
+  }
+}
+
+type BrothelPerson = {
+  id: string
+  name: string
+  gender: 'male' | 'female'
+  age: number
+  personality: string
+  beauty: number // 80~100
+  affection: number // 0~100
 }
 
 // ============ 常量数据 ============
@@ -1397,6 +1411,16 @@ function makeRng(seed: number) {
       return result
     },
   }
+}
+
+function hashString32(input: string): number {
+  const s = String(input || '')
+  let h = 2166136261 >>> 0
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619) >>> 0
+  }
+  return h >>> 0
 }
 
 function uuidLike(rng: ReturnType<typeof makeRng>) {
@@ -5073,6 +5097,7 @@ export default function LiaoliaoYishengScreen() {
   const [showRelations, setShowRelations] = useState(false)
   const [showExplore, setShowExplore] = useState(false)
   const [showMarket, setShowMarket] = useState(false)
+  const [showBrothel, setShowBrothel] = useState(false)
   const [showItems, setShowItems] = useState(false)
   const [marketQty, setMarketQty] = useState<Record<string, number>>({})
   const [chatResult, setChatResult] = useState<{ personName: string; text: string } | null>(null)
@@ -5390,6 +5415,143 @@ export default function LiaoliaoYishengScreen() {
     setShowMarket(true)
   }
 
+  const getBrothelDecade = (age: number) => Math.floor(Math.max(0, age) / 10)
+
+  const ensureBrothelRoster = (g: GameState): GameState => {
+    const decade = getBrothelDecade(g.age)
+    if (g.brothel && g.brothel.decade === decade && Array.isArray(g.brothel.people) && g.brothel.people.length > 0) {
+      return g
+    }
+    const rng = makeRng(g.seed + decade * 10007 + 2029)
+    const playerGender = g.gender
+    const people: BrothelPerson[] = []
+    const usedNames = new Set<string>()
+    const count = rng.nextInt(6, 8)
+    for (let i = 0; i < count; i++) {
+      const gender = rng.chance(0.8) ? oppositeGender(playerGender) : playerGender
+      let name = genName(rng, gender)
+      let guard = 0
+      while (usedNames.has(name) && guard++ < 12) name = genName(rng, gender)
+      usedNames.add(name)
+      people.push({
+        id: `bro-${decade}-${i}-${uuidLike(rng)}`,
+        name,
+        gender,
+        age: rng.nextInt(18, 28),
+        personality: rng.pickOne(PERSONALITIES),
+        beauty: rng.nextInt(82, 98),
+        affection: 0,
+      })
+    }
+    const next: GameState = { ...g, brothel: { decade, people } }
+    return next
+  }
+
+  const handleOpenBrothel = () => {
+    if (!game) return
+    if (!game.alive) return
+    if (game.yearFlags.explored) return
+    // 进入花楼也算“出门”一次
+    let next: GameState = { ...game, yearFlags: { ...game.yearFlags, explored: true } }
+    next = ensureBrothelRoster(next)
+    next = { ...next, logs: pushLog(next, '你拐进城里最热闹的那条巷子。\n灯影摇晃，丝竹隐约——花楼里人来人往，笑声像酒。') }
+    shouldAutoScroll.current = true
+    setGame(next)
+    setShowExplore(false)
+    setShowBrothel(true)
+  }
+
+  const updateBrothelPerson = (g: GameState, id: string, patch: Partial<BrothelPerson>): GameState => {
+    const b = g.brothel
+    if (!b) return g
+    const people = (b.people || []).map(p => (p.id === id ? { ...p, ...patch } : p))
+    return { ...g, brothel: { ...b, people } }
+  }
+
+  const removeBrothelPerson = (g: GameState, id: string): GameState => {
+    const b = g.brothel
+    if (!b) return g
+    return { ...g, brothel: { ...b, people: (b.people || []).filter(p => p.id !== id) } }
+  }
+
+  const handleBrothelAction = (pid: string, kind: 'drink' | 'sing' | 'night') => {
+    if (!game) return
+    const g0 = ensureBrothelRoster(game)
+    const person = g0.brothel?.people?.find(p => p.id === pid)
+    if (!person) return
+    const cost = kind === 'drink' ? 200 : kind === 'sing' ? 400 : 1000
+    const gain = kind === 'drink' ? 5 : kind === 'sing' ? 10 : 20
+    const label = kind === 'drink' ? '共饮一杯' : kind === 'sing' ? '请TA唱一曲' : '共度良宵'
+    if (g0.money < cost) {
+      const next = appendPopup(g0, '灵石不足', `需要：${cost}，你只有：${g0.money}。`)
+      shouldAutoScroll.current = true
+      setGame(next)
+      return
+    }
+    let next: GameState = { ...g0, money: g0.money - cost }
+    const afterAff = Math.min(100, Math.max(0, (person.affection || 0) + gain))
+    next = updateBrothelPerson(next, pid, { affection: afterAff })
+    const line =
+      kind === 'drink'
+        ? `你与「${person.name}」在帘影下对饮。\n酒意微醺，TA看你的眼神多了点热。`
+        : kind === 'sing'
+          ? `你请「${person.name}」唱了一曲。\n嗓音绕梁，像把人心轻轻拽住。`
+          : `你与「${person.name}」共度良宵。\n灯火熄了又亮，你的名字在TA唇边反复。`
+    next = { ...next, logs: pushLog(next, `${line}\n（灵石-${cost}，心动+${gain}）`) }
+    next = appendPopup(next, label, `「${person.name}」心动+${gain}（${afterAff}/100）。`)
+    shouldAutoScroll.current = true
+    setGame(next)
+  }
+
+  const handleBrothelRedeem = (pid: string) => {
+    if (!game) return
+    const g0 = ensureBrothelRoster(game)
+    const person = g0.brothel?.people?.find(p => p.id === pid)
+    if (!person) return
+    if ((person.affection || 0) < 100) {
+      const next = appendPopup(g0, '还不够', `「${person.name}」对你的心动还未满（${person.affection || 0}/100）。`)
+      shouldAutoScroll.current = true
+      setGame(next)
+      return
+    }
+    const price = 5000
+    if (g0.money < price) {
+      const next = appendPopup(g0, '灵石不足', `赎身需要：${price}，你只有：${g0.money}。`)
+      shouldAutoScroll.current = true
+      setGame(next)
+      return
+    }
+    let next: GameState = { ...g0, money: g0.money - price }
+    // 赎身后：进入朋友栏，满好感/满心动
+    const newPerson: Person = {
+      id: `fr-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: person.name,
+      gender: person.gender,
+      role: 'friend',
+      appearance: `花楼名伶（容貌出众：${person.beauty}）`,
+      personality: person.personality as any,
+      race: 'human',
+      realm: 'mortal',
+      age: person.age,
+      favor: 100,
+      affection: 100,
+      status: 'alive',
+      flags: [],
+    }
+    next = addRelation(next, newPerson)
+    next = removeBrothelPerson(next, pid)
+    const msg =
+      `你以${price}灵石为「${person.name}」赎身。\n` +
+      `那一夜灯火最亮，巷口却最安静。\n` +
+      `TA把发簪轻轻放进你掌心，像把自己的命运也交出来。\n` +
+      `从此，世上少了一个被称作“过客”的名字，多了一个站在你身旁的人。\n` +
+      `（灵石-${price}；「${person.name}」加入【朋友】，好感/心动已满）`
+    next = { ...next, logs: pushLog(next, msg) }
+    next = appendPopup(next, '赎身成功', `「${person.name}」已加入朋友栏。\n好感/心动已满。`)
+    shouldAutoScroll.current = true
+    setGame(next)
+  }
+
   const createMarketCompanion = (rng: ReturnType<typeof makeRng>, def: Extract<MarketDef, { kind: 'companion' }>): Person => {
     const id = `cmp-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const playerGender = game?.gender || 'female'
@@ -5486,7 +5648,7 @@ export default function LiaoliaoYishengScreen() {
       return
     }
 
-    const rng = makeRng(game.seed + game.age * 919 + game.logs.length + defId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 919 + game.logs.length + hashString32(defId))
     let next: GameState = { ...game, money: game.money - cost }
     if (def.kind === 'item') {
       next = { ...next, items: [...next.items, ...Array.from({ length: finalQty }, () => def.name)] }
@@ -5509,7 +5671,7 @@ export default function LiaoliaoYishengScreen() {
   const handleChatWith = (personId: string) => {
     if (!game) return
     if (game.yearFlags.chattedIds.includes(personId)) return
-    const rng = makeRng(game.seed + game.age * 300 + game.logs.length + personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 300 + game.logs.length + hashString32(personId))
     const result = handleChat(rng, game, personId)
     if (result) {
       shouldAutoScroll.current = true
@@ -5524,7 +5686,7 @@ export default function LiaoliaoYishengScreen() {
     if (!p || p.status !== 'alive') return
     if (game.yearFlags.chattedIds.includes(personId)) return
     if (!game.items.includes(itemName)) return
-    const rng = makeRng(game.seed + game.age * 333 + game.logs.length + personId.charCodeAt(0) + itemName.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 333 + game.logs.length + hashString32(personId) + hashString32(itemName))
 
     let next = { ...game, yearFlags: { ...game.yearFlags, chattedIds: [...game.yearFlags.chattedIds, personId] } }
     next = removeOneItem(next, itemName)
@@ -5619,7 +5781,7 @@ export default function LiaoliaoYishengScreen() {
     if (!hasPersonFlag(p, 'disciple_of_player')) return
     if (game.yearFlags.chattedIds.includes(personId)) return
 
-    const rng = makeRng(game.seed + game.age * 601 + game.logs.length + personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 601 + game.logs.length + hashString32(personId))
     const cultGain = rng.nextInt(10, 18)
     const favorGain = rng.nextInt(8, 12)
 
@@ -5654,7 +5816,7 @@ export default function LiaoliaoYishengScreen() {
     if (p.role !== 'lover' && !isHatchedCompanion(p)) return
     if (game.yearFlags.chattedIds.includes(personId)) return
 
-    const rng = makeRng(game.seed + game.age * 389 + game.logs.length + personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 389 + game.logs.length + hashString32(personId))
     const gain = rng.nextInt(8, 12)
     let next: GameState = { ...game, yearFlags: { ...game.yearFlags, chattedIds: [...game.yearFlags.chattedIds, personId] } }
     next = { ...next, cultivation: Math.min(getCultivationNeed(next.realm), next.cultivation + gain) }
@@ -5836,7 +5998,7 @@ export default function LiaoliaoYishengScreen() {
       return
     }
 
-    const rng = makeRng(game.seed + game.age * 911 + game.logs.length + personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 911 + game.logs.length + hashString32(personId))
     let next: GameState = addPersonFlag(game, personId, `worked_year_${game.age}`)
     // 奖励：多数给灵石，少数给丹药/小物
     const moneyGain = rng.nextInt(120, 360) + Math.floor((game.stats.luck || 0) / 10) * 10
@@ -5876,7 +6038,7 @@ export default function LiaoliaoYishengScreen() {
     if (!p || p.status !== 'alive') return
     if (p.companionKind !== 'weak_beast') return
     // 放生：100%送忘情水；小概率再送点别的
-    const rng = makeRng(game.seed + game.age * 997 + game.logs.length + personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 997 + game.logs.length + hashString32(personId))
     const extraPool = ['澄心露', '小福符', '聚灵丹', '回天破境丹', '启灵草']
     const extra = rng.chance(0.35) ? rng.pickOne(extraPool) : null
     let next: GameState = removeRelationById(game, personId)
@@ -5903,7 +6065,7 @@ export default function LiaoliaoYishengScreen() {
     if (isMarriedToOther(p) || p.affectionLocked) return
 
     const alreadyMarried = hasAlivePlayerLover(game)
-    const rng = makeRng(game.seed + game.age * 377 + game.logs.length + personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 377 + game.logs.length + hashString32(personId))
     let next: GameState = { ...game, yearFlags: { ...game.yearFlags, chattedIds: [...game.yearFlags.chattedIds, personId] } }
     if (alreadyMarried) {
       next = { ...next, logs: pushLog(next, `你想对${nameWithRole(p)}说出口，却在最后一刻把话咽了回去。\n你已有道侣。`) }
@@ -5971,7 +6133,7 @@ export default function LiaoliaoYishengScreen() {
     if (!game) return
     const p = game.relations.find(r => r.id === personId)
     if (!p || p.status !== 'dead') return
-    const rng = makeRng(game.seed + game.age * 701 + game.logs.length + personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 701 + game.logs.length + hashString32(personId))
     const role = p.prevRole || p.role
     const relMem: Record<PersonRole, string[]> = {
       parent: ['你站了很久，想起小时候被抱在怀里的温度。', '你低头抹去碑上的尘，忽然有点不敢看那两个字。'],
@@ -6018,7 +6180,7 @@ export default function LiaoliaoYishengScreen() {
     if (!game || !graveResult) return
     const p = game.relations.find(r => r.id === graveResult.personId)
     const who = p ? nameWithRole(p) : graveResult.personName
-    const rng = makeRng(game.seed + game.age * 733 + game.logs.length + graveResult.personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 733 + game.logs.length + hashString32(graveResult.personId) + 11)
     let next = game
     let extra = ''
     const roll = rng.nextFloat()
@@ -6043,7 +6205,7 @@ export default function LiaoliaoYishengScreen() {
     if (!game || !graveResult) return
     const p = game.relations.find(r => r.id === graveResult.personId)
     const who = p ? nameWithRole(p) : graveResult.personName
-    const rng = makeRng(game.seed + game.age * 777 + game.logs.length + graveResult.personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 777 + game.logs.length + hashString32(graveResult.personId) + 17)
     const askPool = [
       '「今天我也努力活下去了。」',
       '「你会怪我吗？」',
@@ -6324,7 +6486,7 @@ export default function LiaoliaoYishengScreen() {
     if (!game) return
     const person = game.relations.find(r => r.id === personId)
     if (!person) return
-    const rng = makeRng(game.seed + game.age * 777 + game.logs.length + personId.charCodeAt(0))
+    const rng = makeRng(game.seed + game.age * 777 + game.logs.length + hashString32(personId))
     const text = makeDivorceText(rng, game, person)
     setDivorcePrompt({ id: personId, name: person.name, text })
   }
@@ -7285,6 +7447,17 @@ export default function LiaoliaoYishengScreen() {
               </div>
               <div className="text-xs text-amber-800/70 mt-0.5">你现在有 {game.money} 灵石</div>
             </button>
+            <button
+              type="button"
+              onClick={handleOpenBrothel}
+              className="w-full mb-3 text-left px-3 py-3 rounded-xl bg-gradient-to-r from-pink-100 to-rose-100 border border-pink-200 active:bg-pink-100"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-rose-900">花楼</span>
+                <span className="text-xs text-rose-700">共饮 / 听曲 / 良宵</span>
+              </div>
+              <div className="text-xs text-rose-800/70 mt-0.5">灯影摇晃，笑声像酒（异性出现概率 80%）</div>
+            </button>
             <div className="space-y-2">
               {EXPLORE_PLACES.map(p => (
                 <button
@@ -7303,6 +7476,89 @@ export default function LiaoliaoYishengScreen() {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 花楼弹窗 */}
+      {showBrothel && game && (
+        <div className="fixed inset-0 z-[56] flex items-end justify-center bg-black/40" onClick={() => setShowBrothel(false)}>
+          <div className="w-full max-w-[420px] max-h-[78vh] rounded-t-3xl bg-white p-4 overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-bold text-gray-800">花楼（每10年换一拨人）</div>
+              <button type="button" onClick={() => setShowBrothel(false)} className="text-sm text-gray-500">关闭</button>
+            </div>
+            <div className="text-xs text-gray-600 mb-3">灵石：<span className="font-bold text-yellow-700">{game.money}</span></div>
+
+            {ensureBrothelRoster(game).brothel?.people?.length ? (
+              <div className="space-y-3">
+                {ensureBrothelRoster(game).brothel!.people.map((p) => {
+                  const pct = Math.max(0, Math.min(100, Math.floor((p.affection || 0))))
+                  const canRedeem = (p.affection || 0) >= 100
+                  return (
+                    <div key={p.id} className="rounded-2xl bg-white border border-rose-100 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-gray-800 truncate">
+                            {p.name}
+                            <span className="ml-2 text-[11px] font-semibold text-rose-600">
+                              {p.gender === 'male' ? '男' : '女'} · {p.age}岁 · 容貌{p.beauty}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-gray-500 mt-0.5 truncate">性格：{p.personality}</div>
+                          <div className="mt-2 flex items-center gap-2">
+                            <div className="text-[10px] text-gray-500 w-10">心动</div>
+                            <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                              <div className="h-full rounded-full bg-gradient-to-r from-rose-400 to-pink-500" style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="text-[10px] text-gray-600 w-12 text-right">{pct}/100</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleBrothelAction(p.id, 'drink')}
+                          className="py-2 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs font-bold active:bg-rose-100"
+                        >
+                          共饮一杯
+                          <div className="text-[10px] opacity-70">200灵石 · +5</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleBrothelAction(p.id, 'sing')}
+                          className="py-2 rounded-xl bg-pink-50 border border-pink-100 text-pink-700 text-xs font-bold active:bg-pink-100"
+                        >
+                          听曲
+                          <div className="text-[10px] opacity-70">400灵石 · +10</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleBrothelAction(p.id, 'night')}
+                          className="py-2 rounded-xl bg-purple-50 border border-purple-100 text-purple-700 text-xs font-bold active:bg-purple-100"
+                        >
+                          良宵
+                          <div className="text-[10px] opacity-70">1000灵石 · +20</div>
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleBrothelRedeem(p.id)}
+                        disabled={!canRedeem}
+                        className={`mt-2 w-full py-2.5 rounded-xl text-xs font-bold ${
+                          canRedeem ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white active:opacity-95' : 'bg-gray-100 text-gray-400'
+                        }`}
+                        title={canRedeem ? '赎身5000灵石（加入朋友，满好感/满心动）' : '心动满了才可赎身'}
+                      >
+                        赎身（5000）
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="text-sm text-gray-400 text-center py-10">今日清冷，暂无客人。</div>
+            )}
           </div>
         </div>
       )}
