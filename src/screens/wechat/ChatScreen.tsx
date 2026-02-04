@@ -146,6 +146,10 @@ export default function ChatScreen() {
   
   // 点击转账消息时的操作弹窗
   const [transferActionMsg, setTransferActionMsg] = useState<typeof messages[0] | null>(null)
+
+  // 虚拟语音（用户发语音：假语音条 + 转文字）
+  const [fakeVoiceOpen, setFakeVoiceOpen] = useState(false)
+  const [fakeVoiceDraft, setFakeVoiceDraft] = useState('')
   
   // 听歌邀请：确认进入“一起听歌界面”（类似QQ音乐）
   const [musicInviteDialog, setMusicInviteDialog] = useState<{
@@ -3528,6 +3532,39 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     setPendingCount(prev => prev + 1)
   }
 
+  // 发送虚拟语音（本质是输入文字，但显示为语音条 + 转文字）
+  const handleSendFakeVoice = () => {
+    const raw = String(fakeVoiceDraft || '').trim()
+    if (!raw) return
+    if (character.offlineMode) return
+
+    // 用户主动发送：强制滚到底部
+    forceScrollRef.current = true
+    nearBottomRef.current = true
+
+    const duration = Math.max(2, Math.min(60, Math.ceil(raw.length / 5)))
+    const voiceMsg = addMessage({
+      characterId: character.id,
+      content: '[语音消息]',
+      isUser: true,
+      type: 'voice',
+      voiceText: raw, // 转文字
+      voiceOriginalText: raw,
+      voiceDuration: duration,
+      // 不提供 voiceUrl：这是“虚拟语音”，不可播放
+      voiceUrl: undefined as any,
+    })
+    messagesRef.current = [...messagesRef.current, voiceMsg]
+
+    setFakeVoiceDraft('')
+    setFakeVoiceOpen(false)
+    setShowPlusMenu(false)
+    setShowStickerPanel(false)
+    setActivePanel(null)
+    // 统一手动：累计待回复数量（点击箭头触发）
+    setPendingCount(prev => prev + 1)
+  }
+
   // 处理收到的转账（用户收款或拒绝对方发来的转账）
   const handleTransferAction = (action: 'receive' | 'reject') => {
     if (!transferActionMsg) return
@@ -4889,6 +4926,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       const duration = msg.voiceDuration || 3
       const isPlaying = playingVoiceId === msg.id
       const hasUrl = !!msg.voiceUrl
+      const isFake = msg.isUser && !hasUrl && !!msg.voiceText
+      // 虚拟语音：外观对齐“对方语音条”（白底），但消息位置仍然由外层布局决定（用户在右）
+      const styleAsUser = msg.isUser && !isFake
       // 语音条宽度根据时长变化（最小140px，最大280px）- 加宽了
       const barWidth = Math.min(280, Math.max(140, 100 + duration * 6))
       
@@ -4897,6 +4937,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           {/* 语音条 - 加宽加高 */}
           <button
             type="button"
+            data-allow-msg-menu={isFake ? '1' : undefined}
             onClick={() => {
               if (hasUrl && msg.voiceUrl) {
                 playVoiceMessage(msg.id, msg.voiceUrl)
@@ -4904,30 +4945,40 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             }}
             disabled={!hasUrl}
             className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-transform active:scale-[0.98] ${
-              msg.isUser 
-                ? 'bg-green-500 text-white' 
+              styleAsUser
+                ? 'bg-green-500 text-white'
                 : 'bg-white text-gray-800 shadow-sm border border-gray-100'
-            } ${!hasUrl ? 'opacity-60' : ''}`}
+            } ${(!hasUrl && !isFake) ? 'opacity-60' : ''}`}
             style={{ width: barWidth }}
           >
             {/* 播放/加载图标 - 播放按钮改为白色圆形 */}
             {!hasUrl ? (
-              <div className="w-8 h-8 rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0" />
+              isFake ? (
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  styleAsUser ? 'bg-white/20' : 'bg-gray-100'
+                }`}>
+                  <svg className={`w-4 h-4 ${styleAsUser ? 'text-white' : 'text-gray-600'}`} fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+              ) : (
+                <div className="w-8 h-8 rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0" />
+              )
             ) : isPlaying ? (
               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                msg.isUser ? 'bg-white/20' : 'bg-gray-100'
+                styleAsUser ? 'bg-white/20' : 'bg-gray-100'
               }`}>
                 <div className="flex items-center gap-0.5">
-                  <div className={`w-1 h-3 rounded-full ${msg.isUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} />
-                  <div className={`w-1 h-4 rounded-full ${msg.isUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ animationDelay: '0.1s' }} />
-                  <div className={`w-1 h-3 rounded-full ${msg.isUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ animationDelay: '0.2s' }} />
+                  <div className={`w-1 h-3 rounded-full ${styleAsUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} />
+                  <div className={`w-1 h-4 rounded-full ${styleAsUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ animationDelay: '0.1s' }} />
+                  <div className={`w-1 h-3 rounded-full ${styleAsUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ animationDelay: '0.2s' }} />
                 </div>
               </div>
             ) : (
               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                msg.isUser ? 'bg-white/20' : 'bg-gray-100'
+                styleAsUser ? 'bg-white/20' : 'bg-gray-100'
               }`}>
-                <svg className={`w-4 h-4 ${msg.isUser ? 'text-white' : 'text-gray-600'}`} fill="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-4 h-4 ${styleAsUser ? 'text-white' : 'text-gray-600'}`} fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
               </div>
@@ -4939,7 +4990,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 <div
                   key={i}
                   className={`w-1 rounded-full transition-all ${
-                    msg.isUser ? 'bg-white/70' : 'bg-gray-300'
+                    styleAsUser ? 'bg-white/70' : 'bg-gray-300'
                   } ${isPlaying ? 'animate-pulse' : ''}`}
                   style={{ 
                     height: `${10 + Math.random() * 12}px`,
@@ -4950,17 +5001,15 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             </div>
             
             {/* 时长 */}
-            <span className={`text-sm font-medium flex-shrink-0 ${msg.isUser ? 'text-white/90' : 'text-gray-500'}`}>
+            <span className={`text-sm font-medium flex-shrink-0 ${styleAsUser ? 'text-white/90' : 'text-gray-500'}`}>
               {duration}"
             </span>
           </button>
           
           {/* 语音转文字（展开） */}
           {msg.voiceText && (
-            <div className={`mt-2 px-3 py-2 rounded-xl text-sm ${
-              msg.isUser ? 'bg-green-600/20 text-green-100' : 'bg-gray-50 text-gray-600 border border-gray-100'
-            }`}>
-              <div className={`text-xs mb-1 ${msg.isUser ? 'text-green-200' : 'text-gray-400'}`}>转文字</div>
+            <div className="mt-2 px-3 py-2 rounded-xl text-sm bg-white/90 border border-gray-200 text-gray-700">
+              <div className="text-xs mb-1 text-gray-400">转文字</div>
               <div className="whitespace-pre-wrap break-words leading-relaxed">{msg.voiceText}</div>
             </div>
           )}
@@ -5445,12 +5494,20 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           >
             {/* 叙事内容 - 使用自定义颜色和字体，添加白色半透明背景以提高可读性 */}
             <div 
-              className={`text-[15px] leading-relaxed whitespace-pre-wrap px-3 py-2 rounded-lg ${msg.isUser ? 'text-right' : 'text-left'}`}
+              className={`text-[15px] leading-relaxed whitespace-pre-wrap px-3 py-2 rounded-lg ${
+                msg.isUser ? 'text-right cursor-pointer active:opacity-80' : 'text-left'
+              }`}
               style={{ 
                 color: msg.isUser ? offlineUserColor : offlineCharColor,
                 fontFamily: offlineFontFamily,
                 fontStyle: msg.isUser ? 'italic' : 'normal',
                 backgroundColor: `rgba(255, 255, 255, ${(character.offlineTextBgOpacity ?? 85) / 100})`,
+              }}
+              onClick={() => {
+                // 线下模式：允许点击“自己发出的气泡”直接进入编辑
+                if (!msg.isUser) return
+                setEditingMessageId(msg.id)
+                setEditingContent(msg.content)
               }}
             >
               {renderOfflineContent(msg.content)}
@@ -5628,7 +5685,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                   // 允许“图片打开/转账卡片收款”等原始点击行为：标记为 primary-click 的元素不弹菜单
                   if (target?.closest?.('[data-primary-click="1"]')) return
                   // 对于内部按钮/输入等交互，不抢点击
-                  if (target?.closest?.('button,a,input,textarea,select')) return
+                  {
+                    const interactive = target?.closest?.('button,a,input,textarea,select') as HTMLElement | null
+                    // 仅当该交互元素显式允许弹菜单时，才继续（用于“虚拟语音条”等没有实际点击行为的按钮）
+                    if (interactive && !interactive.closest?.('[data-allow-msg-menu="1"]')) return
+                  }
                   e.preventDefault()
                   e.stopPropagation()
                   openMsgActionMenu(msg, e.currentTarget as HTMLElement)
@@ -5918,21 +5979,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             )
           )}
           
-          {/* 重新生成按钮（只在最后一条消息是AI回复时显示，用户发消息后不显示） */}
-          {!showTyping && messages.length > 0 && !messages[messages.length - 1].isUser && messages[messages.length - 1].type !== 'system' && (
-            <div className="flex justify-center mb-3">
-              <button
-                type="button"
-                onClick={handleRegenerate}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/80 shadow-sm text-xs text-gray-500 hover:bg-white active:scale-95 transition-transform"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                重新生成
-              </button>
-            </div>
-          )}
           <div ref={messagesEndRef} />
         </div>
 
@@ -5963,20 +6009,26 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         {/* 移动端禁用 blur（滚动+输入会非常卡），桌面端保留 */}
         <div className="px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40">
           <div className="flex items-center gap-2">
-            {/* 加号按钮 - 线下模式时也可用，但功能受限 */}
-            <button
-              type="button"
-              onClick={() => {
-                setShowPlusMenu(!showPlusMenu)
-                setShowStickerPanel(false)
-                setActivePanel(null)
-              }}
-              className="w-7 h-7 rounded-full border-2 border-gray-400 flex items-center justify-center transition-transform flex-shrink-0 active:scale-90"
-            >
-              <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
+            {/* 语音按钮（虚拟语音：弹窗输入文字→发出语音条+转文字；线下模式不显示） */}
+            {!character.offlineMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFakeVoiceOpen(true)
+                  setShowPlusMenu(false)
+                  setShowStickerPanel(false)
+                  setActivePanel(null)
+                }}
+                className="w-7 h-7 rounded-full flex items-center justify-center transition-transform flex-shrink-0 active:scale-90 bg-gray-100"
+                title="语音"
+              >
+                <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 14a3 3 0 003-3V7a3 3 0 10-6 0v4a3 3 0 003 3z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-14 0" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v3" />
+                </svg>
+              </button>
+            )}
             
             {/* 表情包按钮 */}
             <button
@@ -6025,17 +6077,32 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               </svg>
             </button>
             
+            {/* 右侧合并按钮：无输入=加号；有输入=发送 */}
             <button
               type="button"
-              onClick={handleSend}
-              disabled={!inputText.trim()}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all flex-shrink-0 ${
-                inputText.trim() 
-                  ? 'bg-gradient-to-r from-pink-400 to-pink-500 text-white shadow-sm' 
-                  : 'bg-gray-200 text-gray-400'
+              onClick={() => {
+                if (inputText.trim()) {
+                  handleSend()
+                  return
+                }
+                setShowPlusMenu(!showPlusMenu)
+                setShowStickerPanel(false)
+                setActivePanel(null)
+              }}
+              className={`flex items-center justify-center transition-transform flex-shrink-0 active:scale-90 ${
+                inputText.trim()
+                  ? 'px-3 py-1.5 rounded-full text-xs font-medium bg-gradient-to-r from-pink-400 to-pink-500 text-white shadow-sm'
+                  : 'w-7 h-7 rounded-full border-2 border-gray-400'
               }`}
+              title={inputText.trim() ? '发送' : '更多'}
             >
-              发送
+              {inputText.trim() ? (
+                '发送'
+              ) : (
+                <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+              )}
             </button>
           </div>
           
@@ -6983,6 +7050,44 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         </div>
       )}
 
+      {/* 虚拟语音输入弹窗（线上模式） */}
+      {fakeVoiceOpen && !character.offlineMode && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setFakeVoiceOpen(false)} />
+          <div className="relative w-full max-w-[320px] rounded-2xl bg-white shadow-xl overflow-hidden">
+            <div className="px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white text-center">
+              <div className="text-sm font-medium">发送语音</div>
+              <div className="text-[11px] text-white/80 mt-0.5">（虚拟语音：会显示语音条 + 转文字）</div>
+            </div>
+            <div className="p-4">
+              <textarea
+                value={fakeVoiceDraft}
+                onChange={(e) => setFakeVoiceDraft(e.target.value)}
+                placeholder="在这里输入你想说的话…"
+                className="w-full min-h-[110px] px-3 py-2 rounded-xl bg-gray-50 text-gray-800 placeholder-gray-400 outline-none text-sm border border-gray-200"
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setFakeVoiceOpen(false); setFakeVoiceDraft('') }}
+                  className="flex-1 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendFakeVoice}
+                  disabled={!String(fakeVoiceDraft || '').trim()}
+                  className="flex-1 py-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 text-white text-sm font-medium disabled:opacity-50"
+                >
+                  发送语音
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 收到转账的操作弹窗 */}
       {transferActionMsg && (
         <div className="absolute inset-0 z-50 flex items-center justify-center px-8">
@@ -7365,8 +7470,16 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 <button
                   type="button"
                   onClick={() => {
-                    if (editingContent.trim()) {
-                      updateMessage(editingMessageId, { content: editingContent.trim() })
+                    const v = editingContent.trim()
+                    if (v) {
+                      // 根据消息类型更新对应字段（支持：用户消息编辑 / 转账备注 / 虚拟语音转文字）
+                      if (editMsg.type === 'transfer') {
+                        updateMessage(editingMessageId, { transferNote: v })
+                      } else if (editMsg.type === 'voice') {
+                        updateMessage(editingMessageId, { voiceText: v, voiceOriginalText: v })
+                      } else {
+                        updateMessage(editingMessageId, { content: v })
+                      }
                     }
                     setEditingMessageId(null)
                     setEditingContent('')
@@ -7770,15 +7883,42 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             onPointerDown={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-2xl bg-black/75 text-white shadow-lg border border-white/10 backdrop-blur">
-              {/* 编辑（仅对方消息的文本/语音/转账备注） */}
-              {!msgActionMenu.msg.isUser &&
-                (msgActionMenu.msg.type === 'text' || msgActionMenu.msg.type === 'voice' || msgActionMenu.msg.type === 'transfer') && (
+              {/* 重新生成（放到最后一条AI消息的菜单里，避免按钮碍事） */}
+              {(() => {
+                const last = messages.length > 0 ? messages[messages.length - 1] : null
+                const canRegen =
+                  !showTyping &&
+                  !!last &&
+                  !last.isUser &&
+                  last.type !== 'system' &&
+                  msgActionMenu.msg?.id === last.id
+                if (!canRegen) return null
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeMsgActionMenu()
+                      handleRegenerate()
+                    }}
+                    className="px-2.5 py-1 rounded-xl text-[12px] hover:bg-white/15 active:bg-white/20"
+                  >
+                    重新生成
+                  </button>
+                )
+              })()}
+
+              {/* 编辑（支持：自己发的文本；对方文本；转账备注；虚拟语音转文字） */}
+              {(msgActionMenu.msg.type === 'text' ||
+                msgActionMenu.msg.type === 'transfer' ||
+                (msgActionMenu.msg.type === 'voice' && !msgActionMenu.msg.voiceUrl)) && (
                   <button
                     type="button"
                     onClick={() => {
                       const m = msgActionMenu.msg!
                       setEditingMessageId(m.id)
-                      setEditingContent(m.type === 'transfer' ? (m.transferNote || '') : m.content)
+                      if (m.type === 'transfer') setEditingContent(m.transferNote || '')
+                      else if (m.type === 'voice') setEditingContent(m.voiceText || '')
+                      else setEditingContent(m.content)
                       closeMsgActionMenu()
                     }}
                     className="px-2.5 py-1 rounded-xl text-[12px] hover:bg-white/15 active:bg-white/20"
