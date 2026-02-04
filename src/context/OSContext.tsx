@@ -10,7 +10,14 @@ import {
 import { kvGet, kvGetJSONDeep, kvSet, kvSetJSON } from '../storage/kv'
 
 export type UserProfile = { avatar: string; nickname: string; persona: string }
-export type LLMConfig = { apiBaseUrl: string; apiKey: string; selectedModel: string; availableModels: string[] }
+export type LLMApiInterface = 'openai_compatible' | 'anthropic_native' | 'gemini_native' | 'ollama'
+export type LLMConfig = {
+  apiBaseUrl: string
+  apiKey: string
+  selectedModel: string
+  availableModels: string[]
+  apiInterface: LLMApiInterface
+}
 
 // MiniMax 语音配置
 export type TTSRegion = 'cn' | 'global'  // 国内版 / 海外版
@@ -272,7 +279,7 @@ type OSContextValue = {
   removeCustomFont: (id: string) => void
   getAllFontOptions: () => FontOption[]  // 获取所有字体选项（内置 + 自定义）
   // API相关（手动配置）
-  fetchAvailableModels: (override?: { apiBaseUrl?: string; apiKey?: string }) => Promise<string[]>
+  fetchAvailableModels: (override?: { apiBaseUrl?: string; apiKey?: string; apiInterface?: LLMApiInterface }) => Promise<string[]>
   callLLM: (
     messages: {
       role: string
@@ -296,7 +303,7 @@ const OSContext = createContext<OSContextValue | undefined>(undefined)
 const formatTime = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 
 const defaultUserProfile: UserProfile = { avatar: '', nickname: '用户', persona: '' }
-const defaultLLMConfig: LLMConfig = { apiBaseUrl: '', apiKey: '', selectedModel: '', availableModels: [] }
+const defaultLLMConfig: LLMConfig = { apiBaseUrl: '', apiKey: '', selectedModel: '', availableModels: [], apiInterface: 'openai_compatible' }
 const defaultTTSConfig: TTSConfig = { 
   apiKey: '', 
   voiceId: 'female-shaonv',  // 默认少女音色
@@ -342,7 +349,7 @@ export const MINIMAL_ICONS: Record<string, string> = {
   preset: '/icons/minimal/preset.svg',
 }
 
-function normalizeApiBaseUrl(input: string): string {
+function normalizeApiBaseUrl(input: string, apiInterface: LLMApiInterface = 'openai_compatible'): string {
   let trimmed = (input || '').trim()
   if (!trimmed) return ''
   // 去掉结尾的多余斜杠
@@ -352,15 +359,32 @@ function normalizeApiBaseUrl(input: string): string {
   // 统一裁剪回“base(/v1)”级别，避免拼接出 /v1/chat/completions/v1 这种路径
   trimmed = trimmed.replace(/\/chat\/completions\/?$/i, '')
   trimmed = trimmed.replace(/\/models\/?$/i, '')
+  // anthropic / gemini / ollama 的常见误填
+  trimmed = trimmed.replace(/\/messages\/?$/i, '')
+  trimmed = trimmed.replace(/\/generateContent\/?$/i, '')
+  trimmed = trimmed.replace(/\/chat\/?$/i, '')
+  trimmed = trimmed.replace(/\/tags\/?$/i, '')
 
-  // 若 URL 中间已经包含 /v1（如 https://xxx/openai/v1），则裁剪到该 /v1 结尾
-  const v1Index = trimmed.toLowerCase().indexOf('/v1')
-  if (v1Index >= 0) {
-    const prefix = trimmed.slice(0, v1Index)
+  const lower = trimmed.toLowerCase()
+  // Gemini 原生：v1beta
+  const v1betaMatch = lower.match(/\/v1beta(\/|$)/)
+  if (v1betaMatch) {
+    const idx = lower.indexOf('/v1beta')
+    const prefix = trimmed.slice(0, idx)
+    return `${prefix}/v1beta`
+  }
+  // 仅当“真正包含 /v1 片段”时才裁剪（避免把 /v1beta 错裁成 /v1）
+  const v1Match = lower.match(/\/v1(\/|$)/)
+  if (v1Match) {
+    const idx = lower.indexOf('/v1')
+    const prefix = trimmed.slice(0, idx)
     return `${prefix}/v1`
   }
 
-  // 兼容用户填 https://xxx
+  // 没写版本号：按接口类型补默认路径
+  if (apiInterface === 'gemini_native') return `${trimmed}/v1beta`
+  if (apiInterface === 'ollama') return `${trimmed}/api`
+  // OpenAI/Claude 兼容：默认 /v1
   return `${trimmed}/v1`
 }
 const seedCharacters: VirtualCharacter[] = [
@@ -841,8 +865,15 @@ export function OSProvider({ children }: PropsWithChildren) {
   const setLLMConfig = (config: Partial<LLMConfig>) =>
     setLLMConfigState((prev) => {
       const next = { ...prev, ...config }
+      // 先合并 apiInterface，再按接口类型归一化 baseUrl
+      if (typeof config.apiInterface === 'string') {
+        next.apiInterface = config.apiInterface
+      }
       if (typeof config.apiBaseUrl === 'string') {
-        next.apiBaseUrl = normalizeApiBaseUrl(config.apiBaseUrl)
+        next.apiBaseUrl = normalizeApiBaseUrl(config.apiBaseUrl, next.apiInterface)
+      } else if (typeof config.apiInterface === 'string' && typeof next.apiBaseUrl === 'string') {
+        // 只改了接口类型：也要重新归一化一下 baseUrl（例如 /v1 ↔ /v1beta ↔ /api）
+        next.apiBaseUrl = normalizeApiBaseUrl(next.apiBaseUrl, next.apiInterface)
       }
       return next
     })
@@ -1224,10 +1255,49 @@ export function OSProvider({ children }: PropsWithChildren) {
   }, [locationSettings.mode, locationSettings.manualCity])
 
   // 获取可用模型列表
-  const fetchAvailableModels = async (override?: { apiBaseUrl?: string; apiKey?: string }): Promise<string[]> => {
-    const base = normalizeApiBaseUrl(override?.apiBaseUrl ?? llmConfig.apiBaseUrl)
+  const fetchAvailableModels = async (override?: { apiBaseUrl?: string; apiKey?: string; apiInterface?: LLMApiInterface }): Promise<string[]> => {
+    const apiInterface = override?.apiInterface ?? llmConfig.apiInterface ?? 'openai_compatible'
+    const base = normalizeApiBaseUrl(override?.apiBaseUrl ?? llmConfig.apiBaseUrl, apiInterface)
     const key = override?.apiKey ?? llmConfig.apiKey
     if (!base || !key) throw new Error('请先在「设置 -> API 配置」中填写 Base URL 和 API Key')
+
+    // Ollama：/api/tags
+    if (apiInterface === 'ollama') {
+      const response = await fetch(`${base}/tags`, { method: 'GET' })
+      if (!response.ok) throw new Error(`请求失败: ${response.status}`)
+      const data = await response.json().catch(() => ({}))
+      const models = Array.isArray(data?.models) ? data.models : []
+      return models.map((m: any) => m?.name).filter(Boolean)
+    }
+
+    // Gemini 原生：GET /models?key=...
+    if (apiInterface === 'gemini_native') {
+      const url = `${base}/models?key=${encodeURIComponent(key)}`
+      const response = await fetch(url, { method: 'GET' })
+      if (!response.ok) throw new Error(`请求失败: ${response.status}${response.status === 401 ? '（未授权：请检查 API Key / 权限）' : ''}`)
+      const data = await response.json().catch(() => ({}))
+      const models = Array.isArray(data?.models) ? data.models : []
+      // 返回形如 "models/gemini-..." 的 name
+      const ids = models.map((m: any) => m?.name).filter(Boolean)
+      return ids.length ? ids : []
+    }
+
+    // Anthropic 原生：GET /models（如果上游不支持，让上层 UI 走兜底列表）
+    if (apiInterface === 'anthropic_native') {
+      const response = await fetch(`${base}/models`, {
+        method: 'GET',
+        headers: {
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+      })
+      if (!response.ok) throw new Error(`请求失败: ${response.status}${response.status === 401 ? '（未授权：请检查 API Key / 权限）' : ''}`)
+      const data = await response.json().catch(() => ({}))
+      if (Array.isArray(data?.data)) return data.data.map((m: any) => m?.id).filter(Boolean)
+      if (Array.isArray(data?.models)) return data.models.map((m: any) => m?.id || m?.name).filter(Boolean)
+      throw new Error('返回数据格式错误')
+    }
 
     const fetchViaProxy = async (): Promise<string[]> => {
       const proxyRes = await fetch('/api/llm/models', {
@@ -1305,7 +1375,8 @@ export function OSProvider({ children }: PropsWithChildren) {
     model?: string,
     options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ): Promise<string> => {
-    const base = normalizeApiBaseUrl(llmConfig.apiBaseUrl)
+    const apiInterface = llmConfig.apiInterface ?? 'openai_compatible'
+    const base = normalizeApiBaseUrl(llmConfig.apiBaseUrl, apiInterface)
     const key = llmConfig.apiKey
     const selectedModel = model || llmConfig.selectedModel
     if (!base || !key) throw new Error('请先在「设置 -> API 配置」中填写 Base URL 和 API Key')
@@ -1313,10 +1384,144 @@ export function OSProvider({ children }: PropsWithChildren) {
     
     try {
       const maxTokens = options?.maxTokens ?? 900
+      const temperature = options?.temperature ?? 0.7
+
+      // ====== 1) Ollama 原生 ======
+      if (apiInterface === 'ollama') {
+        const controller = new AbortController()
+        const timeoutMs = options?.timeoutMs ?? 600000
+        const t = window.setTimeout(() => controller.abort(), timeoutMs)
+        const response = await fetch(`${base}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: selectedModel,
+            messages: messages.map((m) => ({
+              role: m.role,
+              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+            })),
+            stream: false,
+            options: {
+              temperature,
+              num_predict: maxTokens,
+            },
+          }),
+        })
+        window.clearTimeout(t)
+        if (!response.ok) {
+          const text = await response.text().catch(() => '')
+          throw new Error(text || `请求失败: ${response.status}`)
+        }
+        const data = await response.json().catch(() => ({}))
+        const content = data?.message?.content ?? data?.response ?? ''
+        const finalText = typeof content === 'string' ? content.trim() : ''
+        if (!finalText) throw new Error('模型返回空内容（Ollama）')
+        return finalText
+      }
+
+      // ====== 2) Gemini 原生 ======
+      if (apiInterface === 'gemini_native') {
+        const sys = messages.filter(m => m.role === 'system').map(m => (typeof m.content === 'string' ? m.content : '')).filter(Boolean).join('\n\n').trim()
+        const contents = messages
+          .filter(m => m.role !== 'system')
+          .map((m) => {
+            const role = m.role === 'assistant' ? 'model' : 'user'
+            const text =
+              typeof m.content === 'string'
+                ? m.content
+                : Array.isArray(m.content)
+                  ? m.content.map(p => (p?.text ? String(p.text) : p?.type === 'image_url' || p?.type === 'image' ? '[图片]' : '')).filter(Boolean).join('\n')
+                  : String(m.content || '')
+            return { role, parts: [{ text }] }
+          })
+        const modelPath = selectedModel.startsWith('models/') ? selectedModel : `models/${selectedModel}`
+        const url = `${base}/${modelPath}:generateContent?key=${encodeURIComponent(key)}`
+        const controller = new AbortController()
+        const timeoutMs = options?.timeoutMs ?? 600000
+        const t = window.setTimeout(() => controller.abort(), timeoutMs)
+        const body: any = {
+          contents,
+          generationConfig: {
+            temperature,
+            maxOutputTokens: maxTokens,
+          },
+        }
+        if (sys) body.systemInstruction = { parts: [{ text: sys }] }
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify(body),
+        })
+        window.clearTimeout(t)
+        if (!response.ok) {
+          const text = await response.text().catch(() => '')
+          throw new Error(text || `请求失败: ${response.status}`)
+        }
+        const data = await response.json().catch(() => ({}))
+        const parts = data?.candidates?.[0]?.content?.parts
+        const text = Array.isArray(parts) ? parts.map((p: any) => p?.text).filter(Boolean).join('') : ''
+        const finalText = typeof text === 'string' ? text.trim() : ''
+        if (!finalText) {
+          throw new Error('模型返回空内容（Gemini）。请检查：模型名是否正确、API Key 权限是否包含 Generative Language API。')
+        }
+        return finalText
+      }
+
+      // ====== 3) Claude（Anthropic）原生 ======
+      if (apiInterface === 'anthropic_native') {
+        const sys = messages.filter(m => m.role === 'system').map(m => (typeof m.content === 'string' ? m.content : '')).filter(Boolean).join('\n\n').trim()
+        const anthMessages = messages
+          .filter(m => m.role !== 'system')
+          .map((m) => {
+            const role = m.role === 'assistant' ? 'assistant' : 'user'
+            const text =
+              typeof m.content === 'string'
+                ? m.content
+                : Array.isArray(m.content)
+                  ? m.content.map(p => (p?.text ? String(p.text) : p?.type === 'image_url' || p?.type === 'image' ? '[图片]' : '')).filter(Boolean).join('\n')
+                  : String(m.content || '')
+            return { role, content: [{ type: 'text', text }] }
+          })
+
+        const controller = new AbortController()
+        const timeoutMs = options?.timeoutMs ?? 600000
+        const t = window.setTimeout(() => controller.abort(), timeoutMs)
+        const response = await fetch(`${base}/messages`, {
+          method: 'POST',
+          headers: {
+            'x-api-key': key,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: selectedModel,
+            max_tokens: maxTokens,
+            temperature,
+            system: sys || undefined,
+            messages: anthMessages,
+          }),
+        })
+        window.clearTimeout(t)
+        if (!response.ok) {
+          const text = await response.text().catch(() => '')
+          throw new Error(text || `请求失败: ${response.status}`)
+        }
+        const data = await response.json().catch(() => ({}))
+        const parts = Array.isArray(data?.content) ? data.content : []
+        const text = parts.map((p: any) => (p?.type === 'text' ? p?.text : '')).filter(Boolean).join('')
+        const finalText = typeof text === 'string' ? text.trim() : ''
+        if (!finalText) throw new Error('模型返回空内容（Claude/Anthropic）。请检查：接口是否为 /v1/messages、以及模型名是否正确。')
+        return finalText
+      }
+
+      // ====== 4) OpenAI 兼容 ======
       const payload = {
         model: selectedModel,
         messages: messages,
-        temperature: options?.temperature ?? 0.7,
+        temperature,
         max_tokens: maxTokens,
       }
 
@@ -1357,8 +1562,7 @@ export function OSProvider({ children }: PropsWithChildren) {
       if (!finalText) {
         throw new Error(
           '模型返回空内容（常见原因：接口返回格式不兼容）。' +
-            '当前这里走的是 OpenAI 兼容接口：需要支持 GET /models 与 POST /chat/completions，并返回 choices[0].message.content。' +
-            '如果你用的是 Gemini/Claude 官方原生接口，需要使用“OpenAI兼容中转”，或者后续我再给你加“接口类型”切换适配。'
+            '请到：设置App → API 配置，把“接口类型”切换到正确的（OpenAI兼容 / Claude原生 / Gemini原生 / Ollama）。'
         )
       }
 

@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useOS, type TTSRegion, type TTSVoice } from '../../context/OSContext'
+import { useOS, type LLMApiInterface, type TTSRegion, type TTSVoice } from '../../context/OSContext'
 import AppHeader from '../../components/AppHeader'
 import PageContainer from '../../components/PageContainer'
 import { getAdvancedConfig } from '../PresetScreen'
@@ -34,6 +34,13 @@ export default function ApiConfigScreen() {
   const { llmConfig, setLLMConfig, ttsConfig, setTTSConfig, textToSpeech, fontColor, fetchAvailableModels } = useOS()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isHttpsPage = typeof window !== 'undefined' && window.location?.protocol === 'https:'
+
+  const getBaseUrlPlaceholder = (t: LLMApiInterface) => {
+    if (t === 'gemini_native') return 'https://generativelanguage.googleapis.com/v1beta'
+    if (t === 'anthropic_native') return 'https://api.anthropic.com/v1'
+    if (t === 'ollama') return 'http://localhost:11434/api'
+    return 'https://api.openai.com/v1'
+  }
   
   // API 配置条目类型
   type ApiConfigItem = {
@@ -43,6 +50,7 @@ export default function ApiConfigScreen() {
     apiKey: string
     selectedModel: string
     models: string[]
+    apiInterface?: LLMApiInterface
   }
   
   // 从 localStorage 加载保存的 API 配置列表
@@ -70,6 +78,7 @@ export default function ApiConfigScreen() {
   const [editApiKey, setEditApiKey] = useState('')
   const [editSelectedModel, setEditSelectedModel] = useState('')
   const [editModels, setEditModels] = useState<string[]>([])
+  const [editApiInterface, setEditApiInterface] = useState<LLMApiInterface>('openai_compatible')
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState('')
   
@@ -78,6 +87,7 @@ export default function ApiConfigScreen() {
   const [apiKey, setApiKey] = useState(llmConfig.apiKey)
   const [selectedModel, setSelectedModel] = useState(llmConfig.selectedModel)
   const [models, setModels] = useState<string[]>(llmConfig.availableModels)
+  const [apiInterface, setApiInterface] = useState<LLMApiInterface>(llmConfig.apiInterface || 'openai_compatible')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
@@ -149,7 +159,7 @@ export default function ApiConfigScreen() {
     if (!baseUrl || !apiKey) { setError('请先填写 API Base URL 和 API Key'); return }
     setLoading(true); setError('')
     try {
-      const modelList = await fetchAvailableModels({ apiBaseUrl: baseUrl, apiKey })
+      const modelList = await fetchAvailableModels({ apiBaseUrl: baseUrl, apiKey, apiInterface })
       setModels(modelList)
     } catch (err: any) {
       const raw = String(err?.message || err || '')
@@ -169,6 +179,7 @@ export default function ApiConfigScreen() {
     setEditApiKey(config.apiKey || '')
     setEditSelectedModel(config.selectedModel || '')
     setEditModels(Array.isArray(config.models) ? config.models : [])
+    setEditApiInterface((config.apiInterface as any) || 'openai_compatible')
     setEditError('')
   }
 
@@ -180,7 +191,7 @@ export default function ApiConfigScreen() {
     setEditLoading(true)
     setEditError('')
     try {
-      const modelList = await fetchAvailableModels({ apiBaseUrl: editBaseUrl, apiKey: editApiKey })
+      const modelList = await fetchAvailableModels({ apiBaseUrl: editBaseUrl, apiKey: editApiKey, apiInterface: editApiInterface })
       setEditModels(modelList)
       // 如果当前选中的模型不在列表里，先清空，避免保存无效模型
       if (editSelectedModel && !modelList.includes(editSelectedModel)) {
@@ -211,6 +222,7 @@ export default function ApiConfigScreen() {
       apiKey: editApiKey.trim(),
       selectedModel: editSelectedModel,
       models: editModels,
+      apiInterface: editApiInterface,
     }
     const updated = savedConfigs.map(c => (c.id === editingConfigId ? updatedItem : c))
     setSavedConfigs(updated)
@@ -232,6 +244,7 @@ export default function ApiConfigScreen() {
       apiKey,
       selectedModel,
       models,
+      apiInterface,
     }
     const updated = [...savedConfigs, newConfig]
     setSavedConfigs(updated)
@@ -243,7 +256,8 @@ export default function ApiConfigScreen() {
       apiBaseUrl: baseUrl, 
       apiKey, 
       selectedModel, 
-      availableModels: models 
+      availableModels: models,
+      apiInterface,
     })
     // 保存高级参数
     saveAdvancedConfig({ temperature, topP, maxTokens, frequencyPenalty, presencePenalty })
@@ -274,6 +288,7 @@ export default function ApiConfigScreen() {
     setApiKey(config.apiKey)
     setSelectedModel(config.selectedModel)
     setModels(config.models)
+    setApiInterface((config.apiInterface as any) || 'openai_compatible')
     setCurrentConfigId(config.id)
     localStorage.setItem('mina_current_api_config_id', config.id)
     // 同时更新到全局配置
@@ -281,7 +296,8 @@ export default function ApiConfigScreen() {
       apiBaseUrl: config.baseUrl, 
       apiKey: config.apiKey, 
       selectedModel: config.selectedModel, 
-      availableModels: config.models 
+      availableModels: config.models,
+      apiInterface: ((config.apiInterface as any) || 'openai_compatible') as LLMApiInterface,
     })
   }
   
@@ -613,6 +629,27 @@ export default function ApiConfigScreen() {
                 style={{ color: fontColor.value }}
               />
             </div>
+
+            <div className="space-y-2">
+              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>接口类型</label>
+              <div className="relative">
+                <select
+                  value={apiInterface}
+                  onChange={(e) => setApiInterface(e.target.value as LLMApiInterface)}
+                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base"
+                  style={{ color: fontColor.value }}
+                >
+                  <option value="openai_compatible">OpenAI 兼容（/v1/models + /v1/chat/completions）</option>
+                  <option value="anthropic_native">Claude 原生（Anthropic /v1/messages）</option>
+                  <option value="gemini_native">Gemini 原生（Google /v1beta/models）</option>
+                  <option value="ollama">Ollama 本地（/api/chat）</option>
+                </select>
+                <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </div>
+              <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
+                如果你用的是 Claude/Gemini 官方原生接口，记得在这里切换；否则会出现“返回空内容/格式不兼容”的报错。
+              </div>
+            </div>
           
             <div className="space-y-2">
               <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
@@ -620,7 +657,7 @@ export default function ApiConfigScreen() {
                 type="url"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.openai.com/v1"
+                placeholder={getBaseUrlPlaceholder(apiInterface)}
                 className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
                 style={{ color: fontColor.value }}
               />
@@ -1277,11 +1314,28 @@ export default function ApiConfigScreen() {
                 />
               </div>
               <div className="space-y-1.5">
+                <label className="text-xs opacity-60" style={{ color: fontColor.value }}>接口类型</label>
+                <div className="relative">
+                  <select
+                    value={editApiInterface}
+                    onChange={(e) => setEditApiInterface(e.target.value as LLMApiInterface)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-white border border-black/10 text-[13px] outline-none appearance-none"
+                    style={{ color: fontColor.value }}
+                  >
+                    <option value="openai_compatible">OpenAI 兼容</option>
+                    <option value="anthropic_native">Claude 原生（Anthropic）</option>
+                    <option value="gemini_native">Gemini 原生（Google）</option>
+                    <option value="ollama">Ollama 本地</option>
+                  </select>
+                  <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </div>
+              </div>
+              <div className="space-y-1.5">
                 <label className="text-xs opacity-60" style={{ color: fontColor.value }}>API Base URL</label>
                 <input
                   value={editBaseUrl}
                   onChange={(e) => setEditBaseUrl(e.target.value)}
-                  placeholder="https://xxx/v1"
+                  placeholder={getBaseUrlPlaceholder(editApiInterface)}
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-black/10 text-[13px] outline-none"
                   style={{ color: fontColor.value }}
                 />
