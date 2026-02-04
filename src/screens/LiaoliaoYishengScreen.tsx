@@ -175,6 +175,7 @@ type GameState = {
   relations: Person[]
   flags: string[]
   logs: string[]
+  logArchive: string[] // 完整日志（用于AI生成故事/锚点）；UI仍只渲染 logs 的短列表
   items: string[]
   currentEvent: CurrentEvent | null
   yearFlags: {
@@ -194,7 +195,7 @@ type GameState = {
   breakthroughBonus: number // 突破额外成功率加成（丹药等，0~100）
   pendingRescue: { id: string; cause: string }[] // 待处理的“濒死救人”队列（可连续弹出）
   brothel?: {
-    decade: number
+    updatedAtAge: number // 上次刷新/进入花楼时玩家年龄（用于“多年没去”的年龄增长）
     people: BrothelPerson[]
   }
 }
@@ -576,16 +577,16 @@ function getChatText(rng: ReturnType<typeof makeRng>, g: GameState, p: Person): 
     }
     const byKind: Record<string, string[]> = {
       dragon_egg: [
-        'TA看你一眼，语气冷却笃定：「别逞强。我在。」',
-        '「谁敢伤你，我就让谁付出代价。」TA说得很平静，却让人心安。',
+        'TA看你一眼，语气冷却笃定：「主人，别逞强。我在。」',
+        '「主人。」TA说得很平静，「谁敢伤你，我就让谁付出代价。」',
       ],
       phoenix_egg: [
-        'TA笑着靠近你：「今天也要一起变强呀。」',
-        '「你别难过。」TA的声音像火焰，暖得让人想哭。',
+        'TA笑着靠近你：「主人，今天也要一起变强呀。」',
+        '「主人别难过。」TA的声音像火焰，暖得让人想哭。',
       ],
       kirin_egg: [
-        'TA安静地站在你身侧，像一盏不熄的灯。\n「我认你。」',
-        '「嗯。」TA点头，指尖轻轻碰了碰你手背，「我在这里。」',
+        'TA安静地站在你身侧，像一盏不熄的灯。\n「主人，我认你。」',
+        '「嗯。」TA点头，指尖轻轻碰了碰你手背，「主人，我在这里。」',
       ],
     }
     const pool = byKind[p.companionKind || ''] || ['TA望着你，眼神很专注。']
@@ -601,6 +602,17 @@ function getChatText(rng: ReturnType<typeof makeRng>, g: GameState, p: Person): 
       line = line + ' ' + rng.pickOne(tiny)
     }
     return line
+  }
+
+  // 徒弟专属：称呼必须是“师父/师尊”，绝不叫“师姐”
+  if (hasPersonFlag(p, 'disciple_of_player')) {
+    const lvl = p.favor >= 60 ? 'high' : p.favor >= 20 ? 'mid' : 'low'
+    const pools: Record<'low' | 'mid' | 'high', string[]> = {
+      low: ['「师父。」TA站得笔直，「弟子不敢懈怠。」', '「师尊，我会把今日功课补完。」', '「师父……我没有偷懒。」'],
+      mid: ['「师父，我今日有所悟。」TA眼睛亮亮的。', '「师尊，弟子想再请你指点一招。」', '「师父，我给你带了点灵草。」'],
+      high: ['「师父。」TA低声道，「你就是我这一生的灯。」', '「师尊，我会一直跟着你。」TA认真得像在发誓。', '「师父别受伤。」TA把你护在身后。'],
+    }
+    return applyGenderToLine(rng.pickOne(pools[lvl] || pools.mid).replace(/TA/g, ta(p)), p)
   }
 
   // 仙帝专属台词：成为道侣后，每次聊天都走专属池
@@ -629,6 +641,29 @@ function getChatText(rng: ReturnType<typeof makeRng>, g: GameState, p: Person): 
     const extra = rng.chance(0.5) ? rng.pickOne(perAddon[p.personality] || []) : ''
     const merged = extra ? `${rng.pickOne(base)}\n${extra}` : (rng.pickOne(base) as string)
     return applyGenderToLine(merged.replace(/TA/g, ta(p)), p)
+  }
+
+  // 花楼赎身：避免“自卑/我不配”模板，改为更日常、更自信的专属池
+  if (hasPersonFlag(p, 'brothel_redeemed')) {
+    const stage = getChatStage(g, p)
+    const pools: Record<ChatStage, string[]> = {
+      neutral: [
+        'TA把茶盏推到你面前：「喝点热的。」\n「你忙你的，我就在这儿。」',
+        '「今天想吃什么？」TA认真地想了想，「我去给你买。」',
+        'TA抬眼看你，笑意很淡却很稳：「别皱眉。你一皱眉，我就想把全世界都哄好。」',
+      ],
+      subtle: [
+        'TA低声道：「我不是客人了，对吧？」\n说完又笑：「那我就名正言顺地惦记你了。」',
+        '「你给我的不是一条路。」TA指尖轻轻碰了碰你袖口，「是‘回家’。」',
+        'TA把发簪别回你发间，像在认真宣布某种归属：「以后，我站你这边。」',
+      ],
+      ambiguous: [
+        'TA靠近你，声音压得很轻：「你想要什么，我都可以学。」\n「但你要先答应我——别一个人扛。」',
+        '「别躲。」TA握住你手腕，笑得像火光，「我光明正大地喜欢你。」',
+        'TA看着你很久，忽然轻声说：「我不求你立刻给答案……我只想每天都能见到你。」',
+      ],
+    }
+    return applyGenderToLine(rng.pickOne(pools[stage] || pools.neutral).replace(/TA/g, ta(p)), p)
   }
 
   const stage = getChatStage(g, p)
@@ -1592,13 +1627,27 @@ function pushLog(g: GameState, text: string): string[] {
   // 同一年内多条记录只在第一条标注年龄
   const agePrefixRe = /^【(\d+)岁】/
   let lastAge: number | null = null
-  for (let i = g.logs.length - 1; i >= 0; i--) {
-    const m = g.logs[i].match(agePrefixRe)
+  const search = (Array.isArray(g.logArchive) && g.logArchive.length) ? g.logArchive : (Array.isArray(g.logs) ? g.logs : [])
+  for (let i = search.length - 1; i >= 0; i--) {
+    const m = search[i].match(agePrefixRe)
     if (m) { lastAge = parseInt(m[1]); break }
   }
   const line = lastAge === g.age ? text : `【${g.age}岁】${text}`
-  const next = g.logs.length > 150 ? g.logs.slice(-150) : g.logs.slice()
+  const next = (Array.isArray(g.logs) ? (g.logs.length > 150 ? g.logs.slice(-150) : g.logs.slice()) : [])
   next.push(line)
+
+  // 归档：保留更长的“完整时间线”，用于 AI 故事生成（避免被150条上限截断）
+  const MAX_ARCHIVE = 5000
+  const baseArchive = Array.isArray(g.logArchive) && g.logArchive.length ? g.logArchive.slice() : (Array.isArray(g.logs) ? g.logs.slice() : [])
+  baseArchive.push(line)
+  const capped = baseArchive.length > MAX_ARCHIVE ? baseArchive.slice(-MAX_ARCHIVE) : baseArchive
+  try {
+    // 轻量可控的可变更新：调用处通常会立即 spread 成新对象，因此不会长期污染 React state
+    ;(g as any).logArchive = capped
+  } catch {
+    // ignore
+  }
+
   return next
 }
 
@@ -3019,7 +3068,7 @@ function getEvents(): EventDef[] {
       },
       options: (g, _rng) => {
         const cands = g.relations
-          .filter(r => r.status === 'alive' && r.role !== 'parent' && r.age >= 14)
+          .filter(r => r.status === 'alive' && r.role !== 'parent' && r.age >= 14 && !isSpecialCompanion(r))
           .sort((a, b) => b.favor - a.favor)
           .slice(0, 6)
         const opts = cands.map(p => ({
@@ -3077,14 +3126,32 @@ function getEvents(): EventDef[] {
       id: 'E300_childhood_return',
       title: '故人重逢',
       minAge: 15, maxAge: 40,
-      condition: (g) => hasFlag(g, 'childhood_separated') && !hasFlag(g, 'childhood_returned'),
+      condition: (g) =>
+        hasFlag(g, 'childhood_separated') &&
+        !hasFlag(g, 'childhood_returned') &&
+        !!g.relations.find(r => r.role === 'childhood'),
       weight: () => 50,
       text: (g) => {
         const childhood = g.relations.find(r => r.role === 'childhood')
         return `你以为再也见不到「${childhood?.name}」了。\n没想到在宗门外的坊市，你看到了一个熟悉的身影。\n他长大了，${genAppearance(makeRng(g.seed + g.age), 'male')}，但你一眼就认出了他。`
       },
       options: (g) => {
-        const childhood = g.relations.find(r => r.role === 'childhood')!
+        const childhood = g.relations.find(r => r.role === 'childhood')
+        if (!childhood) {
+          // 兜底：旧存档数据异常时，避免卡死在事件里
+          return [
+            {
+              id: 'leave',
+              text: '离开',
+              effect: (g2: GameState) => {
+                let next = removeFlag(g2, 'childhood_separated')
+                next = addFlag(next, 'childhood_returned')
+                next = appendPopup(next, '存档已修复', '检测到“青梅竹马”关系缺失，已自动跳过该事件，避免卡死。')
+                return { ...next, currentEvent: null }
+              },
+            },
+          ]
+        }
         const hasKeepsake = hasFlag(g, 'gave_childhood_keepsake')
         const hadRegret = hasFlag(g, 'childhood_regret')
         
@@ -4323,6 +4390,7 @@ function defaultNewGame(seed: number, gender: 'male' | 'female'): GameState {
       return flags
     })(),
     logs: [],
+    logArchive: [],
     items: [],
     currentEvent: null,
     yearFlags: { explored: false, chattedIds: [], popup: null },
@@ -4773,10 +4841,11 @@ function nextYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   {
     const emperor = next.relations.find(r => r.status === 'alive' && hasPersonFlag(r, 'immortal_emperor'))
     // 降到 20%：避免每年都送导致刷屏
-    if (emperor && rng.chance(0.2)) {
+    if (emperor && !hasPersonFlag(emperor, `emperor_gift_year_${next.age}`) && rng.chance(0.2)) {
       const r = rng.nextFloat()
       const giftItem = r < 0.55 ? '太清仙露' : r < 0.85 ? '引灵丹' : '回天破境丹'
       let n2: GameState = next
+      n2 = addPersonFlag(n2, emperor.id, `emperor_gift_year_${next.age}`)
       n2 = { ...n2, items: [...n2.items, giftItem] }
 
       const lines = [
@@ -4786,16 +4855,21 @@ function nextYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
         '「我送你此物。」TA道，「不为别的——只因我想看你更高处。」',
       ]
       const line = (rng.pickOne(lines) as string).replace(/TA/g, ta(emperor))
-      const msg = `有人送来一封不署名的信，纸上只留一缕清冽的仙意。\n随信而来的是「${giftItem}」。\n${line}`
+      const isPartner = emperor.role === 'lover' || next.spouseId === emperor.id
+      const msg = isPartner
+        ? `仙帝命人送来「${giftItem}」。\n${line}`
+        : `有人送来一封不署名的信，纸上只留一缕清冽的仙意。\n随信而来的是「${giftItem}」。\n${line}`
       n2 = { ...n2, logs: pushLog(n2, `「${nameWithRole(emperor)}」送来「${giftItem}」。`) }
-      n2 = appendPopup(n2, '仙帝来信', msg)
+      n2 = appendPopup(n2, isPartner ? '仙帝赠礼' : '仙帝来信', msg)
       next = n2
     }
   }
 
   // NPC主动送礼/邀约：不占用当年事件，只弹窗提示（好感>=50才会发生）
   {
-    const cands = next.relations.filter(r => r.status === 'alive' && r.role !== 'parent' && r.favor >= 50)
+    const cands = next.relations.filter(
+      r => r.status === 'alive' && r.role !== 'parent' && r.favor >= 50 && !hasPersonFlag(r, 'immortal_emperor')
+    )
     if (cands.length > 0 && rng.chance(0.35)) {
       const p = rng.pickOne(cands)
 
@@ -5352,6 +5426,12 @@ export default function LiaoliaoYishengScreen() {
           // 轻量存档迁移：补齐新增字段默认值
           const migrated: GameState = {
             ...parsed,
+            logs: Array.isArray(parsed?.logs)
+              ? parsed.logs.map((x: any) => String(x || '')).filter(Boolean).slice(-150)
+              : [],
+            logArchive: Array.isArray(parsed?.logArchive)
+              ? parsed.logArchive.map((x: any) => String(x || '')).filter(Boolean).slice(-5000)
+              : (Array.isArray(parsed?.logs) ? parsed.logs.map((x: any) => String(x || '')).filter(Boolean).slice(-5000) : []),
             yearFlags: {
               explored: !!parsed?.yearFlags?.explored,
               chattedIds: Array.isArray(parsed?.yearFlags?.chattedIds) ? parsed.yearFlags.chattedIds : [],
@@ -5372,6 +5452,26 @@ export default function LiaoliaoYishengScreen() {
               : (parsed?.pendingRescue && typeof parsed.pendingRescue === 'object' && parsed.pendingRescue.id)
                 ? [parsed.pendingRescue]
                 : [],
+            brothel: parsed?.brothel && typeof parsed.brothel === 'object'
+              ? {
+                  updatedAtAge:
+                    typeof (parsed.brothel as any)?.updatedAtAge === 'number'
+                      ? Math.max(0, (parsed.brothel as any).updatedAtAge)
+                      : (typeof parsed?.age === 'number' ? Math.max(0, parsed.age) : 0),
+                  people: Array.isArray((parsed.brothel as any)?.people)
+                    ? (parsed.brothel as any).people.map((p: any) => ({
+                        ...p,
+                        id: String(p?.id || ''),
+                        name: String(p?.name || ''),
+                        gender: (p?.gender === 'male' || p?.gender === 'female') ? p.gender : 'female',
+                        age: typeof p?.age === 'number' ? Math.max(1, Math.floor(p.age)) : 18,
+                        personality: String(p?.personality || ''),
+                        beauty: typeof p?.beauty === 'number' ? clamp(Math.floor(p.beauty), 0, 100) : 80,
+                        affection: typeof p?.affection === 'number' ? clamp(Math.floor(p.affection), 0, 100) : 0,
+                      }))
+                    : [],
+                }
+              : undefined,
             relations: Array.isArray(parsed?.relations)
               ? parsed.relations.map((r: any) => ({
                 ...r,
@@ -5436,6 +5536,24 @@ export default function LiaoliaoYishengScreen() {
             // ignore
           }
 
+          // 兼容旧存档：修复“故人重逢”事件在缺少 childhood 关系时卡死/显示 undefined
+          try {
+            const ce = migrated.currentEvent as any
+            if (ce && ce.id === 'E300_childhood_return') {
+              const hasChildhood = (migrated.relations || []).some(r => r?.role === 'childhood')
+              if (!hasChildhood) {
+                let next: GameState = { ...migrated, currentEvent: null, lastEventId: null }
+                next = removeFlag(next, 'childhood_separated')
+                next = addFlag(next, 'childhood_returned')
+                next = { ...next, logs: pushLog(next, '【存档修复】检测到“故人重逢”缺少青梅竹马对象，已跳过该事件以避免卡死。') }
+                next = appendPopup(next, '存档已修复', '检测到“故人重逢”事件缺少青梅竹马对象，已自动跳过该事件（避免出现 undefined/卡死）。')
+                Object.assign(migrated, next)
+              }
+            }
+          } catch {
+            // ignore
+          }
+
           // 进入游戏时自动定位到日志最底部
           shouldAutoScroll.current = true
           setGame(migrated)
@@ -5494,6 +5612,23 @@ export default function LiaoliaoYishengScreen() {
     shouldAutoScroll.current = true
     setGame(next)
   }, [game?.realm, game?.alive])
+
+  // 运行时兜底：若存档里进入“故人重逢”但缺少 childhood 关系，自动跳出避免卡死/undefined
+  useEffect(() => {
+    if (!game?.alive) return
+    const ce = game.currentEvent
+    if (!ce) return
+    if (ce.id !== 'E300_childhood_return') return
+    const hasChildhood = (game.relations || []).some(r => r?.role === 'childhood')
+    if (hasChildhood) return
+    let next: GameState = { ...game, currentEvent: null, lastEventId: null }
+    next = removeFlag(next, 'childhood_separated')
+    next = addFlag(next, 'childhood_returned')
+    next = { ...next, logs: pushLog(next, '【存档修复】检测到“故人重逢”缺少青梅竹马对象，已跳过该事件以避免卡死。') }
+    next = appendPopup(next, '存档已修复', '检测到“故人重逢”事件缺少青梅竹马对象，已自动跳过该事件（避免出现 undefined/卡死）。')
+    shouldAutoScroll.current = true
+    setGame(next)
+  }, [game?.currentEvent?.id])
   
   useEffect(() => {
     if (!game) return
@@ -5581,35 +5716,42 @@ export default function LiaoliaoYishengScreen() {
     if (!game) return
     if (!game.alive) return
     if (game.yearFlags.explored) return
-    // 进入集市也算“出门”一次
-    let next: GameState = { ...game, yearFlags: { ...game.yearFlags, explored: true } }
-    next = { ...next, logs: pushLog(next, '你来到集市。人声鼎沸，摊贩叫卖，灵石与机缘在这里流转。') }
-    shouldAutoScroll.current = true
-    setGame(next)
     setShowExplore(false)
     setShowMarket(true)
   }
 
-  const getBrothelDecade = (age: number) => Math.floor(Math.max(0, age) / 10)
-
   const ensureBrothelRoster = (g: GameState): GameState => {
-    const decade = getBrothelDecade(g.age)
-    if (g.brothel && g.brothel.decade === decade && Array.isArray(g.brothel.people) && g.brothel.people.length > 0) {
-      return g
+    const nowAge = Math.max(0, g.age || 0)
+    const prev = g.brothel
+    const prevUpdated = typeof (prev as any)?.updatedAtAge === 'number' ? Math.max(0, (prev as any).updatedAtAge) : nowAge
+    const delta = Math.max(0, nowAge - prevUpdated)
+
+    // 多年没来：花楼人也会变老；超过30岁视为“被卖掉/离开”
+    let people: BrothelPerson[] = Array.isArray(prev?.people) ? prev!.people.slice() : []
+    if (delta > 0) {
+      people = people
+        .map((p) => ({ ...p, age: Math.max(1, Math.floor((p.age || 18) + delta)) }))
+        .filter((p) => (p.age || 0) <= 30)
+    } else {
+      // 即便没过年，也做一次过滤（防旧数据不干净）
+      people = people.filter((p) => (p.age || 0) <= 30)
     }
-    const rng = makeRng(g.seed + decade * 10007 + 2029)
+
+    const rng = makeRng(g.seed + nowAge * 10007 + 2029)
     const playerGender = g.gender
-    const people: BrothelPerson[] = []
     const usedNames = new Set<string>()
-    const count = rng.nextInt(6, 8)
-    for (let i = 0; i < count; i++) {
+    for (const p of people) usedNames.add(p.name)
+
+    const targetCount = rng.nextInt(6, 8)
+    let guard = 0
+    while (people.length < targetCount && guard++ < 40) {
       const gender = rng.chance(0.8) ? oppositeGender(playerGender) : playerGender
       let name = genName(rng, gender)
-      let guard = 0
-      while (usedNames.has(name) && guard++ < 12) name = genName(rng, gender)
+      let g2 = 0
+      while (usedNames.has(name) && g2++ < 12) name = genName(rng, gender)
       usedNames.add(name)
       people.push({
-        id: `bro-${decade}-${i}-${uuidLike(rng)}`,
+        id: `bro-${nowAge}-${people.length}-${uuidLike(rng)}`,
         name,
         gender,
         age: rng.nextInt(18, 28),
@@ -5618,7 +5760,7 @@ export default function LiaoliaoYishengScreen() {
         affection: 0,
       })
     }
-    const next: GameState = { ...g, brothel: { decade, people } }
+    const next: GameState = { ...g, brothel: { updatedAtAge: nowAge, people } }
     return next
   }
 
@@ -5632,10 +5774,9 @@ export default function LiaoliaoYishengScreen() {
       setGame(next)
       return
     }
-    // 进入花楼也算“出门”一次
-    let next: GameState = { ...game, yearFlags: { ...game.yearFlags, explored: true } }
-    next = ensureBrothelRoster(next)
-    next = { ...next, logs: pushLog(next, '你拐进城里最热闹的那条巷子。\n灯影摇晃，丝竹隐约——花楼里人来人往，笑声像酒。') }
+    // 打开花楼不算“出门用掉”：只有发生实际消费/赎身才算
+    // 但要持久化刷新花楼名单（年龄增长/30岁离开等）
+    const next = ensureBrothelRoster(game)
     shouldAutoScroll.current = true
     setGame(next)
     setShowExplore(false)
@@ -5669,7 +5810,8 @@ export default function LiaoliaoYishengScreen() {
       setGame(next)
       return
     }
-    let next: GameState = { ...g0, money: g0.money - cost }
+    // 只有发生“消费”才算当年出门已用
+    let next: GameState = { ...g0, money: g0.money - cost, yearFlags: { ...g0.yearFlags, explored: true } }
     const afterAff = Math.min(100, Math.max(0, (person.affection || 0) + gain))
     next = updateBrothelPerson(next, pid, { affection: afterAff })
     const line =
@@ -5702,7 +5844,8 @@ export default function LiaoliaoYishengScreen() {
       setGame(next)
       return
     }
-    let next: GameState = { ...g0, money: g0.money - price }
+    // 只有发生“赎身”才算当年出门已用
+    let next: GameState = { ...g0, money: g0.money - price, yearFlags: { ...g0.yearFlags, explored: true } }
     // 赎身后：进入朋友栏，满好感/满心动
     const newPerson: Person = {
       id: `fr-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -5717,7 +5860,7 @@ export default function LiaoliaoYishengScreen() {
       favor: 100,
       affection: 100,
       status: 'alive',
-      flags: [],
+      flags: ['brothel_redeemed'],
     }
     next = addRelation(next, newPerson)
     next = removeBrothelPerson(next, pid)
@@ -5830,7 +5973,8 @@ export default function LiaoliaoYishengScreen() {
     }
 
     const rng = makeRng(game.seed + game.age * 919 + game.logs.length + hashString32(defId))
-    let next: GameState = { ...game, money: game.money - cost }
+    // 只有发生“购买”才算当年出门已用
+    let next: GameState = { ...game, money: game.money - cost, yearFlags: { ...game.yearFlags, explored: true } }
     if (def.kind === 'item') {
       next = { ...next, items: [...next.items, ...Array.from({ length: finalQty }, () => def.name)] }
       next = { ...next, logs: pushLog(next, `你在集市买下「${def.name}」x${finalQty}，花了${cost}灵石。`) }
@@ -6089,7 +6233,7 @@ export default function LiaoliaoYishengScreen() {
           `一声低低的龙吟压过风雪，光与雾在你掌心汇成形。\n\n` +
           `光里走出一个${young}。\n` +
           `${pron}银白长发，金色眼眸，目光冷静，却第一时间站到你身前。\n\n` +
-          `「从今往后，你的事就是我的事。」\n` +
+          `「主人。」${pron}低声道，「从今往后，你的事就是我的事。」\n` +
           `（龙裔孵化完成：满好感/满心动，待遇同道侣）`,
       }
     }
@@ -6101,7 +6245,7 @@ export default function LiaoliaoYishengScreen() {
           `火焰没有灼你，反而像羽毛一样轻轻落在你指尖。\n\n` +
           `光里走出一个${young}。\n` +
           `${pron}红金长发，琥珀眼眸，笑意灼灼却温柔。\n\n` +
-          `「你把我叫醒了。」${pron}轻轻说。\n` +
+          `「主人，你把我叫醒了。」${pron}轻轻说。\n` +
           `（凤鸣孵化完成：满好感/满心动，待遇同道侣）`,
       }
     }
@@ -6113,7 +6257,7 @@ export default function LiaoliaoYishengScreen() {
           `一瞬间，风停了，连你的心跳都变得清晰。\n\n` +
           `光里走出一个${young}。\n` +
           `${pron}墨白长发，蓝灰眼眸，安静得像雪落无声。\n\n` +
-          `${pron}抬手轻轻覆住你的指尖：「我认主。」\n` +
+          `${pron}抬手轻轻覆住你的指尖：「主人，我认主。」\n` +
           `（云麒孵化完成：满好感/满心动，待遇同道侣）`,
       }
     }
@@ -6194,6 +6338,55 @@ export default function LiaoliaoYishengScreen() {
       next = { ...next, logs: pushLog(next, `你把「${p.name}」派出去打工。\n它在集市后街蹿来蹿去，最后叼回一个小包。\n你打开一看，竟是「${item}」。`) }
       next = appendPopup(next, '打工归来', `「${p.name}」带回「${item}」。\n可在「物品」里查看。`)
     }
+    shouldAutoScroll.current = true
+    setGame(next)
+  }
+
+  const handleAllBeastsWork = () => {
+    if (!game) return
+    if (!game.alive) return
+    if (game.currentEvent || game.yearFlags.popup) {
+      const next = appendPopup(game, '先忙正事', '先处理当前事件/弹窗，再安排它们去打工。')
+      shouldAutoScroll.current = true
+      setGame(next)
+      return
+    }
+
+    const beasts = (game.relations || []).filter((p) => {
+      if (!p || p.status !== 'alive') return false
+      if (p.companionKind !== 'weak_beast') return false
+      if (!hasPersonFlag(p, 'beast_contracted')) return false
+      if (hasPersonFlag(p, `worked_year_${game.age}`)) return false
+      return true
+    })
+
+    if (beasts.length === 0) {
+      const next = appendPopup(game, '没有可打工的灵宠', '需要先绑定契约，且这一年没打过工。')
+      shouldAutoScroll.current = true
+      setGame(next)
+      return
+    }
+
+    let next: GameState = game
+    const sum: string[] = []
+    for (const b of beasts) {
+      const rng = makeRng(next.seed + next.age * 911 + next.logs.length + hashString32(b.id))
+      next = addPersonFlag(next, b.id, `worked_year_${next.age}`)
+      const moneyGain = rng.nextInt(120, 360) + Math.floor((next.stats.luck || 0) / 10) * 10
+      const itemPool = ['培元丹', '洗髓丹', '机缘丹', '聚灵丹', '引灵丹', '小福符', '澄心露', '启灵草']
+      if (rng.chance(0.72)) {
+        next = { ...next, money: next.money + moneyGain }
+        next = { ...next, logs: pushLog(next, `你把「${b.name}」派出去打工。\n它跑了一天一夜，叼回一袋灵石。\n（灵石+${moneyGain}）`) }
+        sum.push(`- ${b.name}：灵石 +${moneyGain}`)
+      } else {
+        const item = rng.pickOne(itemPool)
+        next = { ...next, items: [...next.items, item] }
+        next = { ...next, logs: pushLog(next, `你把「${b.name}」派出去打工。\n它在集市后街蹿来蹿去，最后叼回一个小包。\n你打开一看，竟是「${item}」。`) }
+        sum.push(`- ${b.name}：带回「${item}」`)
+      }
+    }
+
+    next = appendPopup(next, '一键打工', `已安排${beasts.length}只灵宠打工：\n${sum.join('\n')}\n\n（每只灵宠每年只能打工一次）`)
     shouldAutoScroll.current = true
     setGame(next)
   }
@@ -6459,12 +6652,13 @@ export default function LiaoliaoYishengScreen() {
     const style = pickNarrativeStyle('life')
     const rels = g.relations.slice().sort((a, b) => (b.favor || 0) - (a.favor || 0))
     const relSummary = rels
-      .filter(r => r.role !== 'parent')
+      .filter(r => r.role !== 'parent' && !isSpecialCompanion(r))
       .slice(0, 18)
       .map(r => `${nameWithRole(r)}｜性别:${genderLabel(r.gender)}｜种族:${r.race === 'demon' ? '妖' : '人'}｜性格:${r.personality}｜境界:${REALM_NAMES[r.realm]}｜年龄:${r.age}｜好感:${r.favor}｜心动:${r.affection || 0}${r.isPastLover ? '｜转世重逢' : ''}${r.willWait ? '｜等你' : ''}${r.spouseName ? `｜已与他人成婚:${r.spouseName}` : ''}`)
       .join('\n')
-    const timeline = (g.logs || []).slice(-150).join('\n')
-    const ages = parseLogAges(g.logs || [])
+    const allLogs = (Array.isArray(g.logArchive) && g.logArchive.length) ? g.logArchive : (g.logs || [])
+    const timeline = allLogs.slice(-500).join('\n')
+    const ages = parseLogAges(allLogs || [])
     return {
       style,
       relSummary,
@@ -6477,7 +6671,7 @@ export default function LiaoliaoYishengScreen() {
     const npc = getRelationById(g, npcId)
     const style = pickNarrativeStyle('npc')
     const name = npc ? nameWithRole(npc) : '（某人）'
-    const allLogs = g.logs || []
+    const allLogs = (Array.isArray(g.logArchive) && g.logArchive.length) ? g.logArchive : (g.logs || [])
     const deathInfo = npc ? findNpcDeathInfo(allLogs, npc) : null
     const usableLogs = deathInfo ? allLogs.slice(0, deathInfo.idx + 1) : allLogs
     const timeAnchors = npc ? buildNpcTimeAnchors(usableLogs, npc) : null
@@ -6499,7 +6693,26 @@ export default function LiaoliaoYishengScreen() {
     const keySnippets = key.map(x => sanitize(`【你${x.playerAge}岁】${x.text.replace(/^【\d+岁】/, '')}`)).join('\n')
 
     const relatedOnly = (usableLogs || []).filter(l => npc && l.includes(npc.name))
-    const relatedLogs = sanitize(relatedOnly.slice(-120).join('\n'))
+    const buildRelatedLogs = (lines: string[]) => {
+      const MAX_CHARS = 32000
+      const cleaned = lines.filter(Boolean)
+      let joined = sanitize(cleaned.join('\n'))
+      if (joined.length <= MAX_CHARS) return joined
+      // 超长：保留“最早一段 + 最近一段”，中间省略
+      let headN = 50
+      let tailN = 180
+      while (headN >= 20 && tailN >= 80) {
+        const head = cleaned.slice(0, headN)
+        const tail = cleaned.slice(-tailN)
+        joined = sanitize([...head, '（……中间省略……）', ...tail].join('\n'))
+        if (joined.length <= MAX_CHARS) return joined
+        tailN -= 20
+        if (tailN < 80) headN -= 10
+      }
+      // 最后兜底：只保留最近
+      return sanitize(cleaned.slice(-160).join('\n'))
+    }
+    const relatedLogs = buildRelatedLogs(relatedOnly)
     return {
       style,
       npc,
@@ -6557,6 +6770,7 @@ export default function LiaoliaoYishengScreen() {
           `如果是倒叙：从死亡/落幕开场，再一步步倒回最初。\n` +
           `如果是梦境：用梦/幻境/回声把事件串起，时序可跳跃，但要清晰动人。\n\n` +
           `【硬性规则：年龄】日志里每条以“【X岁】”开头的记录，X都是玩家（主角）的年龄，不是NPC年龄。\n` +
+          `【硬性规则：修仙不显老】你是修仙者，容貌不会随年岁衰老；禁止写“白发苍苍/老态龙钟/皱纹密布”等老态描写。\n` +
           `【硬性规则：转世重逢】若关系人里出现“转世重逢”，表示该NPC是长生者：玩家上一世寿终正寝后，TA孤独多年才找到今生的你。不要写成“TA也死在你怀里/替身文学”。\n` +
           `【硬性规则：结尾年份】主角享年${deathAge}岁，故事必须在“这一年”结束（可以不写死的瞬间，但必须让读者明确：主角已逝/尘缘已尽）。\n` +
           `【硬性规则：写法】这是小说，不是流水账：不要连续写“多少岁发生什么”。“X岁”字样全篇最多出现3次，其余用意象与场景推进。\n\n` +
@@ -6588,6 +6802,7 @@ export default function LiaoliaoYishengScreen() {
           `写一篇“某个NPC视角”的小说正文（第一人称），主角是“我”与“你”（玩家）。叙事结构随机采用：${style}。\n` +
           `如果是倒叙/梦境也可以，但必须有强烈的情绪线索贯穿。\n\n` +
           `【硬性规则：年龄】日志里每条以“【X岁】”开头的记录，X都是玩家（主角）的年龄。\n` +
+          `【硬性规则：修仙不显老】你（玩家）是修仙者，容貌不会随年岁衰老；禁止写“白发苍苍/老态龙钟/皱纹密布”等老态描写。\n` +
           `【硬性规则：视角稳定】全篇只能使用“我”(NPC第一人称)与“你”(玩家第二人称)。禁止突然切换第三人称旁白；叙述主体只能是“我”，不得用“他/她/TA”指代我。\n` +
           `【硬性规则：自检】输出前请自检：全文不得出现“他/她/TA做了什么”来讲我的行为；若出现，必须改写为“我”。\n` +
           `【硬性规则：只写我看到的】正文只允许写“与我直接相关/我亲历/我确知”的事：只围绕我与“你”的相遇、相处、分别（或结契/拒绝/誓言等）。\n` +
@@ -7163,6 +7378,33 @@ export default function LiaoliaoYishengScreen() {
                     <div className="text-sm text-gray-400 text-center py-10">暂无灵契</div>
                   ) : (
                     <div className="space-y-2">
+                      {(() => {
+                        const beasts = groupedRelations.companions.filter((c) => {
+                          if (c.companionKind !== 'weak_beast') return false
+                          if (c.status !== 'alive') return false
+                          if (!hasPersonFlag(c, 'beast_contracted')) return false
+                          if (hasPersonFlag(c, `worked_year_${game.age}`)) return false
+                          return true
+                        })
+                        const canBatch = beasts.length > 0 && !game.currentEvent && !game.yearFlags.popup
+                        if (beasts.length === 0) return null
+                        return (
+                          <button
+                            type="button"
+                            onClick={handleAllBeastsWork}
+                            disabled={!canBatch}
+                            className={`w-full py-2 rounded-2xl text-xs font-bold border ${
+                              canBatch
+                                ? 'bg-amber-50 text-amber-900 border-amber-200 active:bg-amber-100'
+                                : 'bg-gray-100 text-gray-400 border-gray-200'
+                            }`}
+                            title={canBatch ? '一键安排所有已绑定灵宠打工' : '先处理当前事件/弹窗'}
+                          >
+                            一键打工
+                            <div className="text-[10px] opacity-70 mt-0.5">已绑定且今年未打工：{beasts.length}只</div>
+                          </button>
+                        )
+                      })()}
                       {groupedRelations.companions.map((c) => {
                         const nurture = getCompanionNurture(c)
                         const pct = Math.max(0, Math.min(100, Math.floor((nurture / 2000) * 100)))
@@ -7208,7 +7450,7 @@ export default function LiaoliaoYishengScreen() {
                               </div>
                             </div>
 
-                            {c.companionKind !== 'weak_beast' && (
+                            {isEgg && (
                               <div className="mt-2 flex items-center gap-2">
                                 <div className="text-[10px] text-gray-500 w-8">进度</div>
                                 <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
@@ -7427,7 +7669,7 @@ export default function LiaoliaoYishengScreen() {
               <button type="button" onClick={() => setStoryPickNpcOpen(false)} className="text-sm text-gray-500">关闭</button>
             </div>
             <div className="space-y-2">
-              {game.relations.filter(r => r.role !== 'parent').map(r => (
+              {game.relations.filter(r => r.role !== 'parent' && !isSpecialCompanion(r)).map(r => (
                 <button
                   key={r.id}
                   type="button"
@@ -7671,10 +7913,13 @@ export default function LiaoliaoYishengScreen() {
         <div className="fixed inset-0 z-[56] flex items-end justify-center bg-black/40" onClick={() => setShowBrothel(false)}>
           <div className="w-full max-w-[420px] max-h-[78vh] rounded-t-3xl bg-white p-4 overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-bold text-gray-800">花楼（每10年换一拨人）</div>
+              <div className="text-sm font-bold text-gray-800">花楼</div>
               <button type="button" onClick={() => setShowBrothel(false)} className="text-sm text-gray-500">关闭</button>
             </div>
-            <div className="text-xs text-gray-600 mb-3">灵石：<span className="font-bold text-yellow-700">{game.money}</span></div>
+            <div className="text-xs text-gray-600 mb-3">
+              灵石：<span className="font-bold text-yellow-700">{game.money}</span>
+              <span className="ml-2 text-gray-400">· 30岁后会被卖掉，喜欢就尽早赎走</span>
+            </div>
 
             {ensureBrothelRoster(game).brothel?.people?.length ? (
               <div className="space-y-3">
