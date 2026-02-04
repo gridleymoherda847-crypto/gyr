@@ -5,7 +5,7 @@ import { WeChatProvider, useWeChat } from './context/WeChatContext'
 import PhoneShell from './components/PhoneShell'
 import ErrorBoundary from './components/ErrorBoundary'
 import ActivationScreen from './components/ActivationScreen'
-import { checkDeviceActivation, getLocalActivationStatus } from './services/redemption'
+import { checkDeviceActivationDetailed, getLocalActivationStatus } from './services/redemption'
 
 // 路由按需加载（减少首屏体积，避免移动端黑屏）
 const HomeScreen = lazy(() => import('./screens/HomeScreen'))
@@ -87,9 +87,61 @@ function InnerApp() {
   // 激活状态
   const [isActivated, setIsActivated] = useState<boolean | null>(null)
   const [checkingActivation, setCheckingActivation] = useState(true)
+  const [activationReason, setActivationReason] = useState<string>('')
   
   // 检查激活状态
   useEffect(() => {
+    let cancelled = false
+    let intervalId: number | null = null
+    const firstNetworkFailAtRef = { current: 0 }
+
+    const stopInterval = () => {
+      if (intervalId != null) {
+        window.clearInterval(intervalId)
+        intervalId = null
+      }
+    }
+
+    const computeReason = (kind: 'mismatch' | 'no_local' | 'network_grace_timeout' | 'server') => {
+      // 若本地激活已被清空：通常表示兑换码已迁移到其他设备
+      const local = getLocalActivationStatus()
+      if (kind === 'mismatch' || kind === 'no_local' || !local.isActivated) return '兑换码已在其他设备激活，当前设备已失效。'
+      if (kind === 'network_grace_timeout') {
+        if (navigator && 'onLine' in navigator && navigator.onLine === false) return '需要联网验证激活（离线超过5分钟）。'
+        return '需要联网验证激活（网络异常超过5分钟）。'
+      }
+      if (kind === 'server') return '需要联网验证激活（服务异常）。'
+      return '需要联网验证激活（验证失败）。'
+    }
+
+    const revalidate = async () => {
+      const res = await checkDeviceActivationDetailed()
+      if (cancelled) return
+      if (res.ok) {
+        firstNetworkFailAtRef.current = 0
+        return
+      }
+
+      // 明确换绑/本地失效：立刻踢下线
+      if (res.reason === 'mismatch' || res.reason === 'code_missing' || res.reason === 'no_local') {
+        setActivationReason(computeReason(res.reason === 'mismatch' ? 'mismatch' : 'no_local'))
+        setIsActivated(false)
+        stopInterval()
+        return
+      }
+
+      // 网络/服务异常：给 5 分钟宽限（避免正常玩家网络抖动被立刻踢）
+      const now = Date.now()
+      const failStart = firstNetworkFailAtRef.current || now
+      if (!firstNetworkFailAtRef.current) firstNetworkFailAtRef.current = now
+      const elapsed = now - failStart
+      if (elapsed > 5 * 60 * 1000) {
+        setActivationReason(computeReason('network_grace_timeout'))
+        setIsActivated(false)
+        stopInterval()
+      }
+    }
+
     const checkActivation = async () => {
       // 先检查本地状态（快速）
       const local = getLocalActivationStatus()
@@ -104,17 +156,35 @@ function InnerApp() {
       setCheckingActivation(false)
       
       // 异步验证服务器
-      const serverValid = await checkDeviceActivation()
-      if (!serverValid) {
-        setIsActivated(false)
+      await revalidate()
+      if (cancelled) return
+
+      // 每 2 分钟复查一次（保证“换绑后不刷新也会被踢”）
+      if (intervalId == null) {
+        intervalId = window.setInterval(() => { void revalidate() }, 120000)
       }
     }
     
     checkActivation()
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void revalidate()
+    }
+    const onFocus = () => { void revalidate() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onFocus)
+
+    return () => {
+      cancelled = true
+      stopInterval()
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [])
   
   // 激活成功回调
   const handleActivated = () => {
+    setActivationReason('')
     setIsActivated(true)
   }
   
@@ -131,7 +201,7 @@ function InnerApp() {
   
   // 未激活，显示激活界面
   if (!isActivated) {
-    return <ActivationScreen onActivated={handleActivated} />
+    return <ActivationScreen onActivated={handleActivated} reason={activationReason} />
   }
 
   return (

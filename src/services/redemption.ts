@@ -226,10 +226,20 @@ export async function migrateToNewDevice(code: string): Promise<{
 
 // 验证当前设备是否已激活（用于自动检查）
 export async function checkDeviceActivation(): Promise<boolean> {
+  const res = await checkDeviceActivationDetailed()
+  return res.ok
+}
+
+export type ActivationCheckResult =
+  | { ok: true }
+  | { ok: false; reason: 'no_local' | 'code_missing' | 'mismatch' | 'network' | 'server' }
+
+// 更细粒度的激活校验：用于“网络宽限”策略
+export async function checkDeviceActivationDetailed(): Promise<ActivationCheckResult> {
   // 1. 先检查本地存储
   const local = getLocalActivationStatus()
   if (!local.isActivated || !local.code) {
-    return false
+    return { ok: false, reason: 'no_local' }
   }
   
   // 2. 验证服务器端
@@ -245,30 +255,33 @@ export async function checkDeviceActivation(): Promise<boolean> {
         },
       }
     )
+
+    if (!response.ok) {
+      return { ok: false, reason: 'server' }
+    }
     
     const codes: RedemptionCode[] = await response.json()
     
     if (codes.length === 0) {
       // 兑换码不存在了，清除本地状态
       localStorage.removeItem(LOCAL_STORAGE_KEY)
-      return false
+      return { ok: false, reason: 'code_missing' }
     }
     
     const codeData = codes[0]
     
     // 检查设备指纹是否匹配
     if (codeData.device_fingerprint === fingerprint) {
-      return true
+      return { ok: true }
     }
     
     // 设备不匹配（可能已迁移到其他设备），清除本地状态
     localStorage.removeItem(LOCAL_STORAGE_KEY)
-    return false
+    return { ok: false, reason: 'mismatch' }
     
   } catch (error) {
     console.error('检查激活状态失败:', error)
-    // 网络错误时，暂时信任本地状态
-    return local.isActivated
+    return { ok: false, reason: 'network' }
   }
 }
 

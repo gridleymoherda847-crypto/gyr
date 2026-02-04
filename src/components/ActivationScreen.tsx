@@ -7,9 +7,10 @@ import { verifyRedemptionCode, migrateToNewDevice } from '../services/redemption
 
 type ActivationScreenProps = {
   onActivated: () => void
+  reason?: string
 }
 
-export default function ActivationScreen({ onActivated }: ActivationScreenProps) {
+export default function ActivationScreen({ onActivated, reason }: ActivationScreenProps) {
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -135,6 +136,12 @@ export default function ActivationScreen({ onActivated }: ActivationScreenProps)
           </div>
           <p className="text-gray-500 mt-2">请输入兑换码激活小手机</p>
         </div>
+
+        {!!reason && (
+          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-center">
+            <span className="text-sm text-amber-800">{reason}</span>
+          </div>
+        )}
         
         {/* 输入表单 */}
         <form onSubmit={handleSubmit} className="space-y-4">
