@@ -4185,7 +4185,8 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   if (!hasFlag(g, 'vow_used')) {
     const candidates = g.relations
       .filter(r => r.status === 'alive' && r.role !== 'parent' && isAdultForRomance(r) && !r.willWait && !isMarriedToOther(r) && r.role !== 'lover')
-      .filter(r => (r.favor >= 100 && (r.affection || 0) >= 80) || r.favor >= 90)
+      // “等你/此心系君”必须高心动才触发，避免“心动很低也立誓”的违和
+      .filter(r => (r.affection || 0) >= 90)
       .sort((a, b) => b.favor - a.favor)
     if (candidates.length > 0 && rng.chance(0.12)) {
       const p = candidates[0]
