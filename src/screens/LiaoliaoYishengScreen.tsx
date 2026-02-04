@@ -139,6 +139,12 @@ function oppositeGender(g: 'male' | 'female'): 'male' | 'female' {
   return g === 'male' ? 'female' : 'male'
 }
 
+function pickEncounterGender(rng: ReturnType<typeof makeRng>, g: GameState): 'male' | 'female' {
+  // 性别偏好：玩家男 → 70%更容易遇到女性；玩家女 → 70%更容易遇到男性
+  const prefer = oppositeGender(g.gender)
+  return rng.chance(0.7) ? prefer : g.gender
+}
+
 type EventOption = {
   id: string
   text: string
@@ -1336,9 +1342,13 @@ function createPerson(
   rng: ReturnType<typeof makeRng>,
   role: PersonRole,
   overrides?: Partial<Person>,
-  canBePastLover: boolean = false // 是否可能是前世爱人
+  canBePastLover: boolean = false, // 是否可能是前世爱人
+  // 可选：用于“遇见异性更多”的权重
+  playerGender?: 'male' | 'female'
 ): Person {
-  const gender = overrides?.gender ?? (rng.chance(0.5) ? 'male' : 'female')
+  const gender =
+    overrides?.gender ??
+    (playerGender ? (rng.chance(0.7) ? oppositeGender(playerGender) : playerGender) : (rng.chance(0.5) ? 'male' : 'female'))
   
   // 转世重逢：设定为“玩家上一世寿尽”，长生NPC孤独多年后寻到转世
   // 为避免违和：不出现在父母/青梅竹马/师弟等“天然偏同龄或更小”的身份上
@@ -2837,7 +2847,7 @@ function getEvents(): EventDef[] {
           deer: '额间淡淡灵纹与一对尖耳',
         }
         const trait = traitByKind[kind] || rng.pickOne(BEAST_TRAITS)
-        const gender: 'male' | 'female' = rng.chance(0.5) ? 'male' : 'female'
+        const gender: 'male' | 'female' = pickEncounterGender(rng, g)
         const name = genName(rng, gender)
         const t = gender === 'female' ? '她' : '他'
         return `夜雨骤落，你在回廊下避雨。\n一人撑伞而来，衣袍微湿，眸色却亮得惊人。\n${t}站定，耳尖与尾影在灯下一晃。\n「原来是你。」${t}低头笑了一下，「我终于找到你了。」\n那双眼睛——和当年竹林里的小兽一模一样。\n[temp_beast_human:${name}|${trait}|${gender}]`
@@ -2943,7 +2953,7 @@ function getEvents(): EventDef[] {
       text: (_g, rng) => {
         const trait = rng.pickOne(BEAST_TRAITS)
         const app = `气势如山，眸色幽深（化形仍保留：${trait}）`
-        const gender: 'male' | 'female' = rng.chance(0.6) ? 'male' : 'female'
+        const gender: 'male' | 'female' = pickEncounterGender(rng, g)
         const name = genName(rng, gender)
         const t = gender === 'female' ? '她' : '他'
         return `你在坊市外的山道上，听见人群压低的惊呼。\n一行妖气如潮而来，众人纷纷避让。\n为首之人披着黑色大氅，步伐不疾不徐，却让四周灵气都静了下来。\n${t}停在你身前，目光落下，像把你从骨头到神魂都看了一遍。\n「人修？」${t}笑得很淡，「胆子不小。」\n[temp_demon_king:${name}|${app}|${gender}]`
@@ -4603,7 +4613,7 @@ function handleExplore(rng: ReturnType<typeof makeRng>, g: GameState, placeId: s
     // 最高难度地点：20%遇妖王（很强）
     if (place.id === 'ancient_ruins' && next.age >= 18 && rng.chance(0.2) && !hasFlag(next, 'met_demon_king')) {
       const trait = rng.pickOne(BEAST_TRAITS)
-      const gender: 'male' | 'female' = rng.chance(0.6) ? 'male' : 'female'
+      const gender: 'male' | 'female' = pickEncounterGender(rng, next)
       const name = genName(rng, gender)
       const kind = (next.stats.face >= 80 || next.stats.luck >= 60) ? 'demon_friend' : (next.stats.luck < 25 && rng.chance(0.55) ? 'enemy' : 'demon_friend')
       let king = createPerson(
@@ -5474,13 +5484,80 @@ export default function LiaoliaoYishengScreen() {
     setGraveResult({ personId: p.id, personName: nameWithRole(p), text })
   }
 
+  const handleSweepGrave = () => {
+    if (!game || !graveResult) return
+    const p = game.relations.find(r => r.id === graveResult.personId)
+    const who = p ? nameWithRole(p) : graveResult.personName
+    const rng = makeRng(game.seed + game.age * 733 + game.logs.length + graveResult.personId.charCodeAt(0))
+    let next = game
+    let extra = ''
+    const roll = rng.nextFloat()
+    if (roll < 0.22) {
+      next = { ...next, stats: { ...next.stats, luck: Math.min(100, next.stats.luck + 1) } }
+      extra = '\n你把香灰拢好，心也跟着稳了一点。\n（机缘+1）'
+    } else if (roll < 0.34) {
+      const item = rng.pickOne(['小福符', '澄心露', '启灵草'])
+      next = { ...next, items: [...next.items, item] }
+      extra = `\n你在碑旁翻出一枚旧布包，像被人反复埋过又挖出。\n（获得「${item}」）`
+    }
+    const text =
+      `你在「${who}」墓前扫去尘土。\n` +
+      `你把香摆正，把花放好，又把碑上的字一点点擦亮。\n` +
+      `风吹过来，像有人轻轻替你把袖口拢好。${extra}`
+    shouldAutoScroll.current = true
+    setGame({ ...next, logs: pushLog(next, text) })
+    setGraveResult((cur) => (cur ? { ...cur, text } : cur))
+  }
+
+  const handleChatAtGrave = () => {
+    if (!game || !graveResult) return
+    const p = game.relations.find(r => r.id === graveResult.personId)
+    const who = p ? nameWithRole(p) : graveResult.personName
+    const rng = makeRng(game.seed + game.age * 777 + game.logs.length + graveResult.personId.charCodeAt(0))
+    const askPool = [
+      '「今天我也努力活下去了。」',
+      '「你会怪我吗？」',
+      '「如果当时我能再勇敢一点……」',
+      '「我把这一年的风雪，都讲给你听。」',
+      '「我好像……还是很想你。」',
+    ]
+    const replyPool = [
+      '风从碑后绕出来，像有人轻轻“嗯”了一声。',
+      '香火忽然稳了，火光细细跳了一下。',
+      '有一片叶子落在你掌心，像一句没说出口的回答。',
+      '远处有鸟鸣一声，像把你刚才的话记住了。',
+      '你听见衣角的摩擦声，回头却只看见空空的月色。',
+    ]
+    const ask = rng.pickOne(askPool)
+    const reply = rng.pickOne(replyPool)
+    const text =
+      `你在「${who}」墓前坐下，像在等一场迟到的对话。\n\n` +
+      `你低声说：${ask}\n` +
+      `${reply}\n\n` +
+      `你笑了一下，眼眶却发热。\n` +
+      `「没事。」你对着风说，「我会继续走下去……也会继续爱你。」`
+    shouldAutoScroll.current = true
+    setGame({ ...game, logs: pushLog(game, text) })
+    setGraveResult((cur) => (cur ? { ...cur, text } : cur))
+  }
+
   const handleDieAtGrave = () => {
     if (!game || !graveResult) return
     const p = game.relations.find(r => r.id === graveResult.personId)
     const who = p ? nameWithRole(p) : 'TA'
     shouldAutoScroll.current = true
     setGraveResult(null)
-    setGame(killPlayer(game, `你坐在${who}的碑前。\n风声很轻，树叶却像在回应你。\n你忽然觉得——若此生尽头能靠近一点，就靠近一点。\n你闭上眼，像终于回到一个无人能打扰的地方。`, '墓前长眠'))
+    // 注意：日志必须明确写出“自刎”
+    const line =
+      `你坐在${who}的碑前很久。\n` +
+      `风声很轻，香火也很轻，像怕惊醒谁。\n` +
+      `你终于把刀拔出来，贴着掌心，指尖抖了一下，又稳住。\n` +
+      `你低声说：「我来陪你。」\n` +
+      `然后——你在墓前自刎。\n\n` +
+      `这一天，${who}的墓前多了一个身影。\n` +
+      `那个身影像睡着了一般，发梢沾着夜露，脸上是干枯的泪痕。\n` +
+      `嘴角却还带着一丝笑意，像终于与思念重逢。`
+    setGame(killPlayer(game, line, '墓前长眠'))
   }
   
   const handleUseItemClick = (itemName: string) => {
@@ -6733,21 +6810,32 @@ export default function LiaoliaoYishengScreen() {
             <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-xl p-3 max-h-[48vh] overflow-y-auto custom-scrollbar">
               {graveResult.text}
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setGraveResult(null)}
-                className="py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:bg-slate-800"
+                onClick={handleSweepGrave}
+                className="py-2 rounded-xl bg-slate-100 text-slate-800 text-sm font-semibold active:bg-slate-200"
               >
-                离开
+                扫墓
+              </button>
+              <button
+                type="button"
+                onClick={handleChatAtGrave}
+                className="py-2 rounded-xl bg-purple-100 text-purple-800 text-sm font-semibold active:bg-purple-200"
+              >
+                聊天
               </button>
               <button
                 type="button"
                 onClick={handleDieAtGrave}
-                className="py-2 rounded-xl bg-black text-white text-sm font-medium active:bg-gray-900"
+                className="py-2 rounded-xl bg-black text-white text-sm font-semibold active:bg-gray-900"
+                title="提示：选择后会自刎，且会写入日志"
               >
-                留在墓前
+                留在这
               </button>
+            </div>
+            <div className="mt-2 text-[11px] text-gray-500 text-center">
+              提示：选择「留在这」将会自刎，日志会写得更浪漫一点。
             </div>
           </div>
         </div>
