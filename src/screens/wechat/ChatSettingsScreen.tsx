@@ -1073,10 +1073,10 @@ export default function ChatSettingsScreen() {
                           <input
                             type="number"
                             min={50}
-                            max={2000}
+                            max={5000}
                             value={offlineMaxLengthDraft}
                             onChange={(e) => {
-                              const val = Math.max(50, Math.min(2000, Number(e.target.value) || 300))
+                              const val = Math.max(50, Math.min(5000, Number(e.target.value) || 300))
                               setOfflineMaxLengthDraft(val)
                               updateCharacter(character.id, { offlineMaxLength: val })
                             }}
@@ -1093,6 +1093,7 @@ export default function ChatSettingsScreen() {
                           { label: '适中', min: 50, max: 300 },
                           { label: '详细', min: 100, max: 500 },
                           { label: '长文', min: 200, max: 1000 },
+                          { label: '超长', min: 500, max: 3000 },
                         ].map((preset) => (
                           <button
                             key={preset.label}

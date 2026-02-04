@@ -720,6 +720,76 @@ export default function ChatScreen() {
             return [text]
           }
           
+          const splitOutImageTokens = (s: string) => {
+            const src = (s || '').trim()
+            if (!src) return []
+            const out: string[] = []
+            const re = /\[图片[：:]\s*([\s\S]*?)\]/g
+            let last = 0
+            let m: RegExpExecArray | null
+            while ((m = re.exec(src)) !== null) {
+              const before = src.slice(last, m.index).trim()
+              if (before) out.push(before)
+              const desc = String(m[1] || '').trim()
+              if (desc) out.push(`[图片：${desc}]`)
+              last = m.index + m[0].length
+            }
+            const after = src.slice(last).trim()
+            if (after) out.push(after)
+            return out
+          }
+
+          const dedupeConsecutive = (arr: string[]) => {
+            const out: string[] = []
+            let last: string | null = null
+            for (const x of arr) {
+              const t = (x || '').trim()
+              if (!t) continue
+              if (last && t === last) continue
+              out.push(t)
+              last = t
+            }
+            return out
+          }
+
+          const forceSplitToAtLeast = (parts: string[], minCount: number) => {
+            const out = parts.slice()
+            const isCmd = (s: string) => /^\[(图片|转账|推文|位置|音乐)[：:].*\]$/.test((s || '').trim())
+            const splitByComma = (s: string) => (s || '').split(/[，,]/).map(x => x.trim()).filter(Boolean)
+            const splitByLen = (s: string, n: number) => {
+              const t = (s || '').trim()
+              if (!t) return []
+              if (t.length <= n) return [t]
+              const seg = Math.ceil(t.length / n)
+              const res: string[] = []
+              let i = 0
+              while (i < t.length) {
+                res.push(t.slice(i, i + seg).trim())
+                i += seg
+              }
+              return res.filter(Boolean)
+            }
+            while (out.length < minCount) {
+              // 找一个可拆的最长文本
+              let idx = -1
+              let bestLen = -1
+              for (let i = 0; i < out.length; i++) {
+                const t = out[i]
+                if (isCmd(t)) continue
+                if (t.length > bestLen) { bestLen = t.length; idx = i }
+              }
+              if (idx < 0) break
+              const target = out[idx]
+              let more = splitByComma(target)
+              if (more.length <= 1) more = splitByLen(target, Math.max(minCount, 3))
+              if (more.length <= 1) break
+              out.splice(idx, 1, ...more)
+              // 防止无限增长
+              if (out.length > 15) break
+            }
+            return out
+          }
+
           // 线上模式：只在“完整句末标点/换行”处拆分，避免把一句话硬拆成半句
           const keepCmd = (s: string) =>
             /\|\|\|/.test(s) ||
@@ -763,7 +833,12 @@ export default function ChatScreen() {
             }
           }
 
-          return merged.filter(Boolean).slice(0, 15)
+          // 把 [图片：...] 从文本里拆出来，保证图片卡片不和文字混在同一个气泡里
+          let expanded: string[] = []
+          for (const m of merged) expanded.push(...splitOutImageTokens(m))
+          expanded = dedupeConsecutive(expanded)
+          expanded = forceSplitToAtLeast(expanded, 3)
+          return expanded.filter(Boolean).slice(0, 15)
         }
 
         // 线上模式：强制剥离“思维链/分析段落”，避免少数模型/中转仍然输出思考内容
@@ -1354,6 +1429,9 @@ ${recentTimeline || '（无）'}
 - 你必须输出 3~15 句（每句就是一句完整的聊天句子）
 - 强烈建议：每句单独一行（像微信连续发多条）
 - 强烈建议：每句尽量以“。/！/？/…/～”结尾，避免半句被误拆
+- 严禁把多句话黏成一整段长段落发出
+- 【图片卡片必须分行】如果你要发图片卡片，必须单独一行输出 [图片：...]，图片卡片这一行不能和任何其它文字在同一行
+- 【禁止复读】绝对禁止把你最近 1~3 条自己发过的内容原封不动再发一遍；如果用户说“继续/然后呢”，请在不复述上一段的前提下推进
 `
         }
 
@@ -1696,7 +1774,24 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         }
 
         // 分割回复为多条消息（最多15条；即便模型只回一大段也能拆成多条）
-        const replies = splitToReplies(response)
+        let replies = splitToReplies(response)
+
+        // 防复读：如果模型把“最近自己说过的话”原封不动再发一遍，就过滤掉重复项
+        {
+          const normalize = (s: string) => (s || '').trim().replace(/\s+/g, ' ')
+          const recentAiTexts = workingMessages
+            .filter(m => !m.isUser && m.type === 'text')
+            .slice(-6)
+            .map(m => normalize(String(m.content || '')))
+            .filter(Boolean)
+            .slice(-3)
+          if (recentAiTexts.length > 0) {
+            const before = replies.slice()
+            replies = replies.filter(r => !recentAiTexts.includes(normalize(r)))
+            // 如果过滤到太少，至少保留一条（避免不回复）
+            if (replies.length === 0) replies = before.slice(0, 3)
+          }
+        }
 
         // 表情包策略（活人感必须项）：
         // - 不再做“关键词替换文本”
@@ -4852,10 +4947,15 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     if (imageDescMatch) {
       const description = imageDescMatch[1].trim()
       return (
-        <div className="w-[160px] h-[160px] rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300 flex items-center justify-center p-3 shadow-inner">
-          <div className="text-center">
-            <div className="text-[11px] text-gray-400 mb-1">📷</div>
-            <div className="text-[12px] text-gray-600 leading-relaxed break-words line-clamp-5">{description}</div>
+        <div className="w-[170px] rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300 p-3 shadow-inner">
+          <div className="flex items-center justify-center gap-1 text-[11px] text-gray-400 mb-1">
+            <span>📷</span>
+            <span>图片</span>
+          </div>
+          <div className="max-h-[120px] overflow-y-auto custom-scrollbar">
+            <div className="text-[12px] text-gray-600 leading-relaxed break-words whitespace-pre-wrap">
+              {description}
+            </div>
           </div>
         </div>
       )
@@ -4880,10 +4980,13 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         // 添加图片卡片
         const desc = match[1].trim()
         parts.push(
-          <div key={`img-${match.index}`} className="my-2 w-[140px] h-[140px] rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300 flex items-center justify-center p-2 shadow-inner">
-            <div className="text-center">
-              <div className="text-[10px] text-gray-400 mb-0.5">📷</div>
-              <div className="text-[11px] text-gray-600 leading-relaxed break-words line-clamp-4">{desc}</div>
+          <div key={`img-${match.index}`} className="my-2 w-[170px] rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300 p-2 shadow-inner">
+            <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400 mb-1">
+              <span>📷</span>
+              <span>图片</span>
+            </div>
+            <div className="max-h-[100px] overflow-y-auto custom-scrollbar">
+              <div className="text-[11px] text-gray-600 leading-relaxed break-words whitespace-pre-wrap">{desc}</div>
             </div>
           </div>
         )
