@@ -80,23 +80,23 @@ function removeOneItem(g: GameState, itemName: string): GameState {
 }
 
 const ITEMS: Record<string, ItemDef> = {
-  '聚灵丹': { id: '聚灵丹', name: '聚灵丹', desc: '服用后修为+15', effect: (g) => ({ ...g, cultivation: Math.min(100, g.cultivation + 15) }) },
-  '太清仙露': { id: '太清仙露', name: '太清仙露', desc: '服用后修为+20（仙帝所赠）', effect: (g) => ({ ...g, cultivation: Math.min(100, g.cultivation + 20) }) },
+  '聚灵丹': { id: '聚灵丹', name: '聚灵丹', desc: '服用后修为+15', effect: (g) => ({ ...g, cultivation: Math.min(getCultivationNeed(g.realm), g.cultivation + 15) }) },
+  '太清仙露': { id: '太清仙露', name: '太清仙露', desc: '服用后修为+20（仙帝所赠）', effect: (g) => ({ ...g, cultivation: Math.min(getCultivationNeed(g.realm), g.cultivation + 20) }) },
   '延寿丹': { id: '延寿丹', name: '延寿丹', desc: '服用后大限+10岁（不避意外）', effect: (g) => addPlayerLifeBonusYears(g, 10) },
-  '归元灵髓': { id: '归元灵髓', name: '归元灵髓', desc: '服用后修为+100（上限100）', effect: (g) => ({ ...g, cultivation: Math.min(100, g.cultivation + 100) }) },
+  '归元灵髓': { id: '归元灵髓', name: '归元灵髓', desc: '服用后修为+100（上限随境界变化）', effect: (g) => ({ ...g, cultivation: Math.min(getCultivationNeed(g.realm), g.cultivation + 100) }) },
   '培元丹': { id: '培元丹', name: '培元丹', desc: '服用后体魄+5', effect: (g) => ({ ...g, stats: { ...g.stats, body: Math.min(100, g.stats.body + 5) } }) },
   '洗髓丹': { id: '洗髓丹', name: '洗髓丹', desc: '服用后根骨+3', effect: (g) => ({ ...g, stats: { ...g.stats, root: Math.min(100, g.stats.root + 3) } }) },
   '驻颜丹': { id: '驻颜丹', name: '驻颜丹', desc: '服用后容貌+5', effect: (g) => ({ ...g, stats: { ...g.stats, face: Math.min(100, g.stats.face + 5) } }) },
   '机缘丹': { id: '机缘丹', name: '机缘丹', desc: '服用后机缘+5', effect: (g) => ({ ...g, stats: { ...g.stats, luck: Math.min(100, g.stats.luck + 5) } }) },
   // 幼年小机缘：更“小而多”，让10岁前不那么固定
-  '启灵草': { id: '启灵草', name: '启灵草', desc: '服用后修为+6（幼年启灵）', effect: (g) => ({ ...g, cultivation: Math.min(100, g.cultivation + 6) }) },
+  '启灵草': { id: '启灵草', name: '启灵草', desc: '服用后修为+6（幼年启灵）', effect: (g) => ({ ...g, cultivation: Math.min(getCultivationNeed(g.realm), g.cultivation + 6) }) },
   '小福符': { id: '小福符', name: '小福符', desc: '使用后机缘+4（随身的薄福）', effect: (g) => ({ ...g, stats: { ...g.stats, luck: Math.min(100, g.stats.luck + 4) } }) },
   '澄心露': { id: '澄心露', name: '澄心露', desc: '服用后根骨+2、体魄+1（安神定息）', effect: (g) => ({ ...g, stats: { ...g.stats, root: Math.min(100, g.stats.root + 2), body: Math.min(100, g.stats.body + 1) } }) },
   '忘情水': { id: '忘情水', name: '忘情水', desc: '不可自用：送给NPC后，TA的心动值归零', effect: (g) => g },
   '破境丹': { id: '破境丹', name: '破境丹', desc: '突破时成功率+20%（自动生效）', effect: (g) => g },
   '回天破境丹': { id: '回天破境丹', name: '回天破境丹', desc: '服用后突破成功率+10%', effect: (g) => ({ ...g, breakthroughBonus: clamp(g.breakthroughBonus + 10, 0, 100) }) },
   '护脉丹': { id: '护脉丹', name: '护脉丹', desc: '服用后体魄+5（救命后调养专用）', effect: (g) => ({ ...g, stats: { ...g.stats, body: Math.min(100, g.stats.body + 5) } }) },
-  '引灵丹': { id: '引灵丹', name: '引灵丹', desc: '服用后修为+8', effect: (g) => ({ ...g, cultivation: Math.min(100, g.cultivation + 8) }) },
+  '引灵丹': { id: '引灵丹', name: '引灵丹', desc: '服用后修为+8', effect: (g) => ({ ...g, cultivation: Math.min(getCultivationNeed(g.realm), g.cultivation + 8) }) },
 }
 
 type MarketRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
@@ -1606,9 +1606,23 @@ function getMaxLifespan(realm: Realm): number {
   return REALM_LIFESPAN[realm]
 }
 
+function getCultivationNeed(realm: Realm): number {
+  // 每突破一次，下一阶所需修为翻倍：100 → 200 → 400 → 800 → ...
+  // 注：飞升为结局，不再继续累积
+  if (realm === 'ascend') return Number.POSITIVE_INFINITY
+  const idx = getRealmIdx(realm)
+  return 100 * Math.pow(2, Math.max(0, idx))
+}
+
+function getCultivationPercent(g: GameState): number {
+  const need = getCultivationNeed(g.realm)
+  if (!Number.isFinite(need) || need <= 0) return 0
+  return clamp((g.cultivation / need) * 100, 0, 100)
+}
+
 function canBreakthrough(g: GameState): boolean {
   if (g.realm === 'ascend') return false
-  return g.cultivation >= 100
+  return g.cultivation >= getCultivationNeed(g.realm)
 }
 
 function getNextRealm(realm: Realm): Realm | null {
@@ -2165,7 +2179,7 @@ function getEvents(): EventDef[] {
           effect: (g2) => {
             let next = addFlag(g2, 'E018_done')
             const gain = 4 + Math.floor(g2.stats.root / 40)
-            next = { ...next, cultivation: Math.min(100, next.cultivation + gain) }
+            next = { ...next, cultivation: Math.min(getCultivationNeed(next.realm), next.cultivation + gain) }
             return { ...next, logs: pushLog(next, `草汁清苦，却让你胸口一暖，像是第一次“听见了气”。\n（修为+${gain}）`) }
           },
         },
@@ -2198,7 +2212,7 @@ function getEvents(): EventDef[] {
           effect: (g2) => {
             let next = addFlag(g2, 'E019_done')
             const gain = 6 + Math.floor(g2.stats.root / 35)
-            next = { ...next, cultivation: Math.min(100, next.cultivation + gain), stats: { ...next.stats, root: Math.min(100, next.stats.root + 1) } }
+            next = { ...next, cultivation: Math.min(getCultivationNeed(next.realm), next.cultivation + gain), stats: { ...next.stats, root: Math.min(100, next.stats.root + 1) } }
             return { ...next, logs: pushLog(next, `你学着盘腿坐好，呼吸一深一浅。\n片刻后，掌心竟微微发热。\n（修为+${gain}，根骨+1）`) }
           },
         },
@@ -2449,7 +2463,7 @@ function getEvents(): EventDef[] {
       options: () => [
         { id: 'hard', text: '刻苦修炼', effect: (g) => {
           const gain = 5 + Math.floor(g.stats.root / 20)
-          return { ...g, cultivation: Math.min(100, g.cultivation + gain), logs: pushLog(g, `你刻苦修炼，修为有所精进。（+${gain}修为）`) }
+          return { ...g, cultivation: Math.min(getCultivationNeed(g.realm), g.cultivation + gain), logs: pushLog(g, `你刻苦修炼，修为有所精进。（+${gain}修为）`) }
         }},
         { id: 'rest', text: '休息一下', effect: (g) => {
           return { ...g, stats: { ...g.stats, body: Math.min(100, g.stats.body + 2) }, logs: pushLog(g, '你休息了一天，感觉神清气爽。') }
@@ -2539,7 +2553,7 @@ function getEvents(): EventDef[] {
         return [
           { id: 'take', text: '感激收下', effect: (g2) => {
             let next = updateRelation(g2, master.id, { favor: master.favor + 10 })
-            next = { ...next, cultivation: Math.min(100, next.cultivation + 15) }
+            next = { ...next, cultivation: Math.min(getCultivationNeed(next.realm), next.cultivation + 15) }
             return { ...next, logs: pushLog(next, `你收下丹药，服用后修为大涨。师父的嘴角似乎微微上扬。`) }
           }},
           { id: 'refuse', text: '「弟子不敢受」', effect: (g2) => {
@@ -2685,10 +2699,10 @@ function getEvents(): EventDef[] {
             next = { ...next, items: [...next.items, outcome.item] }
           }
           if ('cultivation' in outcome && outcome.cultivation) {
-            next = { ...next, cultivation: Math.min(100, next.cultivation + outcome.cultivation) }
+            next = { ...next, cultivation: Math.min(getCultivationNeed(next.realm), next.cultivation + outcome.cultivation) }
           }
           if ('cultivationDelta' in outcome && outcome.cultivationDelta) {
-            next = { ...next, cultivation: clamp(next.cultivation + outcome.cultivationDelta, 0, 100) }
+            next = { ...next, cultivation: clamp(next.cultivation + outcome.cultivationDelta, 0, getCultivationNeed(next.realm)) }
           }
           if ('bodyDelta' in outcome && outcome.bodyDelta) {
             next = { ...next, stats: { ...next.stats, body: Math.max(1, next.stats.body + outcome.bodyDelta) } }
@@ -3587,7 +3601,7 @@ function getEvents(): EventDef[] {
       id: 'E700_ascend',
       title: '飞升',
       minAge: 50, maxAge: 200,
-      condition: (g) => g.realm === 'nascent' && g.cultivation >= 100,
+    condition: (g) => g.realm === 'nascent' && g.cultivation >= getCultivationNeed(g.realm),
       weight: () => 100,
       text: () => '你的修为已经到达了这个世界的顶点。\n天空中出现异象，仙界的大门似乎在向你敞开。\n你即将……飞升。',
       options: (g) => {
@@ -4356,7 +4370,7 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   if (!hasEvent) {
     // 平淡的一年
     const gain = 2 + Math.floor(g.stats.root / 30)
-    let next = { ...g, cultivation: Math.min(100, g.cultivation + gain) }
+    let next = { ...g, cultivation: Math.min(getCultivationNeed(g.realm), g.cultivation + gain) }
     next = { ...next, logs: pushLog(next, '平静的一年，你在修炼中度过。') }
       return { ...next, lastEventId: 'calm_year' }
   }
@@ -4364,7 +4378,7 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   const def = pickEvent(rng, g)
   if (!def) {
     const gain = 2 + Math.floor(g.stats.root / 30)
-    let next = { ...g, cultivation: Math.min(100, g.cultivation + gain) }
+    let next = { ...g, cultivation: Math.min(getCultivationNeed(g.realm), g.cultivation + gain) }
     next = { ...next, logs: pushLog(next, '平静的一年。') }
     return { ...next, lastEventId: 'calm_year' }
   }
@@ -4783,7 +4797,7 @@ function handleExplore(rng: ReturnType<typeof makeRng>, g: GameState, placeId: s
     const moneyBonus = Math.floor(next.stats.luck / 20) + (next.stats.face >= 80 ? 2 : 0)
     const moneyGain = Math.max(10, moneyBase + moneyBonus * 5)
     const cultGain = clamp(rng.nextInt(3, 10) + Math.floor(next.stats.root / 30), 1, 20)
-    next = { ...next, money: next.money + moneyGain, cultivation: Math.min(100, next.cultivation + cultGain) }
+    next = { ...next, money: next.money + moneyGain, cultivation: Math.min(getCultivationNeed(next.realm), next.cultivation + cultGain) }
     next = { ...next, logs: pushLog(next, `你在${place.name}采集到了一些灵草，卖了${moneyGain}灵石。（+${cultGain}修为）`) }
     
     // 稀有收获
@@ -5510,7 +5524,7 @@ export default function LiaoliaoYishengScreen() {
     const rng = makeRng(game.seed + game.age * 389 + game.logs.length + personId.charCodeAt(0))
     const gain = rng.nextInt(8, 12)
     let next: GameState = { ...game, yearFlags: { ...game.yearFlags, chattedIds: [...game.yearFlags.chattedIds, personId] } }
-    next = { ...next, cultivation: Math.min(100, next.cultivation + gain) }
+    next = { ...next, cultivation: Math.min(getCultivationNeed(next.realm), next.cultivation + gain) }
     next = { ...next, logs: pushLog(next, `你与「${p.name}」一同打坐，灵息交融。\n你们的呼吸渐渐同频，像两条溪流汇成一条河。\n（修为+${gain}）`) }
 
     shouldAutoScroll.current = true
@@ -6385,9 +6399,9 @@ export default function LiaoliaoYishengScreen() {
               <div className="flex items-center gap-2">
                 <div className="text-[10px] text-gray-500">修为</div>
                 <div className="flex-1 h-2 rounded-full bg-gray-200">
-                  <div className="h-full rounded-full bg-gradient-to-r from-blue-400 to-cyan-400" style={{ width: `${game.cultivation}%` }} />
+                  <div className="h-full rounded-full bg-gradient-to-r from-blue-400 to-cyan-400" style={{ width: `${getCultivationPercent(game)}%` }} />
                 </div>
-                <div className="text-[10px] text-gray-600">{game.cultivation}/100</div>
+                <div className="text-[10px] text-gray-600">{game.cultivation}/{getCultivationNeed(game.realm)}</div>
                 <button
                   type="button"
                   onClick={handleManualBreakthrough}
@@ -6397,7 +6411,7 @@ export default function LiaoliaoYishengScreen() {
                       ? 'bg-purple-50 text-purple-700 border-purple-200 active:bg-purple-100'
                       : 'bg-gray-100 text-gray-400 border-gray-200'
                   }`}
-                  title={canBreakthrough(game) ? '手动突破' : '修为满100后可突破'}
+                  title={canBreakthrough(game) ? '手动突破' : `修为满${getCultivationNeed(game.realm)}后可突破`}
                 >
                   突破{getBreakthroughRateLabel(game)}
                 </button>
