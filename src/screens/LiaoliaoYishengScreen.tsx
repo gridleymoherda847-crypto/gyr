@@ -5502,6 +5502,12 @@ export default function LiaoliaoYishengScreen() {
     if (!game) return
     if (!game.alive) return
     if (game.yearFlags.explored) return
+    if (game.age < 16) {
+      const next = appendPopup(game, '还太早', '花楼要16岁之后才开放。')
+      shouldAutoScroll.current = true
+      setGame(next)
+      return
+    }
     // 进入花楼也算“出门”一次
     let next: GameState = { ...game, yearFlags: { ...game.yearFlags, explored: true } }
     next = ensureBrothelRoster(next)
@@ -7501,13 +7507,18 @@ export default function LiaoliaoYishengScreen() {
             <button
               type="button"
               onClick={handleOpenBrothel}
-              className="w-full mb-3 text-left px-3 py-3 rounded-xl bg-gradient-to-r from-pink-100 to-rose-100 border border-pink-200 active:bg-pink-100"
+              disabled={game.age < 16}
+              className={`w-full mb-3 text-left px-3 py-3 rounded-xl border ${
+                game.age < 16
+                  ? 'bg-gray-100 border-gray-200 text-gray-400'
+                  : 'bg-gradient-to-r from-pink-100 to-rose-100 border-pink-200 active:bg-pink-100'
+              }`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold text-rose-900">花楼</span>
-                <span className="text-xs text-rose-700">共饮 / 听曲 / 良宵</span>
+                <span className={`text-xs ${game.age < 16 ? 'text-gray-500' : 'text-rose-700'}`}>{game.age < 16 ? '16岁后开放' : '共饮 / 听曲 / 良宵'}</span>
               </div>
-              <div className="text-xs text-rose-800/70 mt-0.5">灯影摇晃，笑声像酒（异性出现概率 80%）</div>
+              <div className={`text-xs mt-0.5 ${game.age < 16 ? 'text-gray-500' : 'text-rose-800/70'}`}>灯影摇晃，笑声像酒</div>
             </button>
             <div className="space-y-2">
               {EXPLORE_PLACES.map(p => (

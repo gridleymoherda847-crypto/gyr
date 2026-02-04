@@ -36,10 +36,10 @@ export default function ApiConfigScreen() {
   const isHttpsPage = typeof window !== 'undefined' && window.location?.protocol === 'https:'
 
   const getBaseUrlPlaceholder = (t: LLMApiInterface) => {
-    if (t === 'gemini_native') return 'https://generativelanguage.googleapis.com/v1beta'
-    if (t === 'anthropic_native') return 'https://api.anthropic.com/v1'
-    if (t === 'ollama') return 'http://localhost:11434/api'
-    return 'https://api.openai.com/v1'
+    if (t === 'gemini_native') return 'https://generativelanguage.googleapis.com'
+    if (t === 'anthropic_native') return 'https://api.anthropic.com'
+    if (t === 'ollama') return 'http://localhost:11434'
+    return 'https://api.openai.com'
   }
   
   // API 配置条目类型
@@ -639,15 +639,15 @@ export default function ApiConfigScreen() {
                   className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base"
                   style={{ color: fontColor.value }}
                 >
-                  <option value="openai_compatible">OpenAI 兼容（/v1/models + /v1/chat/completions）</option>
-                  <option value="anthropic_native">Claude 原生（Anthropic /v1/messages）</option>
-                  <option value="gemini_native">Gemini 原生（Google /v1beta/models）</option>
-                  <option value="ollama">Ollama 本地（/api/chat）</option>
+                  <option value="openai_compatible">OpenAI 兼容</option>
+                  <option value="anthropic_native">Claude 原生</option>
+                  <option value="gemini_native">Gemini 原生</option>
+                  <option value="ollama">Ollama 本地</option>
                 </select>
                 <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </div>
               <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
-                如果你用的是 Claude/Gemini 官方原生接口，记得在这里切换；否则会出现“返回空内容/格式不兼容”的报错。
+                如果报“返回空内容/格式不兼容”，通常是接口类型没选对。
               </div>
             </div>
           
@@ -1323,8 +1323,8 @@ export default function ApiConfigScreen() {
                     style={{ color: fontColor.value }}
                   >
                     <option value="openai_compatible">OpenAI 兼容</option>
-                    <option value="anthropic_native">Claude 原生（Anthropic）</option>
-                    <option value="gemini_native">Gemini 原生（Google）</option>
+                    <option value="anthropic_native">Claude 原生</option>
+                    <option value="gemini_native">Gemini 原生</option>
                     <option value="ollama">Ollama 本地</option>
                   </select>
                   <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
