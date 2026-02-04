@@ -715,6 +715,27 @@ export default function ChatScreen() {
     // 如果配置了API，使用真实的LLM回复
     if (hasApiConfig) {
       try {
+        const getLastUserText = (all: typeof messages) => {
+          for (let i = all.length - 1; i >= 0; i--) {
+            const m = all[i]
+            if (!m?.isUser) continue
+            if (m.type !== 'text') continue
+            const t = String(m.content || '').trim()
+            if (t) return t
+          }
+          return ''
+        }
+
+        const isTrivialUserInput = (s: string) => {
+          const t = String(s || '').trim()
+          if (!t) return true
+          // 单字、纯标点、非常敷衍的输入：允许只回一条
+          if (t.length <= 1) return true
+          if (/^[\s\d\p{P}\p{S}]+$/u.test(t)) return true
+          if (/^(嗯|哦|啊|？|\?|。|…+|哈+|呵+|行|好|在|是)$/u.test(t)) return true
+          return false
+        }
+
         const splitToReplies = (raw: string) => {
           const text = (raw || '').trim()
           if (!text) return []
@@ -752,44 +773,6 @@ export default function ChatScreen() {
               if (last && t === last) continue
               out.push(t)
               last = t
-            }
-            return out
-          }
-
-          const forceSplitToAtLeast = (parts: string[], minCount: number) => {
-            const out = parts.slice()
-            const isCmd = (s: string) => /^\[(图片|转账|推文|位置|音乐)[：:].*\]$/.test((s || '').trim())
-            const splitByComma = (s: string) => (s || '').split(/[，,]/).map(x => x.trim()).filter(Boolean)
-            const splitByLen = (s: string, n: number) => {
-              const t = (s || '').trim()
-              if (!t) return []
-              if (t.length <= n) return [t]
-              const seg = Math.ceil(t.length / n)
-              const res: string[] = []
-              let i = 0
-              while (i < t.length) {
-                res.push(t.slice(i, i + seg).trim())
-                i += seg
-              }
-              return res.filter(Boolean)
-            }
-            while (out.length < minCount) {
-              // 找一个可拆的最长文本
-              let idx = -1
-              let bestLen = -1
-              for (let i = 0; i < out.length; i++) {
-                const t = out[i]
-                if (isCmd(t)) continue
-                if (t.length > bestLen) { bestLen = t.length; idx = i }
-              }
-              if (idx < 0) break
-              const target = out[idx]
-              let more = splitByComma(target)
-              if (more.length <= 1) more = splitByLen(target, Math.max(minCount, 3))
-              if (more.length <= 1) break
-              out.splice(idx, 1, ...more)
-              // 防止无限增长
-              if (out.length > 15) break
             }
             return out
           }
@@ -841,7 +824,6 @@ export default function ChatScreen() {
           let expanded: string[] = []
           for (const m of merged) expanded.push(...splitOutImageTokens(m))
           expanded = dedupeConsecutive(expanded)
-          expanded = forceSplitToAtLeast(expanded, 3)
           return expanded.filter(Boolean).slice(0, 15)
         }
 
@@ -1846,6 +1828,45 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             replies = replies.filter(r => !recentAiTexts.includes(normalize(r)))
             // 如果过滤到太少，至少保留一条（避免不回复）
             if (replies.length === 0) replies = before.slice(0, 3)
+          }
+        }
+
+        // 兜底：如果模型仍只输出 1 条（且用户输入不敷衍），再补 1~2 条短消息（不拆半句、不重复）
+        {
+          const lastUserText = getLastUserText(workingMessages)
+          if (!character.offlineMode && replies.length < 2 && !isTrivialUserInput(lastUserText)) {
+            try {
+              const supplementPrompt =
+                `你刚才只输出了${replies.length}条微信消息。现在请再补充 1~2 条“短消息”，要求：\n` +
+                `- 不要重复刚才的内容\n` +
+                `- 每条必须是完整句/完整语义，禁止拆半句\n` +
+                `- 不能输出任何系统说明/格式说明/思维链\n` +
+                `- 不要输出转账/图片/音乐/位置等指令\n` +
+                `只输出补充消息，多条用换行分隔。`
+              let extra = await callLLM(
+                [...llmMessages, { role: 'assistant', content: response }, { role: 'user', content: supplementPrompt }],
+                undefined,
+                { maxTokens: 220, timeoutMs: 600000, temperature: 0.9 }
+              )
+              if (extra && !character.offlineMode) extra = stripThoughtForOnline(extra)
+              const extras = splitToReplies(extra || '')
+              const normalize = (s: string) => (s || '').trim().replace(/\s+/g, ' ')
+              const seen = new Set(replies.map(normalize))
+              const picked: string[] = []
+              for (const e of extras) {
+                const n = normalize(e)
+                if (!n) continue
+                if (seen.has(n)) continue
+                picked.push(e)
+                seen.add(n)
+                if (picked.length >= 2) break
+              }
+              if (picked.length > 0) {
+                replies = [...replies, ...picked]
+              }
+            } catch {
+              // ignore
+            }
           }
         }
 
@@ -3236,6 +3257,8 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 3. 要有情感，不要机械化
 4. 可以表达惊喜、感动、开心等情绪
 5. 可以追问、撒娇、表达关心等
+6. 【完整句强规则】每一条都必须是“完整的一句/完整语义”，绝对禁止把一句话硬拆成两条半句（例如“在干嘛”/“呢宝宝怎么这”/“个点还不睡”这种断句）。
+7. 如果你本来只想说一句话，也必须再补1~2句短消息把意思说完整（可以是追问、关心、补充语气、emoji），而不是拆半句。
 6. 【线上模式安全要求】禁止输出任何思维链/推理过程/分析过程/系统提示复述。只输出最终要发给用户的聊天内容。
 7. 【必读要求】在输出前必须阅读并遵守：全局预设/世界书/角色人设/用户人设/对话上下文。若冲突：先满足格式规则，其次满足这些设定，最后才是自由发挥。
 8. 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复；禁止夹杂中文（除非是专有名词/人名/歌名必须保留原文）。
