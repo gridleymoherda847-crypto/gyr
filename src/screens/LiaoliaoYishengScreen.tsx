@@ -4802,12 +4802,6 @@ function handleExplore(rng: ReturnType<typeof makeRng>, g: GameState, placeId: s
       next = { ...next, logs: pushLog(next, '你在石缝里摸到一枚温润如玉的灵髓，握在手心就像有潮声。\n（获得「归元灵髓」）') }
     }
 
-    // 忘情水：采药也可能遇到（稀有）
-    if (rng.chance(place.id === 'herb_valley' ? 0.02 : 0.06)) {
-      next = { ...next, items: [...next.items, '忘情水'] }
-      next = { ...next, logs: pushLog(next, '你在一处冷泉旁捡到一只小瓷瓶，瓶口封着淡淡的苦香。\n（获得「忘情水」）') }
-    }
-
     // 延寿丹：仅上古遗迹采药，10%概率
     if (place.id === 'ancient_ruins' && rng.chance(0.1)) {
       next = { ...next, items: [...next.items, '延寿丹'] }
