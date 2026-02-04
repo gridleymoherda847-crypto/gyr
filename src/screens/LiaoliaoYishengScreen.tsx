@@ -3605,12 +3605,22 @@ function getEvents(): EventDef[] {
       weight: () => 100,
       text: () => '你的修为已经到达了这个世界的顶点。\n天空中出现异象，仙界的大门似乎在向你敞开。\n你即将……飞升。',
       options: (g) => {
-        const lover = g.relations.find(r => r.role === 'lover' && r.status === 'alive')
+        const preferredStay =
+          g.relations.find(r => r.role === 'lover' && r.status === 'alive') ||
+          g.relations.filter(r => r.status === 'alive').slice().sort((a, b) => (b.favor || 0) - (a.favor || 0))[0] ||
+          null
         const opts: { id: string; text: string; effect: (g: GameState, rng: ReturnType<typeof makeRng>) => GameState }[] = [
-          { id: 'ascend', text: '飞升', effect: (g2, rng) => {
+          // 1) 独自飞升：孤高的传说
+          { id: 'ascend', text: '独自飞升', effect: (g2, rng) => {
             let next = { ...g2, realm: 'ascend' as Realm, alive: false }
             next = addFlag(next, 'ascended_end')
-            next = { ...next, logs: pushLog(next, '你踏入仙门，回头看了一眼人间。\n从此，你成为了传说。\n【飞升结局】') }
+            const opener =
+              '你踏入仙门，衣袂被天光拂起。\n' +
+              '你没有回头。\n' +
+              '因为你知道——回头那一眼，会让人间的牵绊把你留住。\n' +
+              '而你此生，终要去更高处。\n' +
+              '【结局：孤高的传说】'
+            next = { ...next, logs: pushLog(next, opener) }
             // 人间回声：不同性格的反应
             const alive = next.relations.filter(r => r.status === 'alive' && r.role !== 'parent')
             const top = alive.slice().sort((a, b) => (b.favor || 0) - (a.favor || 0)).slice(0, 8)
@@ -3629,31 +3639,94 @@ function getEvents(): EventDef[] {
               const l = rng.pickOne(reactByPer[p.personality] || ['TA望着天门，久久不语。']) as string
               return `【${nameWithRole(p)}】${(l as string).replace(/TA/g, ta(p))}`
             })
-            const ep = `飞升那日，天门如海。\n而人间的风，也记住了你。\n\n${lines.join('\n')}`
+            const ep = `飞升那日，天门如海。\n你的一步，像把尘世与仙途一刀两断。\n\n${lines.join('\n')}`
             next = { ...next, logs: pushLog(next, ep) }
             next = appendPopup(next, '人间回声', ep)
             return next
           }},
+          // 2) 留在人间：也成为传说
+          { id: 'stay_legend', text: preferredStay ? `留在人间，陪着${preferredStay.name}` : '留在人间', effect: (g2, _rng) => {
+            let next: GameState = { ...g2, alive: false }
+            const who = preferredStay ? nameWithRole(preferredStay) : '你在意的人'
+            const text =
+              `仙门在天，风声像海。\n` +
+              `你抬头看了一眼那扇门，又低头看向${who}。\n` +
+              `你忽然笑了。\n` +
+              `「我走得再高，也不过是想回到你身边。」\n` +
+              `你转身，朝人间走去。\n\n` +
+              `后来，坊间有许多传说：\n` +
+              `有人说你已半步成仙，却甘愿把天命放下；\n` +
+              `有人说那天你只说了一句「我不走了」，就把一生写成了圆满。\n` +
+              `【结局：留在人间的传说】`
+            next = { ...next, logs: pushLog(next, text) }
+            next = appendPopup(next, '结局', text)
+            return next
+          }},
+          // 3) 带一位NPC飞升（可已故）：转入二级选择
+          { id: 'choose_companion', text: '带一位NPC一起飞升', effect: (g2) => {
+            const ce: CurrentEvent = {
+              id: 'S971_ascend_choose_companion',
+              title: '携一人飞升',
+              rawText: '',
+              text: '仙门已开。\n你可以带一位与自己因果最深的人同行——\n哪怕TA已逝去，你也愿意以自己的力量，托起那缕魂魄。\n\n你要带谁？',
+              options: [],
+              resolved: false,
+            }
+            return { ...g2, currentEvent: ce, lastEventId: ce.id }
+          }},
         ]
-        if (lover) {
-          if (getRelationById(g, lover.id)?.realm === 'nascent') {
-            opts.push({ id: 'together', text: `和${lover.name}一起飞升`, effect: (g2) => {
-              let next = { ...g2, realm: 'ascend' as Realm, alive: false }
+        return opts
+      },
+    },
+
+    // ===== 飞升二段：选择同行之人（可已故）=====
+    {
+      id: 'S971_ascend_choose_companion',
+      title: '携一人飞升',
+      minAge: 0, maxAge: 999,
+      condition: () => false,
+      weight: () => 0,
+      text: (g) => g.currentEvent?.text || '',
+      options: (g) => {
+        const candidates = g.relations
+          .filter(r => r.role !== 'parent') // 父母暂时不支持同行（避免剧情过沉）
+          .filter(r => r.status !== 'missing')
+          .slice()
+          .sort((a, b) => (b.favor || 0) - (a.favor || 0))
+          .slice(0, 10)
+        const opts: { id: string; text: string; effect: (g: GameState, rng: ReturnType<typeof makeRng>) => GameState }[] = []
+        for (const p of candidates) {
+          const tag = p.status === 'dead' ? '（已故）' : ''
+          opts.push({
+            id: `pick_${p.id}`,
+            text: `带${p.name}一起飞升${tag}`,
+            effect: (g2, _rng) => {
+              let next: GameState = { ...g2, realm: 'ascend' as Realm, alive: false }
               next = addFlag(next, 'ascended_end')
-              const text = `你握住${lover.name}的手。\n「一起。」\n「一起。」\n你们并肩踏入仙门，金光闪耀。\n【圆满结局】`
-              next = { ...next, logs: pushLog(next, text) }
-              const ep = `你们的身影消失在天门之后。\n人间有人仰望，有人落泪。\n可更多的人，只能在传说里记住你们。`
-              next = { ...next, logs: pushLog(next, ep) }
-              next = appendPopup(next, '飞升', `${text}\n\n${ep}`)
+              const cloud =
+                '传说那天，天空里有两道云并肩而行。\n' +
+                '远远望去，像一对幸福的伴侣。'
+              const core =
+                p.status === 'dead'
+                  ? `你在天门前停了很久。\n风从人间吹来，带着一丝熟悉的气息，像${p.name}还在你身边。\n\n你伸出手，掌心覆住那一点微凉。\n你把自己的灵力一点点渡过去，像把一盏灯捧回夜里。\n那缕魂魄轻轻颤动，竟在你指尖凝出一抹温度。\n\n「别怕。」你低声说。\n「这一回，我带你走。」\n\n当你踏入仙门时，天光落下，像替你们补上迟到的团圆。\n\n${cloud}\n【结局：携魂同飞升】`
+                  : `你握住${p.name}的手。\n你们没有说太多话——\n有些答案，早在无数个并肩的夜里写完了。\n\n你们踏入仙门时，天光落在肩头，像一场盛大的祝福。\n你忽然明白：所谓飞升，不是离开人间。\n而是把爱与名字，一起带去更高处。\n\n${cloud}\n【结局：并肩飞升】`
+              next = { ...next, logs: pushLog(next, core) }
+              next = appendPopup(next, '结局', core)
               return next
-            }})
-          } else {
-            opts.push({ id: 'stay', text: `放弃飞升，留下陪他`, effect: (g2) => {
-              let next = updateRelation(g2, lover.id, { favor: 100 })
-              return { ...next, logs: pushLog(next, `你看着天上的仙门，又看了看${lover.name}。\n「我不走了。」\n他愣住了，眼眶红了。\n「傻瓜……」\n【相守结局】`) }
-            }})
-          }
+            },
+          })
         }
+        opts.push({
+          id: 'back',
+          text: '还是独自飞升',
+          effect: (g2, rng) => {
+            const def = getEvents().find(e => e.id === 'E700_ascend')
+            if (!def) return { ...g2, currentEvent: null }
+            // 直接复用“独自飞升”分支
+            const alone = def.options(g2, rng).find(o => o.id === 'ascend')
+            return alone ? alone.effect({ ...g2, currentEvent: null }, rng) : { ...g2, currentEvent: null }
+          },
+        })
         return opts
       },
     },

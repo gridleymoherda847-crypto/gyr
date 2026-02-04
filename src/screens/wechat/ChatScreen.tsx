@@ -1837,6 +1837,18 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         const doudizhuProcessIndex = pendingDoudizhuInvites.length > 0 
           ? Math.floor(Math.random() * Math.max(1, replies.length)) 
           : -1
+
+        // 统一“转账处理”与角色话术：如果角色文本明确表示“退还/不收”，就必须退款；
+        // 如果角色明确表示“收下/收到”，就必须收款；否则再走默认随机。
+        const inferTransferDecision = (text: string): 'accept' | 'refund' | null => {
+          const t = String(text || '').trim()
+          if (!t) return null
+          // 明确退款/拒收
+          if (/(退还|退回|退款|返还|还给你|你拿回去|不收|不敢收|不要(你|你的)?(钱|转账|红包)|别给我(钱|转账|红包)?)/.test(t)) return 'refund'
+          // 明确收款/接受
+          if (/(已收款|已领取|收下了|我收了|我拿着了|收到啦|收到啦|谢谢.*(钱|转账|红包)|那我就收下)/.test(t)) return 'accept'
+          return null
+        }
         
         // 依次发送回复（首条更快；每条<=5秒）
         let totalDelay = 0
@@ -2299,13 +2311,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             totalDelay += 500 + Math.random() * 600
             
             for (const transfer of pendingUserTransfers) {
-              const willAccept = Math.random() > 0.3
+              const hint = inferTransferDecision(replies[index] || '')
+              const willAccept = hint === 'accept' ? true : hint === 'refund' ? false : (Math.random() > 0.3)
               const amount = transfer.transferAmount || 0
               
               safeTimeoutEx(() => {
                 
-                // 标记原转账为已处理
-                updateMessage(transfer.id, { transferStatus: 'processed' })
+                // 标记原转账状态（防止重复处理 + 与对话内容一致）
+                updateMessage(transfer.id, { transferStatus: willAccept ? 'received' : 'refunded' })
                 
                 // 对方发收款/退款美化框
                 addMessage({
