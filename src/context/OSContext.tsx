@@ -1229,6 +1229,10 @@ export function OSProvider({ children }: PropsWithChildren) {
     const key = override?.apiKey ?? llmConfig.apiKey
     if (!base || !key) throw new Error('请先在「设置 -> API 配置」中填写 Base URL 和 API Key')
     try {
+      // HTTPS 页面 + HTTP Base URL：浏览器会拦截混合内容，直接走同域转发
+      if (window.location.protocol === 'https:' && base.trim().toLowerCase().startsWith('http://')) {
+        throw new TypeError('Mixed content blocked')
+      }
       const response = await fetch(`${base}/models`, {
         method: 'GET',
         headers: {
@@ -1307,6 +1311,11 @@ export function OSProvider({ children }: PropsWithChildren) {
       const controller = new AbortController()
       const timeoutMs = options?.timeoutMs ?? 600000
       const t = window.setTimeout(() => controller.abort(), timeoutMs)
+
+      // HTTPS 页面 + HTTP Base URL：浏览器会拦截混合内容，直接走同域转发
+      if (window.location.protocol === 'https:' && base.trim().toLowerCase().startsWith('http://')) {
+        throw new TypeError('Mixed content blocked')
+      }
 
       const response = await fetch(`${base}/chat/completions`, {
         method: 'POST',

@@ -1251,6 +1251,28 @@ function roleLabelForLog(p: Person): string {
   return ROLE_NAMES[p.role] || '关系人'
 }
 
+function getDiscipleCount(g: GameState): number {
+  return (g.relations || []).filter((r) => r.status === 'alive' && hasPersonFlag(r, 'disciple_of_player')).length
+}
+
+function getDiscipleCultivation(p: Person): number {
+  return getPersonFlagNumber(p, 'disciple_cult_') ?? 0
+}
+
+function setDiscipleCultivation(g: GameState, id: string, value: number): GameState {
+  const p = getRelationById(g, id)
+  if (!p) return g
+  const cleaned = removeFlagsByPrefix(p.flags || [], 'disciple_cult_')
+  return updateRelation(g, id, { flags: [...cleaned, `disciple_cult_${Math.max(0, Math.floor(value))}`] })
+}
+
+function addDiscipleCultivation(g: GameState, id: string, delta: number): GameState {
+  const p = getRelationById(g, id)
+  if (!p) return g
+  const cur = getDiscipleCultivation(p)
+  return setDiscipleCultivation(g, id, cur + delta)
+}
+
 function nameWithRole(p: Person): string {
   return `（${roleLabelForLog(p)}）${p.name}`
 }
@@ -3572,15 +3594,44 @@ function getEvents(): EventDef[] {
         const lover = g.relations.find(r => r.role === 'lover' && r.status === 'alive')
         const opts: { id: string; text: string; effect: (g: GameState, rng: ReturnType<typeof makeRng>) => GameState }[] = [
           { id: 'ascend', text: '飞升', effect: (g2) => {
-            let next = { ...g2, realm: 'ascend' as Realm }
-            return { ...next, logs: pushLog(next, '你踏入仙门，回头看了一眼人间。\n从此，你成为了传说。\n【飞升结局】') }
+            let next = { ...g2, realm: 'ascend' as Realm, alive: false }
+            next = addFlag(next, 'ascended_end')
+            next = { ...next, logs: pushLog(next, '你踏入仙门，回头看了一眼人间。\n从此，你成为了传说。\n【飞升结局】') }
+            // 人间回声：不同性格的反应
+            const alive = next.relations.filter(r => r.status === 'alive' && r.role !== 'parent')
+            const top = alive.slice().sort((a, b) => (b.favor || 0) - (a.favor || 0)).slice(0, 8)
+            const reactByPer: Record<string, string[]> = {
+              '冷淡疏离': ['TA只说：「……去吧。」转身时衣袖微微发抖。', 'TA望着天门很久，最后低声道：「别回头。」'],
+              '温柔体贴': ['TA笑着祝你：「一路顺遂。」可眼眶红得很快。', 'TA替你拢好衣襟：「别怕。」像怕你在天上也受委屈。'],
+              '腹黑狡诈': ['TA轻笑：「你欠我的，别想赖。」可指尖攥得发白。', 'TA看你一眼：「成仙了，也别忘了人间。」'],
+              '毒舌傲娇': ['TA骂你一句：「走就走，别装深情。」声音却发哑。', 'TA别过脸：「……恭喜。」'],
+              '闷骚内敛': ['TA沉默很久，才说：「我会记得。」', 'TA抬手想抓住你，最终只握住一把风。'],
+              '热情开朗': ['TA笑着挥手：「我会替你把人间好好活着！」笑意却藏不住酸。', 'TA冲你喊：「别忘了我！」声音飘得很远。'],
+              '深情专一': ['TA望着你：「我会等你。」像誓言落地。', 'TA把祝福说得很轻：「去更高处。」却像要碎。'],
+              '神秘莫测': ['TA低声道：「缘起缘灭，皆由你。」', 'TA像在笑，又像在叹：「天门之后，你还是你。」'],
+              '高冷禁欲': ['TA只说：「嗯。」却把你送到风口尽头。', 'TA垂眸：「别逞强。」像把人间最后的温柔塞给你。'],
+            }
+            const lines = top.map((p) => {
+              const l = rng.pickOne(reactByPer[p.personality] || ['TA望着天门，久久不语。']) as string
+              return `【${nameWithRole(p)}】${(l as string).replace(/TA/g, ta(p))}`
+            })
+            const ep = `飞升那日，天门如海。\n而人间的风，也记住了你。\n\n${lines.join('\n')}`
+            next = { ...next, logs: pushLog(next, ep) }
+            next = appendPopup(next, '人间回声', ep)
+            return next
           }},
         ]
         if (lover) {
           if (getRelationById(g, lover.id)?.realm === 'nascent') {
             opts.push({ id: 'together', text: `和${lover.name}一起飞升`, effect: (g2) => {
-              let next = { ...g2, realm: 'ascend' as Realm }
-              return { ...next, logs: pushLog(next, `你握住${lover.name}的手。\n「一起。」\n「一起。」\n你们并肩踏入仙门，金光闪耀。\n【圆满结局】`) }
+              let next = { ...g2, realm: 'ascend' as Realm, alive: false }
+              next = addFlag(next, 'ascended_end')
+              const text = `你握住${lover.name}的手。\n「一起。」\n「一起。」\n你们并肩踏入仙门，金光闪耀。\n【圆满结局】`
+              next = { ...next, logs: pushLog(next, text) }
+              const ep = `你们的身影消失在天门之后。\n人间有人仰望，有人落泪。\n可更多的人，只能在传说里记住你们。`
+              next = { ...next, logs: pushLog(next, ep) }
+              next = appendPopup(next, '飞升', `${text}\n\n${ep}`)
+              return next
             }})
           } else {
             opts.push({ id: 'stay', text: `放弃飞升，留下陪他`, effect: (g2) => {
@@ -3598,12 +3649,9 @@ function getEvents(): EventDef[] {
       id: 'E810_disciple_seeks',
       title: '叩门求师',
       minAge: 18, maxAge: 160,
-      condition: (g) =>
-        g.alive &&
-        !hasFlag(g, 'took_disciple') &&
-        (hasFlag(g, 'in_sect') || hasFlag(g, 'is_loose_cultivator')) &&
-        getRealmIdx(g.realm) >= getRealmIdx('core'),
-      weight: (g) => 16 + Math.floor(g.stats.luck / 18),
+      // 改为“每年逻辑主动触发”：避免被随机事件稀释导致玩家经常遇不到
+      condition: () => false,
+      weight: () => 0,
       text: (_g, rng) => {
         const weather = rng.pickOne(['夜雨', '初雪', '暮色', '清晨薄雾'])
         return `${weather}时分，你住处门环被轻轻叩响。\n门外站着一个年轻修士，衣衫被风吹得猎猎。\n「前辈。」\nTA低声道：「我想拜您为师。」`
@@ -3613,7 +3661,10 @@ function getEvents(): EventDef[] {
           id: 'accept',
           text: '收下徒弟',
           effect: (g2, rng2) => {
-            const gender: 'male' | 'female' = rng2.chance(0.55) ? 'male' : 'female'
+            if (getDiscipleCount(g2) >= 3) {
+              return { ...g2, logs: pushLog(g2, '你望着门外那人，最终还是摇头。\n你已收徒太多，不愿再牵一段因果。') }
+            }
+            const gender: 'male' | 'female' = pickEncounterGender(rng2, g2)
             const name = genName(rng2, gender)
             const app = genAppearance(rng2, gender)
             const pers = genPersonality(rng2)
@@ -3630,7 +3681,7 @@ function getEvents(): EventDef[] {
                 favor: rng2.nextInt(25, 45),
                 appearance: app,
                 personality: pers,
-                flags: ['disciple_of_player'],
+                flags: ['disciple_of_player', 'disciple_cult_0'],
               },
               false
             )
@@ -3638,7 +3689,8 @@ function getEvents(): EventDef[] {
             let next: GameState = cameo.g
             disciple = cameo.p
             next = addRelation(next, disciple)
-            next = addFlag(next, 'took_disciple')
+            // 冷却：至少两年后才会再有人叩门
+            next = { ...next, flags: [...removeFlagsByPrefix(next.flags || [], 'disciple_seek_block_until_'), `disciple_seek_block_until_${g2.age + 2}`] }
             next = { ...next, logs: pushLog(next, `你收下了${nameWithRole(disciple)}。\nTA跪下叩首，声音发颤：「弟子谨记师训。」\n从此，你也成了别人命里的一盏灯。`) }
             return next
           },
@@ -3647,7 +3699,7 @@ function getEvents(): EventDef[] {
           id: 'refuse',
           text: '婉拒',
           effect: (g2, rng2) => {
-            let next = addFlag(g2, 'took_disciple')
+            let next = { ...g2, flags: [...removeFlagsByPrefix(g2.flags || [], 'disciple_seek_block_until_'), `disciple_seek_block_until_${g2.age + 2}`] }
             if (rng2.chance(0.45)) next = { ...next, stats: { ...next.stats, luck: Math.min(100, next.stats.luck + 1) } }
             return { ...next, logs: pushLog(next, '你没有收徒。\n门外那人沉默良久，向你行了一礼，转身没入风里。') }
           },
@@ -4095,6 +4147,37 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
     }
     // 兜底：队列坏数据就清空
     return { ...g, pendingRescue: [] }
+  }
+
+  // ===== 金丹后收徒：每年概率有人叩门（最多3人）=====
+  {
+    const canTake =
+      g.alive &&
+      g.age >= 18 &&
+      (hasFlag(g, 'in_sect') || hasFlag(g, 'is_loose_cultivator')) &&
+      getRealmIdx(g.realm) >= getRealmIdx('core') &&
+      getDiscipleCount(g) < 3
+    const blockUntil = getGameFlagNumber(g, 'disciple_seek_block_until_') ?? 0
+    if (canTake && g.age >= blockUntil) {
+      // 有概率：基础 12%，机缘越高越容易遇到“来拜师的人”
+      const p = clamp(0.12 + (g.stats.luck / 800), 0.12, 0.25)
+      if (rng.chance(p)) {
+        const def = getEvents().find(e => e.id === 'E810_disciple_seeks')
+        if (def) {
+          const rawText = def.text(g, rng)
+          const options = def.options(g, rng)
+          const ce: CurrentEvent = {
+            id: def.id,
+            title: def.title,
+            rawText,
+            text: rawText.replace(/\[[^\]]+\]/g, ''),
+            options: options.map(o => ({ id: o.id, text: o.text, picked: false })),
+            resolved: false,
+          }
+          return { ...g, currentEvent: ce, lastEventId: ce.id }
+        }
+      }
+    }
   }
 
   // ===== 每年优先触发：誓言 / 满好感表白 / NPC与他人成婚 =====
@@ -5384,6 +5467,40 @@ export default function LiaoliaoYishengScreen() {
     setGame(next)
     setInteractResult({ personName: nameWithRole(p), text: `你送出了「${itemName}」。\n${reply}\n${extra}` })
     setGiftTargetId(null)
+    setInteractTargetId(null)
+  }
+
+  const handleTeachDisciple = (personId: string) => {
+    if (!game) return
+    const p = game.relations.find(r => r.id === personId)
+    if (!p || p.status !== 'alive') return
+    if (!hasPersonFlag(p, 'disciple_of_player')) return
+    if (game.yearFlags.chattedIds.includes(personId)) return
+
+    const rng = makeRng(game.seed + game.age * 601 + game.logs.length + personId.charCodeAt(0))
+    const cultGain = rng.nextInt(10, 18)
+    const favorGain = rng.nextInt(8, 12)
+
+    let next: GameState = { ...game, yearFlags: { ...game.yearFlags, chattedIds: [...game.yearFlags.chattedIds, personId] } }
+    next = addDiscipleCultivation(next, personId, cultGain)
+    next = updateRelation(next, personId, { favor: clamp(p.favor + favorGain, 0, 100) })
+
+    // 满 100：弟子境界上升（不超过你当前境界），并清零进度
+    const after = getRelationById(next, personId) || p
+    const curCult = getDiscipleCultivation(after)
+    if (curCult >= 100) {
+      const nextRealm = getNextRealm(after.realm)
+      if (nextRealm && getRealmIdx(nextRealm) <= getRealmIdx(next.realm)) {
+        next = updateRelation(next, personId, { realm: nextRealm })
+        next = setDiscipleCultivation(next, personId, 0)
+        next = { ...next, logs: pushLog(next, `你传授「${after.name}」修行。\nTA气息一凝，竟在你指点下突破到了${REALM_NAMES[nextRealm]}。\n（徒弟进度清零）`) }
+      }
+    }
+
+    next = { ...next, logs: pushLog(next, `你传授「${p.name}」修行。\n（徒弟修行进度+${cultGain}，好感+${favorGain}）`) }
+    shouldAutoScroll.current = true
+    setGame(next)
+    setInteractResult({ personName: nameWithRole(p), text: `传授修行完成。\n（进度+${cultGain}，好感+${favorGain}）` })
     setInteractTargetId(null)
   }
 
@@ -7151,6 +7268,8 @@ export default function LiaoliaoYishengScreen() {
               const canConfess = canAct && !isLover && !isCompanion && isAdultForRomance(p) && !isMarriedToOther(p) && !p.affectionLocked && p.role !== 'parent'
               const canDual = canAct && (isLover || isCompanion)
               const canGift = canAct && game.items.length > 0 && p.role !== 'parent'
+              const isDisciple = hasPersonFlag(p, 'disciple_of_player')
+              const canTeach = canAct && isDisciple
               return (
                 <>
                   <div className="flex items-center justify-between mb-2">
@@ -7179,6 +7298,17 @@ export default function LiaoliaoYishengScreen() {
                     >
                       聊一聊
                     </button>
+                    {isDisciple && (
+                      <button
+                        type="button"
+                        disabled={!canTeach}
+                        onClick={() => handleTeachDisciple(p.id)}
+                        className="w-full py-2 rounded-xl bg-blue-100 text-blue-700 text-sm font-semibold disabled:opacity-50"
+                      >
+                        传授修行
+                        <div className="text-[10px] text-blue-700/70 mt-0.5">徒弟进度+10~18 · 好感+8~12</div>
+                      </button>
+                    )}
                     <button
                       type="button"
                       disabled={!canGift}
