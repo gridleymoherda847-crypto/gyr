@@ -1837,9 +1837,30 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           } catch { return false }
         })
         
-        // 随机决定在哪条回复后处理转账（如果有的话）
-        const transferProcessIndex = pendingUserTransfers.length > 0 
-          ? Math.floor(Math.random() * Math.max(1, replies.length)) 
+        // 处理转账：必须“看角色说了什么”来决定收/退，避免出现“嘴上退还但系统却领取”的左右脑互搏
+        // 规则：
+        // - 在本轮 replies 中扫描“收/退”关键词
+        // - 若出现多次，以“最后一次明确表态”为准（更贴近真实聊天：后面一句往往是最终态度）
+        // - 若本轮没有任何明确表态，则把卡片放在最后一条回复后处理，并保留少量随机性兜底
+        const findTransferDecisionInReplies = (rs: string[]) => {
+          let last: { decision: 'accept' | 'refund'; index: number } | null = null
+          for (let i = 0; i < rs.length; i++) {
+            const d = inferTransferDecision(rs[i] || '')
+            if (d) last = { decision: d, index: i }
+          }
+          if (!last) {
+            // 有些模型会把“我不收/我收下”等关键词拆散在多句里：再用整段拼接兜底扫描一次
+            const joined = rs.join('\n')
+            const d2 = inferTransferDecision(joined)
+            if (d2) last = { decision: d2, index: Math.max(0, rs.length - 1) }
+          }
+          return last
+        }
+        const transferDecisionHit = pendingUserTransfers.length > 0 ? findTransferDecisionInReplies(replies) : null
+
+        // 决定在哪条回复后处理转账：优先跟随“明确表态”的那条；否则统一放到最后（不再随机）
+        const transferProcessIndex = pendingUserTransfers.length > 0
+          ? (transferDecisionHit?.index ?? Math.max(0, replies.length - 1))
           : -1
         
         // 随机决定在哪条回复后处理音乐邀请
@@ -1854,13 +1875,13 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
         // 统一“转账处理”与角色话术：如果角色文本明确表示“退还/不收”，就必须退款；
         // 如果角色明确表示“收下/收到”，就必须收款；否则再走默认随机。
-        const inferTransferDecision = (text: string): 'accept' | 'refund' | null => {
+        function inferTransferDecision(text: string): 'accept' | 'refund' | null {
           const t = String(text || '').trim()
           if (!t) return null
           // 明确退款/拒收
-          if (/(退还|退回|退款|返还|还给你|你拿回去|不收|不敢收|不要(你|你的)?(钱|转账|红包)|别给我(钱|转账|红包)?)/.test(t)) return 'refund'
+          if (/(退还|退回|退款|返还|退给你|还给你|还你|转回去|原路退回|你拿回去|不收|不敢收|不能收|不方便收|收不了|不要(你|你的)?(钱|转账|红包)|别给我(钱|转账|红包)?|我不要|我不收)/.test(t)) return 'refund'
           // 明确收款/接受
-          if (/(已收款|已领取|收下了|我收了|我拿着了|收到啦|收到啦|谢谢.*(钱|转账|红包)|那我就收下)/.test(t)) return 'accept'
+          if (/(已收款|已领取|我收下|收下了|我收了|我先收着|我拿着了|收到啦|收到啦|收到了|谢谢.*(钱|转账|红包)|那我就收下|那我就收了)/.test(t)) return 'accept'
           return null
         }
         
@@ -2326,7 +2347,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             totalDelay += 500 + Math.random() * 600
             
             for (const transfer of pendingUserTransfers) {
-              const hint = inferTransferDecision(replies[index] || '')
+              // 必须以“本轮上下文的明确表态”为准（避免某一句说退还，但转账处理挂在别的 index 上）
+              const hint = transferDecisionHit?.decision ?? inferTransferDecision(replies[index] || '')
               const willAccept = hint === 'accept' ? true : hint === 'refund' ? false : (Math.random() > 0.3)
               const amount = transfer.transferAmount || 0
               
