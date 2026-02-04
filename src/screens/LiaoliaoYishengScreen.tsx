@@ -4658,7 +4658,8 @@ export default function LiaoliaoYishengScreen() {
       title: '-記憶-(ヨスガノソラ メインテーマ)',
       artist: '市川淳',
       cover: '/icons/music-cover.png',
-      url: '/music/kioku.mp3',
+      // 使用新文件名避免浏览器缓存到旧短音频
+      url: '/music/yososuga-kioku.mp3',
       duration: 999,
       source: 'builtin',
     }
@@ -4689,7 +4690,7 @@ export default function LiaoliaoYishengScreen() {
     if (!bgmEnabled) {
       try {
         const src = (audioRef.current?.src || '').toLowerCase()
-        if (src.includes('kioku.mp3')) {
+        if (src.includes('yososuga-kioku.mp3')) {
           pauseMusic()
         }
       } catch {
@@ -4749,7 +4750,7 @@ export default function LiaoliaoYishengScreen() {
       // 离开页面：如果当前播放的是主题曲，则暂停，避免“退回主页还在循环”
       try {
         const src = (audioRef.current?.src || '').toLowerCase()
-        if (src.includes('kioku.mp3')) {
+        if (src.includes('yososuga-kioku.mp3')) {
           pauseMusic()
         }
       } catch {
