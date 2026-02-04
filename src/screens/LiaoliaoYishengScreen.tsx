@@ -177,7 +177,12 @@ type GameState = {
   logs: string[]
   items: string[]
   currentEvent: CurrentEvent | null
-  yearFlags: { explored: boolean; chattedIds: string[]; popup: null | { title: string; text: string } }
+  yearFlags: {
+    explored: boolean
+    chattedIds: string[]
+    popup: null | { title: string; text: string }
+    popupQueue?: { title: string; text: string }[]
+  }
   hasPastLover: boolean // 本局是否已有前世爱人
   spouseId: string | null // 主角道侣（只能有一个）
   friendNames: string[] // 邀请好友名字池（仅复刻名字）
@@ -790,7 +795,11 @@ function clearPlayerLover(g: GameState, loverId: string, reason?: string): GameS
 
 function getPersonMaxLifespan(p: Person): number {
   const base = getMaxLifespan(p.realm)
-  const extra = (hasPersonFlag(p, 'life_extended_10') ? 10 : 0) + getPersonLifeBonusYears(p)
+  // 续命十年：统一用 life_bonus_ 计数；life_extended_10 仅作为“已续命过一次”的标记（避免重复救）
+  // 兼容旧存档：只有 life_extended_10 而没有 life_bonus_ 时，仍视作 +10
+  const bonus = getPersonLifeBonusYears(p)
+  const legacy = hasPersonFlag(p, 'life_extended_10') && bonus <= 0 ? 10 : 0
+  const extra = bonus + legacy
   // 仙帝：不死（用于“容貌极高”的隐藏线）
   if (hasPersonFlag(p, 'immortal_emperor')) return 999999 + extra
   // 师父常常寿元极长：避免 300~600 岁直接“寿尽”
@@ -927,9 +936,9 @@ function applyGenderToLine(line: string, p: Person): string {
 function appendPopup(g: GameState, title: string, text: string): GameState {
   const cur = g.yearFlags.popup
   if (!cur) return { ...g, yearFlags: { ...g.yearFlags, popup: { title, text } } }
-  const mergedTitle = cur.title === title ? title : '本年消息'
-  const mergedText = `${cur.text}\n\n——\n\n【${title}】\n${text}`
-  return { ...g, yearFlags: { ...g.yearFlags, popup: { title: mergedTitle, text: mergedText } } }
+  const q = Array.isArray(g.yearFlags.popupQueue) ? g.yearFlags.popupQueue : []
+  // 一次只弹一件事：把后续弹窗入队，按关闭顺序依次展示
+  return { ...g, yearFlags: { ...g.yearFlags, popupQueue: [...q, { title, text }] } }
 }
 
 function loadSavedStories(): SavedStory[] {
@@ -3787,9 +3796,17 @@ function getEvents(): EventDef[] {
               const gain = randRelGain(rng2, 8, 15)
               let next: GameState = { ...g2, pendingRescue: g2.pendingRescue.slice(1), stats: { ...g2.stats, body: 1 } }
               next = addPersonFlag(next, person.id, 'rescued_by_player')
-              if (!hasPersonFlag(person, 'life_extended_10')) next = addPersonFlag(next, person.id, 'life_extended_10')
+              // 续命：点击后立刻让TA“+10年寿元”（只允许一次）
+              const alreadyExtended = hasPersonFlag(person, 'life_extended_10') || getPersonLifeBonusYears(person) > 0
+              if (!alreadyExtended) {
+                next = addPersonFlag(next, person.id, 'life_extended_10')
+                next = addPersonLifeBonusYears(next, person.id, 10)
+              }
               next = updateRelation(next, person.id, { status: 'alive', favor: clamp(person.favor + gain, 0, 100) })
-              const lifeLine = hasPersonFlag(person, 'life_extended_10') ? '' : `\n${ta(person)}的脉息终于稳下来，像被你硬生生从黄泉边拽回。`
+              const after = getRelationById(next, person.id) || person
+              const lifeLine = alreadyExtended
+                ? ''
+                : `\n${ta(after)}的脉息终于稳下来，像被你硬生生从黄泉边拽回。\n（寿元+10年）`
               const msg = `你以灵力强行续住${nameWithRole(person)}的命脉。\n经脉像被火烧，你几乎站不稳。\n${person.name}醒来时，第一眼就抓住了你的手。\n「别这样……」${ta(person)}嗓音发哑。${lifeLine}\n（你的体魄降为1，今后每年都有猝死风险；${person.name}好感+${gain}）`
               next = { ...next, logs: pushLog(next, msg) }
               next = appendPopup(next, '救回一命', msg)
@@ -4357,7 +4374,12 @@ function nextYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   next = {
     ...next,
     age: next.age + 1,
-    yearFlags: { explored: false, chattedIds: [], popup: next.yearFlags.popup },
+    yearFlags: {
+      explored: false,
+      chattedIds: [],
+      popup: next.yearFlags.popup,
+      popupQueue: Array.isArray(next.yearFlags.popupQueue) ? next.yearFlags.popupQueue : [],
+    },
     currentEvent: null,
     treasureCd: Math.max(0, (next.treasureCd || 0) - 1),
     marketDemonCd: Math.max(0, (next.marketDemonCd || 0) - 1),
@@ -4384,7 +4406,8 @@ function nextYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   // 仙帝来信：容貌极高的隐藏线触发后，TA会常常送你修为之物
   {
     const emperor = next.relations.find(r => r.status === 'alive' && hasPersonFlag(r, 'immortal_emperor'))
-    if (emperor && rng.chance(0.65)) {
+    // 降到 20%：避免每年都送导致刷屏
+    if (emperor && rng.chance(0.2)) {
       const r = rng.nextFloat()
       const giftItem = r < 0.55 ? '太清仙露' : r < 0.85 ? '引灵丹' : '回天破境丹'
       let n2: GameState = next
@@ -4988,6 +5011,7 @@ export default function LiaoliaoYishengScreen() {
               explored: !!parsed?.yearFlags?.explored,
               chattedIds: Array.isArray(parsed?.yearFlags?.chattedIds) ? parsed.yearFlags.chattedIds : [],
               popup: parsed?.yearFlags?.popup ?? null,
+              popupQueue: Array.isArray(parsed?.yearFlags?.popupQueue) ? parsed.yearFlags.popupQueue : [],
             },
             hasPastLover: !!parsed?.hasPastLover,
             spouseId: parsed?.spouseId ?? (Array.isArray(parsed?.relations) ? (parsed.relations.find((r: any) => r?.role === 'lover')?.id ?? null) : null),
@@ -5889,7 +5913,13 @@ export default function LiaoliaoYishengScreen() {
 
   const handleClosePopup = () => {
     if (!game) return
-    setGame({ ...game, yearFlags: { ...game.yearFlags, popup: null } })
+    const q = Array.isArray(game.yearFlags.popupQueue) ? game.yearFlags.popupQueue : []
+    if (q.length > 0) {
+      const [nextPopup, ...rest] = q
+      setGame({ ...game, yearFlags: { ...game.yearFlags, popup: nextPopup, popupQueue: rest } })
+      return
+    }
+    setGame({ ...game, yearFlags: { ...game.yearFlags, popup: null, popupQueue: [] } })
   }
 
   const handleAskDivorce = (personId: string) => {
