@@ -3792,12 +3792,33 @@ function getEvents(): EventDef[] {
           }},
           // 3) 带一位NPC飞升（可已故）：转入二级选择
           { id: 'choose_companion', text: '带一位NPC一起飞升', effect: (g2) => {
+            const def2 = getEvents().find((e) => e.id === 'S971_ascend_choose_companion')
+            if (!def2) return { ...g2, currentEvent: null }
+            const seed2 = g2.seed + g2.age * 515 + (g2.logs?.length || 0) + 971
+            const rng2 = makeRng(seed2)
+            const intro =
+              '仙门已开。\n你可以带一位与自己因果最深的人同行——\n' +
+              '哪怕TA已逝去，你也愿意以自己的力量，托起那缕魂魄。\n\n你要带谁？'
+            // 先把引导文字放进 currentEvent，方便 def2.text 读取
+            const temp: GameState = {
+              ...g2,
+              currentEvent: {
+                id: def2.id,
+                title: def2.title,
+                rawText: intro,
+                text: intro,
+                options: [],
+                resolved: false,
+              },
+            }
+            const rawText = def2.text(temp, rng2)
+            const options = def2.options(temp, rng2)
             const ce: CurrentEvent = {
-              id: 'S971_ascend_choose_companion',
-              title: '携一人飞升',
-              rawText: '',
-              text: '仙门已开。\n你可以带一位与自己因果最深的人同行——\n哪怕TA已逝去，你也愿意以自己的力量，托起那缕魂魄。\n\n你要带谁？',
-              options: [],
+              id: def2.id,
+              title: def2.title,
+              rawText,
+              text: rawText.replace(/\[[^\]]+\]/g, ''),
+              options: options.map((o) => ({ id: o.id, text: o.text, picked: false })),
               resolved: false,
             }
             return { ...g2, currentEvent: ce, lastEventId: ce.id }
