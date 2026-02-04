@@ -59,6 +59,10 @@ type Person = {
   status: 'alive' | 'injured' | 'missing' | 'dead'
   flags: string[]
   isPastLover?: boolean // 前世爱人标记
+  // 神话灵契/剑灵等（显示在关系表最上方，不归入父母/朋友/宗门/伴侣/已故）
+  companionKind?: 'sword_spirit' | 'dragon_egg' | 'phoenix_egg' | 'kirin_egg' | 'weak_beast'
+  companionStage?: 'egg' | 'hatched'
+  companionNurture?: number // 孵化/养成进度（累计“投入修为/丹药”的总量）
 }
 
 // 物品定义
@@ -93,6 +97,46 @@ const ITEMS: Record<string, ItemDef> = {
   '回天破境丹': { id: '回天破境丹', name: '回天破境丹', desc: '服用后突破成功率+10%', effect: (g) => ({ ...g, breakthroughBonus: clamp(g.breakthroughBonus + 10, 0, 100) }) },
   '护脉丹': { id: '护脉丹', name: '护脉丹', desc: '服用后体魄+5（救命后调养专用）', effect: (g) => ({ ...g, stats: { ...g.stats, body: Math.min(100, g.stats.body + 5) } }) },
   '引灵丹': { id: '引灵丹', name: '引灵丹', desc: '服用后修为+8', effect: (g) => ({ ...g, cultivation: Math.min(100, g.cultivation + 8) }) },
+}
+
+type MarketRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
+type MarketDef =
+  | { kind: 'item'; id: string; name: string; price: number; rarity: MarketRarity; desc: string }
+  | { kind: 'companion'; id: string; companionKind: NonNullable<Person['companionKind']>; name: string; price: number; rarity: MarketRarity; desc: string }
+
+const MARKET_DEFS: MarketDef[] = [
+  // 弱妖兽（很弱）
+  { kind: 'companion', id: 'weak_beast_fox', companionKind: 'weak_beast', name: '弱妖兽·雪狐幼崽', price: 400, rarity: 'common', desc: '很弱的小妖兽，会跟着你。' },
+  { kind: 'companion', id: 'weak_beast_deer', companionKind: 'weak_beast', name: '弱妖兽·灵鹿幼崽', price: 450, rarity: 'common', desc: '胆子小但很乖。' },
+
+  // 剑灵 / 神话蛋（同价）
+  { kind: 'companion', id: 'egg_sword', companionKind: 'sword_spirit', name: '剑灵·灵剑（未孵化）', price: 2000, rarity: 'epic', desc: '一柄沉睡的灵剑，需投入修为至 2000 才能孵化。' },
+  { kind: 'companion', id: 'egg_dragon', companionKind: 'dragon_egg', name: '龙蛋（仙派秘藏）', price: 2000, rarity: 'epic', desc: '神话之蛋，需投入修为至 2000 才能孵化。' },
+  { kind: 'companion', id: 'egg_phoenix', companionKind: 'phoenix_egg', name: '凤蛋（仙派秘藏）', price: 2000, rarity: 'epic', desc: '神话之蛋，需投入修为至 2000 才能孵化。' },
+  { kind: 'companion', id: 'egg_kirin', companionKind: 'kirin_egg', name: '麒麟蛋（仙派秘藏）', price: 2000, rarity: 'epic', desc: '神话之蛋，需投入修为至 2000 才能孵化。' },
+
+  // 丹药（可多份）
+  { kind: 'item', id: 'pill_peiyuan', name: '培元丹', price: 120, rarity: 'common', desc: '体魄+5' },
+  { kind: 'item', id: 'pill_xisui', name: '洗髓丹', price: 150, rarity: 'uncommon', desc: '根骨+3' },
+  { kind: 'item', id: 'pill_zhuyan', name: '驻颜丹', price: 150, rarity: 'uncommon', desc: '容貌+5' },
+  { kind: 'item', id: 'pill_jiyuan', name: '机缘丹', price: 180, rarity: 'uncommon', desc: '机缘+5' },
+  { kind: 'item', id: 'pill_juling', name: '聚灵丹', price: 220, rarity: 'rare', desc: '修为+15' },
+  { kind: 'item', id: 'pill_yinling', name: '引灵丹', price: 200, rarity: 'rare', desc: '修为+8' },
+  { kind: 'item', id: 'pill_humai', name: '护脉丹', price: 260, rarity: 'rare', desc: '体魄+5（调养）' },
+  { kind: 'item', id: 'pill_pojing', name: '回天破境丹', price: 800, rarity: 'epic', desc: '突破成功率+10%' },
+  { kind: 'item', id: 'pill_taqq', name: '太清仙露', price: 1200, rarity: 'legendary', desc: '修为+20' },
+  { kind: 'item', id: 'pill_yanshou', name: '延寿丹', price: 1500, rarity: 'legendary', desc: '大限+10岁（一次）' },
+
+  // 专门给剑灵用的养成丹：100灵石一枚，+50（可多份）
+  { kind: 'item', id: 'pill_sword_nurture', name: '剑灵养成丹', price: 100, rarity: 'common', desc: '（剑灵专用）养成+50' },
+]
+
+function rarityLabel(r: MarketRarity): string {
+  return r === 'common' ? '普通' : r === 'uncommon' ? '少见' : r === 'rare' ? '稀有' : r === 'epic' ? '史诗' : '传说'
+}
+
+function oppositeGender(g: 'male' | 'female'): 'male' | 'female' {
+  return g === 'male' ? 'female' : 'male'
 }
 
 type EventOption = {
@@ -1098,6 +1142,29 @@ function makeDeathDetailText(g: GameState): string {
 }
 
 function killPlayer(g: GameState, reasonLine?: string, popupTitle: string = '人生落幕'): GameState {
+  // 神话灵契/剑灵：若你本该死去，会以命续你十年寿元（必触发，牺牲者必死）
+  try {
+    const guardian = (g.relations || []).find(r => r.status === 'alive' && isHatchedCompanion(r))
+    if (guardian) {
+      let next: GameState = { ...g, currentEvent: null }
+      if (reasonLine) next = { ...next, logs: pushLog(next, reasonLine) }
+      // 牺牲者身死
+      next = updateRelation(next, guardian.id, { status: 'dead' })
+      // 玩家续命十年（不避意外）
+      next = addPlayerLifeBonusYears(next, 10)
+      const msg =
+        `你眼前发黑，几乎要坠入长夜。\n` +
+        `却在那一瞬，有人替你按住了命灯。\n` +
+        `「${guardian.name}」以命为誓，将自己的灵息尽数渡给你。\n` +
+        `你活了下来——但TA的气息，彻底断了。\n` +
+        `（寿元+10年；「${guardian.name}」身死道消）`
+      next = { ...next, logs: pushLog(next, msg) }
+      next = appendPopup(next, '以命续命', msg)
+      return next
+    }
+  } catch {
+    // ignore and fallthrough to normal death
+  }
   let next: GameState = { ...g, alive: false, currentEvent: null }
   if (reasonLine) next = { ...next, logs: pushLog(next, reasonLine) }
   const detail = makeDeathDetailText(next)
@@ -1433,6 +1500,26 @@ function addPersonFlag(g: GameState, id: string, flag: string): GameState {
 
 function addRelation(g: GameState, person: Person): GameState {
   return { ...g, relations: [...g.relations, person] }
+}
+
+function isSpecialCompanion(p: Person | undefined): boolean {
+  return !!p?.companionKind
+}
+
+function isHatchedCompanion(p: Person | undefined): boolean {
+  if (!p?.companionKind) return false
+  if (p.companionKind === 'weak_beast') return false
+  return p.companionStage === 'hatched'
+}
+
+function getCompanionNurture(p: Person | undefined): number {
+  const n = p?.companionNurture
+  if (typeof n !== 'number' || !Number.isFinite(n)) return 0
+  return Math.max(0, Math.floor(n))
+}
+
+function addSpecialCompanionToFront(g: GameState, person: Person): GameState {
+  return { ...g, relations: [person, ...g.relations] }
 }
 
 function getMaxLifespan(realm: Realm): number {
@@ -4446,8 +4533,29 @@ function handleExplore(rng: ReturnType<typeof makeRng>, g: GameState, placeId: s
     // 可能遇到妖族
     if (place.id === 'demon_mountain' && rng.chance(0.3) && !hasFlag(next, 'met_demon_explore')) {
       const demonName = genName(rng, 'male')
+      const trait = rng.pickOne(BEAST_TRAITS)
+      const pers = rng.pickOne(PERSONALITIES)
+      const realm: Realm = rng.chance(0.75) ? 'qi' : 'foundation'
       next = addFlag(next, 'met_demon_explore')
-      next = { ...next, logs: pushLog(next, `危急时刻，一个妖族青年救了你。「${demonName}」……他笑着消失在山林中。`) }
+      // 让“救你的人”出现在关系表里
+      const rescuer = createPerson(
+        rng,
+        'demon_friend',
+        {
+          name: demonName,
+          gender: 'male',
+          race: 'demon',
+          realm,
+          age: rng.nextInt(40, 180),
+          favor: rng.nextInt(10, 25),
+          appearance: `白发如雪，眸色清冷（化形仍保留：${trait}）`,
+          personality: pers,
+          flags: ['rescued_player_once'],
+        },
+        !next.hasPastLover
+      )
+      next = addRelation(next, rescuer)
+      next = { ...next, logs: pushLog(next, `危急时刻，一个妖族青年救了你。「${demonName}」……他笑着消失在山林中。\n从此，你的关系里多了一位「${nameWithRole(rescuer)}」。`) }
     }
   } else {
     // 安全收获
@@ -4606,7 +4714,9 @@ export default function LiaoliaoYishengScreen() {
   const [copyHint, setCopyHint] = useState<string>('')
   const [showRelations, setShowRelations] = useState(false)
   const [showExplore, setShowExplore] = useState(false)
+  const [showMarket, setShowMarket] = useState(false)
   const [showItems, setShowItems] = useState(false)
+  const [marketQty, setMarketQty] = useState<Record<string, number>>({})
   const [chatResult, setChatResult] = useState<{ personName: string; text: string } | null>(null)
   const [graveResult, setGraveResult] = useState<{ personId: string; personName: string; text: string } | null>(null)
   const [interactTargetId, setInteractTargetId] = useState<string | null>(null)
@@ -4615,6 +4725,7 @@ export default function LiaoliaoYishengScreen() {
   const [interactResult, setInteractResult] = useState<{ personName: string; text: string } | null>(null)
   const [divorcePrompt, setDivorcePrompt] = useState<{ id: string; name: string; text: string } | null>(null)
   const [relTab, setRelTab] = useState<'parents' | 'friends' | 'sect' | 'lovers' | 'deceased'>('sect')
+  const [companionFeedInput, setCompanionFeedInput] = useState<Record<string, string>>({})
 
   // 死亡后“生成故事”（API）
   const [storyModalOpen, setStoryModalOpen] = useState(false)
@@ -4664,6 +4775,23 @@ export default function LiaoliaoYishengScreen() {
       source: 'builtin',
     }
   }, [])
+
+  // 修为到达 100：立即提示“可以突破”（不必等点下一年）
+  useEffect(() => {
+    if (!game) return
+    if (!game.alive) return
+    if ((game.cultivation || 0) < 100) return
+    if (hasFlag(game, 'breakthrough_tip_shown')) return
+    // 避免打断“突破事件”本身的提示
+    if (game.currentEvent?.id === 'E500_breakthrough') return
+    const tip =
+      `你的修为已满（100/100）。\n` +
+      `现在可以尝试突破到更高境界：成功后寿元与实力都会大涨。\n` +
+      `提示：突破有风险，失败可能受伤；丹药可提升成功率。`
+    const next = addFlag(appendPopup(game, '突破提示', tip), 'breakthrough_tip_shown')
+    setGame(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game?.cultivation, game?.alive])
 
   // 同步音量到 audio 元素，并记住配置
   useEffect(() => {
@@ -4881,6 +5009,128 @@ export default function LiaoliaoYishengScreen() {
     setGame(handleExplore(rng, game, placeId))
     setShowExplore(false)
   }
+
+  const handleOpenMarket = () => {
+    if (!game) return
+    if (!game.alive) return
+    if (game.yearFlags.explored) return
+    // 进入集市也算“出门”一次
+    let next: GameState = { ...game, yearFlags: { ...game.yearFlags, explored: true } }
+    next = { ...next, logs: pushLog(next, '你来到集市。人声鼎沸，摊贩叫卖，灵石与机缘在这里流转。') }
+    shouldAutoScroll.current = true
+    setGame(next)
+    setShowExplore(false)
+    setShowMarket(true)
+  }
+
+  const createMarketCompanion = (rng: ReturnType<typeof makeRng>, def: Extract<MarketDef, { kind: 'companion' }>): Person => {
+    const id = `cmp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const playerGender = game?.gender || 'female'
+    const gender = oppositeGender(playerGender)
+    const base: Person = {
+      id,
+      name: def.name,
+      gender,
+      role: 'friend',
+      appearance: '……',
+      personality: '神秘莫测',
+      race: 'human',
+      realm: game?.realm || 'mortal',
+      age: Math.max(1, game?.age || 1),
+      favor: 100,
+      affection: 100,
+      status: 'alive',
+      flags: [],
+      companionKind: def.companionKind,
+      companionStage: def.companionKind === 'weak_beast' ? 'hatched' : 'egg',
+      companionNurture: 0,
+    }
+
+    if (def.companionKind === 'weak_beast') {
+      const isFox = def.id.includes('fox')
+      return {
+        ...base,
+        name: isFox ? '雪狐' : '灵鹿',
+        role: 'demon_friend',
+        race: 'demon',
+        gender: rng.chance(0.5) ? 'male' : 'female',
+        realm: 'mortal',
+        favor: rng.nextInt(25, 45),
+        affection: 0,
+        appearance: isFox ? '雪白的小狐幼崽，尾巴蓬松，眼睛像宝石' : '小灵鹿幼崽，角还很短，跟着你不敢走远',
+        personality: isFox ? '热情开朗' : '闷骚内敛',
+        companionStage: 'hatched',
+      }
+    }
+
+    if (def.companionKind === 'sword_spirit') {
+      return {
+        ...base,
+        name: '灵剑·霜华（未孵化）',
+        appearance: '一柄沉睡的灵剑，剑鞘冰凉，像在等待你的灵息唤醒',
+        personality: '温柔体贴',
+        companionStage: 'egg',
+      }
+    }
+    if (def.companionKind === 'dragon_egg') {
+      return {
+        ...base,
+        name: '龙蛋（未孵化）',
+        appearance: '蛋壳像玉，纹路若隐若现，凑近时能听见潮声',
+        personality: '高冷禁欲',
+        companionStage: 'egg',
+      }
+    }
+    if (def.companionKind === 'phoenix_egg') {
+      return {
+        ...base,
+        name: '凤蛋（未孵化）',
+        appearance: '蛋壳温热，像捧着一簇小火，隐约有羽纹浮动',
+        personality: '热情开朗',
+        companionStage: 'egg',
+      }
+    }
+    if (def.companionKind === 'kirin_egg') {
+      return {
+        ...base,
+        name: '麒麟蛋（未孵化）',
+        appearance: '蛋壳洁白，云纹淡淡，贴在掌心像被柔光包住',
+        personality: '闷骚内敛',
+        companionStage: 'egg',
+      }
+    }
+
+    return base
+  }
+
+  const handleMarketBuy = (defId: string) => {
+    if (!game) return
+    const def = MARKET_DEFS.find(d => d.id === defId)
+    if (!def) return
+    const qty = Math.max(1, Math.min(99, Math.floor(marketQty[defId] || 1)))
+    const finalQty = def.kind === 'companion' ? 1 : qty
+    const cost = def.price * finalQty
+    if (game.money < cost) {
+      const msg = `灵石不足。\n需要：${cost}，你只有：${game.money}。`
+      const next = appendPopup(game, '买不起', msg)
+      shouldAutoScroll.current = true
+      setGame(next)
+      return
+    }
+
+    const rng = makeRng(game.seed + game.age * 919 + game.logs.length + defId.charCodeAt(0))
+    let next: GameState = { ...game, money: game.money - cost }
+    if (def.kind === 'item') {
+      next = { ...next, items: [...next.items, ...Array.from({ length: finalQty }, () => def.name)] }
+      next = { ...next, logs: pushLog(next, `你在集市买下「${def.name}」x${finalQty}，花了${cost}灵石。`) }
+    } else {
+      const person = createMarketCompanion(rng, def)
+      next = addSpecialCompanionToFront(next, person)
+      next = { ...next, logs: pushLog(next, `你在集市买下「${def.name}」，花了${cost}灵石。\n从此，你的关系里多了一位「${person.name}」。`) }
+    }
+    shouldAutoScroll.current = true
+    setGame(next)
+  }
   
   const handleChatWith = (personId: string) => {
     if (!game) return
@@ -4986,6 +5236,121 @@ export default function LiaoliaoYishengScreen() {
     setInteractResult({ personName: nameWithRole(p), text: `你送出了「${itemName}」。\n${reply}\n${extra}` })
     setGiftTargetId(null)
     setInteractTargetId(null)
+  }
+
+  const handleDualCultivation = (personId: string) => {
+    if (!game) return
+    const p = game.relations.find(r => r.id === personId)
+    if (!p || p.status !== 'alive') return
+    // 道侣 or 已孵化灵契：都可以双修
+    if (p.role !== 'lover' && !isHatchedCompanion(p)) return
+    if (game.yearFlags.chattedIds.includes(personId)) return
+
+    const rng = makeRng(game.seed + game.age * 389 + game.logs.length + personId.charCodeAt(0))
+    const gain = rng.nextInt(8, 12)
+    let next: GameState = { ...game, yearFlags: { ...game.yearFlags, chattedIds: [...game.yearFlags.chattedIds, personId] } }
+    next = { ...next, cultivation: Math.min(100, next.cultivation + gain) }
+    next = { ...next, logs: pushLog(next, `你与「${p.name}」一同打坐，灵息交融。\n你们的呼吸渐渐同频，像两条溪流汇成一条河。\n（修为+${gain}）`) }
+
+    shouldAutoScroll.current = true
+    setGame(next)
+    setInteractResult({ personName: nameWithRole(p), text: `双修完成。\n（修为+${gain}）` })
+    setInteractTargetId(null)
+  }
+
+  const hatchCompanionIfReady = (g: GameState, pid: string): GameState => {
+    const p = getRelationById(g, pid)
+    if (!p) return g
+    if (!isSpecialCompanion(p)) return g
+    if (p.companionStage !== 'egg') return g
+    const nurture = getCompanionNurture(p)
+    if (nurture < 2000) return g
+
+    const playerGender = g.gender
+    const gender = oppositeGender(playerGender)
+    const base: Partial<Person> = {
+      companionStage: 'hatched',
+      favor: 100,
+      affection: 100,
+      realm: g.realm,
+      age: Math.max(18, g.age),
+      gender,
+      race: 'human',
+      flags: Array.from(new Set([...(p.flags || []), 'guardian_companion'])),
+    }
+    if (p.companionKind === 'sword_spirit') {
+      return updateRelation(g, pid, {
+        ...base,
+        name: p.name.replace(/（未孵化）/g, '').replace(/灵剑/g, '剑灵').trim() || '剑灵',
+        personality: '温柔体贴',
+        appearance: '白发如雪，蓝瞳清澈，气质不食人间烟火',
+      })
+    }
+    if (p.companionKind === 'dragon_egg') {
+      return updateRelation(g, pid, {
+        ...base,
+        name: '龙裔',
+        personality: '高冷禁欲',
+        appearance: '银白长发，金色眼眸，冷静而护短',
+      })
+    }
+    if (p.companionKind === 'phoenix_egg') {
+      return updateRelation(g, pid, {
+        ...base,
+        name: '凤鸣',
+        personality: '热情开朗',
+        appearance: '红金长发，琥珀眼眸，笑意灼灼却温柔',
+      })
+    }
+    if (p.companionKind === 'kirin_egg') {
+      return updateRelation(g, pid, {
+        ...base,
+        name: '云麒',
+        personality: '闷骚内敛',
+        appearance: '墨白长发，蓝灰眼眸，安静却极其忠诚',
+      })
+    }
+    return updateRelation(g, pid, base)
+  }
+
+  const handleFeedCompanion = (personId: string) => {
+    if (!game) return
+    const p = game.relations.find(r => r.id === personId)
+    if (!p || p.status !== 'alive') return
+    if (!isSpecialCompanion(p)) return
+    const raw = (companionFeedInput[personId] || '').trim()
+    const amount = Math.floor(Number(raw))
+    if (!Number.isFinite(amount) || amount <= 0) return
+    if ((game.cultivation || 0) < amount) return
+
+    let next: GameState = { ...game, cultivation: Math.max(0, (game.cultivation || 0) - amount) }
+    next = updateRelation(next, personId, { companionNurture: getCompanionNurture(p) + amount })
+    const after = getRelationById(next, personId) || p
+    next = { ...next, logs: pushLog(next, `你将${amount}点修为渡入「${after.name}」。\n（养成进度：${getCompanionNurture(after)}/2000）`) }
+    next = hatchCompanionIfReady(next, personId)
+    const after2 = getRelationById(next, personId) || after
+    if (after2.companionStage === 'hatched' && p.companionStage !== 'hatched') {
+      next = { ...next, logs: pushLog(next, `「${after2.name}」孵化了。\nTA睁开眼，第一句话是：「我在。」`) }
+      next = appendPopup(next, '孵化', `你投入的修为终于开花。\n「${after2.name}」孵化了。\n\nTA的气息与您齐平（境界：${REALM_NAMES[next.realm]}）。`)
+    }
+    shouldAutoScroll.current = true
+    setGame(next)
+    setCompanionFeedInput(prev => ({ ...prev, [personId]: '' }))
+  }
+
+  const handleUseSwordNurturePill = (personId: string) => {
+    if (!game) return
+    const p = game.relations.find(r => r.id === personId)
+    if (!p || p.status !== 'alive') return
+    if (p.companionKind !== 'sword_spirit') return
+    if (!game.items.includes('剑灵养成丹')) return
+    let next: GameState = removeOneItem(game, '剑灵养成丹')
+    next = updateRelation(next, personId, { companionNurture: getCompanionNurture(p) + 50 })
+    const after = getRelationById(next, personId) || p
+    next = { ...next, logs: pushLog(next, `你给「${after.name}」服下一枚「剑灵养成丹」。\n（养成进度：${getCompanionNurture(after)}/2000）`) }
+    next = hatchCompanionIfReady(next, personId)
+    shouldAutoScroll.current = true
+    setGame(next)
   }
 
   const handlePlayerConfess = (personId: string) => {
@@ -5378,21 +5743,29 @@ export default function LiaoliaoYishengScreen() {
     return game.relations.filter(r => r.status === 'alive')
   }, [game?.relations])
 
+  const specialCompanions = useMemo(() => {
+    if (!game) return [] as Person[]
+    // 特殊灵契：不归入任何分类，单独置顶展示（即使已故也不进“已故”tab）
+    return (game.relations || []).filter(r => isSpecialCompanion(r))
+  }, [game?.relations])
+
   const deadRelations = useMemo(() => {
     if (!game) return []
-    return game.relations.filter(r => r.status === 'dead')
+    // 注意：灵契不进入“已故”tab
+    return game.relations.filter(r => r.status === 'dead' && !isSpecialCompanion(r))
   }, [game?.relations])
 
   const groupedRelations = useMemo(() => {
     if (!game) return { parents: [], friends: [], sect: [], lovers: [] as Person[], deceased: [] as Person[] }
-    const parents = aliveRelations.filter(r => r.role === 'parent')
-    const lovers = aliveRelations.filter(r => r.role === 'lover')
-    const sect = aliveRelations
+    const normalAlive = aliveRelations.filter(r => !isSpecialCompanion(r))
+    const parents = normalAlive.filter(r => r.role === 'parent')
+    const lovers = normalAlive.filter(r => r.role === 'lover')
+    const sect = normalAlive
       .filter(r => r.role === 'master' || r.role === 'senior' || r.role === 'junior')
       .filter(r => !r.isPastLover) // 前世线归“朋友”
       .filter(r => r.race !== 'demon') // 妖怪归“朋友”
       .filter(r => r.role !== 'lover')
-    const friends = aliveRelations
+    const friends = normalAlive
       .filter(r => r.role !== 'parent')
       .filter(r => r.role !== 'lover')
       .filter(r => !(r.role === 'master' || r.role === 'senior' || r.role === 'junior') || r.isPastLover || r.race === 'demon')
@@ -5739,6 +6112,87 @@ export default function LiaoliaoYishengScreen() {
               <div className="text-sm font-bold text-gray-800">关系（每人每年可互动一次）</div>
               <button type="button" onClick={() => setShowRelations(false)} className="text-sm text-gray-500">关闭</button>
             </div>
+
+            {/* 置顶：灵契/剑灵/神话蛋（不归入任何分类） */}
+            {specialCompanions.length > 0 && (
+              <div className="mb-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-indigo-900">灵契</div>
+                  <div className="text-[10px] text-indigo-900/60">投入修为至 2000 孵化</div>
+                </div>
+                <div className="mt-2 space-y-2">
+                  {specialCompanions.map((c) => {
+                    const nurture = getCompanionNurture(c)
+                    const pct = Math.max(0, Math.min(100, Math.floor((nurture / 2000) * 100)))
+                    const isEgg = c.companionStage !== 'hatched'
+                    const isSword = c.companionKind === 'sword_spirit'
+                    const hasPill = game.items.includes('剑灵养成丹')
+                    return (
+                      <div key={c.id} className={`rounded-2xl bg-white border ${c.status === 'dead' ? 'border-gray-200 opacity-60' : 'border-indigo-100'} p-3`}>
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="text-sm font-bold text-gray-800 truncate">{c.name}</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                              {c.status === 'dead' ? '已故（为你续命而亡）' : (c.companionKind === 'sword_spirit' ? '剑灵' : c.companionKind === 'weak_beast' ? '弱妖兽' : '神话灵契')}
+                              <span className="ml-2 text-gray-400">{rarityLabel('epic')}</span>
+                            </div>
+                          </div>
+                          <div className={`text-[11px] font-semibold ${isEgg ? 'text-indigo-700' : 'text-emerald-700'}`}>
+                            {isEgg ? '未孵化' : '已孵化'}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="text-[10px] text-gray-500 w-8">进度</div>
+                          <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <div className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-purple-500" style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="text-[10px] text-gray-600 w-16 text-right">{nurture}/2000</div>
+                        </div>
+
+                        {isEgg && c.status !== 'dead' && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <input
+                              value={companionFeedInput[c.id] ?? ''}
+                              onChange={(e) => setCompanionFeedInput(prev => ({ ...prev, [c.id]: e.target.value }))}
+                              placeholder={`投入修为（你有${game.cultivation}）`}
+                              inputMode="numeric"
+                              className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-xs outline-none focus:border-indigo-300"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleFeedCompanion(c.id)}
+                              className="px-3 py-2 rounded-xl bg-indigo-500 text-white text-xs font-bold active:bg-indigo-600"
+                            >
+                              投入
+                            </button>
+                            {isSword && (
+                              <button
+                                type="button"
+                                disabled={!hasPill}
+                                onClick={() => handleUseSwordNurturePill(c.id)}
+                                className={`px-3 py-2 rounded-xl text-xs font-bold border ${
+                                  hasPill ? 'bg-white text-indigo-700 border-indigo-200 active:bg-indigo-50' : 'bg-gray-100 text-gray-400 border-gray-200'
+                                }`}
+                                title={hasPill ? '使用一枚剑灵养成丹（+50）' : '没有剑灵养成丹'}
+                              >
+                                +50
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {!isEgg && c.status !== 'dead' && (
+                          <div className="mt-2 text-[11px] text-indigo-700">
+                            已孵化：在“聊一聊”里可选择「双修」，每次修为+8~12。
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
             
             {/* 顶部分类 Tab */}
             <div className="grid grid-cols-5 gap-2 mb-3">
@@ -6070,6 +6524,17 @@ export default function LiaoliaoYishengScreen() {
               <div className="text-sm font-bold text-gray-800">出门历练</div>
               <button type="button" onClick={() => setShowExplore(false)} className="text-sm text-gray-500">取消</button>
             </div>
+            <button
+              type="button"
+              onClick={handleOpenMarket}
+              className="w-full mb-3 text-left px-3 py-3 rounded-xl bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-200 active:bg-amber-100"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-amber-900">集市</span>
+                <span className="text-xs text-amber-700">买妖兽 / 剑灵 / 丹药</span>
+              </div>
+              <div className="text-xs text-amber-800/70 mt-0.5">你现在有 {game.money} 灵石</div>
+            </button>
             <div className="space-y-2">
               {EXPLORE_PLACES.map(p => (
                 <button
@@ -6087,6 +6552,105 @@ export default function LiaoliaoYishengScreen() {
                   <div className="text-xs text-gray-500 mt-0.5">{p.desc}</div>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 集市弹窗 */}
+      {showMarket && game && (
+        <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/40" onClick={() => setShowMarket(false)}>
+          <div className="w-full max-w-[420px] max-h-[78vh] rounded-t-3xl bg-white p-4 overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-bold text-gray-800">集市</div>
+              <button type="button" onClick={() => setShowMarket(false)} className="text-sm text-gray-500">关闭</button>
+            </div>
+            <div className="text-xs text-gray-600 mb-3">灵石：<span className="font-bold text-yellow-700">{game.money}</span></div>
+
+            <div className="space-y-4">
+              {/* 灵契/妖兽 */}
+              <div>
+                <div className="text-xs font-bold text-gray-800 mb-2">灵契 / 妖兽</div>
+                <div className="space-y-2">
+                  {MARKET_DEFS.filter(d => d.kind === 'companion').map((d) => (
+                    <div key={d.id} className="rounded-2xl bg-gray-50 border border-gray-100 p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-gray-800 truncate">{d.name}</div>
+                          <div className="text-[11px] text-gray-500 mt-0.5">{rarityLabel(d.rarity)} · {d.desc}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-bold text-yellow-700">{d.price}</div>
+                          <div className="text-[10px] text-gray-400">灵石</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleMarketBuy(d.id)}
+                        className="mt-2 w-full py-2 rounded-xl bg-black/80 text-white text-xs font-bold active:bg-black"
+                      >
+                        购买
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 丹药 */}
+              <div>
+                <div className="text-xs font-bold text-gray-800 mb-2">丹药（可多份）</div>
+                <div className="space-y-2">
+                  {MARKET_DEFS.filter(d => d.kind === 'item').map((d) => {
+                    const qty = Math.max(1, Math.min(99, Math.floor(marketQty[d.id] || 1)))
+                    return (
+                      <div key={d.id} className="rounded-2xl bg-white border border-gray-200 p-3">
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-gray-800 truncate">{d.name}</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">{rarityLabel(d.rarity)} · {d.desc}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs font-bold text-yellow-700">{d.price}</div>
+                            <div className="text-[10px] text-gray-400">灵石/份</div>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setMarketQty(prev => ({ ...prev, [d.id]: Math.max(1, qty - 1) }))}
+                            className="w-10 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold active:bg-gray-200"
+                          >
+                            -
+                          </button>
+                          <input
+                            value={String(qty)}
+                            onChange={(e) => {
+                              const n = Math.floor(Number(e.target.value))
+                              setMarketQty(prev => ({ ...prev, [d.id]: Number.isFinite(n) ? Math.max(1, Math.min(99, n)) : 1 }))
+                            }}
+                            inputMode="numeric"
+                            className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-xs text-center outline-none focus:border-gray-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setMarketQty(prev => ({ ...prev, [d.id]: Math.min(99, qty + 1) }))}
+                            className="w-10 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold active:bg-gray-200"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMarketBuy(d.id)}
+                            className="px-4 py-2 rounded-xl bg-purple-500 text-white text-xs font-bold active:bg-purple-600"
+                          >
+                            买 {qty} 份
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -6198,8 +6762,11 @@ export default function LiaoliaoYishengScreen() {
               if (!p || p.status !== 'alive') return <div className="text-sm text-gray-500">这个人不在了。</div>
               const hasInteracted = game.yearFlags.chattedIds.includes(p.id)
               const canAct = !hasInteracted && !game.currentEvent && !game.yearFlags.popup
+              const isLover = p.role === 'lover'
+              const isCompanion = isHatchedCompanion(p)
               const confessRate = clamp(p.affection || 0, 0, 100)
-              const canConfess = canAct && isAdultForRomance(p) && !isMarriedToOther(p) && !p.affectionLocked && p.role !== 'parent'
+              const canConfess = canAct && !isLover && !isCompanion && isAdultForRomance(p) && !isMarriedToOther(p) && !p.affectionLocked && p.role !== 'parent'
+              const canDual = canAct && (isLover || isCompanion)
               const canGift = canAct && game.items.length > 0 && p.role !== 'parent'
               return (
                 <>
@@ -6238,15 +6805,27 @@ export default function LiaoliaoYishengScreen() {
                       送东西
                       <div className="text-[10px] text-green-700/70 mt-0.5">背包 {game.items.length} 个</div>
                     </button>
-                    <button
-                      type="button"
-                      disabled={!canConfess}
-                      onClick={() => setConfessTargetId(p.id)}
-                      className="w-full py-2 rounded-xl bg-pink-100 text-pink-700 text-sm font-semibold disabled:opacity-50"
-                    >
-                      表白
-                      <div className="text-[10px] text-pink-700/70 mt-0.5">成功率≈{confessRate}%（按心动）</div>
-                    </button>
+                    {(isLover || isCompanion) ? (
+                      <button
+                        type="button"
+                        disabled={!canDual}
+                        onClick={() => handleDualCultivation(p.id)}
+                        className="w-full py-2 rounded-xl bg-indigo-100 text-indigo-700 text-sm font-semibold disabled:opacity-50"
+                      >
+                        双修
+                        <div className="text-[10px] text-indigo-700/70 mt-0.5">一起修炼，修为+8~12</div>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!canConfess}
+                        onClick={() => setConfessTargetId(p.id)}
+                        className="w-full py-2 rounded-xl bg-pink-100 text-pink-700 text-sm font-semibold disabled:opacity-50"
+                      >
+                        表白
+                        <div className="text-[10px] text-pink-700/70 mt-0.5">成功率≈{confessRate}%（按心动）</div>
+                      </button>
+                    )}
                   </div>
                 </>
               )
