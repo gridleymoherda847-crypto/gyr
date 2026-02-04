@@ -831,7 +831,9 @@ function getPersonMaxLifespan(p: Person): number {
   // 仙帝：不死（用于“容貌极高”的隐藏线）
   if (hasPersonFlag(p, 'immortal_emperor')) return 999999 + extra
   // 师父常常寿元极长：避免 300~600 岁直接“寿尽”
-  if (p.role === 'master') return Math.max(base, 900) + extra
+  // 注意：师父若后来成为道侣，role 会变成 lover，但 prevRole 会保留为 master
+  // 若不特殊处理，会导致寿元上限从 900+ 突然跌回“按境界计算”，出现 (376/900) → (376/190) 的错乱
+  if (p.role === 'master' || p.prevRole === 'master') return Math.max(base, 900) + extra
   // 妖族寿元偏长：用于妖王/化形线
   if (p.race === 'demon') return Math.max(base, 600) + extra
   return base + extra
@@ -1623,6 +1625,10 @@ function getCultivationPercent(g: GameState): number {
 function canBreakthrough(g: GameState): boolean {
   if (g.realm === 'ascend') return false
   return g.cultivation >= getCultivationNeed(g.realm)
+}
+
+function canAscend(g: GameState): boolean {
+  return g.alive && g.realm === 'nascent' && g.cultivation >= getCultivationNeed(g.realm)
 }
 
 function getNextRealm(realm: Realm): Realm | null {
@@ -3600,9 +3606,10 @@ function getEvents(): EventDef[] {
     {
       id: 'E700_ascend',
       title: '飞升',
-      minAge: 50, maxAge: 200,
-    condition: (g) => g.realm === 'nascent' && g.cultivation >= getCultivationNeed(g.realm),
-      weight: () => 100,
+      minAge: 0, maxAge: 999,
+      // 只允许手动触发：避免“刚满就自动弹”，并配合按钮文案切换为“飞升”
+      condition: () => false,
+      weight: () => 0,
       text: () => '你的修为已经到达了这个世界的顶点。\n天空中出现异象，仙界的大门似乎在向你敞开。\n你即将……飞升。',
       options: (g) => {
         const preferredStay =
@@ -5298,10 +5305,10 @@ export default function LiaoliaoYishengScreen() {
     if (!game.alive) return
     if (game.currentEvent) return
     if (game.yearFlags.popup) return
-    if (!canBreakthrough(game)) return
+    if (!canBreakthrough(game) && !canAscend(game)) return
 
     const rng = makeRng(game.seed + game.age * 515 + game.logs.length + 7)
-    const def = getEvents().find((e) => e.id === 'E500_breakthrough')
+    const def = getEvents().find((e) => e.id === (canAscend(game) ? 'E700_ascend' : 'E500_breakthrough'))
     if (!def) return
     const rawText = def.text(game, rng)
     const options = def.options(game, rng)
@@ -6256,15 +6263,14 @@ export default function LiaoliaoYishengScreen() {
     const normalAlive = aliveRelations.filter(r => !isSpecialCompanion(r))
     const parents = normalAlive.filter(r => r.role === 'parent')
     const lovers = normalAlive.filter(r => r.role === 'lover')
-    const sect = normalAlive
-      .filter(r => r.role === 'master' || r.role === 'senior' || r.role === 'junior')
-      .filter(r => !r.isPastLover) // 前世线归“朋友”
-      .filter(r => r.race !== 'demon') // 妖怪归“朋友”
-      .filter(r => r.role !== 'lover')
+    // 分组规则（更直觉、避免“师父跑到朋友栏”）：
+    // - 先按 role 分：父母 / 道侣 / 宗门（师父/师兄/师弟）/ 朋友（其余）
+    // - isPastLover / 妖族 只影响剧情与标签，不影响“归属栏”
+    const sect = normalAlive.filter(r => r.role === 'master' || r.role === 'senior' || r.role === 'junior')
     const friends = normalAlive
       .filter(r => r.role !== 'parent')
       .filter(r => r.role !== 'lover')
-      .filter(r => !(r.role === 'master' || r.role === 'senior' || r.role === 'junior') || r.isPastLover || r.race === 'demon')
+      .filter(r => !(r.role === 'master' || r.role === 'senior' || r.role === 'junior'))
     const deceased = deadRelations.slice().sort((a, b) => (b.favor || 0) - (a.favor || 0))
     const companions = specialCompanions
       .slice()
@@ -6478,15 +6484,21 @@ export default function LiaoliaoYishengScreen() {
                 <button
                   type="button"
                   onClick={handleManualBreakthrough}
-                  disabled={!canBreakthrough(game) || !!game.currentEvent || !!game.yearFlags.popup}
+                  disabled={(!canBreakthrough(game) && !canAscend(game)) || !!game.currentEvent || !!game.yearFlags.popup}
                   className={`text-[10px] whitespace-nowrap px-2 py-1 rounded-full border ${
-                    canBreakthrough(game) && !game.currentEvent && !game.yearFlags.popup
+                    (canBreakthrough(game) || canAscend(game)) && !game.currentEvent && !game.yearFlags.popup
                       ? 'bg-purple-50 text-purple-700 border-purple-200 active:bg-purple-100'
                       : 'bg-gray-100 text-gray-400 border-gray-200'
                   }`}
-                  title={canBreakthrough(game) ? '手动突破' : `修为满${getCultivationNeed(game.realm)}后可突破`}
+                  title={
+                    canAscend(game)
+                      ? '手动飞升'
+                      : canBreakthrough(game)
+                        ? '手动突破'
+                        : `修为满${getCultivationNeed(game.realm)}后可突破`
+                  }
                 >
-                  突破{getBreakthroughRateLabel(game)}
+                  {canAscend(game) ? '飞升' : `突破${getBreakthroughRateLabel(game)}`}
                 </button>
               </div>
             </div>
