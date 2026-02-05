@@ -1044,6 +1044,14 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   // 关键：必须等 hydration 完成后再开始自动保存，否则会把“初始空数组/默认值”写回 KV 覆盖导入数据
   const isImporting = () => !!(window as any).__LP_IMPORTING__
   const canPersist = () => isHydrated && !isImporting()
+
+  // 手机端性能优化：
+  // - JSON.stringify(大量 messages) + 写入存储会阻塞主线程
+  // - 用“防抖写入”把短时间内的多次变更合并为一次，减少进/退聊天时的卡顿
+  const MESSAGES_PERSIST_DEBOUNCE_MS = 700
+  const messagesPersistTimerRef = useRef<number | null>(null)
+  const messagesPersistLatestRef = useRef<WeChatMessage[]>([])
+
   // 角色和消息额外备份到 localStorage（防止 IndexedDB 被清除导致数据丢失）
   useEffect(() => {
     if (!canPersist()) return
@@ -1059,15 +1067,34 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     }
   }, [characters, isHydrated])
   useEffect(() => {
+    // 始终更新最新快照（供定时器 flush 使用，避免闭包拿到旧数组）
+    messagesPersistLatestRef.current = messages
     if (!canPersist()) return
-    void kvSetJSON(STORAGE_KEYS.messages, messages)
-    // 备份最近消息到 localStorage（只保留最近 200 条）
-    if (messages.length > 0) {
-      try {
-        const recent = messages.slice(-200).map(m => ({ ...m, content: m.content?.slice(0, 500) }))
-        localStorage.setItem(STORAGE_KEYS.messages + '_backup', JSON.stringify(recent))
-      } catch { /* ignore quota errors */ }
+
+    // 防抖：短时间内多次 messages 变化，只落盘一次
+    if (messagesPersistTimerRef.current != null) {
+      window.clearTimeout(messagesPersistTimerRef.current)
+      messagesPersistTimerRef.current = null
     }
+    messagesPersistTimerRef.current = window.setTimeout(() => {
+      const latest = messagesPersistLatestRef.current || []
+      void kvSetJSON(STORAGE_KEYS.messages, latest)
+      // 备份最近消息到 localStorage（只保留最近 200 条）
+      if (latest.length > 0) {
+        try {
+          const recent = latest.slice(-200).map(m => ({ ...m, content: m.content?.slice(0, 500) }))
+          localStorage.setItem(STORAGE_KEYS.messages + '_backup', JSON.stringify(recent))
+        } catch { /* ignore quota errors */ }
+      }
+    }, MESSAGES_PERSIST_DEBOUNCE_MS)
+
+    return () => {
+      if (messagesPersistTimerRef.current != null) {
+        window.clearTimeout(messagesPersistTimerRef.current)
+        messagesPersistTimerRef.current = null
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, isHydrated])
   // 关键：我的人设与钱包也做 localStorage 备份（这两项是用户最敏感的资产/设定）
   useEffect(() => {

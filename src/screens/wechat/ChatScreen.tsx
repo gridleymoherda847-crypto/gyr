@@ -804,15 +804,67 @@ export default function ChatScreen() {
             if (/\p{Extended_Pictographic}/u.test(lastChar)) return t
             // 把尾部的引号/括号拆出来，把标点插到它们前面
             const m = t.match(/^(.*?)(["'”’）)\]]*)$/)
-            const base = (m?.[1] ?? t).trimEnd()
+            let base = (m?.[1] ?? t).trimEnd()
             const tail = m?.[2] ?? ''
             if (!base) return t
+            // 句中分隔符结尾（逗号/顿号/分号等）先去掉，避免出现 “，。” 这种怪组合
+            const stripped = base.replace(/[，,、；;：:]+$/g, '').trimEnd()
+            if (stripped) base = stripped
 
             const isZh = characterLanguage === 'zh'
             const punct = isZh
               ? (/[吗嘛呢么]$/.test(base) ? '？' : '。')
               : '.'
             return `${base}${punct}${tail}`
+          }
+
+          // 无标点长段落兜底：模型有时会把一大坨话不加标点直接输出
+          // 这里按“自然分隔符/长度”拆成多条，再配合 appendEndPunct 让每条更像微信气泡
+          const softSplitLongNoPunct = (s: string) => {
+            const src = String(s || '').trim()
+            if (!src) return []
+            if (keepCmd(src)) return [src]
+            // 已有句末标点或较短：不处理
+            if (isSentenceEnd(src) || src.length <= 60) return [src]
+            // 若有明显分隔符，优先按分隔符切（保留分隔符在段尾）
+            const segBySep = src.match(/[^，,、；;：:]+[，,、；;：:]?/g)?.map(x => x.trim()).filter(Boolean) || []
+            const cleanedSep = segBySep.length > 1 ? segBySep.filter(Boolean) : []
+            const out: string[] = []
+            const pushChunked = (t0: string) => {
+              let t = String(t0 || '').trim()
+              if (!t) return
+              const MAX = 55
+              const MIN = 22
+              while (t.length > MAX) {
+                let cut = -1
+                // 尽量在 MAX 附近找个自然断点
+                const window = t.slice(0, MAX + 1)
+                const hit =
+                  Math.max(
+                    window.lastIndexOf(' '),
+                    window.lastIndexOf('、'),
+                    window.lastIndexOf('，'),
+                    window.lastIndexOf(','),
+                    window.lastIndexOf('；'),
+                    window.lastIndexOf(';'),
+                    window.lastIndexOf('：'),
+                    window.lastIndexOf(':')
+                  )
+                if (hit >= MIN) cut = hit + 1
+                if (cut < MIN) cut = MAX
+                const a = t.slice(0, cut).trim()
+                if (a) out.push(a)
+                t = t.slice(cut).trim()
+              }
+              if (t) out.push(t)
+            }
+            if (cleanedSep.length > 1) {
+              for (const seg of cleanedSep) pushChunked(seg)
+            } else {
+              pushChunked(src)
+            }
+            // 避免极端情况下过多
+            return out.filter(Boolean).slice(0, 15)
           }
 
           const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
@@ -834,7 +886,9 @@ export default function ChatScreen() {
             if (!cur) continue
             if (merged.length === 0) { merged.push(cur); continue }
             const last = merged[merged.length - 1]
-            if (!keepCmd(last) && !keepCmd(cur) && !isSentenceEnd(last) && (last.length + cur.length <= 120)) {
+            // 只在“明显半句断开”的情况下合并，避免把模型本来分开的多条气泡又堆回一条长气泡
+            const looksLikeHalfSentence = last.length < 18 || cur.length < 10
+            if (!keepCmd(last) && !keepCmd(cur) && looksLikeHalfSentence && !isSentenceEnd(last) && (last.length + cur.length <= 120)) {
               merged[merged.length - 1] = `${last}${cur}`
             } else {
               merged.push(cur)
@@ -845,13 +899,21 @@ export default function ChatScreen() {
           let expanded: string[] = []
           for (const m of merged) expanded.push(...splitOutImageTokens(m))
           expanded = dedupeConsecutive(expanded)
-          const trimmed = expanded.filter(Boolean).slice(0, 15)
-          if (trimmed.length <= 1) return trimmed
-          const withPunct = trimmed.slice()
-          for (let i = 0; i < withPunct.length - 1; i++) {
-            withPunct[i] = appendEndPunct(withPunct[i])
+          let trimmed = expanded.filter(Boolean).slice(0, 15)
+          // 兜底：对“无标点且偏长”的段落按分隔符/长度软拆成多条气泡（不局限于只有一条时）
+          {
+            const expanded2: string[] = []
+            for (const t of trimmed) {
+              if (t && !keepCmd(t) && !isSentenceEnd(t) && t.length > 60) {
+                const split = softSplitLongNoPunct(t)
+                if (split.length > 0) { expanded2.push(...split); continue }
+              }
+              expanded2.push(t)
+            }
+            trimmed = dedupeConsecutive(expanded2).filter(Boolean).slice(0, 15)
           }
-          return withPunct
+          // 每条都补齐句末标点（命令/纯 emoji 除外）
+          return trimmed.map(appendEndPunct)
         }
 
         // 线上模式：强制剥离“思维链/分析段落”，避免少数模型/中转仍然输出思考内容
@@ -1858,15 +1920,17 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           }
         }
 
-        // 兜底：如果模型仍只输出 1 条（且用户输入不敷衍），再补 1~2 条短消息（不拆半句、不重复）
+        // 兜底：如果模型输出条数不足（且用户输入不敷衍），再补一些短消息（不拆半句、不重复）
         {
           const lastUserText = getLastUserText(workingMessages)
-          if (!character.offlineMode && replies.length < 2 && !isTrivialUserInput(lastUserText)) {
+          if (!character.offlineMode && replies.length < 3 && !isTrivialUserInput(lastUserText)) {
             try {
+              const need = Math.max(1, Math.min(4, 3 - replies.length))
               const supplementPrompt =
-                `你刚才只输出了${replies.length}条微信消息。现在请再补充 1~2 条“短消息”，要求：\n` +
+                `你刚才只输出了${replies.length}条微信消息。现在请再补充 ${need} 条“短消息”，要求：\n` +
                 `- 不要重复刚才的内容\n` +
                 `- 每条必须是完整句/完整语义，禁止拆半句\n` +
+                `- 每条尽量以“。/！/？/…/～”结尾（像真人微信）\n` +
                 `- 不能输出任何系统说明/格式说明/思维链\n` +
                 `- 不要输出转账/图片/音乐/位置等指令\n` +
                 `只输出补充消息，多条用换行分隔。`
@@ -1886,7 +1950,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 if (seen.has(n)) continue
                 picked.push(e)
                 seen.add(n)
-                if (picked.length >= 2) break
+                if (picked.length >= need) break
               }
               if (picked.length > 0) {
                 replies = [...replies, ...picked]
@@ -3224,13 +3288,58 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
           const lastChar = t.slice(-1)
           if (/\p{Extended_Pictographic}/u.test(lastChar)) return t
           const m = t.match(/^(.*?)(["'”’）)\]]*)$/)
-          const base = (m?.[1] ?? t).trimEnd()
+          let base = (m?.[1] ?? t).trimEnd()
           const tail = m?.[2] ?? ''
           if (!base) return t
+          const stripped = base.replace(/[，,、；;：:]+$/g, '').trimEnd()
+          if (stripped) base = stripped
           const punct = characterLanguage === 'zh'
             ? (/[吗嘛呢么]$/.test(base) ? '？' : '。')
             : '.'
           return `${base}${punct}${tail}`
+        }
+
+        const softSplitLongNoPunct = (s: string) => {
+          const src = String(s || '').trim()
+          if (!src) return []
+          if (keepCmd(src)) return [src]
+          if (isSentenceEnd(src) || src.length <= 60) return [src]
+          const segBySep = src.match(/[^，,、；;：:]+[，,、；;：:]?/g)?.map(x => x.trim()).filter(Boolean) || []
+          const cleanedSep = segBySep.length > 1 ? segBySep.filter(Boolean) : []
+          const out: string[] = []
+          const pushChunked = (t0: string) => {
+            let t = String(t0 || '').trim()
+            if (!t) return
+            const MAX = 55
+            const MIN = 22
+            while (t.length > MAX) {
+              let cut = -1
+              const window = t.slice(0, MAX + 1)
+              const hit =
+                Math.max(
+                  window.lastIndexOf(' '),
+                  window.lastIndexOf('、'),
+                  window.lastIndexOf('，'),
+                  window.lastIndexOf(','),
+                  window.lastIndexOf('；'),
+                  window.lastIndexOf(';'),
+                  window.lastIndexOf('：'),
+                  window.lastIndexOf(':')
+                )
+              if (hit >= MIN) cut = hit + 1
+              if (cut < MIN) cut = MAX
+              const a = t.slice(0, cut).trim()
+              if (a) out.push(a)
+              t = t.slice(cut).trim()
+            }
+            if (t) out.push(t)
+          }
+          if (cleanedSep.length > 1) {
+            for (const seg of cleanedSep) pushChunked(seg)
+          } else {
+            pushChunked(src)
+          }
+          return out.filter(Boolean).slice(0, 15)
         }
 
         const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
@@ -3250,20 +3359,27 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
           if (!cur) continue
           if (merged.length === 0) { merged.push(cur); continue }
           const last = merged[merged.length - 1]
-          if (!keepCmd(last) && !keepCmd(cur) && !isSentenceEnd(last) && (last.length + cur.length <= 120)) {
+          const looksLikeHalfSentence = last.length < 18 || cur.length < 10
+          if (!keepCmd(last) && !keepCmd(cur) && looksLikeHalfSentence && !isSentenceEnd(last) && (last.length + cur.length <= 120)) {
             merged[merged.length - 1] = `${last}${cur}`
           } else {
             merged.push(cur)
           }
         }
 
-        const trimmed = merged.filter(Boolean).slice(0, 15)
-        if (trimmed.length <= 1) return trimmed
-        const withPunct = trimmed.slice()
-        for (let i = 0; i < withPunct.length - 1; i++) {
-          withPunct[i] = appendEndPunct(withPunct[i])
+        let trimmed = merged.filter(Boolean).slice(0, 15)
+        {
+          const expanded2: string[] = []
+          for (const t of trimmed) {
+            if (t && !keepCmd(t) && !isSentenceEnd(t) && t.length > 60) {
+              const split = softSplitLongNoPunct(t)
+              if (split.length > 0) { expanded2.push(...split); continue }
+            }
+            expanded2.push(t)
+          }
+          trimmed = expanded2.filter(Boolean).slice(0, 15)
         }
-        return withPunct
+        return trimmed.map(appendEndPunct)
       }
       // 获取全局预设
       const globalPresets = getGlobalPresets()
@@ -3301,7 +3417,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 对方${context}
 
 【回复要求】
-1. 根据情境和你的性格，回复至少2条、最多15条消息（除非用户只发一个字/标点这种极敷衍输入）
+1. 根据情境和你的性格，回复至少3条、最多15条消息（除非用户只发一个字/标点这种极敷衍输入）
 2. 每条消息用换行分隔
 3. 要有情感，不要机械化
 4. 可以表达惊喜、感动、开心等情绪
