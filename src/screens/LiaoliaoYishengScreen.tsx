@@ -1383,7 +1383,15 @@ async function copyToClipboard(text: string): Promise<boolean> {
     ta.focus()
     ta.select()
     const ok = document.execCommand('copy')
-    document.body.removeChild(ta)
+    // 安全移除：先检查元素是否还在DOM中
+    if (ta.parentNode === document.body) {
+      document.body.removeChild(ta)
+    } else if (ta.parentNode) {
+      ta.parentNode.removeChild(ta)
+    } else {
+      // 如果已经不在DOM中，使用remove()方法（更安全）
+      ta.remove()
+    }
     return !!ok
   } catch {
     return false

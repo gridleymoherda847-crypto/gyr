@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS, type Song } from '../context/OSContext'
 import PageContainer from '../components/PageContainer'
@@ -16,12 +16,14 @@ export default function MusicScreen() {
   
   // 导入音乐状态
   const [showImportDialog, setShowImportDialog] = useState(false)
+  const [showImportMethod, setShowImportMethod] = useState(false) // 选择导入方式
   const [importSongName, setImportSongName] = useState('')
   const [importSongArtist, setImportSongArtist] = useState('网络音乐')
   const [importSongData, setImportSongData] = useState<{ url: string; duration: number; isUrl?: boolean } | null>(null)
   const [importSuccess, setImportSuccess] = useState(false)
   const [showUrlInput, setShowUrlInput] = useState(false)
   const [importUrl, setImportUrl] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 搜索过滤（添加安全检查防止 undefined）
   const playlist = musicPlaylist || []
@@ -81,6 +83,64 @@ export default function MusicScreen() {
     setShowImportDialog(true)
   }
 
+  // 处理文件选择
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = '' // 重置input，允许重复选择同一文件
+    
+    // 检查文件类型
+    const validTypes = ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/aac', 'audio/ogg', 'audio/webm']
+    const validExtensions = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.webm']
+    const fileName = file.name.toLowerCase()
+    const fileType = file.type.toLowerCase()
+    const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext))
+    const hasValidType = fileType && validTypes.some(t => fileType.includes(t))
+    
+    if (!hasValidExtension && !hasValidType) {
+      alert(`不支持的文件格式\n\n支持的格式：MP3、M4A、WAV、AAC、OGG、WEBM\n当前文件：${file.name}`)
+      return
+    }
+    
+    try {
+      // 读取文件为data URL
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string
+        if (!dataUrl) {
+          alert('读取文件失败，请重试')
+          return
+        }
+        
+        // 从文件名提取歌曲名（去掉扩展名）
+        const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, '')
+        
+        // 创建音频元素获取时长
+        const audio = new Audio(dataUrl)
+        audio.onloadedmetadata = () => {
+          const duration = Math.floor(audio.duration) || 180
+          setImportSongName(fileNameWithoutExt)
+          setImportSongArtist('本地音乐')
+          setImportSongData({ url: dataUrl, duration, isUrl: false })
+          setShowImportDialog(true)
+        }
+        audio.onerror = () => {
+          // 如果无法获取时长，使用默认值
+          setImportSongName(fileNameWithoutExt)
+          setImportSongArtist('本地音乐')
+          setImportSongData({ url: dataUrl, duration: 180, isUrl: false })
+          setShowImportDialog(true)
+        }
+      }
+      reader.onerror = () => {
+        alert('读取文件失败，请重试')
+      }
+      reader.readAsDataURL(file)
+    } catch (err: any) {
+      alert(`导入失败：${err?.message || '未知错误'}`)
+    }
+  }
+
   const confirmImport = () => {
     if (!importSongData) return
     
@@ -92,14 +152,15 @@ export default function MusicScreen() {
     addSong({
       id: songId,
       title: songTitle,
-      artist: importSongArtist.trim() || '网络音乐',
+      artist: importSongArtist.trim() || (importSongData.isUrl ? '网络音乐' : '本地音乐'),
       cover: '/icons/music-cover.png',
       url: importSongData.url,
       duration: importSongData.duration,
-      source: 'url',
+      source: importSongData.isUrl ? 'url' : 'data',
     })
     
     setShowImportDialog(false)
+    setShowImportMethod(false)
     setImportSongData(null)
     setImportSuccess(true)
     setTimeout(() => setImportSuccess(false), 2000)
@@ -184,13 +245,13 @@ export default function MusicScreen() {
             </button>
           </div>
           
-          {/* 导入按钮 - 只支持链接导入 */}
+          {/* 导入按钮 */}
           <button
             type="button"
-            onClick={() => setShowUrlInput(true)}
+            onClick={() => setShowImportMethod(true)}
             className="px-3 py-1.5 rounded-full bg-[#31c27c] text-white text-xs font-medium active:opacity-80"
           >
-            🔗 导入链接
+            ➕ 导入音乐
           </button>
         </div>
 
@@ -523,13 +584,84 @@ export default function MusicScreen() {
         </div>
       )}
       
+      {/* 选择导入方式对话框 */}
+      {showImportMethod && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center px-6 bg-black/50">
+          <div className="w-full max-w-[320px] rounded-2xl bg-white p-4 shadow-xl">
+            <div className="text-center mb-4">
+              <div className="text-lg font-semibold text-gray-800">导入音乐</div>
+              <div className="text-xs text-gray-500 mt-1">选择导入方式</div>
+            </div>
+            
+            <div className="space-y-2 mb-4">
+              {/* 文件导入 */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImportMethod(false)
+                  fileInputRef.current?.click()
+                }}
+                className="w-full px-4 py-3 rounded-xl bg-green-50 border-2 border-green-200 text-left flex items-center gap-3 active:bg-green-100"
+              >
+                <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium text-gray-800">📁 导入文件</div>
+                  <div className="text-xs text-gray-500 mt-0.5">选择手机/电脑中的音频文件</div>
+                </div>
+              </button>
+              
+              {/* 链接导入 */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImportMethod(false)
+                  setShowUrlInput(true)
+                }}
+                className="w-full px-4 py-3 rounded-xl bg-blue-50 border-2 border-blue-200 text-left flex items-center gap-3 active:bg-blue-100"
+              >
+                <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium text-gray-800">🔗 导入链接</div>
+                  <div className="text-xs text-gray-500 mt-0.5">粘贴音乐直链（MP3格式）</div>
+                </div>
+              </button>
+            </div>
+            
+            <button
+              type="button"
+              onClick={() => setShowImportMethod(false)}
+              className="w-full py-2 rounded-full border border-gray-300 text-gray-600 text-sm"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* 隐藏的文件选择input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.webm"
+        className="hidden"
+        onChange={handleFileSelect}
+      />
+      
       {/* 链接导入对话框 */}
       {showUrlInput && (
         <div className="absolute inset-0 z-50 flex items-center justify-center px-6 bg-black/50">
           <div className="w-full max-w-[320px] rounded-2xl bg-white p-4 shadow-xl max-h-[85vh] overflow-y-auto">
             <div className="text-center mb-4">
               <div className="text-lg font-semibold text-gray-800">🔗 链接导入</div>
-              <div className="text-xs text-gray-500 mt-1">推荐方式，手机/电脑都能用</div>
+              <div className="text-xs text-gray-500 mt-1">粘贴音乐直链</div>
             </div>
             
             <input
@@ -538,14 +670,15 @@ export default function MusicScreen() {
               onChange={(e) => setImportUrl(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 text-sm outline-none mb-3"
               placeholder="https://example.com/music.mp3"
+              autoFocus
             />
             
             <div className="text-xs text-gray-500 mb-3 space-y-1">
               <div className="font-medium text-gray-600">💡 如何获取音乐链接：</div>
-              <div>1. 上传音频到 <span className="text-blue-500">catbox.moe</span> 或网盘</div>
-              <div>2. 复制直链（以 .mp3 结尾最佳）</div>
+              <div>1. 上传音频到网盘或图床</div>
+              <div>2. 复制直链（以 .mp3 结尾）</div>
               <div>3. 粘贴到上方输入框</div>
-              <div className="text-orange-500 mt-1">⚠️ 手机端请用 .mp3 格式，不支持 .m4a</div>
+              <div className="text-orange-500 mt-1">⚠️ 手机端建议使用 .mp3 格式</div>
             </div>
             
             <div className="flex gap-2">
