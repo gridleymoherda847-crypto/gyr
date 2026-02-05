@@ -89,6 +89,10 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   // Game
   'doudizhu_stats',
   'scratch_card_stats', // 刮刮乐统计
+  'lp_xiuxian_v1', // 寥寥一生游戏存档
+  'lp_xiuxian_stories_v1', // 寥寥一生游戏故事
+  'liaoliao_yisheng_bgm_volume', // 寥寥一生背景音乐音量
+  'liaoliao_yisheng_bgm_enabled', // 寥寥一生背景音乐开关
 
   // X (推特)
   'littlephone_x_v1', // X全部数据（用户、推文、私信、关注等）

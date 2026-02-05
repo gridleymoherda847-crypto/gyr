@@ -62,35 +62,61 @@ export default function ChatsTab({ onBack }: Props) {
     if (!file) return
     e.target.value = ''
     
+    // 检查文件扩展名
+    const fileName = file.name.toLowerCase()
+    const isJson = fileName.endsWith('.json') || file.type === 'application/json' || file.type === 'text/json'
+    
+    if (!isJson) {
+      setImportError(`文件格式不支持：角色卡必须是 JSON 格式（.json 文件）\n当前文件：${file.name}`)
+      return
+    }
+    
     try {
       const text = await file.text()
-      let card: CharacterCard
+      let card: any
       try {
         card = JSON.parse(text)
       } catch {
-        setImportError('文件格式错误，请选择有效的角色卡 JSON 文件')
+        setImportError('文件格式错误：无法解析 JSON 内容\n请确认文件是有效的 JSON 格式')
         return
       }
       
-      // 兼容多种格式
-      const charData = card.character || card
+      // 兼容多种格式：支持不同小手机的角色卡结构
+      // 1. 标准格式：{ character: { ... } }
+      // 2. 扁平格式：{ name: ..., prompt: ... }
+      // 3. 其他格式：{ data: { ... } } 或直接是角色对象
+      let charData: any = null
+      
+      if (card.character && typeof card.character === 'object') {
+        charData = card.character
+      } else if (card.data && typeof card.data === 'object') {
+        charData = card.data
+      } else if (card.name || card.prompt || card.description) {
+        // 扁平格式：直接是角色对象
+        charData = card
+      } else {
+        setImportError('角色卡格式不正确：无法识别角色数据')
+        return
+      }
+      
       if (!charData || typeof charData !== 'object') {
-        setImportError('角色卡格式不正确')
+        setImportError('角色卡格式不正确：角色数据无效')
         return
       }
       
-      const name = charData.name || ''
+      // 兼容不同字段名：支持其他小手机可能使用的字段名变体
+      const name = charData.name || charData.nickname || charData.title || ''
       if (!name.trim()) {
-        setImportError('角色卡中缺少名字')
+        setImportError('角色卡中缺少名字（需要 name/nickname/title 字段）')
         return
       }
       
       // 显示确认导入弹窗
-      setPendingCardData(card)
+      setPendingCardData({ character: charData })
       setShowImportConfirm(true)
       setImportError('')
-    } catch {
-      setImportError('读取文件失败')
+    } catch (err: any) {
+      setImportError(`读取文件失败：${err?.message || '未知错误'}`)
     }
   }
   
@@ -98,22 +124,59 @@ export default function ChatsTab({ onBack }: Props) {
   const confirmImportCard = () => {
     if (!pendingCardData) return
     
-    const charData = pendingCardData.character || pendingCardData
+    const charData: any = pendingCardData.character || pendingCardData
     
-    addCharacter({
-      name: charData.name || '未命名角色',
-      avatar: charData.avatar || '',
-      gender: charData.gender || 'female',
-      prompt: charData.prompt || '',
-      birthday: charData.birthday || '',
-      callMeName: charData.callMeName || '',
-      relationship: charData.relationship || '',
-      country: charData.country || '',
+    // 兼容不同小手机可能使用的字段名变体
+    const getName = () => charData.name || charData.nickname || charData.title || '未命名角色'
+    const getPrompt = () => charData.prompt || charData.description || charData.persona || charData.bio || charData.introduction || ''
+    const getAvatar = () => charData.avatar || charData.avatarUrl || charData.image || charData.icon || ''
+    const getGender = () => {
+      const g = charData.gender || charData.sex || 'female'
+      if (g === 'male' || g === 'female' || g === 'other') return g
+      if (g === '男' || g === 'm' || g === 'M') return 'male'
+      if (g === '女' || g === 'f' || g === 'F') return 'female'
+      return 'female' // 默认
+    }
+    
+    // 基础字段（必须）
+    const baseFields = {
+      name: getName(),
+      avatar: getAvatar(),
+      gender: getGender(),
+      prompt: getPrompt(),
+      birthday: charData.birthday || charData.birthDate || '',
+      callMeName: charData.callMeName || charData.callMe || charData.userName || '',
+      relationship: charData.relationship || charData.relation || charData.relationShip || '',
+      country: charData.country || charData.nation || charData.location || '',
       language: charData.language || 'zh',
       chatTranslationEnabled: !!charData.chatTranslationEnabled,
       coupleSpaceEnabled: false,
       chatBackground: '',
       unreadCount: 0,
+    }
+    
+    // 兼容字段：如果角色卡有更多字段（如 memorySummary, voiceEnabled, xHandle 等），也一并导入
+    // 这样即使是从其他版本/设备导出的角色卡，也能保留更多信息
+    const compatibleFields: any = {}
+    
+    // 只提取支持的字段，忽略不支持的字段（避免报错）
+    const supportedFields = [
+      'memoryRounds', 'memorySummary', 'memorySummaryUpdatedAt',
+      'voiceEnabled', 'voiceId', 'voiceFrequency',
+      'xHandle', 'xAliases', 'lorebookId',
+      'userBubbleStyle', 'charBubbleStyle', 'bubbleSyncEnabled',
+      'patMeText', 'patThemText', 'timeSyncEnabled', 'manualTime'
+    ]
+    
+    for (const field of supportedFields) {
+      if (charData[field] !== undefined && charData[field] !== null) {
+        compatibleFields[field] = charData[field]
+      }
+    }
+    
+    addCharacter({
+      ...baseFields,
+      ...compatibleFields,
     })
     
     setShowImportConfirm(false)
@@ -730,7 +793,7 @@ export default function ChatsTab({ onBack }: Props) {
       <input
         ref={cardInputRef}
         type="file"
-        accept=".json,application/json"
+        accept=".json,application/json,text/json,*/*"
         className="hidden"
         onChange={handleCardFileChange}
       />
