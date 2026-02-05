@@ -825,7 +825,8 @@ export default function ChatScreen() {
             if (!src) return []
             if (keepCmd(src)) return [src]
             // 已有句末标点或较短：不处理
-            if (isSentenceEnd(src) || src.length <= 60) return [src]
+            // 重要：避免把正常一句话强拆（<=110 基本都算“一个微信气泡里能说完”）
+            if (isSentenceEnd(src) || src.length <= 110) return [src]
             // 若有明显分隔符，优先按分隔符切（保留分隔符在段尾）
             const segBySep = src.match(/[^，,、；;：:]+[，,、；;：:]?/g)?.map(x => x.trim()).filter(Boolean) || []
             const cleanedSep = segBySep.length > 1 ? segBySep.filter(Boolean) : []
@@ -882,13 +883,31 @@ export default function ChatScreen() {
 
           // 合并被“换行/分段”切断的句子：前一段不以句末标点结束，则优先拼到下一段
           const merged: string[] = []
+          const startsLikeContinuation = (s: string) => {
+            const t = String(s || '').trim()
+            if (!t) return false
+            // 以标点/连接词/语气词开头：很可能是上一句的延续
+            if (/^[，,、；;：:)\]】”’》〉…~～\.!?。！？]/.test(t)) return true
+            if (/^(的|了|着|过|吧|呀|啊|哦|诶|嗯|哈|在|就|还|也|都|又|再|跟|和|与|以及|因为|所以|但是|然后|不过|而且|如果|其实|就是|可能|应该|要|会|能|可以)/.test(t)) return true
+            return false
+          }
+          const endsLikeConnector = (s: string) => {
+            const t = String(s || '').trim()
+            if (!t) return false
+            return /[，,、；;：:（(\[【]$/.test(t)
+          }
           for (const cur of rawParts) {
             if (!cur) continue
             if (merged.length === 0) { merged.push(cur); continue }
             const last = merged[merged.length - 1]
-            // 只在“明显半句断开”的情况下合并，避免把模型本来分开的多条气泡又堆回一条长气泡
-            const looksLikeHalfSentence = last.length < 18 || cur.length < 10
-            if (!keepCmd(last) && !keepCmd(cur) && looksLikeHalfSentence && !isSentenceEnd(last) && (last.length + cur.length <= 120)) {
+            // 目标：尽量“拼回完整句子”，避免人名/一句话被拆成半句
+            const shouldMerge =
+              !keepCmd(last) &&
+              !keepCmd(cur) &&
+              !isSentenceEnd(last) &&
+              (endsLikeConnector(last) || startsLikeContinuation(cur) || last.length < 28 || cur.length < 22) &&
+              (last.length + cur.length <= 160)
+            if (shouldMerge) {
               merged[merged.length - 1] = `${last}${cur}`
             } else {
               merged.push(cur)
@@ -904,7 +923,8 @@ export default function ChatScreen() {
           {
             const expanded2: string[] = []
             for (const t of trimmed) {
-              if (t && !keepCmd(t) && !isSentenceEnd(t) && t.length > 60) {
+              // 只对“真的很长、又没句末标点”的一坨做软拆，避免强行把短句拆开
+              if (t && !keepCmd(t) && !isSentenceEnd(t) && t.length > 110) {
                 const split = softSplitLongNoPunct(t)
                 if (split.length > 0) { expanded2.push(...split); continue }
               }
@@ -924,6 +944,8 @@ export default function ChatScreen() {
           t = t.replace(/```(?:think|analysis)[\s\S]*?```/gi, '')
           t = t.replace(/<think[\s\S]*?<\/think>/gi, '')
           t = t.replace(/<analysis[\s\S]*?<\/analysis>/gi, '')
+          // 常见“括号思维链”
+          t = t.replace(/[（(]\s*(思考|分析|推理|推断|reasoning|thoughts?|chain of thought|cot)[\s\S]*?[）)]/gi, '')
 
           // 【重要】过滤 AI 错误输出的系统标记（如 <STICKER/>、<STIVKER/>、<FUND_SHARE/> 等）
           // 这些是上下文中用于标记消息类型的，AI 不应该在回复中输出
@@ -959,10 +981,12 @@ export default function ChatScreen() {
           let skipping = false
           const startRe = /^\s*(思考|分析|推理|推断|reasoning|thoughts?|chain of thought|cot)\s*[:：]/i
           const bracketStartRe = /^\s*[【\[]\s*(思考|分析|推理|reasoning)\s*[】\]]\s*[:：]?/i
+          const mdTitleRe = /^\s*#{1,6}\s*(思考|分析|推理|reasoning)\b/i
           const endRe = /^\s*(最终回复|正文|回复|Final|Answer)\s*[:：]/i
           for (const line of lines) {
             const s = line || ''
-            if (!skipping && (startRe.test(s) || bracketStartRe.test(s) || /^\s*Let's think step by step/i.test(s))) {
+            // 额外兜底：直接出现“思维链/Chain-of-thought”等字样也视为要剔除
+            if (!skipping && (startRe.test(s) || bracketStartRe.test(s) || mdTitleRe.test(s) || /^\s*Let's think step by step/i.test(s) || /思维链|chain[-\s]?of[-\s]?thought/i.test(s))) {
               skipping = true
               continue
             }
@@ -972,12 +996,18 @@ export default function ChatScreen() {
                 skipping = false
                 continue
               }
+              // 思维链常见是列表/步骤：继续丢弃
+              if (/^\s*(?:[-*]|\d+[.)]|（\d+）)\s*/.test(s)) continue
+              // 也可能是“让我想想/我来分析”之类的开头
+              if (/^\s*(让我想想|我想想|思考一下|先想想|我来分析|我先分析)/.test(s)) continue
               // 空行：通常是思维链段落结束
               if (!s.trim()) {
                 skipping = false
               }
               continue
             }
+            // 非跳过状态也要剔除“让我想想…”这类明显元叙述（微信里很出戏）
+            if (/^\s*(让我想想|我想想|思考一下|先想想|我来分析|我先分析)\b/.test(s)) continue
             out.push(s)
           }
           return out.join('\n').trim()
@@ -1922,6 +1952,10 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
         // 分割回复为多条消息（最多15条；即便模型只回一大段也能拆成多条）
         let replies = splitToReplies(response)
+        // 二次兜底：逐条再剥离一次思维链（防止夹在某一行/某个气泡里）
+        if (!character.offlineMode) {
+          replies = replies.map(stripThoughtForOnline).map((s) => (s || '').trim()).filter(Boolean)
+        }
 
         // 防复读：如果模型把“最近自己说过的话”原封不动再发一遍，就过滤掉重复项
         {
@@ -1960,7 +1994,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 { maxTokens: 220, timeoutMs: 600000, temperature: 0.9 }
               )
               if (extra && !character.offlineMode) extra = stripThoughtForOnline(extra)
-              const extras = splitToReplies(extra || '')
+              let extras = splitToReplies(extra || '')
+              if (!character.offlineMode) extras = extras.map(stripThoughtForOnline).map((s) => (s || '').trim()).filter(Boolean)
               const normalize = (s: string) => (s || '').trim().replace(/\s+/g, ' ')
               const seen = new Set(replies.map(normalize))
               const picked: string[] = []
@@ -3323,7 +3358,8 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
           const src = String(s || '').trim()
           if (!src) return []
           if (keepCmd(src)) return [src]
-          if (isSentenceEnd(src) || src.length <= 60) return [src]
+          // 重要：避免把正常一句话强拆（<=110 基本都算“一个微信气泡里能说完”）
+          if (isSentenceEnd(src) || src.length <= 110) return [src]
           const segBySep = src.match(/[^，,、；;：:]+[，,、；;：:]?/g)?.map(x => x.trim()).filter(Boolean) || []
           const cleanedSep = segBySep.length > 1 ? segBySep.filter(Boolean) : []
           const out: string[] = []
@@ -3375,12 +3411,29 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
         }
 
         const merged: string[] = []
+        const startsLikeContinuation = (s: string) => {
+          const t = String(s || '').trim()
+          if (!t) return false
+          if (/^[，,、；;：:)\]】”’》〉…~～\.!?。！？]/.test(t)) return true
+          if (/^(的|了|着|过|吧|呀|啊|哦|诶|嗯|哈|在|就|还|也|都|又|再|跟|和|与|以及|因为|所以|但是|然后|不过|而且|如果|其实|就是|可能|应该|要|会|能|可以)/.test(t)) return true
+          return false
+        }
+        const endsLikeConnector = (s: string) => {
+          const t = String(s || '').trim()
+          if (!t) return false
+          return /[，,、；;：:（(\[【]$/.test(t)
+        }
         for (const cur of rawParts) {
           if (!cur) continue
           if (merged.length === 0) { merged.push(cur); continue }
           const last = merged[merged.length - 1]
-          const looksLikeHalfSentence = last.length < 18 || cur.length < 10
-          if (!keepCmd(last) && !keepCmd(cur) && looksLikeHalfSentence && !isSentenceEnd(last) && (last.length + cur.length <= 120)) {
+          const shouldMerge =
+            !keepCmd(last) &&
+            !keepCmd(cur) &&
+            !isSentenceEnd(last) &&
+            (endsLikeConnector(last) || startsLikeContinuation(cur) || last.length < 28 || cur.length < 22) &&
+            (last.length + cur.length <= 160)
+          if (shouldMerge) {
             merged[merged.length - 1] = `${last}${cur}`
           } else {
             merged.push(cur)
@@ -3390,8 +3443,9 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
         let trimmed = merged.filter(Boolean).slice(0, 15)
         {
           const expanded2: string[] = []
-          for (const t of trimmed) {
-            if (t && !keepCmd(t) && !isSentenceEnd(t) && t.length > 60) {
+        for (const t of trimmed) {
+          // 只对“真的很长、又没句末标点”的一坨做软拆，避免强行把短句拆开
+          if (t && !keepCmd(t) && !isSentenceEnd(t) && t.length > 110) {
               const split = softSplitLongNoPunct(t)
               if (split.length > 0) { expanded2.push(...split); continue }
             }
@@ -3572,6 +3626,39 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             .replace(/拍一拍/g, '')
             .replace(/拍了拍/g, '')
             .trim()
+        } else {
+          // 线上模式：强制剥离思维链（+号功能同样适用）
+          cleanedResult = (() => {
+            let t = String(cleanedResult || '')
+            if (!t.trim()) return ''
+            t = t.replace(/```(?:think|analysis)[\s\S]*?```/gi, '')
+            t = t.replace(/<think[\s\S]*?<\/think>/gi, '')
+            t = t.replace(/<analysis[\s\S]*?<\/analysis>/gi, '')
+            t = t.replace(/[（(]\s*(思考|分析|推理|推断|reasoning|thoughts?|chain of thought|cot)[\s\S]*?[）)]/gi, '')
+            const lines = t.split('\n')
+            const out: string[] = []
+            let skipping = false
+            const startRe = /^\s*(思考|分析|推理|推断|reasoning|thoughts?|chain of thought|cot)\s*[:：]/i
+            const bracketStartRe = /^\s*[【\[]\s*(思考|分析|推理|reasoning)\s*[】\]]\s*[:：]?/i
+            const mdTitleRe = /^\s*#{1,6}\s*(思考|分析|推理|reasoning)\b/i
+            const endRe = /^\s*(最终回复|正文|回复|Final|Answer)\s*[:：]/i
+            for (const line of lines) {
+              const s = line || ''
+              if (!skipping && (startRe.test(s) || bracketStartRe.test(s) || mdTitleRe.test(s) || /^\s*Let's think step by step/i.test(s) || /思维链|chain[-\s]?of[-\s]?thought/i.test(s))) {
+                skipping = true
+                continue
+              }
+              if (skipping) {
+                if (endRe.test(s)) { skipping = false; continue }
+                if (/^\s*(?:[-*]|\d+[.)]|（\d+）)\s*/.test(s)) continue
+                if (!s.trim()) skipping = false
+                continue
+              }
+              if (/^\s*(让我想想|我想想|思考一下|先想想|我来分析|我先分析)\b/.test(s)) continue
+              out.push(s)
+            }
+            return out.join('\n').trim()
+          })()
         }
         
         const lines = splitToReplies(cleanedResult)
