@@ -57,6 +57,29 @@ const isIOSStandalone = (window.navigator as any).standalone === true
 // iOS PWA 模式自动应用安全区域适配（只针对 iOS）
 if (isIOS && isIOSStandalone) {
   document.documentElement.classList.add('ios-pwa')
+  
+  // 监听 popstate，确保客户端路由正常工作（React Router 会自动处理）
+  window.addEventListener('popstate', () => {
+    // React Router 会自动处理，这里只是确保事件能正常触发
+  }, { passive: true })
+  
+  // 强化 meta 标签：确保 iOS 识别为全屏 App
+  const existingMeta = document.querySelector('meta[name="apple-mobile-web-app-capable"]')
+  if (!existingMeta) {
+    const meta = document.createElement('meta')
+    meta.name = 'apple-mobile-web-app-capable'
+    meta.content = 'yes'
+    document.head.appendChild(meta)
+  }
+  
+  // 确保 manifest 被引用
+  const existingManifest = document.querySelector('link[rel="manifest"]')
+  if (!existingManifest) {
+    const link = document.createElement('link')
+    link.rel = 'manifest'
+    link.href = '/manifest.webmanifest'
+    document.head.appendChild(link)
+  }
 }
 
 // iOS 设备：自动启用安全区域适配（无需用户手动开关）

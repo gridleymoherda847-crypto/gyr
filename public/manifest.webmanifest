@@ -1,0 +1,25 @@
+{
+  "name": "Mina Phone",
+  "short_name": "Mina Phone",
+  "description": "小手机 - 虚拟手机桌面",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#000000",
+  "background_color": "#fef7f0",
+  "icons": [
+    {
+      "src": "/icons/wechat.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/wechat.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -95,7 +95,15 @@ export default class ErrorBoundary extends Component<Props, State> {
                 <button
                   type="button"
                   className="flex-1 rounded-full border border-black/10 bg-white px-4 py-2 text-[13px] font-medium text-[#333]"
-                  onClick={() => (window.location.href = '/')}
+                  onClick={() => {
+                    // iOS PWA 优化：用客户端路由避免页面重载导致被踢出全屏
+                    if (window.history && window.history.pushState) {
+                      window.history.pushState(null, '', '/')
+                      window.dispatchEvent(new PopStateEvent('popstate'))
+                    } else {
+                      window.location.href = '/'
+                    }
+                  }}
                 >
                   回到主页
                 </button>
