@@ -96,6 +96,10 @@ export type WeChatCharacter = {
   patEnabled?: boolean // 是否启用拍一拍（默认true）
   patMeText?: string // 对方拍我时显示的内容（如"拍了拍我的小脑袋"）
   patThemText?: string // 我拍对方时显示的内容（如"拍了拍TA的肩膀"）
+  // 线上回复条数偏好（仅线上模式；线下模式不使用）
+  // 说明：这是“最大气泡条数”上限，允许用户喜欢“少回/多回”
+  // 默认 15，上限 20
+  onlineReplyMax?: number
 }
 
 // 聊天消息
@@ -457,6 +461,7 @@ type AddCharacterInput = Omit<
   | 'chatTranslationEnabled'
   | 'xHandle'
   | 'xAliases'
+  | 'onlineReplyMax'
 >>
 
 type WeChatContextValue = {
@@ -1162,12 +1167,19 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   // 预计算：按角色分组的消息（避免在列表/聊天界面反复 filter+sort 导致手机端卡顿）
   const messagesByCharacter = useMemo(() => {
     const map: Record<string, WeChatMessage[]> = {}
+    const maybeUnsorted = new Set<string>()
+    const lastTs: Record<string, number> = {}
     for (const m of messages) {
       const key = m.characterId
       if (!map[key]) map[key] = []
+      // 通常消息是按时间追加的；只有检测到“倒序”时才对该角色排序，避免每次都 sort 巨量数组导致卡顿
+      const ts = Number(m.timestamp || 0)
+      const prev = lastTs[key]
+      if (prev != null && ts < prev) maybeUnsorted.add(key)
+      lastTs[key] = ts
       map[key].push(m)
     }
-    for (const key of Object.keys(map)) {
+    for (const key of maybeUnsorted) {
       map[key].sort((a, b) => a.timestamp - b.timestamp)
     }
     return map
@@ -1213,6 +1225,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       xAliases: Array.isArray(character.xAliases) ? character.xAliases : [],
       patMeText: character.patMeText ?? '拍了拍我的小脑袋',
       patThemText: character.patThemText ?? '拍了拍TA的肩膀',
+      onlineReplyMax: Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 15) || 15)),
     }
     setCharacters(prev => [...prev, newCharacter])
     return newCharacter

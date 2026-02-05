@@ -174,8 +174,12 @@ export default function HomeScreen() {
           
           {/* 音乐控制条 */}
           <div className="mt-3 flex items-center gap-3">
-            <div className="flex-1">
-              <div className="text-xs truncate mb-1" style={{ color: fontColor.value }}>
+            <div className="flex-1 min-w-0">
+              <div
+                className="text-xs truncate mb-1 max-w-[180px] sm:max-w-[240px]"
+                style={{ color: fontColor.value }}
+                title={currentSong ? `${currentSong.title} - ${currentSong.artist}` : '暂无播放'}
+              >
                 {currentSong ? `${currentSong.title} - ${currentSong.artist}` : '暂无播放'}
               </div>
               <div className="h-1 rounded-full overflow-hidden" style={{ background: `${fontColor.value}20` }}>

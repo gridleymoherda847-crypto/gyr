@@ -307,6 +307,29 @@ export default function GroupChatScreen() {
     const hms = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
     return sameDay ? hms : `${d.getMonth() + 1}/${d.getDate()} ${hms}`
   }
+
+  const languageName = (lang: any) => {
+    const map: Record<string, string> = {
+      zh: '中文',
+      en: '英语',
+      ru: '俄语',
+      fr: '法语',
+      ja: '日语',
+      ko: '韩语',
+      de: '德语',
+    }
+    return map[String(lang || 'zh')] || '中文'
+  }
+
+  // 伪翻译解析：外语原文 ||| 中文翻译
+  const parseDual = (line: string) => {
+    const idx = String(line || '').indexOf('|||')
+    if (idx < 0) return null
+    const orig = String(line || '').slice(0, idx).trim()
+    const zh = String(line || '').slice(idx + 3).trim()
+    if (!orig || !zh) return null
+    return { orig, zh }
+  }
   
   // 获取当前时间字符串（用于时间同步）
   const getCurrentTimeStr = () => {
@@ -336,8 +359,10 @@ export default function GroupChatScreen() {
     
     // 2. 每个成员的人设
     const memberProfiles = members.map(m => {
+      const translationMode = (m as any).language !== 'zh' && !!(m as any).chatTranslationEnabled
       return `【${m.name}】
 - 性别：${m.gender === 'male' ? '男' : m.gender === 'female' ? '女' : '其他'}
+- 主要语言：${languageName((m as any).language || 'zh')}${translationMode ? '（已开启聊天翻译：输出 外语原文 ||| 中文翻译）' : ''}
 - 人设：${m.prompt || '普通朋友'}
 - 关系：${m.relationship || '朋友'}`
     }).join('\n\n')
@@ -377,6 +402,11 @@ ${getCurrentTimeStr()}
 5. 可以有成员不说话，也可以有成员连续发多条
 6. 根据关系网设定，成员之间的互动方式应符合他们的关系（如情侣会更亲密，死对头会互怼等）
 7. 注意消息中的[回复XXX]标记，表示该消息是在回复/引用XXX说的话，回复时要理解这个上下文关系
+8. 【群聊翻译（伪翻译）】对“主要语言不是中文且已开启聊天翻译”的成员：每一条内容都必须按同一行格式输出：
+   外语原文 ||| 中文翻译
+   - 外语原文必须严格使用该成员的主要语言
+   - 中文翻译必须是简体中文
+   - 只允许用 "|||" 作为分隔符，不要添加其他括号/标签
 
 【群聊上下文】
 ${params.recentMessages || '（暂无消息）'}`
@@ -455,7 +485,11 @@ ${params.recentMessages || '（暂无消息）'}`
       const imageUrls = Array.from(
         new Set(
           recentForVision
-            .filter(m => m.type === 'image' && typeof m.content === 'string' && String(m.content || '').trim())
+            .filter(m =>
+              (m.type === 'image' || m.type === 'sticker') &&
+              typeof m.content === 'string' &&
+              String(m.content || '').trim()
+            )
             .map(m => String(m.content || '').trim())
         )
       ).slice(0, 3)
@@ -471,7 +505,11 @@ ${params.recentMessages || '（暂无消息）'}`
           const desc = u ? (imageDescCacheRef.current[u] || '无法识别图片内容') : '无法识别图片内容'
           return `【图片内容：${desc}】`
         }
-        if (m.type === 'sticker') return '<表情包>'
+        if (m.type === 'sticker') {
+          const u = String(m.content || '').trim()
+          const desc = u ? (imageDescCacheRef.current[u] || '无法识别表情包内容') : '无法识别表情包内容'
+          return `【表情包内容：${desc}】`
+        }
         if (m.type === 'voice') return '<语音>'
         if (m.type === 'transfer') return '<转账>'
         if (m.type === 'location') return '<位置>'
@@ -505,6 +543,7 @@ ${uniqueNames.join('、')}
 输出格式说明：
 - 普通回复：[成员名]内容
 - 引用/回复某人消息：[成员名>>被引用者名]内容
+注意：如果该成员“主要语言不是中文且已开启聊天翻译”，则该成员的每条内容必须按：外语原文 ||| 中文翻译（同一行）输出。
 
 输出格式示例：
 [小明]今天天气不错
@@ -575,14 +614,21 @@ ${uniqueNames.join('、')}
           replyToMessageId = recentMessageIdBySender[reply.replyTo]
         }
         
+        const translationMode = (member as any).language !== 'zh' && !!(member as any).chatTranslationEnabled
+        const dual = translationMode ? parseDual(reply.content) : null
+
         const newMsg = addMessage({
           characterId: '',
           groupId: group.id,
           groupSenderId: member.id,
-          content: reply.content,
+          content: dual ? dual.orig : reply.content,
           isUser: false,
           type: 'text',
           replyToMessageId,
+          messageLanguage: translationMode ? (member as any).language : undefined,
+          chatTranslationEnabledAtSend: translationMode ? true : undefined,
+          translationStatus: translationMode ? (dual ? 'done' : 'error') : undefined,
+          translatedZh: dual ? dual.zh : undefined,
         })
         
         // 更新这个成员最近的消息ID
@@ -1218,6 +1264,21 @@ ${history}`
                         </div>
                       ) : renderMessageContent(msg)}
                     </div>
+
+                    {/* 群聊翻译（伪翻译）展示：与私聊一致 */}
+                    {msg.type === 'text' && (msg as any).chatTranslationEnabledAtSend && (msg as any).messageLanguage && (msg as any).messageLanguage !== 'zh' && (
+                      <div className={`mt-1 max-w-full ${msg.isUser ? 'text-right' : 'text-left'}`}>
+                        {(msg as any).translationStatus === 'done' && (msg as any).translatedZh ? (
+                          <div className="inline-block px-2 py-1 rounded-lg bg-black/5 text-[12px] text-gray-700 whitespace-pre-wrap break-words">
+                            {(msg as any).translatedZh}
+                          </div>
+                        ) : (
+                          <div className="inline-block px-2 py-1 rounded-lg bg-black/5 text-[12px] text-gray-500">
+                            {String((msg as any).translationStatus) === 'error' ? '（未生成翻译）' : '（翻译中…）'}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     
                     {/* 时间戳和操作按钮 */}
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">

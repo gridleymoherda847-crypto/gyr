@@ -119,6 +119,15 @@ export default function ChatSettingsScreen() {
   // 拍一拍设置状态（草稿）
   const [patMeTextDraft, setPatMeTextDraft] = useState<string>(character?.patMeText || '拍了拍我的小脑袋')
   const [patThemTextDraft, setPatThemTextDraft] = useState<string>(character?.patThemText || '拍了拍TA的肩膀')
+
+  // 线上回复条数（草稿）
+  const [onlineReplyMaxDraft, setOnlineReplyMaxDraft] = useState<number>(Math.min(20, Math.max(1, Number((character as any)?.onlineReplyMax ?? 15) || 15)))
+
+  useEffect(() => {
+    if (!character) return
+    const v = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 15) || 15))
+    setOnlineReplyMaxDraft(v)
+  }, [character?.id, (character as any)?.onlineReplyMax])
   
   // 线下模式设置（折叠面板）
   const [offlineSettingsExpanded, setOfflineSettingsExpanded] = useState(false)
@@ -869,6 +878,34 @@ export default function ChatSettingsScreen() {
                 </svg>
               </div>
             </div>
+
+            {/* 线上回复条数（仅线上模式显示） */}
+            {!character.offlineMode && (
+              <div className="px-4 py-4 border-b border-gray-100">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex flex-col">
+                    <span className="text-[#000]">线上回复气泡数量</span>
+                    <span className="text-xs text-gray-400 mt-0.5">喜欢TA回得多/少都可以调（上限20条）</span>
+                  </div>
+                  <span className="text-xs font-medium text-gray-600">{onlineReplyMaxDraft}条</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  value={onlineReplyMaxDraft}
+                  onChange={(e) => {
+                    const v = Math.min(20, Math.max(1, Number(e.target.value) || 15))
+                    setOnlineReplyMaxDraft(v)
+                    updateCharacter(character.id, { onlineReplyMax: v } as any)
+                  }}
+                  className="w-full accent-green-500"
+                />
+                <div className="mt-2 text-[11px] text-gray-400">
+                  提示：只是“最多几条”的偏好，不会为了凑数把一句话硬拆开。
+                </div>
+              </div>
+            )}
             
             {/* 线下模式 */}
             <div 

@@ -1110,7 +1110,7 @@ ${MANUAL_TEXT}
         {/* 搜索结果弹窗 */}
         {showSearchResult && searchResult && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="w-full max-w-[340px] max-h-[80vh] bg-white rounded-2xl overflow-hidden shadow-xl flex flex-col">
+            <div className="w-full max-w-[420px] max-h-[86vh] bg-white rounded-2xl overflow-hidden shadow-xl flex flex-col">
               <div className="p-4 border-b border-gray-100 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-gray-800">搜索结果</div>

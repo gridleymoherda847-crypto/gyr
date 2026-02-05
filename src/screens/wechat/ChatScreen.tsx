@@ -94,7 +94,9 @@ export default function ChatScreen() {
   const forceScrollRef = useRef(false)
   // 分页渲染窗口：只渲染最近 N 条，上拉再加载更早的
   const PAGE_SIZE = 15
-  const [startIndex, setStartIndex] = useState(0)
+  // 关键优化：首次进入聊天时不要先渲染“全量消息”，否则超长聊天会直接卡死
+  // 用 lazy init 让首屏只渲染最后一页，避免第一次 render 就 map 全量 messages
+  const [startIndex, setStartIndex] = useState(() => Math.max(0, messages.length - PAGE_SIZE))
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null) // 高亮的消息ID（搜索跳转用）
   const tailModeRef = useRef(true) // 是否处在“看最新消息”模式
   const loadingMoreRef = useRef(false)
@@ -744,6 +746,9 @@ export default function ChatScreen() {
           if (character.offlineMode) {
             return [text]
           }
+
+          // 用户可调：线上回复气泡数量上限（默认15，上限20）
+          const onlineReplyMax = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 15) || 15))
           
           const splitOutImageTokens = (s: string) => {
             const src = (s || '').trim()
@@ -865,7 +870,7 @@ export default function ChatScreen() {
               pushChunked(src)
             }
             // 避免极端情况下过多
-            return out.filter(Boolean).slice(0, 15)
+            return out.filter(Boolean).slice(0, onlineReplyMax)
           }
 
           const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
@@ -918,7 +923,7 @@ export default function ChatScreen() {
           let expanded: string[] = []
           for (const m of merged) expanded.push(...splitOutImageTokens(m))
           expanded = dedupeConsecutive(expanded)
-          let trimmed = expanded.filter(Boolean).slice(0, 15)
+          let trimmed = expanded.filter(Boolean).slice(0, onlineReplyMax)
           // 兜底：对“无标点且偏长”的段落按分隔符/长度软拆成多条气泡（不局限于只有一条时）
           {
             const expanded2: string[] = []
@@ -930,7 +935,7 @@ export default function ChatScreen() {
               }
               expanded2.push(t)
             }
-            trimmed = dedupeConsecutive(expanded2).filter(Boolean).slice(0, 15)
+            trimmed = dedupeConsecutive(expanded2).filter(Boolean).slice(0, onlineReplyMax)
           }
           // 每条都补齐句末标点（命令/纯 emoji 除外）
           return trimmed.map(appendEndPunct)
@@ -1043,8 +1048,22 @@ export default function ChatScreen() {
               }
             }
             else if (m.type === 'sticker') {
-              content = '<STICKER />'
-              used += 10
+              const url = String(m.content || '').trim()
+              // 表情包：尽量走 vision，让模型“看到”用户发的表情包（仅当是 data:image 或 http(s) 图片）
+              if (
+                m.isUser &&
+                url &&
+                (/^data:image\//i.test(url) || /^https?:\/\//i.test(url))
+              ) {
+                content = [
+                  { type: 'text', text: '[用户发送了一个表情包/贴纸，请根据图片内容理解情绪与含义并自然回应]' },
+                  { type: 'image_url', image_url: { url } },
+                ]
+                used += 100
+              } else {
+                content = '<STICKER />'
+                used += 10
+              }
             }
             else if (m.type === 'transfer') {
               const amt = (m.transferAmount ?? 0).toFixed(2)
@@ -5976,6 +5995,16 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 onClick={(e) => {
                   if (editMode) return
                   if (character?.offlineMode) return // 线下模式不动
+
+                  // 线上模式：点击“自己发的文字消息”= 直接编辑（与线下模式一致）
+                  if (msg.isUser && msg.type === 'text') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setEditingMessageId(msg.id)
+                    setEditingContent(msg.content || '')
+                    return
+                  }
+
                   const target = e.target as HTMLElement | null
                   // 允许“图片打开/转账卡片收款”等原始点击行为：标记为 primary-click 的元素不弹菜单
                   if (target?.closest?.('[data-primary-click="1"]')) return
@@ -6022,6 +6051,25 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 <span className="inline-block px-2 py-[2px] rounded-md bg-white/85 md:bg-white/70 md:backdrop-blur border border-white/60 text-[10px] text-gray-600">
                   {formatTime(msg.timestamp)}
                 </span>
+
+                {/* 线上模式：由于“点击自己文字气泡=编辑”，给自己消息一个“更多(⋯)”入口打开菜单（含多选删除） */}
+                {!character?.offlineMode &&
+                  msg.isUser &&
+                  !editMode && (
+                    <button
+                      type="button"
+                      data-allow-msg-menu="1"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        openMsgActionMenu(msg, e.currentTarget as HTMLElement)
+                      }}
+                      className="px-2 py-[2px] rounded-md bg-black/5 text-[10px] text-gray-500 hover:bg-black/10 active:opacity-70"
+                      title="更多"
+                    >
+                      ⋯
+                    </button>
+                  )}
                 
                 {/* 消息操作按钮（非系统消息且非编辑模式） */}
                 {/* 线下模式保持原样；线上模式改为“长按气泡 → 悬浮菜单” */}
@@ -8243,13 +8291,30 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 onClick={() => {
                   const id = msgActionMenu.msg!.id
                   closeMsgActionMenu()
-                  if (confirm('确定删除这条消息吗？')) {
-                    deleteMessage(id)
-                  }
+                  // 进入“批量删除”勾选模式（默认选中当前这条）
+                  setForwardMode(false)
+                  setForwardSelectedIds(new Set())
+                  setEditMode(true)
+                  setSelectedMsgIds(new Set([id]))
                 }}
                 className="px-2.5 py-1 rounded-xl text-[12px] text-red-200 hover:bg-red-500/25 active:bg-red-500/30"
               >
                 删除
+              </button>
+
+              {/* 仅删除此条（保留单删能力） */}
+              <button
+                type="button"
+                onClick={() => {
+                  const id = msgActionMenu.msg!.id
+                  closeMsgActionMenu()
+                  if (confirm('确定仅删除这一条消息吗？')) {
+                    deleteMessage(id)
+                  }
+                }}
+                className="px-2.5 py-1 rounded-xl text-[12px] hover:bg-white/15 active:bg-white/20"
+              >
+                单删
               </button>
             </div>
           </div>
