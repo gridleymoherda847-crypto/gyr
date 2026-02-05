@@ -4,7 +4,7 @@ import { useWeChat } from '../../../context/WeChatContext'
 import { useOS } from '../../../context/OSContext'
 import WeChatDialog from '../components/WeChatDialog'
 
-// 角色卡类型
+// 角色卡类型（仅支持本小手机标准格式）
 type CharacterCard = {
   schemaVersion?: number
   type?: string
@@ -20,7 +20,7 @@ type CharacterCard = {
     language?: 'zh' | 'en' | 'ru' | 'fr' | 'ja' | 'ko' | 'de'
     chatTranslationEnabled?: boolean
   }
-  // 兼容直接的角色数据格式
+  // 也支持直接的角色数据格式（扁平格式）
   name?: string
   avatar?: string
   gender?: 'male' | 'female' | 'other'
@@ -81,21 +81,18 @@ export default function ChatsTab({ onBack }: Props) {
         return
       }
       
-      // 兼容多种格式：支持不同小手机的角色卡结构
+      // 仅支持本小手机标准格式
       // 1. 标准格式：{ character: { ... } }
-      // 2. 扁平格式：{ name: ..., prompt: ... }
-      // 3. 其他格式：{ data: { ... } } 或直接是角色对象
+      // 2. 扁平格式：{ name: ..., prompt: ... }（本小手机导出的格式）
       let charData: any = null
       
       if (card.character && typeof card.character === 'object') {
         charData = card.character
-      } else if (card.data && typeof card.data === 'object') {
-        charData = card.data
-      } else if (card.name || card.prompt || card.description) {
-        // 扁平格式：直接是角色对象
+      } else if (card.name || card.prompt) {
+        // 扁平格式：直接是角色对象（本小手机导出的格式）
         charData = card
       } else {
-        setImportError('角色卡格式不正确：无法识别角色数据')
+        setImportError('角色卡格式不正确：仅支持本小手机导出的角色卡格式\n\n标准格式：{ character: { name, prompt, ... } }\n或扁平格式：{ name, prompt, ... }')
         return
       }
       
@@ -104,10 +101,10 @@ export default function ChatsTab({ onBack }: Props) {
         return
       }
       
-      // 兼容不同字段名：支持其他小手机可能使用的字段名变体
-      const name = charData.name || charData.nickname || charData.title || ''
+      // 检查必需字段
+      const name = charData.name || ''
       if (!name.trim()) {
-        setImportError('角色卡中缺少名字（需要 name/nickname/title 字段）')
+        setImportError('角色卡中缺少名字（name 字段）')
         return
       }
       
@@ -120,34 +117,29 @@ export default function ChatsTab({ onBack }: Props) {
     }
   }
   
-  // 确认导入角色卡
+  // 确认导入角色卡（仅支持本小手机标准格式）
   const confirmImportCard = () => {
     if (!pendingCardData) return
     
     const charData: any = pendingCardData.character || pendingCardData
     
-    // 兼容不同小手机可能使用的字段名变体
-    const getName = () => charData.name || charData.nickname || charData.title || '未命名角色'
-    const getPrompt = () => charData.prompt || charData.description || charData.persona || charData.bio || charData.introduction || ''
-    const getAvatar = () => charData.avatar || charData.avatarUrl || charData.image || charData.icon || ''
+    // 仅支持本小手机标准字段名
     const getGender = () => {
-      const g = charData.gender || charData.sex || 'female'
+      const g = charData.gender || 'female'
       if (g === 'male' || g === 'female' || g === 'other') return g
-      if (g === '男' || g === 'm' || g === 'M') return 'male'
-      if (g === '女' || g === 'f' || g === 'F') return 'female'
       return 'female' // 默认
     }
     
-    // 基础字段（必须）
+    // 基础字段（仅使用标准字段名）
     const baseFields = {
-      name: getName(),
-      avatar: getAvatar(),
+      name: charData.name || '未命名角色',
+      avatar: charData.avatar || '',
       gender: getGender(),
-      prompt: getPrompt(),
-      birthday: charData.birthday || charData.birthDate || '',
-      callMeName: charData.callMeName || charData.callMe || charData.userName || '',
-      relationship: charData.relationship || charData.relation || charData.relationShip || '',
-      country: charData.country || charData.nation || charData.location || '',
+      prompt: charData.prompt || '',
+      birthday: charData.birthday || '',
+      callMeName: charData.callMeName || '',
+      relationship: charData.relationship || '',
+      country: charData.country || '',
       language: charData.language || 'zh',
       chatTranslationEnabled: !!charData.chatTranslationEnabled,
       coupleSpaceEnabled: false,
@@ -155,11 +147,8 @@ export default function ChatsTab({ onBack }: Props) {
       unreadCount: 0,
     }
     
-    // 兼容字段：如果角色卡有更多字段（如 memorySummary, voiceEnabled, xHandle 等），也一并导入
-    // 这样即使是从其他版本/设备导出的角色卡，也能保留更多信息
-    const compatibleFields: any = {}
-    
-    // 只提取支持的字段，忽略不支持的字段（避免报错）
+    // 提取本小手机支持的扩展字段
+    const extendedFields: any = {}
     const supportedFields = [
       'memoryRounds', 'memorySummary', 'memorySummaryUpdatedAt',
       'voiceEnabled', 'voiceId', 'voiceFrequency',
@@ -170,13 +159,13 @@ export default function ChatsTab({ onBack }: Props) {
     
     for (const field of supportedFields) {
       if (charData[field] !== undefined && charData[field] !== null) {
-        compatibleFields[field] = charData[field]
+        extendedFields[field] = charData[field]
       }
     }
     
     addCharacter({
       ...baseFields,
-      ...compatibleFields,
+      ...extendedFields,
     })
     
     setShowImportConfirm(false)

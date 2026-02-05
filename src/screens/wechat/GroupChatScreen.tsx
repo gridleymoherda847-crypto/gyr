@@ -357,10 +357,11 @@ export default function GroupChatScreen() {
       return line
     }).join('\n') : ''
     
-    let prompt = `${globalPresets ? globalPresets + '\n\n' : ''}【群聊成员人设】
+    // 严格按照顺序：1.叙事设置 2.世界书 3.角色人设 4.上下文
+    let prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lorebookEntries ? '【世界书/背景设定】\n' + lorebookEntries + '\n\n' : ''}【群聊成员人设】
 ${memberProfiles}
 
-${lorebookEntries ? '【世界书/背景设定】\n' + lorebookEntries + '\n\n' : ''}${relationsText ? '【关系网（必读，影响成员间互动方式）】\n' + relationsText + '\n\n' : ''}【群聊信息】
+${relationsText ? '【关系网（必读，影响成员间互动方式）】\n' + relationsText + '\n\n' : ''}【群聊信息】
 - 群名：${group.name}
 - 群成员：${members.map(m => m.name).join('、')}
 - 用户名：${selectedPersona?.name || '我'}

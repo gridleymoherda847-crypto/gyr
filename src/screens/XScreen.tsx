@@ -439,11 +439,12 @@ export default function XScreen() {
         const rel = String(c.relationship || '').trim()
         const lore = String(getLorebookEntriesForCharacter(c.id, 'X 推特 发推文 私信')).trim().slice(0, 900)
         const handle = String((c as any).xHandle || '').trim()
+        // 顺序：世界书 → 角色人设（符合统一读取顺序）
         return (
           `- 作者名：${c.name}${handle ? `（${handle}）` : ''}\n` +
+          `  世界书：${lore || '（无世界书）'}\n` +
           `  人设：${prompt || '（无）'}\n` +
-          `  与用户关系：${rel || '（未设定）'}\n` +
-          `  世界书：${lore || '（无世界书）'}`
+          `  与用户关系：${rel || '（未设定）'}`
         )
       })
       .filter(Boolean)
@@ -1414,18 +1415,18 @@ ${chatFriendList}
         .slice(-6)
         .map((r) => `- ${r.text.replace(/\s+/g, ' ').slice(0, 80)}`)
         .join('\n')
+      // 严格按照读取顺序：1.叙事设置 2.世界书 3.角色人设 4.上下文
       const sys =
-        sysPrefix() +
+        sysPrefix() + // 1. 叙事设置（风格开关和自定义提示词）
         `【X（推特风格）/私信会话】\n` +
-        `${knownAuthorsForLLM ? `${knownAuthorsForLLM}\n` : ''}` +
         `对方网名：${meta.name}\n` +
         `对方账号：${meta.handle}\n` +
         `对方主要语言：${peerLang}\n` +
         `用户：${meName}（${data.meHandle || xMakeHandle(meName)}）\n` +
         (peerCharacter
-          ? `【对方角色人设】\n${(peerCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 800)}\n` +
+          ? `${peerLore ? `【对方世界书（必须读）】\n${peerLore}\n\n` : ''}` + // 2. 世界书
+            `【对方角色人设】\n${(peerCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 800)}\n` + // 3. 角色人设
             `【对方与用户的关系】${peerCharacter.relationship || '（未设定）'}\n` +
-            `【对方世界书（如有，必须读）】\n${peerLore || '（无世界书）'}\n` +
             `【对方长期记忆摘要】\n${(peerCharacter as any).memorySummary || '（无）'}\n` +
             (() => {
               // 获取微信聊天上下文
@@ -1448,7 +1449,7 @@ ${chatFriendList}
         `- 这次输出 1~5 条新消息，每条一行\n` +
         `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
         `- 你是对方账号本人，不要代替用户说话，不要自称“用户/我”（除非在对话中指代自己）\n` +
-        `- 【必读】输出前必须阅读：对方角色人设/世界书/长期记忆/微信最近聊天/用户最近推文与评论；不得忽略世界书导致串戏。\n` +
+        `- 【必读】输出前必须阅读：叙事设置/世界书/角色人设/长期记忆/微信最近聊天/用户最近推文与评论；不得忽略世界书导致串戏。\n` +
         (peerLang === 'zh'
           ? `- 只输出对方消息正文，不要解释\n`
           : `- 必须使用对方主要语言输出\n- 每条都必须按这个格式输出：外语原文 ||| 中文翻译\n- 中文翻译必须是简体中文，只允许用 "|||" 作为分隔符\n`)
