@@ -86,21 +86,33 @@ export default function MusicScreen() {
   // 处理文件选择
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file) {
+      console.log('[MusicScreen] No file selected')
+      return
+    }
     e.target.value = '' // 重置input，允许重复选择同一文件
     
-    // 检查文件类型
-    const validTypes = ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/aac', 'audio/ogg', 'audio/webm']
-    const validExtensions = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.webm']
+    console.log('[MusicScreen] File selected:', file.name, 'Type:', file.type, 'Size:', file.size)
+    
+    // 检查文件类型（主要依赖扩展名，因为某些浏览器可能不识别MIME类型）
+    const validExtensions = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.webm', '.flac', '.opus']
     const fileName = file.name.toLowerCase()
     const fileType = file.type.toLowerCase()
     const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext))
-    const hasValidType = fileType && validTypes.some(t => fileType.includes(t))
+    
+    // 如果文件类型为空或未知，但扩展名有效，仍然允许（某些浏览器可能不识别MIME类型）
+    const hasValidType = fileType && (
+      fileType.startsWith('audio/') || 
+      ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/aac', 'audio/ogg', 'audio/webm'].some(t => fileType.includes(t))
+    )
     
     if (!hasValidExtension && !hasValidType) {
-      alert(`不支持的文件格式\n\n支持的格式：MP3、M4A、WAV、AAC、OGG、WEBM\n当前文件：${file.name}`)
+      console.error('[MusicScreen] Invalid file format:', file.name, file.type)
+      alert(`不支持的文件格式\n\n支持的格式：MP3、M4A、WAV、AAC、OGG、WEBM、FLAC、OPUS\n当前文件：${file.name}\n文件类型：${file.type || '未知'}`)
       return
     }
+    
+    console.log('[MusicScreen] File validation passed, reading file...')
     
     try {
       // 读取文件为data URL
@@ -108,36 +120,72 @@ export default function MusicScreen() {
       reader.onload = (event) => {
         const dataUrl = event.target?.result as string
         if (!dataUrl) {
+          console.error('[MusicScreen] Failed to read file as data URL')
           alert('读取文件失败，请重试')
           return
         }
+        
+        console.log('[MusicScreen] File read successfully, data URL length:', dataUrl.length)
         
         // 从文件名提取歌曲名（去掉扩展名）
         const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, '')
         
         // 创建音频元素获取时长
         const audio = new Audio(dataUrl)
+        let metadataLoaded = false
+        
         audio.onloadedmetadata = () => {
+          if (metadataLoaded) return // 防止重复触发
+          metadataLoaded = true
           const duration = Math.floor(audio.duration) || 180
+          console.log('[MusicScreen] Audio metadata loaded, duration:', duration)
           setImportSongName(fileNameWithoutExt)
           setImportSongArtist('本地音乐')
           setImportSongData({ url: dataUrl, duration, isUrl: false })
           setShowImportDialog(true)
         }
-        audio.onerror = () => {
-          // 如果无法获取时长，使用默认值
-          setImportSongName(fileNameWithoutExt)
-          setImportSongArtist('本地音乐')
-          setImportSongData({ url: dataUrl, duration: 180, isUrl: false })
-          setShowImportDialog(true)
+        
+        audio.onerror = (err) => {
+          console.error('[MusicScreen] Audio load error:', err)
+          // 即使无法加载音频元数据，也允许导入（可能是浏览器兼容性问题）
+          if (!metadataLoaded) {
+            metadataLoaded = true
+            setImportSongName(fileNameWithoutExt)
+            setImportSongArtist('本地音乐')
+            setImportSongData({ url: dataUrl, duration: 180, isUrl: false })
+            setShowImportDialog(true)
+          }
         }
+        
+        // 设置超时，如果5秒内无法加载元数据，也允许导入
+        setTimeout(() => {
+          if (!metadataLoaded) {
+            console.log('[MusicScreen] Metadata load timeout, proceeding with default duration')
+            metadataLoaded = true
+            setImportSongName(fileNameWithoutExt)
+            setImportSongArtist('本地音乐')
+            setImportSongData({ url: dataUrl, duration: 180, isUrl: false })
+            setShowImportDialog(true)
+          }
+        }, 5000)
       }
-      reader.onerror = () => {
+      
+      reader.onerror = (err) => {
+        console.error('[MusicScreen] FileReader error:', err)
         alert('读取文件失败，请重试')
       }
+      
+      reader.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100)
+          console.log('[MusicScreen] File reading progress:', percent + '%')
+        }
+      }
+      
       reader.readAsDataURL(file)
     } catch (err: any) {
-      alert(`导入失败：${err?.message || '未知错误'}`)
+      console.error('[MusicScreen] Import error:', err)
+      alert(`导入失败：${err?.message || '未知错误'}\n\n请检查文件是否损坏或格式是否正确。`)
     }
   }
 
