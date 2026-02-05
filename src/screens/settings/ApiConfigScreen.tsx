@@ -51,6 +51,14 @@ export default function ApiConfigScreen() {
     selectedModel: string
     models: string[]
     apiInterface?: LLMApiInterface
+    // 高级参数（可选，向后兼容）
+    advanced?: {
+      temperature: number
+      topP: number
+      maxTokens: number
+      frequencyPenalty: number
+      presencePenalty: number
+    }
   }
   
   // 从 localStorage 加载保存的 API 配置列表
@@ -81,6 +89,13 @@ export default function ApiConfigScreen() {
   const [editApiInterface, setEditApiInterface] = useState<LLMApiInterface>('openai_compatible')
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState('')
+  // 编辑时的高级参数状态
+  const [editTemperature, setEditTemperature] = useState(0.8)
+  const [editTopP, setEditTopP] = useState(0.95)
+  const [editMaxTokens, setEditMaxTokens] = useState(1000)
+  const [editFrequencyPenalty, setEditFrequencyPenalty] = useState(0)
+  const [editPresencePenalty, setEditPresencePenalty] = useState(0)
+  const [showEditAdvanced, setShowEditAdvanced] = useState(false)
   
   // LLM 配置状态
   const [baseUrl, setBaseUrl] = useState(llmConfig.apiBaseUrl)
@@ -120,6 +135,8 @@ export default function ApiConfigScreen() {
   
   // 高级选项展开状态
   const [showAdvanced, setShowAdvanced] = useState(false)
+  // 当前配置高级参数展开状态
+  const [showCurrentAdvanced, setShowCurrentAdvanced] = useState(false)
   
   // 音色克隆状态
   const [cloneLoading, setCloneLoading] = useState(false)
@@ -189,6 +206,14 @@ export default function ApiConfigScreen() {
     setEditModels(Array.isArray(config.models) ? config.models : [])
     setEditApiInterface((config.apiInterface as any) || 'openai_compatible')
     setEditError('')
+    // 加载高级参数：优先使用配置中保存的，否则使用全局默认值
+    const advConfig = config.advanced || getAdvancedConfig()
+    setEditTemperature(advConfig.temperature)
+    setEditTopP(advConfig.topP)
+    setEditMaxTokens(advConfig.maxTokens)
+    setEditFrequencyPenalty(advConfig.frequencyPenalty)
+    setEditPresencePenalty(advConfig.presencePenalty)
+    setShowEditAdvanced(false)
   }
 
   const fetchModelsForEdit = async () => {
@@ -231,10 +256,28 @@ export default function ApiConfigScreen() {
       selectedModel: editSelectedModel,
       models: editModels,
       apiInterface: editApiInterface,
+      // 保存高级参数
+      advanced: {
+        temperature: editTemperature,
+        topP: editTopP,
+        maxTokens: editMaxTokens,
+        frequencyPenalty: editFrequencyPenalty,
+        presencePenalty: editPresencePenalty,
+      },
     }
     const updated = savedConfigs.map(c => (c.id === editingConfigId ? updatedItem : c))
     setSavedConfigs(updated)
     saveSavedConfigs(updated)
+    // 保存高级参数到全局配置（如果正在使用）
+    if (currentConfigId === editingConfigId) {
+      saveAdvancedConfig({
+        temperature: editTemperature,
+        topP: editTopP,
+        maxTokens: editMaxTokens,
+        frequencyPenalty: editFrequencyPenalty,
+        presencePenalty: editPresencePenalty,
+      })
+    }
     // 如果正在使用的是这个配置：立即同步到全局配置
     if (currentConfigId === editingConfigId) {
       loadConfig(updatedItem)
@@ -254,6 +297,14 @@ export default function ApiConfigScreen() {
       selectedModel: modelToSave,
       models,
       apiInterface,
+      // 保存高级参数
+      advanced: {
+        temperature,
+        topP,
+        maxTokens,
+        frequencyPenalty,
+        presencePenalty,
+      },
     }
     const updated = [...savedConfigs, newConfig]
     setSavedConfigs(updated)
@@ -302,6 +353,16 @@ export default function ApiConfigScreen() {
     setApiInterface((config.apiInterface as any) || 'openai_compatible')
     setCurrentConfigId(config.id)
     localStorage.setItem('mina_current_api_config_id', config.id)
+    // 加载高级参数（如果配置中有保存）
+    if (config.advanced) {
+      setTemperature(config.advanced.temperature)
+      setTopP(config.advanced.topP)
+      setMaxTokens(config.advanced.maxTokens)
+      setFrequencyPenalty(config.advanced.frequencyPenalty)
+      setPresencePenalty(config.advanced.presencePenalty)
+      // 保存到全局配置
+      saveAdvancedConfig(config.advanced)
+    }
     // 同时更新到全局配置
     setLLMConfig({ 
       apiBaseUrl: config.baseUrl, 
@@ -562,6 +623,86 @@ export default function ApiConfigScreen() {
               </div>
             </div>
             
+            {/* 当前使用的配置（卡片式） */}
+            {currentConfigId && (() => {
+              const currentConfig = savedConfigs.find(c => c.id === currentConfigId)
+              if (!currentConfig) return null
+              return (
+                <div className="bg-gradient-to-br from-green-50/80 to-emerald-50/60 rounded-xl p-4 border border-green-200/50 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-600 text-lg">✓</span>
+                      <span className="text-sm font-semibold" style={{ color: fontColor.value }}>
+                        当前使用的配置
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditConfig(currentConfig)}
+                        className="text-xs px-2 py-1 rounded-lg bg-white/60 hover:bg-white/80 text-blue-600 font-medium"
+                      >
+                        编辑
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="opacity-60 w-16" style={{ color: fontColor.value }}>配置名称：</span>
+                      <span className="font-medium" style={{ color: fontColor.value }}>{currentConfig.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="opacity-60 w-16" style={{ color: fontColor.value }}>接口类型：</span>
+                      <span style={{ color: fontColor.value }}>
+                        {currentConfig.apiInterface === 'openai_compatible' ? 'OpenAI 兼容' :
+                         currentConfig.apiInterface === 'anthropic_native' ? 'Claude 原生' :
+                         currentConfig.apiInterface === 'gemini_native' ? 'Gemini 原生' :
+                         currentConfig.apiInterface === 'ollama' ? 'Ollama 本地' : 'OpenAI 兼容'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="opacity-60 w-16" style={{ color: fontColor.value }}>Base URL：</span>
+                      <span className="truncate font-mono text-[10px]" style={{ color: fontColor.value }}>
+                        {currentConfig.baseUrl}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="opacity-60 w-16" style={{ color: fontColor.value }}>API Key：</span>
+                      <span className="font-mono text-[10px]" style={{ color: fontColor.value }}>
+                        {currentConfig.apiKey.slice(0, 8)}...{currentConfig.apiKey.slice(-4)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="opacity-60 w-16" style={{ color: fontColor.value }}>模型：</span>
+                      <span className="font-medium" style={{ color: fontColor.value }}>
+                        {currentConfig.selectedModel || '未选择'}
+                      </span>
+                    </div>
+                    {currentConfig.advanced && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCurrentAdvanced(!showCurrentAdvanced)
+                        }}
+                        className="mt-2 text-xs px-2 py-1 rounded-lg bg-white/60 hover:bg-white/80 text-gray-600"
+                      >
+                        {showCurrentAdvanced ? '收起' : '查看'}高级参数
+                      </button>
+                    )}
+                    {showCurrentAdvanced && currentConfig.advanced && (
+                      <div className="mt-2 pt-2 border-t border-green-200/50 space-y-1 text-[10px]">
+                        <div>温度：{currentConfig.advanced.temperature.toFixed(2)}</div>
+                        <div>Top P：{currentConfig.advanced.topP.toFixed(2)}</div>
+                        <div>最大长度：{currentConfig.advanced.maxTokens}</div>
+                        <div>频率惩罚：{currentConfig.advanced.frequencyPenalty.toFixed(1)}</div>
+                        <div>存在惩罚：{currentConfig.advanced.presencePenalty.toFixed(1)}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+            
             {/* 我的 API 配置列表 */}
             {savedConfigs.length > 0 && (
               <div className="space-y-2">
@@ -599,6 +740,15 @@ export default function ApiConfigScreen() {
                           {config.selectedModel || config.baseUrl}
                         </div>
                       </button>
+                      {currentConfigId !== config.id && (
+                        <button
+                          type="button"
+                          onClick={() => loadConfig(config)}
+                          className="flex-shrink-0 whitespace-nowrap text-blue-500 text-xs px-2 py-1 hover:text-blue-700"
+                        >
+                          使用
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => openEditConfig(config)}
@@ -1422,6 +1572,156 @@ export default function ApiConfigScreen() {
                 </div>
               )}
 
+              {/* 高级参数（折叠） */}
+              <div className="pt-2 border-t border-black/10">
+                <button
+                  type="button"
+                  onClick={() => setShowEditAdvanced(!showEditAdvanced)}
+                  className="w-full flex items-center justify-between py-2 text-xs opacity-60 hover:opacity-80 transition-opacity"
+                  style={{ color: fontColor.value }}
+                >
+                  <span>⚙️ 高级参数（{showEditAdvanced ? '点击收起' : '点击展开'}）</span>
+                  <svg 
+                    className={`w-4 h-4 transition-transform ${showEditAdvanced ? 'rotate-180' : ''}`} 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {showEditAdvanced && (
+                  <div className="space-y-3 pt-2">
+                    {/* 温度 */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs opacity-60" style={{ color: fontColor.value }}>温度 (Temperature)</label>
+                        <span className="text-xs font-mono bg-white/30 px-2 py-0.5 rounded" style={{ color: fontColor.value }}>
+                          {editTemperature.toFixed(2)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.05"
+                        value={editTemperature}
+                        onChange={(e) => setEditTemperature(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] opacity-40" style={{ color: fontColor.value }}>
+                        <span>稳定 0</span>
+                        <span>平衡 1</span>
+                        <span>创意 2</span>
+                      </div>
+                    </div>
+                    
+                    {/* Top P */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs opacity-60" style={{ color: fontColor.value }}>Top P</label>
+                        <span className="text-xs font-mono bg-white/30 px-2 py-0.5 rounded" style={{ color: fontColor.value }}>
+                          {editTopP.toFixed(2)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={editTopP}
+                        onChange={(e) => setEditTopP(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] opacity-40" style={{ color: fontColor.value }}>
+                        <span>精确 0</span>
+                        <span>推荐 0.95</span>
+                        <span>多样 1</span>
+                      </div>
+                    </div>
+                    
+                    {/* 最大回复长度 */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs opacity-60" style={{ color: fontColor.value }}>最大回复长度</label>
+                        <span className="text-xs font-mono bg-white/30 px-2 py-0.5 rounded" style={{ color: fontColor.value }}>
+                          {editMaxTokens}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="100"
+                        max="4000"
+                        step="100"
+                        value={editMaxTokens}
+                        onChange={(e) => setEditMaxTokens(parseInt(e.target.value))}
+                        className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] opacity-40" style={{ color: fontColor.value }}>
+                        <span>简短 100</span>
+                        <span>适中 1000</span>
+                        <span>详细 4000</span>
+                      </div>
+                    </div>
+                    
+                    {/* 频率惩罚 */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs opacity-60" style={{ color: fontColor.value }}>频率惩罚（减少重复）</label>
+                        <span className="text-xs font-mono bg-white/30 px-2 py-0.5 rounded" style={{ color: fontColor.value }}>
+                          {editFrequencyPenalty.toFixed(1)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={editFrequencyPenalty}
+                        onChange={(e) => setEditFrequencyPenalty(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                    
+                    {/* 存在惩罚 */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs opacity-60" style={{ color: fontColor.value }}>存在惩罚（鼓励新话题）</label>
+                        <span className="text-xs font-mono bg-white/30 px-2 py-0.5 rounded" style={{ color: fontColor.value }}>
+                          {editPresencePenalty.toFixed(1)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={editPresencePenalty}
+                        onChange={(e) => setEditPresencePenalty(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                    
+                    {/* 重置默认 */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditTemperature(0.8)
+                        setEditTopP(0.95)
+                        setEditMaxTokens(1000)
+                        setEditFrequencyPenalty(0)
+                        setEditPresencePenalty(0)
+                      }}
+                      className="w-full py-2 rounded-xl bg-white/30 text-xs hover:bg-white/40 transition-colors"
+                      style={{ color: fontColor.value }}
+                    >
+                      重置为默认参数
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
@@ -1435,7 +1735,7 @@ export default function ApiConfigScreen() {
                   onClick={saveEditedConfig}
                   className="flex-1 py-2.5 rounded-xl bg-[#07C160] text-[13px] font-semibold text-white active:scale-[0.99]"
                 >
-                  保存
+                  保存配置
                 </button>
               </div>
             </div>
