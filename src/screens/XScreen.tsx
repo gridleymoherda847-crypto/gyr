@@ -5,7 +5,7 @@ import AppHeader from '../components/AppHeader'
 import { useOS } from '../context/OSContext'
 import { useWeChat } from '../context/WeChatContext'
 import WeChatDialog from './wechat/components/WeChatDialog'
-import { getGlobalPresets } from './PresetScreen'
+import { getGlobalPresets, getLorebookEntriesForCharacter } from './PresetScreen'
 import { compressImageFileToDataUrl } from '../utils/image'
 import {
   xEnsureUser,
@@ -428,6 +428,34 @@ export default function XScreen() {
     return globalPresets ? `${globalPresets}\n\n` : ''
   }
 
+  // 重要：当“聊天好友/已创建的角色”在 X 里发帖/私信时，必须读TA自己的人设与世界书，避免串戏
+  // 这里给模型一个“已存在作者池”的强约束提示：只要选用这些作者名，就必须按对应设定写作。
+  const knownAuthorsForLLM = useMemo(() => {
+    const list = (characters || [])
+      .filter((c) => !!c?.id && !!c?.name)
+      .slice(0, 10) // 控制提示词长度，避免过长导致截断
+      .map((c) => {
+        const prompt = String(c.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 260)
+        const rel = String(c.relationship || '').trim()
+        const lore = String(getLorebookEntriesForCharacter(c.id, 'X 推特 发推文 私信')).trim().slice(0, 900)
+        const handle = String((c as any).xHandle || '').trim()
+        return (
+          `- 作者名：${c.name}${handle ? `（${handle}）` : ''}\n` +
+          `  人设：${prompt || '（无）'}\n` +
+          `  与用户关系：${rel || '（未设定）'}\n` +
+          `  世界书：${lore || '（无世界书）'}`
+        )
+      })
+      .filter(Boolean)
+    if (list.length === 0) return ''
+    return (
+      `【已存在的聊天好友作者池（硬性规则）】\n` +
+      `- 如果你在输出里选用了下面任意“作者名”，你必须先阅读该作者的人设与世界书，并用TA的口吻写推文/私信。\n` +
+      `- 严禁串戏：不能把A的人设写到B身上。\n` +
+      `${list.join('\n')}\n`
+    )
+  }, [characters])
+
   const withLoading = async (stage: string, fn: () => Promise<void>) => {
     if (refreshLockRef.current) return
     refreshLockRef.current = true
@@ -515,6 +543,7 @@ export default function XScreen() {
       const sys =
         sysPrefix() +
         `【X（推特风格）/首页信息流生成】\n` +
+        `${knownAuthorsForLLM ? `${knownAuthorsForLLM}\n` : ''}` +
         `你要生成一些“像真的推特/X”的帖子（短为主，偶尔长一点）。\n` +
         `要求（重要，必须遵守）：\n` +
         `- 每次生成 ${want} 条\n` +
@@ -522,6 +551,9 @@ export default function XScreen() {
         `- 风格必须有明显差异：吐槽/阴阳怪气/梗/碎碎念/认真科普/一句话问号/冷幽默/新闻搬运 等至少 6 种\n` +
         `- 可以带情绪与脏话，但严禁辱女/性羞辱词汇\n` +
         `- 不要出现违法内容、未成年人性内容、极端仇恨\n` +
+        (knownAuthorsForLLM
+          ? `- 【作者一致性】当 authorName 取自“已存在的聊天好友作者池”时，text 必须严格符合该作者的人设与世界书（口吻/背景/关系）。\n`
+          : '') +
         `- 作者名字必须多样：至少 30% 非中文（英文/日文/韩文/混合都可以）\n` +
         // 关键：非中文内容强制带翻译（展示为“原文（中文）”）
         `- 【翻译强制】如果某条 text 不是中文（或主要为外语），必须输出为：外语原文（简体中文翻译）\n` +
@@ -1369,6 +1401,9 @@ ${chatFriendList}
       const recent = (thread.messages || []).slice(-16).map((m) => ({ role: m.from === 'me' ? 'user' : 'assistant', content: m.text }))
       const peerCharacter = characters.find((c) => c.id === thread.peerId)
       const peerLang = peerCharacter ? mapWeChatLang((peerCharacter as any).language) : normalizeLang((meta as any).lang)
+      const peerLore = peerCharacter
+        ? String(getLorebookEntriesForCharacter(peerCharacter.id, 'X 私信')).trim().slice(0, 1200)
+        : ''
       const myRecentPosts = (data.posts || [])
         .filter((p) => p.authorId === 'me')
         .slice(0, 6)
@@ -1382,6 +1417,7 @@ ${chatFriendList}
       const sys =
         sysPrefix() +
         `【X（推特风格）/私信会话】\n` +
+        `${knownAuthorsForLLM ? `${knownAuthorsForLLM}\n` : ''}` +
         `对方网名：${meta.name}\n` +
         `对方账号：${meta.handle}\n` +
         `对方主要语言：${peerLang}\n` +
@@ -1389,6 +1425,7 @@ ${chatFriendList}
         (peerCharacter
           ? `【对方角色人设】\n${(peerCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 800)}\n` +
             `【对方与用户的关系】${peerCharacter.relationship || '（未设定）'}\n` +
+            `【对方世界书（如有，必须读）】\n${peerLore || '（无世界书）'}\n` +
             `【对方长期记忆摘要】\n${(peerCharacter as any).memorySummary || '（无）'}\n` +
             (() => {
               // 获取微信聊天上下文
@@ -1411,6 +1448,7 @@ ${chatFriendList}
         `- 这次输出 1~5 条新消息，每条一行\n` +
         `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
         `- 你是对方账号本人，不要代替用户说话，不要自称“用户/我”（除非在对话中指代自己）\n` +
+        `- 【必读】输出前必须阅读：对方角色人设/世界书/长期记忆/微信最近聊天/用户最近推文与评论；不得忽略世界书导致串戏。\n` +
         (peerLang === 'zh'
           ? `- 只输出对方消息正文，不要解释\n`
           : `- 必须使用对方主要语言输出\n- 每条都必须按这个格式输出：外语原文 ||| 中文翻译\n- 中文翻译必须是简体中文，只允许用 "|||" 作为分隔符\n`)
