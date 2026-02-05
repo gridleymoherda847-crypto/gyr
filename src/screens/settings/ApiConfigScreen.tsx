@@ -86,6 +86,8 @@ export default function ApiConfigScreen() {
   const [baseUrl, setBaseUrl] = useState(llmConfig.apiBaseUrl)
   const [apiKey, setApiKey] = useState(llmConfig.apiKey)
   const [selectedModel, setSelectedModel] = useState(llmConfig.selectedModel)
+  // 用 ref 保证“保存时”读取到的一定是用户最后选择的模型（移动端 select 有时会出现视觉已变但 state 未及时落地）
+  const selectedModelRef = useRef<string>(llmConfig.selectedModel || '')
   const [models, setModels] = useState<string[]>(llmConfig.availableModels)
   const [apiInterface, setApiInterface] = useState<LLMApiInterface>(llmConfig.apiInterface || 'openai_compatible')
   const [loading, setLoading] = useState(false)
@@ -161,6 +163,12 @@ export default function ApiConfigScreen() {
     try {
       const modelList = await fetchAvailableModels({ apiBaseUrl: baseUrl, apiKey, apiInterface })
       setModels(modelList)
+      // 如果当前选中的模型不在新列表里，清空，避免“保存时沿用上一次的模型”
+      const cur = selectedModelRef.current || selectedModel
+      if (cur && !modelList.includes(cur)) {
+        selectedModelRef.current = ''
+        setSelectedModel('')
+      }
     } catch (err: any) {
       const raw = String(err?.message || err || '')
       const hint =
@@ -237,12 +245,13 @@ export default function ApiConfigScreen() {
   // 保存当前配置为新条目
   const handleSaveAsConfig = () => {
     if (!newConfigName.trim() || !baseUrl.trim() || !apiKey.trim()) return
+    const modelToSave = (selectedModelRef.current || selectedModel || '').trim()
     const newConfig: ApiConfigItem = {
       id: `config_${Date.now()}`,
       name: newConfigName.trim(),
       baseUrl,
       apiKey,
-      selectedModel,
+      selectedModel: modelToSave,
       models,
       apiInterface,
     }
@@ -255,7 +264,7 @@ export default function ApiConfigScreen() {
     setLLMConfig({ 
       apiBaseUrl: baseUrl, 
       apiKey, 
-      selectedModel, 
+      selectedModel: modelToSave, 
       availableModels: models,
       apiInterface,
     })
@@ -265,6 +274,7 @@ export default function ApiConfigScreen() {
     setNewConfigName('')
     setBaseUrl('')
     setApiKey('')
+    selectedModelRef.current = ''
     setSelectedModel('')
     setModels([])
     // 显示保存成功
@@ -286,6 +296,7 @@ export default function ApiConfigScreen() {
   const loadConfig = (config: ApiConfigItem) => {
     setBaseUrl(config.baseUrl)
     setApiKey(config.apiKey)
+    selectedModelRef.current = config.selectedModel || ''
     setSelectedModel(config.selectedModel)
     setModels(config.models)
     setApiInterface((config.apiInterface as any) || 'openai_compatible')
@@ -701,7 +712,16 @@ export default function ApiConfigScreen() {
               <div className="space-y-2">
                 <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
                 <div className="relative">
-                  <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base" style={{ color: fontColor.value }}>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      selectedModelRef.current = v
+                      setSelectedModel(v)
+                    }}
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base"
+                    style={{ color: fontColor.value }}
+                  >
                     <option value="" disabled>请选择模型</option>
                     {models.map((model) => <option key={model} value={model}>{model}</option>)}
                   </select>

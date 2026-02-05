@@ -791,7 +791,28 @@ export default function ChatScreen() {
             const t = (s || '').trim()
             if (!t) return true
             // 允许句末带引号/括号
-            return /[。！？!?…~～](?:["'”’）)\]]*)?$/.test(t)
+            return /[。！？!?…~～\.](?:["'”’）)\]]*)?$/.test(t)
+          }
+
+          // 如果要拆成多条气泡：尽量保证“上一条末尾有标点”，避免看起来像没说完
+          const appendEndPunct = (s: string) => {
+            const t = (s || '').trim()
+            if (!t) return t
+            if (keepCmd(t) || isSentenceEnd(t)) return t
+            // 避免给纯 emoji 乱加标点
+            const lastChar = t.slice(-1)
+            if (/\p{Extended_Pictographic}/u.test(lastChar)) return t
+            // 把尾部的引号/括号拆出来，把标点插到它们前面
+            const m = t.match(/^(.*?)(["'”’）)\]]*)$/)
+            const base = (m?.[1] ?? t).trimEnd()
+            const tail = m?.[2] ?? ''
+            if (!base) return t
+
+            const isZh = characterLanguage === 'zh'
+            const punct = isZh
+              ? (/[吗嘛呢么]$/.test(base) ? '？' : '。')
+              : '.'
+            return `${base}${punct}${tail}`
           }
 
           const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
@@ -824,7 +845,13 @@ export default function ChatScreen() {
           let expanded: string[] = []
           for (const m of merged) expanded.push(...splitOutImageTokens(m))
           expanded = dedupeConsecutive(expanded)
-          return expanded.filter(Boolean).slice(0, 15)
+          const trimmed = expanded.filter(Boolean).slice(0, 15)
+          if (trimmed.length <= 1) return trimmed
+          const withPunct = trimmed.slice()
+          for (let i = 0; i < withPunct.length - 1; i++) {
+            withPunct[i] = appendEndPunct(withPunct[i])
+          }
+          return withPunct
         }
 
         // 线上模式：强制剥离“思维链/分析段落”，避免少数模型/中转仍然输出思考内容
@@ -3187,7 +3214,23 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
         const isSentenceEnd = (s: string) => {
           const t = (s || '').trim()
           if (!t) return true
-          return /[。！？!?…~～](?:["'”’）)\]]*)?$/.test(t)
+          return /[。！？!?…~～\.](?:["'”’）)\]]*)?$/.test(t)
+        }
+
+        const appendEndPunct = (s: string) => {
+          const t = (s || '').trim()
+          if (!t) return t
+          if (keepCmd(t) || isSentenceEnd(t)) return t
+          const lastChar = t.slice(-1)
+          if (/\p{Extended_Pictographic}/u.test(lastChar)) return t
+          const m = t.match(/^(.*?)(["'”’）)\]]*)$/)
+          const base = (m?.[1] ?? t).trimEnd()
+          const tail = m?.[2] ?? ''
+          if (!base) return t
+          const punct = characterLanguage === 'zh'
+            ? (/[吗嘛呢么]$/.test(base) ? '？' : '。')
+            : '.'
+          return `${base}${punct}${tail}`
         }
 
         const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
@@ -3214,7 +3257,13 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
           }
         }
 
-        return merged.filter(Boolean).slice(0, 15)
+        const trimmed = merged.filter(Boolean).slice(0, 15)
+        if (trimmed.length <= 1) return trimmed
+        const withPunct = trimmed.slice()
+        for (let i = 0; i < withPunct.length - 1; i++) {
+          withPunct[i] = appendEndPunct(withPunct[i])
+        }
+        return withPunct
       }
       // 获取全局预设
       const globalPresets = getGlobalPresets()
