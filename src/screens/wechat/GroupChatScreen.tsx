@@ -383,7 +383,14 @@ export default function GroupChatScreen() {
     }).join('\n') : ''
     
     // 严格按照顺序：1.叙事设置 2.世界书 3.角色人设 4.上下文
-    let prompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lorebookEntries ? '【世界书/背景设定】\n' + lorebookEntries + '\n\n' : ''}【群聊成员人设】
+    let prompt =
+      `${globalPresets ? globalPresets + '\n\n' : ''}` +
+      `${lorebookEntries ? '【世界书/背景设定】\n' + lorebookEntries + '\n\n' : ''}` +
+      `【最高优先级规则（必须读，必须执行）】\n` +
+      `- “创作工坊提示词/叙事设置”与“世界书”是最高优先级约束，优先级高于成员人设与任何后续聊天。\n` +
+      `- 如果世界书/创作工坊与成员人设或群聊上下文冲突：以世界书/创作工坊为准。\n` +
+      `- 回复前必须先通读：创作工坊提示词 → 世界书 → 成员人设/关系网 → 群聊上下文。\n\n` +
+      `【群聊成员人设】
 ${memberProfiles}
 
 ${relationsText ? '【关系网（必读，影响成员间互动方式）】\n' + relationsText + '\n\n' : ''}【群聊信息】

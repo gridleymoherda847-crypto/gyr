@@ -1037,6 +1037,9 @@ export function OSProvider({ children }: PropsWithChildren) {
   const textToSpeech = async (text: string): Promise<string | null> => {
     if (!ttsConfig.enabled || !ttsConfig.apiKey || !text.trim()) return null
     
+    const controller = new AbortController()
+    const timeoutMs = 45_000
+    const t = window.setTimeout(() => controller.abort(), timeoutMs)
     try {
       const baseUrl = getTTSBaseUrl()
       const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
@@ -1045,6 +1048,7 @@ export function OSProvider({ children }: PropsWithChildren) {
           'Authorization': `Bearer ${ttsConfig.apiKey}`,
           'Content-Type': 'application/json',
         },
+        signal: controller.signal,
         body: JSON.stringify({
           model: ttsConfig.model || 'speech-02-turbo',
           text: text.slice(0, 1000), // 限制长度避免费用过高
@@ -1064,7 +1068,6 @@ export function OSProvider({ children }: PropsWithChildren) {
           output_format: 'url',  // 返回 URL 格式，更方便播放
         }),
       })
-      
       if (!response.ok) {
         console.error('TTS API error:', response.status)
         return null
@@ -1089,8 +1092,14 @@ export function OSProvider({ children }: PropsWithChildren) {
       
       return null
     } catch (err) {
+      if ((err as any)?.name === 'AbortError') {
+        console.error('TTS timeout')
+        return null
+      }
       console.error('TTS failed:', err)
       return null
+    } finally {
+      window.clearTimeout(t)
     }
   }
   

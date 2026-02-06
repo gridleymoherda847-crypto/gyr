@@ -425,7 +425,14 @@ export default function XScreen() {
 
   const sysPrefix = () => {
     const globalPresets = getGlobalPresets()
-    return globalPresets ? `${globalPresets}\n\n` : ''
+    const prefix = globalPresets ? `${globalPresets}\n\n` : ''
+    return (
+      prefix +
+      `【最高优先级规则（必须读，必须执行）】\n` +
+      `- “创作工坊提示词/叙事设置”与“世界书”是最高优先级约束，优先级高于任何作者人设与后续指令。\n` +
+      `- 如果世界书/创作工坊与作者人设或生成要求冲突：以世界书/创作工坊为准。\n` +
+      `- 输出前必须先通读：创作工坊提示词 → 世界书/作者池设定 → 作者人设/长期记忆 → 上下文。\n\n`
+    )
   }
 
   // 重要：当“聊天好友/已创建的角色”在 X 里发帖/私信时，必须读TA自己的人设与世界书，避免串戏
@@ -452,6 +459,7 @@ export default function XScreen() {
     return (
       `【已存在的聊天好友作者池（硬性规则）】\n` +
       `- 如果你在输出里选用了下面任意“作者名”，你必须先阅读该作者的人设与世界书，并用TA的口吻写推文/私信。\n` +
+      `- 优先级：世界书（备注/关键词/背景设定） > 人设；如有冲突，以世界书为准。\n` +
       `- 严禁串戏：不能把A的人设写到B身上。\n` +
       `${list.join('\n')}\n`
     )

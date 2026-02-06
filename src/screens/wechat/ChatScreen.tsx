@@ -620,6 +620,9 @@ export default function ChatScreen() {
     const voiceId = character?.voiceId || ttsConfig.voiceId
     if (!voiceId || !ttsConfig.apiKey) return null
     
+    const controller = new AbortController()
+    const timeoutMs = 45_000
+    const t = window.setTimeout(() => controller.abort(), timeoutMs)
     try {
       const baseUrl = ttsConfig.region === 'global' 
         ? 'https://api.minimax.chat' 
@@ -630,6 +633,7 @@ export default function ChatScreen() {
           'Authorization': `Bearer ${ttsConfig.apiKey}`,
           'Content-Type': 'application/json',
         },
+        signal: controller.signal,
         body: JSON.stringify({
           model: ttsConfig.model || 'speech-02-turbo',
           text: text.slice(0, 500),
@@ -665,8 +669,32 @@ export default function ChatScreen() {
     } catch (err) {
       console.error('Voice generation failed:', err)
       return null
+    } finally {
+      window.clearTimeout(t)
     }
   }, [character?.voiceId, ttsConfig])
+
+  const voiceGenLockRef = useRef<Record<string, boolean>>({})
+  const regenVoiceForMsg = useCallback(async (msgId: string, text: string) => {
+    if (!msgId || !text) return
+    if (voiceGenLockRef.current[msgId]) return
+    voiceGenLockRef.current[msgId] = true
+    try {
+      updateMessage(msgId, { voiceStatus: 'pending', voiceError: '' })
+      const url = await generateVoiceUrl(text)
+      if (!url) {
+        updateMessage(msgId, {
+          voiceStatus: 'error',
+          voiceError: '语音生成失败：可能是网络/跨域拦截，或 MiniMax 服务波动。可稍后重试。',
+          voiceUrl: undefined as any,
+        })
+        return
+      }
+      updateMessage(msgId, { voiceUrl: url, voiceStatus: 'ready', voiceError: '' })
+    } finally {
+      voiceGenLockRef.current[msgId] = false
+    }
+  }, [generateVoiceUrl, updateMessage])
   
   // 当前播放的语音消息ID
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null)
@@ -697,6 +725,18 @@ export default function ChatScreen() {
     audio.onerror = () => {
       setPlayingVoiceId(null)
       audioRef.current = null
+      // 播放失败时，把状态标成 error，避免用户以为“点了没声音”
+      try {
+        const m = messages.find(x => x.id === messageId)
+        const text = String(m?.voiceOriginalText || '').trim()
+        updateMessage(messageId, { voiceStatus: 'error', voiceError: '播放失败：音频链接可能过期或被拦截。点此可重试生成。' })
+        // 如果有原文，允许用户点一下语音条重试生成
+        if (text) {
+          // 不在这里自动重试，避免无止境刷接口；交给点击触发
+        }
+      } catch {
+        // ignore
+      }
     }
     audio.play().catch(() => {
       setPlayingVoiceId(null)
@@ -1474,7 +1514,14 @@ export default function ChatScreen() {
           }
         })()
 
-        let systemPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lorebookEntries ? lorebookEntries + '\n\n' : ''}【角色信息】
+        let systemPrompt =
+          `${globalPresets ? globalPresets + '\n\n' : ''}` +
+          `${lorebookEntries ? lorebookEntries + '\n\n' : ''}` +
+          `【最高优先级规则（必须读，必须执行）】\n` +
+          `- “创作工坊提示词/叙事设置”与“世界书”是最高优先级约束，优先级高于【角色人设】与任何后续对话。\n` +
+          `- 如果世界书/创作工坊与角色人设或聊天上下文冲突：以世界书/创作工坊为准；不要说“我没看到/我不确定”。\n` +
+          `- 回复前必须先通读：创作工坊提示词 → 世界书 → 角色信息/用户人设 → 长期记忆摘要 → 当前对话。\n\n` +
+          `【角色信息】
 你的名字：${character.name}
 你的性别：${character.gender === 'male' ? '男性' : character.gender === 'female' ? '女性' : '其他'}
 你的人设：${character.prompt || '（未设置）'}
@@ -2526,16 +2573,17 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                   voiceText: isChinese ? textContent : (dualZh ? `${textContent}（${dualZh}）` : textContent),
                   voiceOriginalText: textContent, // 原文（用于TTS朗读）
                   voiceDuration: voiceDuration,
-                  voiceUrl: '', // 先为空，异步填充
+                  voiceUrl: undefined as any, // 先不提供，避免“永远转圈”
+                  voiceStatus: 'pending',
+                  voiceError: '',
                   messageLanguage: characterLanguage,
                 })
                 
                 // 异步生成语音URL（用原文生成语音）
                 ;(async () => {
                   const url = await generateVoiceUrl(textContent)
-                  if (url) {
-                    updateMessage(voiceMsg.id, { voiceUrl: url })
-                  }
+                  if (url) updateMessage(voiceMsg.id, { voiceUrl: url, voiceStatus: 'ready', voiceError: '' })
+                  else updateMessage(voiceMsg.id, { voiceStatus: 'error', voiceError: '语音生成失败：可能是网络/跨域拦截，点语音条可重试。' })
                 })()
                 
                 // 如果是外文，异步翻译并更新显示文字（无论是否开启翻译模式，语音转文字都带中文翻译）
@@ -4562,12 +4610,20 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
       // 获取用户的名字（对方叫我什么）
       const userName = character.callMeName || selectedPersona?.name || '那个人'
+      const recentContext = messages.slice(-12).map(m => String(m.content || '')).join(' ')
+      const lorebookEntries = getLorebookEntriesForCharacter(character.id, `${recentContext} 日记 偷看 私密日记`)
       
       const personaText = selectedPersona
         ? `【和你聊天的那个人】\n- 名字：${selectedPersona.name}\n- 描述：${selectedPersona.description || '（无）'}\n`
         : '【和你聊天的那个人】（未知）\n'
 
-      const system = `${globalPresets ? globalPresets + '\n\n' : ''}` +
+      const system =
+        `${globalPresets ? globalPresets + '\n\n' : ''}` +
+        `${lorebookEntries ? lorebookEntries + '\n\n' : ''}` +
+        `【最高优先级规则（必须读，必须执行）】\n` +
+        `- “创作工坊提示词/叙事设置”与“世界书”是最高优先级约束，优先级高于【角色人设】。\n` +
+        `- 如果世界书/创作工坊与角色人设或聊天片段冲突：以世界书/创作工坊为准。\n` +
+        `- 写作前必须先通读：创作工坊提示词 → 世界书 → 角色信息/用户信息 → 长期记忆 → 聊天片段。\n\n` +
         `##############################################\n` +
         `#  【重要】你是 ${character.name}，这是你的私人日记  #\n` +
         `##############################################\n\n` +
@@ -5342,7 +5398,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     if (msg.type === 'voice') {
       const duration = msg.voiceDuration || 3
       const isPlaying = playingVoiceId === msg.id
-      const hasUrl = !!msg.voiceUrl
+      const status = (() => {
+        const explicit = (msg as any).voiceStatus
+        if (explicit) return explicit
+        // 兼容旧数据：曾经用 '' 表示“生成中”，但如果一直没写回就会永远转圈
+        if (msg.voiceUrl === '') return 'error'
+        return msg.voiceUrl ? 'ready' : 'pending'
+      })()
+      const hasUrl = status === 'ready' && !!msg.voiceUrl
       const isFake = msg.isUser && !hasUrl && !!msg.voiceText
       // 虚拟语音：外观对齐“对方语音条”（白底），但消息位置仍然由外层布局决定（用户在右）
       const styleAsUser = msg.isUser && !isFake
@@ -5358,18 +5421,25 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             onClick={() => {
               if (hasUrl && msg.voiceUrl) {
                 playVoiceMessage(msg.id, msg.voiceUrl)
+              } else if (!msg.isUser && status === 'error') {
+                const raw = String(msg.voiceOriginalText || '').trim()
+                if (!raw) {
+                  setInfoDialog({ open: true, title: '语音不可重试', message: '找不到原文内容，无法重新生成语音。' })
+                  return
+                }
+                void regenVoiceForMsg(msg.id, raw)
               }
             }}
-            disabled={!hasUrl}
+            disabled={(!hasUrl && status !== 'error') || isFake}
             className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-transform active:scale-[0.98] ${
               styleAsUser
                 ? 'bg-green-500 text-white'
                 : 'bg-white text-gray-800 shadow-sm border border-gray-100'
-            } ${(!hasUrl && !isFake) ? 'opacity-60' : ''}`}
+            } ${(!hasUrl && !isFake) ? 'opacity-70' : ''}`}
             style={{ width: barWidth }}
           >
             {/* 播放/加载图标 - 播放按钮改为白色圆形 */}
-            {!hasUrl ? (
+            {status !== 'ready' ? (
               isFake ? (
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                   styleAsUser ? 'bg-white/20' : 'bg-gray-100'
@@ -5379,7 +5449,15 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                   </svg>
                 </div>
               ) : (
-                <div className="w-8 h-8 rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0" />
+                status === 'error' ? (
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    styleAsUser ? 'bg-white/20' : 'bg-red-50 border border-red-200'
+                  }`}>
+                    <span className={`${styleAsUser ? 'text-white' : 'text-red-600'} text-[12px] font-bold`}>!</span>
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0" />
+                )
               )
             ) : isPlaying ? (
               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -5422,6 +5500,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               {duration}"
             </span>
           </button>
+
+          {status === 'error' && !msg.isUser && (
+            <div className="mt-2 px-3 py-2 rounded-xl text-[12px] bg-red-50/80 border border-red-200 text-red-700 whitespace-pre-wrap">
+              {String((msg as any).voiceError || '语音生成/播放失败，点语音条可重试生成。')}
+            </div>
+          )}
           
           {/* 语音转文字（展开） */}
           {msg.voiceText && (

@@ -174,6 +174,8 @@ export type WeChatMessage = {
   voiceOriginalText?: string // 语音原文（用于TTS朗读，非中文语言时存储原文）
   voiceDuration?: number // 语音时长（秒）
   voiceUrl?: string // 语音文件URL（用于播放）
+  voiceStatus?: 'pending' | 'ready' | 'error' // 语音生成状态：生成中/可播放/失败（避免一直转圈）
+  voiceError?: string // 失败原因（可选）
   
   // 消息引用相关
   replyTo?: {
