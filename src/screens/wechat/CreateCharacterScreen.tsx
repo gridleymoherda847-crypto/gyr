@@ -266,7 +266,7 @@ export default function CreateCharacterScreen() {
           </div>
 
           <div className="p-4 text-center text-xs text-gray-400">
-            语言决定 TA 的聊天语言；若不是中文，聊天气泡会自动显示“翻译”中文。
+            语言决定 TA 的聊天语言；切换为非中文后，聊天气泡会自动显示中文翻译（无需手动开启）。
           </div>
         </div>
       </div>
@@ -284,11 +284,10 @@ export default function CreateCharacterScreen() {
         open={langDialog.open}
         title="语言提示"
         message={
-          '你选择了中文以外的语言，以下界面有内置翻译：聊天/推特/朋友圈/线下模式\n' +
-          '- 该角色的聊天/日记/朋友圈/情侣空间都会用此语言输出\n' +
-          '- 只有“聊天对话框”可内置翻译；其他界面请用浏览器翻译\n' +
-          '\n' +
-          '要不要开启“聊天对话框自动翻译”？（推荐）'
+          '你选择了中文以外的语言。\n' +
+          '- 该角色会用此语言输出（聊天/日记/朋友圈/情侣空间等）。\n' +
+          '- 【已自动开启】聊天对话框会自带中文翻译（无需再手动开启）。\n' +
+          '- 其他界面不保证内置翻译：需要的话可用浏览器翻译。\n'
         }
         hideDefaultActions
         footer={
@@ -303,18 +302,7 @@ export default function CreateCharacterScreen() {
                 setLangDialog({ open: false, lang: 'zh' })
               }}
             >
-              需要（推荐）
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
-              onClick={() => {
-                prevLangRef.current = langDialog.lang
-                setFormData(p => ({ ...p, language: langDialog.lang, chatTranslationEnabled: false }))
-                setLangDialog({ open: false, lang: 'zh' })
-              }}
-            >
-              不需要
+              知道了
             </button>
             <button
               type="button"
@@ -326,7 +314,7 @@ export default function CreateCharacterScreen() {
                 setLangDialog({ open: false, lang: 'zh' })
               }}
             >
-              取消
+              撤销切换
             </button>
           </div>
         }
@@ -369,9 +357,9 @@ export default function CreateCharacterScreen() {
                   setFormData(p => ({ ...p, language: 'zh', chatTranslationEnabled: false }))
                   return
                 }
-                // 非中文：先切语言，再弹“翻译提示弹窗”
+                // 非中文：自动开启聊天翻译，再弹提示弹窗（仅告知，无需用户手动开关）
                 prevLangRef.current = formData.language || 'zh'
-                setFormData(p => ({ ...p, language: lang }))
+                setFormData(p => ({ ...p, language: lang, chatTranslationEnabled: true }))
                 setLangDialog({ open: true, lang })
               }}
             >

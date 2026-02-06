@@ -1986,11 +1986,10 @@ export default function ChatSettingsScreen() {
         open={langDialog.open}
         title="语言提示"
         message={
-          '你选择了中文以外的语言，以下界面有内置翻译：聊天/推特/朋友圈/线下模式\n' +
-          '- 该角色的聊天/日记/朋友圈/情侣空间都会用此语言输出\n' +
-          '- 只有“聊天对话框”可内置翻译；其他界面请用浏览器翻译\n' +
-          '\n' +
-          '要不要开启“聊天对话框自动翻译”？（推荐）'
+          '你选择了中文以外的语言。\n' +
+          '- 该角色会用此语言输出（聊天/日记/朋友圈/情侣空间等）。\n' +
+          '- 【已自动开启】聊天对话框会自带中文翻译（无需再手动开启）。\n' +
+          '- 其他界面不保证内置翻译：需要的话可用浏览器翻译。\n'
         }
         hideDefaultActions
         footer={
@@ -2006,19 +2005,7 @@ export default function ChatSettingsScreen() {
                 setLangDialog({ open: false, lang: 'zh' })
               }}
             >
-              需要（推荐）
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
-              onClick={() => {
-                prevEditLangRef.current = langDialog.lang
-                setEditLanguage(langDialog.lang)
-                setEditChatTranslationEnabled(false)
-                setLangDialog({ open: false, lang: 'zh' })
-              }}
-            >
-              不需要
+              知道了
             </button>
             <button
               type="button"
@@ -2030,7 +2017,7 @@ export default function ChatSettingsScreen() {
                 setLangDialog({ open: false, lang: 'zh' })
               }}
             >
-              取消
+              撤销切换
             </button>
           </div>
         }
@@ -2076,6 +2063,8 @@ export default function ChatSettingsScreen() {
                 }
                 prevEditLangRef.current = editLanguage || 'zh'
                 setEditLanguage(lang)
+                // 非中文：默认开启聊天翻译（无需用户手动开）
+                setEditChatTranslationEnabled(true)
                 setLangDialog({ open: true, lang })
               }}
             >
@@ -2944,7 +2933,7 @@ ${history}`
                 </svg>
               </button>
               <div className="mt-1 text-[11px] text-gray-400">
-                语言会影响聊天/日记/朋友圈等。聊天/推特/朋友圈/线下模式都有内置翻译。
+                语言会影响聊天/日记/朋友圈等。切换为非中文后，聊天气泡会自动显示中文翻译（无需手动开启）。
               </div>
             </div>
 
@@ -2952,7 +2941,7 @@ ${history}`
               <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-100">
                 <div className="flex flex-col">
                   <div className="text-sm text-gray-700">聊天翻译</div>
-                  <div className="text-[11px] text-gray-400 mt-0.5">仅聊天气泡下方显示中文翻译</div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">已默认开启：聊天气泡下方显示中文翻译</div>
                 </div>
                 <button
                   type="button"
