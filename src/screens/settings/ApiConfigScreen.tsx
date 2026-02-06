@@ -31,7 +31,7 @@ const MODEL_OPTIONS = [
 
 export default function ApiConfigScreen() {
   const navigate = useNavigate()
-  const { llmConfig, setLLMConfig, ttsConfig, setTTSConfig, textToSpeech, fontColor, fetchAvailableModels } = useOS()
+  const { llmConfig, setLLMConfig, ttsConfig, setTTSConfig, textToSpeech, fontColor, fetchAvailableModels, testLLMConfig } = useOS()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isHttpsPage = typeof window !== 'undefined' && window.location?.protocol === 'https:'
 
@@ -89,6 +89,9 @@ export default function ApiConfigScreen() {
   const [editApiInterface, setEditApiInterface] = useState<LLMApiInterface>('openai_compatible')
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState('')
+  const [editTestLoading, setEditTestLoading] = useState(false)
+  const [editTestError, setEditTestError] = useState('')
+  const [editTestOk, setEditTestOk] = useState('')
   // 编辑时的高级参数状态
   const [editTemperature, setEditTemperature] = useState(0.8)
   const [editTopP, setEditTopP] = useState(0.95)
@@ -108,6 +111,9 @@ export default function ApiConfigScreen() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [llmTestLoading, setLlmTestLoading] = useState(false)
+  const [llmTestError, setLlmTestError] = useState('')
+  const [llmTestOk, setLlmTestOk] = useState('')
   const [currentConfigId, setCurrentConfigId] = useState<string | null>(() => {
     try {
       return localStorage.getItem('mina_current_api_config_id') || null
@@ -197,6 +203,35 @@ export default function ApiConfigScreen() {
     } finally { setLoading(false) }
   }
 
+  const handleTestLLM = async () => {
+    if (!baseUrl.trim() || !apiKey.trim()) {
+      setLlmTestError('请先填写 API Base URL 和 API Key')
+      setLlmTestOk('')
+      return
+    }
+    setLlmTestLoading(true)
+    setLlmTestError('')
+    setLlmTestOk('')
+    try {
+      const modelToTry = (selectedModelRef.current || selectedModel || '').trim() || undefined
+      const { modelUsed, reply } = await testLLMConfig({
+        apiBaseUrl: baseUrl,
+        apiKey,
+        apiInterface,
+        model: modelToTry,
+      })
+      const text = String(reply || '').trim()
+      const ok = /(^|\b)ok\b/i.test(text)
+      setLlmTestOk(
+        `连接正常：模型「${modelUsed}」回复「${text || 'OK'}」${ok ? '' : '（提示：上游没严格按 OK 返回，但已能正常调用）'}`
+      )
+    } catch (err: any) {
+      setLlmTestError(String(err?.message || err || '测试失败'))
+    } finally {
+      setLlmTestLoading(false)
+    }
+  }
+
   const openEditConfig = (config: ApiConfigItem) => {
     setEditingConfigId(config.id)
     setEditConfigName(config.name || '')
@@ -239,6 +274,35 @@ export default function ApiConfigScreen() {
       setEditError(`获取模型失败。\n${raw}${hint}`.trim())
     } finally {
       setEditLoading(false)
+    }
+  }
+
+  const handleTestLLMForEdit = async () => {
+    if (!editBaseUrl.trim() || !editApiKey.trim()) {
+      setEditTestError('请先填写 Base URL 和 API Key')
+      setEditTestOk('')
+      return
+    }
+    setEditTestLoading(true)
+    setEditTestError('')
+    setEditTestOk('')
+    try {
+      const modelToTry = String(editSelectedModel || '').trim() || undefined
+      const { modelUsed, reply } = await testLLMConfig({
+        apiBaseUrl: editBaseUrl,
+        apiKey: editApiKey,
+        apiInterface: editApiInterface,
+        model: modelToTry,
+      })
+      const text = String(reply || '').trim()
+      const ok = /(^|\b)ok\b/i.test(text)
+      setEditTestOk(
+        `连接正常：模型「${modelUsed}」回复「${text || 'OK'}」${ok ? '' : '（提示：上游没严格按 OK 返回，但已能正常调用）'}`
+      )
+    } catch (err: any) {
+      setEditTestError(String(err?.message || err || '测试失败'))
+    } finally {
+      setEditTestLoading(false)
     }
   }
 
@@ -894,15 +958,32 @@ export default function ApiConfigScreen() {
             )}
 
             {/* 存储按钮 */}
-            <button 
-              onClick={handleSaveAsConfig} 
-              disabled={!newConfigName.trim() || !baseUrl.trim() || !apiKey.trim()}
-              className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect disabled:opacity-50 ${
-                saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'
-              }`}
-            >
-              {saved ? '✓ 已存储' : '存储此配置'}
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleTestLLM}
+                disabled={llmTestLoading || !baseUrl.trim() || !apiKey.trim()}
+                className="w-full py-3 sm:py-3.5 rounded-2xl font-semibold bg-white/55 hover:bg-white/65 border border-white/30 transition-all press-effect disabled:opacity-50 text-sm sm:text-base"
+                style={{ color: fontColor.value }}
+              >
+                {llmTestLoading ? '测试中...' : '测试连接'}
+              </button>
+              <button 
+                onClick={handleSaveAsConfig} 
+                disabled={!newConfigName.trim() || !baseUrl.trim() || !apiKey.trim()}
+                className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect disabled:opacity-50 ${
+                  saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'
+                }`}
+              >
+                {saved ? '✓ 已存储' : '存储此配置'}
+              </button>
+            </div>
+
+            {(llmTestOk || llmTestError) && (
+              <div className={`text-xs sm:text-sm px-3 py-2.5 rounded-2xl border whitespace-pre-wrap ${llmTestError ? 'text-red-600 bg-red-50/60 border-red-200' : 'text-green-700 bg-green-50/60 border-green-200'}`}>
+                {llmTestError || llmTestOk}
+              </div>
+            )}
             
             {!newConfigName.trim() && baseUrl.trim() && apiKey.trim() && (
               <div className="text-xs text-orange-500 text-center">请先填写配置名称</div>
@@ -1042,6 +1123,68 @@ export default function ApiConfigScreen() {
                 重置为默认参数
               </button>
             </div>
+
+            {/* 常见报错速查（高命中） */}
+            <details className="mt-4 rounded-2xl bg-white/35 border border-white/25 p-3">
+              <summary className="cursor-pointer select-none text-sm font-medium" style={{ color: fontColor.value }}>
+                常见报错速查（点开）
+              </summary>
+              <div className="mt-3 space-y-2 text-[12px] leading-relaxed" style={{ color: fontColor.value }}>
+                <div className="opacity-70">
+                  下面是最常见的报错关键词与处理方式（不涉及任何第三方平台名，按“先自救再换模型”的顺序）。
+                </div>
+                <div className="space-y-2">
+                  <div>
+                    <div className="font-semibold">401 / Unauthorized / invalid api key</div>
+                    <div className="opacity-70">Key 无效/复制不完整/含空格换行。处理：重新粘贴 Key（确保无空格换行）→ 重试。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">403 / Forbidden</div>
+                    <div className="opacity-70">权限不足/策略拦截。处理：换模型 → 重试；仍不行就换 Key/换服务。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">404 / model not found / 模型不存在</div>
+                    <div className="opacity-70">模型名不对或被下架。处理：点“获取模型列表”刷新 → 换一个模型再试。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">429 / Too Many Requests / quota / cooling down</div>
+                    <div className="opacity-70">限流/额度不足/并发太高。处理：等 10–60 秒 → 重试/重新生成 → 换更快/更轻量模型。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">500/502/503/5xx / overloaded / 上游负载过高</div>
+                    <div className="opacity-70">上游或中转站故障。处理：重新生成（多试几次）→ 换模型 → 稍后再试。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">Failed to fetch / NetworkError / Mixed content</div>
+                    <div className="opacity-70">浏览器连不上（HTTPS 页面用 http://、CORS、证书/DNS、网络环境）。处理：改用 https:// 地址、换网络/代理节点。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">400 / invalid argument / Bad Request</div>
+                    <div className="opacity-70">参数不被支持。处理：先把 frequency/presence 设为 0，top_p 设为 1，温度 0.7–0.9，最大回复长度先降到 2000–8000。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">context length / Token budget exceeded / too many tokens</div>
+                    <div className="opacity-70">上下文太长。处理：降低记忆回合/清空部分聊天 → 降低最大回复长度 → 换长上下文模型。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">Empty Message Returned / no candidates returned / 空回复</div>
+                    <div className="opacity-70">上游波动/格式不兼容/内容被拦截。处理：重新生成 → 换模型；如果频繁出现，检查“接口类型”是否选错。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">CUSTOMER_POLICY_VIOLATION / Request blocked</div>
+                    <div className="opacity-70">内容触发安全策略。处理：改写内容（更含蓄/去掉敏感描述）→ 换模型再试。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">Streaming request failed 400 / data: [DONE] is not valid JSON</div>
+                    <div className="opacity-70">流式协议不兼容。处理：关闭流式重试（或开关流式各试一次，以稳定为准）。</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">524 / Gateway Timeout</div>
+                    <div className="opacity-70">网关超时/链路太慢。处理：重试、换网络、换更快模型。</div>
+                  </div>
+                </div>
+              </div>
+            </details>
           </div>
           
           {/* TTS 语音配置区域 - 可折叠 */}
@@ -1598,6 +1741,12 @@ export default function ApiConfigScreen() {
                 </div>
               )}
 
+              {(editTestOk || editTestError) && (
+                <div className={`text-xs border rounded-xl px-3 py-2 whitespace-pre-wrap ${editTestError ? 'text-red-700 bg-red-50 border-red-200' : 'text-green-700 bg-green-50 border-green-200'}`}>
+                  {editTestError || editTestOk}
+                </div>
+              )}
+
               {/* 高级参数（折叠） */}
               <div className="pt-2 border-t border-black/10">
                 <button
@@ -1764,6 +1913,15 @@ export default function ApiConfigScreen() {
                   保存配置
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={handleTestLLMForEdit}
+                disabled={editTestLoading}
+                className="w-full py-2.5 rounded-xl bg-white border border-black/10 text-[13px] font-semibold active:scale-[0.99] disabled:opacity-50"
+                style={{ color: fontColor.value }}
+              >
+                {editTestLoading ? '测试中...' : '测试连接'}
+              </button>
             </div>
           </div>
         </div>

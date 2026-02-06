@@ -280,6 +280,7 @@ type OSContextValue = {
   getAllFontOptions: () => FontOption[]  // 获取所有字体选项（内置 + 自定义）
   // API相关（手动配置）
   fetchAvailableModels: (override?: { apiBaseUrl?: string; apiKey?: string; apiInterface?: LLMApiInterface }) => Promise<string[]>
+  testLLMConfig: (override: { apiBaseUrl: string; apiKey: string; apiInterface: LLMApiInterface; model?: string }) => Promise<{ modelUsed: string; reply: string }>
   callLLM: (
     messages: {
       role: string
@@ -1525,8 +1526,8 @@ export function OSProvider({ children }: PropsWithChildren) {
     }
   }
 
-  // 调用LLM API（使用用户自己配置的API，不消耗米币）
-  const callLLM = async (
+  const callLLMWithConfig = async (
+    cfg: { apiBaseUrl: string; apiKey: string; apiInterface: LLMApiInterface; selectedModel: string },
     messages: {
       role: string
       content:
@@ -1538,16 +1539,15 @@ export function OSProvider({ children }: PropsWithChildren) {
             imageUrl?: { url: string }
           }>
     }[],
-    model?: string,
     options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ): Promise<string> => {
-    const apiInterface = llmConfig.apiInterface ?? 'openai_compatible'
-    const base = normalizeApiBaseUrl(llmConfig.apiBaseUrl, apiInterface)
-    const key = llmConfig.apiKey
-    const selectedModel = model || llmConfig.selectedModel
+    const apiInterface = cfg.apiInterface ?? 'openai_compatible'
+    const base = normalizeApiBaseUrl(cfg.apiBaseUrl, apiInterface)
+    const key = cfg.apiKey
+    const selectedModel = cfg.selectedModel
     if (!base || !key) throw new Error('请先在「设置 -> API 配置」中填写 Base URL 和 API Key')
     if (!selectedModel) throw new Error('请先选择一个模型')
-    
+
     try {
       const maxTokens = options?.maxTokens ?? 900
       const temperature = options?.temperature ?? 0.7
@@ -1785,7 +1785,7 @@ export function OSProvider({ children }: PropsWithChildren) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              apiBaseUrl: llmConfig.apiBaseUrl,
+              apiBaseUrl: cfg.apiBaseUrl,
               apiKey: key,
               payload: contPayload,
             }),
@@ -1821,7 +1821,7 @@ export function OSProvider({ children }: PropsWithChildren) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              apiBaseUrl: llmConfig.apiBaseUrl,
+              apiBaseUrl: cfg.apiBaseUrl,
               apiKey: key,
               payload: {
                 model: selectedModel,
@@ -1871,12 +1871,67 @@ export function OSProvider({ children }: PropsWithChildren) {
       // 统一分型：把常见错误转成“原因 + 建议”
       const pretty = summarizeLLMError(error, {
         apiInterface,
-        baseUrl: llmConfig.apiBaseUrl,
+        baseUrl: cfg.apiBaseUrl,
         model: selectedModel,
         phase: 'chat',
       })
       throw new Error(pretty)
     }
+  }
+
+  // 测试连接：不要求先进入聊天再发现问题
+  const testLLMConfig = async (override: {
+    apiBaseUrl: string
+    apiKey: string
+    apiInterface: LLMApiInterface
+    model?: string
+  }): Promise<{ modelUsed: string; reply: string }> => {
+    const apiBaseUrl = String(override.apiBaseUrl || '').trim()
+    const apiKey = String(override.apiKey || '').trim()
+    const apiInterface = (override.apiInterface || 'openai_compatible') as LLMApiInterface
+    if (!apiBaseUrl || !apiKey) throw new Error('请先填写 Base URL 和 API Key')
+
+    const modelList = await fetchAvailableModels({ apiBaseUrl, apiKey, apiInterface })
+    const modelUsed = String(override.model || '').trim() || modelList[0] || ''
+    if (!modelUsed) throw new Error('无法获取模型列表：请先点击“获取模型列表”或检查 Base URL / API Key / 接口类型')
+
+    const reply = await callLLMWithConfig(
+      { apiBaseUrl, apiKey, apiInterface, selectedModel: modelUsed },
+      [
+        { role: 'system', content: '你是连接测试。你只允许回复一个词：OK。禁止输出其他任何内容。' },
+        { role: 'user', content: 'test' },
+      ],
+      { temperature: 0, maxTokens: 8, timeoutMs: 60_000 }
+    )
+    return { modelUsed, reply: (reply || '').trim() }
+  }
+
+  // 调用LLM API（使用用户自己配置的API，不消耗米币）
+  const callLLM = async (
+    messages: {
+      role: string
+      content:
+        | string
+        | Array<{
+            type: string
+            text?: string
+            image_url?: { url: string }
+            imageUrl?: { url: string }
+          }>
+    }[],
+    model?: string,
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
+  ): Promise<string> => {
+    return await callLLMWithConfig(
+      {
+        apiBaseUrl: llmConfig.apiBaseUrl,
+        apiKey: llmConfig.apiKey,
+        apiInterface: llmConfig.apiInterface ?? 'openai_compatible',
+        selectedModel: model || llmConfig.selectedModel,
+      },
+      messages,
+      options
+    )
   }
 
   const value = useMemo<OSContextValue>(() => ({
@@ -1894,11 +1949,11 @@ export function OSProvider({ children }: PropsWithChildren) {
     anniversaries, addAnniversary, updateAnniversary, removeAnniversary,
     memo, setMemo,
     customFonts, addCustomFont, removeCustomFont, getAllFontOptions,
-    fetchAvailableModels, callLLM,
-  }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, 
+    fetchAvailableModels, testLLMConfig, callLLM,
+  }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance,
       notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo, customFonts,
       locationSettings, weather,
-      musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, isHydrated])
+      musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, isHydrated, fetchAvailableModels])
 
   return <OSContext.Provider value={value}>{children}</OSContext.Provider>
 }
