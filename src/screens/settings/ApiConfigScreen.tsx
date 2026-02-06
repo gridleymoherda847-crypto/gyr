@@ -1344,6 +1344,29 @@ export default function ApiConfigScreen() {
                     每个角色可以在聊天设置里单独选择音色
                   </p>
                 </div>
+
+                {/* 克隆/导入音色入口（放在更靠上位置，避免用户以为“没了”） */}
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl bg-purple-50/40 border border-white/30 hover:bg-purple-50/60 transition-colors"
+                >
+                  <div className="text-left">
+                    <div className="text-sm font-semibold" style={{ color: fontColor.value }}>🎭 克隆/导入音色</div>
+                    <div className="text-xs opacity-60" style={{ color: fontColor.value }}>
+                      {showAdvanced ? '点此收起' : '点此展开（上传音频克隆 / 导入 Voice ID / 刷新我已克隆）'}
+                    </div>
+                  </div>
+                  <svg
+                    className={`w-5 h-5 opacity-50 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+                    style={{ color: fontColor.value }}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
                 
                 {/* 语速调节 */}
                 <div className="space-y-2">
@@ -1395,25 +1418,8 @@ export default function ApiConfigScreen() {
                     {ttsSaved ? '✓ 已保存' : '保存'}
                   </button>
                 </div>
-                
-                {/* 高级选项折叠按钮 */}
-                <button
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="w-full flex items-center justify-center gap-2 py-2 text-sm opacity-60 hover:opacity-80 transition-opacity"
-                  style={{ color: fontColor.value }}
-                >
-                  <span>{showAdvanced ? '收起高级选项' : '展开高级选项（克隆音色等）'}</span>
-                  <svg 
-                    className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                
-                {/* 高级选项内容 */}
+
+                {/* 克隆/导入音色内容（原“高级选项”） */}
                 {showAdvanced && (
                   <div className="space-y-4 pt-2 border-t border-white/20">
                     {/* 模型选择 */}
