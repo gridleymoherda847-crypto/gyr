@@ -191,6 +191,7 @@ ${replyTo ? `【你要回复的评论】\n@${replyTo.authorName}：${replyTo.con
           lang === 'zh' ? '中文' : lang === 'en' ? '英语' : lang === 'ru' ? '俄语' : lang === 'fr' ? '法语' : lang === 'ja' ? '日语' : lang === 'ko' ? '韩语' : lang === 'de' ? '德语' : '中文'
         const isNonChinese = lang !== 'zh'
         const lore = getLorebookEntriesForCharacter(friend.id, `${recentChat || ''}`)
+        const characterMemory = friend.memorySummary || ''
         
         // 非中文角色需要同时生成原文和中文翻译
         const prompt = isNonChinese
@@ -199,6 +200,7 @@ ${replyTo ? `【你要回复的评论】\n@${replyTo.authorName}：${replyTo.con
 你的人设：${friend.prompt || '（未设置）'}
 你的国家/地区：${(friend as any).country || '（未设置）'}
 你的主要语言：${langName}
+${characterMemory ? `你的长期记忆：\n${characterMemory}\n` : ''}
 最近聊天片段（可用来贴合语境）：
 ${recentChat || '（暂无）'}
 
@@ -215,6 +217,7 @@ ${recentChat || '（暂无）'}
 你的人设：${friend.prompt || '（未设置）'}
 你的国家/地区：${(friend as any).country || '（未设置）'}
 你的主要语言：${langName}
+${characterMemory ? `你的长期记忆：\n${characterMemory}\n` : ''}
 最近聊天片段（可用来贴合语境）：
 ${recentChat || '（暂无）'}
 

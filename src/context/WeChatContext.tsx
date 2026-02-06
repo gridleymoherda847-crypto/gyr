@@ -502,6 +502,12 @@ type WeChatContextValue = {
   getMessagesPage: (characterId: string, opts?: { limit?: number; beforeTimestamp?: number }) => WeChatMessage[]
   getLastMessage: (characterId: string) => WeChatMessage | undefined
   clearMessages: (characterId: string) => void
+  // 批量导入/替换某个私聊的消息（用于跨设备恢复聊天记录）
+  replaceMessagesForCharacter: (
+    characterId: string,
+    nextMessages: WeChatMessage[],
+    opts?: { keepExisting?: boolean }
+  ) => { imported: number }
   
   // 表情包操作
   addSticker: (sticker: Omit<StickerConfig, 'id'>) => void
@@ -1355,6 +1361,39 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     setMessages(prev => prev.filter(m => m.characterId !== characterId))
   }
 
+  const replaceMessagesForCharacter = (
+    characterId: string,
+    nextMessages: WeChatMessage[],
+    opts?: { keepExisting?: boolean }
+  ) => {
+    const safeList = Array.isArray(nextMessages) ? nextMessages : []
+    const seen = new Set<string>()
+    const normalized: WeChatMessage[] = []
+    for (const raw of safeList) {
+      if (!raw) continue
+      const ts = Number((raw as any).timestamp)
+      const id0 = String((raw as any).id || '').trim()
+      let id = id0 && !seen.has(id0) ? id0 : `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      while (seen.has(id)) id = `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      seen.add(id)
+      normalized.push({
+        ...(raw as any),
+        id,
+        characterId,
+        timestamp: Number.isFinite(ts) && ts > 0 ? ts : Date.now(),
+      } as WeChatMessage)
+    }
+
+    setMessages(prev => {
+      const kept = opts?.keepExisting ? prev : prev.filter(m => m.characterId !== characterId)
+      const existingIds = new Set(kept.map(m => m.id))
+      const final = normalized.map(m => (existingIds.has(m.id) ? { ...m, id: `msg_${Date.now()}_${Math.random().toString(36).slice(2)}` } : m))
+      return [...kept, ...final]
+    })
+
+    return { imported: normalized.length }
+  }
+
   const deleteMessage = (id: string) => {
     setMessages(prev => prev.filter(m => m.id !== id))
   }
@@ -1946,7 +1985,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     transfers, anniversaries, periods, listenTogether,
     addCharacter, updateCharacter, deleteCharacter, getCharacter,
     togglePinned, toggleSpecialCare, toggleBlocked, hideFromChat, showInChat, setCurrentChatId, setCharacterTyping,
-    addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter, getMessagesByCharacter, getLastMessage, clearMessages,
+    addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter, getMessagesByCharacter, getLastMessage, clearMessages, replaceMessagesForCharacter,
     getMessagesPage,
     addSticker, removeSticker, updateSticker, getStickersByCharacter, addStickerToCharacter, addStickerToAll,
     addFavoriteDiary, removeFavoriteDiary, isDiaryFavorited,

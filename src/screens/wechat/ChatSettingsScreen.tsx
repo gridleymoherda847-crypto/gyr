@@ -18,7 +18,8 @@ export default function ChatSettingsScreen() {
     characters, addStickerToCharacter,
     userPersonas, getUserPersona, getCurrentPersona,
     stickerCategories, addStickerCategory, removeStickerCategory,
-    getMessagesByCharacter, addMessage
+    getMessagesByCharacter, addMessage,
+    replaceMessagesForCharacter
   } = useWeChat()
   
   const character = getCharacter(characterId || '')
@@ -29,6 +30,7 @@ export default function ChatSettingsScreen() {
   const bgInputRef = useRef<HTMLInputElement>(null)
   const stickerInputRef = useRef<HTMLInputElement>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const chatHistoryInputRef = useRef<HTMLInputElement>(null)
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null)
   
   const [showStickerManager, setShowStickerManager] = useState(false)
@@ -47,6 +49,8 @@ export default function ChatSettingsScreen() {
   const [showTimeSyncSettings, setShowTimeSyncSettings] = useState(false)
   const [showVoiceSettings, setShowVoiceSettings] = useState(false)
   const [showPatSettings, setShowPatSettings] = useState(false)
+  const [chatHistoryTransferOpen, setChatHistoryTransferOpen] = useState(false)
+  const [chatHistoryBusy, setChatHistoryBusy] = useState(false)
 
   // 添加好友后提示“记忆已导入”
   const [postAddTipOpen, setPostAddTipOpen] = useState(false)
@@ -205,6 +209,79 @@ export default function ChatSettingsScreen() {
     danger?: boolean
     onConfirm?: () => void
   }>({ open: false })
+
+  const exportChatHistory = () => {
+    if (!character) return
+    try {
+      const payload = {
+        type: 'littlephone_chat_export',
+        version: 1,
+        exportedAt: Date.now(),
+        character: {
+          id: character.id,
+          name: character.name,
+          memoryRounds: character.memoryRounds || 100,
+          memorySummary: character.memorySummary || '',
+          memorySummaryUpdatedAt: character.memorySummaryUpdatedAt || null,
+        },
+        messages,
+      }
+      const json = JSON.stringify(payload, null, 2)
+      const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+      const safeName = (character.name || '角色').replace(/[\\/:*?"<>|]/g, '_')
+      const filename = `LittlePhone-聊天记录-${safeName}-${new Date().toISOString().slice(0, 10)}.json`
+      saveBlobAsFile(blob, filename, {
+        title: '聊天记录导出',
+        hintText: '导出后可在另一台设备导入恢复（含长期记忆摘要）。',
+      })
+    } catch (e: any) {
+      setDialog({ open: true, title: '导出失败', message: e?.message || '导出失败，请稍后重试。', confirmText: '知道了' })
+    }
+  }
+
+  const triggerImportChatHistory = () => {
+    try {
+      chatHistoryInputRef.current?.click()
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleImportChatHistoryFile = async (file: File | null) => {
+    if (!file || !character) return
+    setChatHistoryBusy(true)
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text || '{}')
+      if (!data || data.type !== 'littlephone_chat_export') {
+        throw new Error('文件格式不对：请导入“小手机”导出的聊天记录 JSON。')
+      }
+      const importedMessages = Array.isArray(data.messages) ? data.messages : []
+      const imported = replaceMessagesForCharacter(character.id, importedMessages, { keepExisting: false })
+      const mem = data.character?.memorySummary
+      const rounds = data.character?.memoryRounds
+      const memAt = data.character?.memorySummaryUpdatedAt
+      if (typeof mem === 'string' || typeof rounds === 'number' || memAt != null) {
+        updateCharacter(character.id, {
+          memorySummary: typeof mem === 'string' ? mem : (character.memorySummary || ''),
+          memoryRounds: typeof rounds === 'number' ? Math.min(1000, Math.max(1, Math.floor(rounds))) : (character.memoryRounds || 100),
+          memorySummaryUpdatedAt: typeof memAt === 'number' ? memAt : (character.memorySummaryUpdatedAt || Date.now()),
+        } as any)
+      }
+      setDialog({
+        open: true,
+        title: '导入成功',
+        message: `已导入 ${imported.imported} 条聊天记录，并同步了长期记忆摘要。`,
+        confirmText: '知道了',
+      })
+    } catch (e: any) {
+      setDialog({ open: true, title: '导入失败', message: e?.message || '导入失败，请检查文件内容。', confirmText: '知道了' })
+    } finally {
+      setChatHistoryBusy(false)
+      // 允许重复导入同一个文件
+      if (chatHistoryInputRef.current) chatHistoryInputRef.current.value = ''
+    }
+  }
 
   // 预览：复用聊天页的“质感预设”渲染逻辑（简化版）
   const hexToRgb = (hex: string) => {
@@ -1197,6 +1274,23 @@ export default function ChatSettingsScreen() {
               </div>
             </div>
 
+            {/* 聊天记录导入/导出（跨设备迁移） */}
+            <div
+              className="flex items-center justify-between px-4 py-4 border-t border-gray-100 cursor-pointer active:bg-gray-50"
+              onClick={() => setChatHistoryTransferOpen(true)}
+            >
+              <div className="flex flex-col">
+                <span className="text-[#000]">聊天记录导入/导出</span>
+                <span className="text-xs text-gray-400 mt-0.5">换设备也能恢复对话（含长期记忆）</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">{chatHistoryBusy ? '处理中…' : ''}</span>
+                <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </div>
+
             {/* 时间同步 */}
             <div
               className="flex items-center justify-between px-4 py-4 border-t border-gray-100 cursor-pointer active:bg-gray-50"
@@ -1748,6 +1842,72 @@ export default function ChatSettingsScreen() {
           </div>
         )}
       </div>
+
+      {/* 聊天记录导入/导出弹窗 */}
+      {chatHistoryTransferOpen && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => (chatHistoryBusy ? null : setChatHistoryTransferOpen(false))}
+            role="presentation"
+          />
+          <div className="relative w-full max-w-[340px] rounded-2xl bg-white p-4 shadow-xl">
+            <div className="text-center font-bold text-[#111] mb-2">聊天记录导入/导出</div>
+            <div className="text-[12px] text-gray-600 bg-gray-50 rounded-xl p-3 mb-3 leading-relaxed">
+              - 导出：会导出本角色的全部聊天记录 + 长期记忆摘要<br />
+              - 导入：会覆盖本角色当前聊天记录（用于换设备恢复）
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={chatHistoryBusy}
+                onClick={() => {
+                  exportChatHistory()
+                  setChatHistoryTransferOpen(false)
+                }}
+                className={`flex-1 py-2.5 rounded-xl text-[13px] font-medium active:scale-[0.98] ${
+                  chatHistoryBusy ? 'bg-gray-100 text-gray-400' : 'bg-[#07C160] text-white'
+                }`}
+              >
+                导出
+              </button>
+              <button
+                type="button"
+                disabled={chatHistoryBusy}
+                onClick={() => {
+                  setChatHistoryTransferOpen(false)
+                  setDialog({
+                    open: true,
+                    title: '导入会覆盖当前聊天',
+                    message: '确定导入吗？（建议先导出备份一份再导入）',
+                    confirmText: '继续导入',
+                    cancelText: '取消',
+                    danger: true,
+                    onConfirm: () => triggerImportChatHistory(),
+                  })
+                }}
+                className={`flex-1 py-2.5 rounded-xl text-[13px] font-medium active:scale-[0.98] ${
+                  chatHistoryBusy ? 'bg-gray-100 text-gray-400' : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                导入
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 隐藏的导入文件输入 */}
+      <input
+        ref={chatHistoryInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files && e.target.files[0]
+          handleImportChatHistoryFile(f || null)
+        }}
+      />
 
       <WeChatDialog
         open={dialog.open}

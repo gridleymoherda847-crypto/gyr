@@ -685,7 +685,7 @@ export default function ApiConfigScreen() {
       <div className="flex h-full flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
         <AppHeader title="API 配置" onBack={() => navigate('/apps/settings')} />
         
-        <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 flex flex-col gap-4 sm:gap-5">
+        <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 pb-12 flex flex-col gap-4 sm:gap-5">
           {/* 当前使用的配置（常驻展示） */}
           <div className="order-1">
             {currentConfigId && (() => {
@@ -760,8 +760,8 @@ export default function ApiConfigScreen() {
             })()}
           </div>
 
-          {/* AI 对话配置：默认收起（放在语音配置后面） */}
-          <div className="order-3">
+          {/* AI 对话配置：默认收起 */}
+          <div className="order-2">
             <div className="bg-white/40 rounded-2xl overflow-hidden border border-white/50 shadow-sm">
               <button
                 type="button"
@@ -1225,7 +1225,7 @@ export default function ApiConfigScreen() {
           </div>
           
           {/* TTS 语音配置区域 - 可折叠 */}
-          <div className="order-2 bg-white/40 rounded-2xl overflow-hidden border border-white/50 shadow-sm">
+          <div className="order-3 bg-white/40 rounded-2xl overflow-hidden border border-white/50 shadow-sm">
             {/* 折叠头部 */}
             <button
               onClick={() => setShowTTSSection(!showTTSSection)}
@@ -1257,7 +1257,7 @@ export default function ApiConfigScreen() {
             
             {/* 折叠内容 */}
             {showTTSSection && (
-              <div className="p-3 sm:p-4 pt-0 space-y-3 border-t border-white/10">
+              <div className="p-3 sm:p-4 pt-0 pb-4 space-y-3 border-t border-white/10">
                 {/* 区域选择 */}
                 <div className="space-y-2">
                   <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>

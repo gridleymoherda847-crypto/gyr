@@ -23,7 +23,7 @@ export default function ChatScreen() {
     walletBalance, updateWalletBalance, addWalletBill,
     getUserPersona, getCurrentPersona,
     addFavoriteDiary, isDiaryFavorited,
-    characters, getTransfersByCharacter, groups
+    characters, getTransfersByCharacter, groups, moments
   } = useWeChat()
   
   const character = getCharacter(characterId || '')
@@ -1387,6 +1387,38 @@ export default function ChatScreen() {
         }
         const recentTimeline = nonSystem.slice(-12).map(m => `- ${fmtTs(m.timestamp)} ${m.isUser ? '我' : 'TA'}：${summarizeMsg(m)}`).join('\n')
 
+        // 朋友圈互通：把“你和TA相关的朋友圈”也塞进上下文，让角色能记得自己/用户最近发过什么
+        const recentMomentsText = (() => {
+          try {
+            const userName = selectedPersona?.name || '我'
+            const related = (moments || [])
+              .slice()
+              .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+              .filter(p => p && (p.authorId === 'user' || p.authorId === character.id))
+              .slice(0, 6)
+            if (related.length === 0) return ''
+            const lines = related.map((p) => {
+              const who = p.authorId === 'user' ? userName : character.name
+              const content = (p.content || '').replace(/\s+/g, ' ').slice(0, 80) || '（仅图片）'
+              const zh = p.contentZh ? `（中文：${String(p.contentZh || '').replace(/\s+/g, ' ').slice(0, 60)}）` : ''
+              const cc = Array.isArray(p.comments) ? p.comments : []
+              const relatedComments = cc
+                .filter(c => c && (c.authorId === 'user' || c.authorId === character.id))
+                .slice(-2)
+                .map(c => {
+                  const cw = c.authorId === 'user' ? userName : character.name
+                  return `${cw}：${String(c.content || '').replace(/\s+/g, ' ').slice(0, 40)}`
+                })
+                .join('；')
+              const commentsText = relatedComments ? `｜评论：${relatedComments}` : ''
+              return `- ${fmtTs(p.timestamp)} ${who}发朋友圈：${content}${zh}${commentsText}`
+            })
+            return lines.join('\n')
+          } catch {
+            return ''
+          }
+        })()
+
         // 说话“活人感”风格（即使人设很简陋也要像真人）
         const styleSeed = `${character.id}|${character.name}|${character.gender}`
         const hash = (s: string) => {
@@ -1483,6 +1515,8 @@ ${(() => {
 
 【最近消息时间线（必须参考，尤其是转账/已领取的时间，不能搞反）】
 ${recentTimeline || '（无）'}
+
+${recentMomentsText ? `\n【近期朋友圈（你和用户相关，用于互通记忆）】\n${recentMomentsText}\n` : ''}
 
 【时间感（用自然语言，严禁报数字）】
 - 上一条消息时间：${prevMsg ? new Date(prevMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
@@ -2041,7 +2075,76 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         // 只使用“本角色已配置”的表情包（公共库不自动使用，必须在消息设置里手动添加给该角色）
         const stickerPool = stickers.filter(s => s.characterId === character.id)
         const stickerCandidates: number[] = []
-        const pickRandomSticker = () => stickerPool[Math.floor(Math.random() * stickerPool.length)]
+        const usedStickerIds = new Set<string>()
+
+        // 线上模式：表情包优先按“备注/描述”匹配，而不是按分类（分类仅用于面板归类）
+        // - description（备注）优先；没有则退回 keyword
+        // - 匹配基于当前要发送的文字内容（如“我很乖”更倾向选择备注含“乖小狗/我很乖”的贴纸）
+        const normalizeStickerText = (s: string) =>
+          String(s || '')
+            .toLowerCase()
+            .replace(/\s+/g, '')
+            // 去掉常见标点（保留中文/英文/数字）
+            .replace(/[，。！？、；：…~`!@#$%^&*()_\-+=\[\]{}\\|;:'",.<>/?]/g, '')
+
+        const extractStickerHints = (st: any): string[] => {
+          const raw = [st?.description, st?.keyword].filter(Boolean).join(' ').trim()
+          if (!raw) return []
+          return raw
+            .split(/[\n\r,，;；/|、]+/g)
+            .map((x) => x.trim())
+            .filter(Boolean)
+            .slice(0, 8)
+        }
+
+        const scoreStickerForText = (st: any, basisText: string) => {
+          const t = normalizeStickerText(basisText)
+          if (!t) return 0
+          const hints = extractStickerHints(st)
+          if (hints.length === 0) return 0
+          let score = 0
+          for (const h of hints) {
+            const hh = normalizeStickerText(h)
+            if (!hh) continue
+            if (hh.length >= 2 && t.includes(hh)) {
+              score += 10 + Math.min(6, hh.length)
+              continue
+            }
+            // 粗粒度：按 2~3 字片段匹配（适配中文）
+            if (hh.length >= 4) {
+              const parts = [hh.slice(0, 2), hh.slice(-2), hh.slice(1, 3)]
+              if (parts.some(p => p && t.includes(p))) score += 3
+            } else if (hh.length >= 2) {
+              if (t.includes(hh.slice(0, 2))) score += 2
+            }
+          }
+          return score
+        }
+
+        const pickStickerForText = (basisText: string) => {
+          if (stickerPool.length === 0) return null
+          // 优先选未用过的，避免一轮里重复刷同一张
+          const pool = stickerPool.filter(s => !usedStickerIds.has(s.id))
+          const candidates = pool.length > 0 ? pool : stickerPool
+
+          let bestScore = 0
+          let best: any[] = []
+          for (const st of candidates) {
+            const sc = scoreStickerForText(st, basisText)
+            if (sc > bestScore) {
+              bestScore = sc
+              best = [st]
+            } else if (sc === bestScore && sc > 0) {
+              best.push(st)
+            }
+          }
+          const picked =
+            bestScore > 0 && best.length > 0
+              ? best[Math.floor(Math.random() * best.length)]
+              : candidates[Math.floor(Math.random() * candidates.length)]
+          if (picked?.id) usedStickerIds.add(picked.id)
+          return picked || null
+        }
         
         // 检查是否有待处理的用户转账
         const pendingUserTransfers = workingMessages.filter(m => 
@@ -2521,9 +2624,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 }
               }
               
-              // 夹带表情包（不按情绪匹配：随机挑本角色已配置的）
+              // 夹带表情包（优先按“备注/描述”匹配当前文字语义；否则随机）
               if (stickerPool.length > 0 && chosenStickerIdx.has(index)) {
-                const sticker = pickRandomSticker()
+                const sticker = pickStickerForText(textContent || replies[index] || '')
                 if (sticker) {
                   safeTimeoutEx(() => {
                     addMessage({

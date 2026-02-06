@@ -1551,6 +1551,26 @@ export function OSProvider({ children }: PropsWithChildren) {
     try {
       const maxTokens = options?.maxTokens ?? 900
       const temperature = options?.temperature ?? 0.7
+      
+      // OpenAI 兼容中转“常见坑”：不支持多模态消息格式（content 为数组 / image_url）
+      // 这里提供一个自动降级：遇到 400 且包含多模态内容时，重试一次“纯文本版”
+      const downgradeMessagesToText = (ms: typeof messages) => {
+        return ms.map((m) => {
+          if (typeof m.content === 'string') return m
+          if (!Array.isArray(m.content)) return { ...m, content: String((m as any).content || '') }
+          const text = m.content
+            .map((p: any) => {
+              if (!p) return ''
+              if (typeof p?.text === 'string' && p.text.trim()) return String(p.text)
+              if (p?.type === 'image_url' || p?.type === 'image') return '[图片]'
+              return ''
+            })
+            .filter(Boolean)
+            .join('\n')
+          return { ...m, content: text || '[图片]' }
+        })
+      }
+      const hasMultimodal = messages.some(m => Array.isArray(m.content))
 
       // ====== 1) Ollama 原生 ======
       if (apiInterface === 'ollama') {
@@ -1709,7 +1729,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         throw new TypeError('Mixed content blocked')
       }
 
-      const response = await fetch(`${base}/chat/completions`, {
+      let response = await fetch(`${base}/chat/completions`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${key}`,
@@ -1721,7 +1741,42 @@ export function OSProvider({ children }: PropsWithChildren) {
       window.clearTimeout(t)
       
       if (!response.ok) {
+        const status = response.status
         const text = await response.text().catch(() => '')
+        
+        // 自动兼容降级：多模态 -> 纯文本（仅对 400 尝试一次）
+        if (status === 400 && hasMultimodal) {
+          try {
+            const downgradedPayload = {
+              ...payload,
+              messages: downgradeMessagesToText(messages),
+            }
+            const controller2 = new AbortController()
+            const t2 = window.setTimeout(() => controller2.abort(), options?.timeoutMs ?? 600000)
+            response = await fetch(`${base}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${key}`,
+                'Content-Type': 'application/json',
+              },
+              signal: controller2.signal,
+              body: JSON.stringify(downgradedPayload),
+            })
+            window.clearTimeout(t2)
+            if (response.ok) {
+              const data2 = await response.json().catch(() => ({}))
+              const content2 =
+                data2?.choices?.[0]?.message?.content ??
+                data2?.choices?.[0]?.text ??
+                data2?.message?.content ??
+                data2?.content
+              const finalText2 = typeof content2 === 'string' ? content2.trim() : ''
+              if (finalText2) return finalText2
+            }
+          } catch {
+            // ignore: fallthrough to original error
+          }
+        }
         let msg = ''
         try {
           const j = text ? JSON.parse(text) : {}
@@ -1729,8 +1784,13 @@ export function OSProvider({ children }: PropsWithChildren) {
         } catch {
           msg = ''
         }
-        const e: any = new Error(msg || `请求失败: ${response.status}`)
-        e.status = response.status
+        const e: any = new Error(
+          (msg || `请求失败: ${status}`) +
+            (status === 400 && hasMultimodal
+              ? '\n（提示：你的接口可能不支持“图片/贴纸”多模态格式。建议换支持 vision 的模型/中转，或尽量避免在本轮带图。）'
+              : '')
+        )
+        e.status = status
         e.phase = 'chat'
         throw e
       }
