@@ -1258,7 +1258,9 @@ export default function ApiConfigScreen() {
             
             {/* 折叠内容 */}
             {showTTSSection && (
-              <div className="p-3 sm:p-4 pt-0 pb-4 space-y-3 border-t border-white/10">
+              // 移动端常见问题：外层滚动容器高度计算异常/被裁切，导致“展开后下面空白像丢功能”
+              // 解决：语音配置面板自身也提供滚动（限制最大高度），保证克隆/导入区域一定可见
+              <div className="p-3 sm:p-4 pt-0 pb-4 space-y-3 border-t border-white/10 max-h-[72vh] overflow-y-auto custom-scrollbar">
                 {/* 区域选择 */}
                 <div className="space-y-2">
                   <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
