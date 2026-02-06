@@ -387,6 +387,151 @@ function normalizeApiBaseUrl(input: string, apiInterface: LLMApiInterface = 'ope
   // OpenAI/Claude 兼容：默认 /v1
   return `${trimmed}/v1`
 }
+
+function toText(v: any): string {
+  try {
+    if (v == null) return ''
+    if (typeof v === 'string') return v
+    if (typeof v?.message === 'string') return v.message
+    return String(v)
+  } catch {
+    return ''
+  }
+}
+
+function parseHttpStatusFromText(text: string): number | undefined {
+  const t = (text || '').trim()
+  if (!t) return undefined
+  // 常见：请求失败: 429 / HTTP 429 / status:429
+  const m = t.match(/(?:HTTP\s*)?(\d{3})\b/)
+  if (!m) return undefined
+  const code = Number(m[1])
+  if (code >= 100 && code <= 599) return code
+  return undefined
+}
+
+function summarizeLLMError(error: any, _ctx: { apiInterface: LLMApiInterface; baseUrl: string; model: string; phase: 'models' | 'chat' }): string {
+  const rawMsg = toText(error) || ''
+  const msg = rawMsg.trim()
+  const status: number | undefined =
+    typeof error?.status === 'number'
+      ? error.status
+      : parseHttpStatusFromText(msg)
+
+  // 1) 超时
+  if (error?.name === 'AbortError') {
+    return (
+      '请求超时：模型响应太慢或网络不稳定。\n' +
+      '建议：\n' +
+      '- 点击“重新生成/重试”\n' +
+      '- 换一个更快的模型（如有）\n' +
+      '- 减少上下文：降低记忆回合/清空部分聊天\n'
+    ).trim()
+  }
+
+  // 2) 浏览器网络类（CORS/混合内容/DNS）
+  if (
+    error instanceof TypeError ||
+    /failed to fetch|networkerror|load failed/i.test(msg) ||
+    /mixed content/i.test(msg)
+  ) {
+    return (
+      '网络请求失败（浏览器拦截或无法连接）。\n' +
+      '常见原因：\n' +
+      '1) HTTPS 页面下使用了 http:// Base URL（混合内容会被拦截）\n' +
+      '2) 中转站未开启 CORS（网页无法跨域；但 Postman/后端可能正常）\n' +
+      '3) 证书/域名问题（证书链不完整、DNS 异常、被运营商拦截）\n' +
+      '4) 网络环境限制（公司网/校园网/代理/VPN）\n' +
+      '建议：换一个支持网页调用的中转站，或使用 https:// 的地址。\n' +
+      (msg ? `\n原始错误：${msg}` : '')
+    ).trim()
+  }
+
+  // 3) 上下文过长/超出限制
+  if (
+    /context length|max(imum)? tokens|too many tokens|token limit|提示词过长|上下文过长/i.test(msg)
+  ) {
+    return (
+      '上下文过长：这次对话历史/设定太多，超过了模型可接受的长度。\n' +
+      '建议：\n' +
+      '- 降低“记忆回合/附带历史”数量\n' +
+      '- 清理部分聊天记录后再生成\n' +
+      '- 换一个支持更长上下文的模型\n'
+    ).trim()
+  }
+
+  // 4) 选错模型/模型不存在
+  if (
+    status === 404 ||
+    /model.*not found|The model .* does not exist|找不到模型|模型不存在/i.test(msg)
+  ) {
+    return (
+      '模型不存在 / 模型名不匹配（404）。\n' +
+      '建议：\n' +
+      '- 到「设置 → API 配置」点击“获取模型列表”刷新\n' +
+      '- 换一个模型再试\n' +
+      '- 确认接口类型正确（OpenAI兼容 / Claude原生 / Gemini原生 / Ollama）\n'
+    ).trim()
+  }
+
+  // 5) Key/权限问题
+  if (status === 401 || /invalid api key|unauthorized|未授权|无效的.?key/i.test(msg)) {
+    return (
+      '鉴权失败（401）：API Key 无效/过期/权限不足。\n' +
+      '建议：\n' +
+      '- 检查 Key 是否复制完整\n' +
+      '- 中转站用户：检查是否欠费/余额不足/Key 被封\n'
+    ).trim()
+  }
+  if (status === 403 || /forbidden|权限不足|无权限/i.test(msg)) {
+    return (
+      '权限不足（403）：Key 没有权限访问该模型/接口。\n' +
+      '建议：换模型或联系服务商开通权限。'
+    ).trim()
+  }
+
+  // 6) 限流/余额不足（很多中转站把余额不足也用 429）
+  if (status === 429 || /rate limit|too many requests|限流|请求过于频繁|quota|insufficient/i.test(msg)) {
+    return (
+      '请求过于频繁/额度不足（429）。\n' +
+      '可能原因：限流、并发太高、或中转站余额不足。\n' +
+      '建议：\n' +
+      '- 等 10~60 秒后重试\n' +
+      '- 换一个便宜/更快的模型\n' +
+      '- 中转站用户：检查余额/套餐/并发限制\n'
+    ).trim()
+  }
+
+  // 7) 服务器故障
+  if ((status != null && status >= 500) || /server error|bad gateway|gateway|服务不可用|内部错误/i.test(msg)) {
+    return (
+      `服务端异常（${status || '5xx'}）：上游/中转站故障。\n` +
+      '建议：\n' +
+      '- 稍后重试或点击“重新生成”\n' +
+      '- 换模型/换一个中转站\n'
+    ).trim()
+  }
+
+  // 8) 空回复/格式问题（用户最常见困扰）
+  if (/空内容|empty|no content|格式不兼容/i.test(msg)) {
+    return (
+      '模型返回空回复/格式不兼容。\n' +
+      '建议：\n' +
+      '- 切换“接口类型”（OpenAI兼容 / Claude原生 / Gemini原生 / Ollama）\n' +
+      '- 换模型后重试\n' +
+      '- 点击“重新生成”\n'
+    ).trim()
+  }
+
+  // 兜底：保留原始信息，但加一行操作建议
+  return (
+    `${msg || '请求失败（未知原因）'}\n\n` +
+    '建议：\n' +
+    '- 先重试/重新生成\n' +
+    '- 不行就换模型\n' +
+    '- 仍然不行：检查 Base URL / API Key / 接口类型'
+  ).trim()
+}
 const seedCharacters: VirtualCharacter[] = [
   { id: 'char-01', name: '青禾', avatar: 'https://i.pravatar.cc/150?img=5', prompt: '温柔的生活助手', intimacy: 68 },
   { id: 'char-02', name: '森野', avatar: 'https://i.pravatar.cc/150?img=3', prompt: '冷静的技术宅', intimacy: 55 },
@@ -1313,7 +1458,10 @@ export function OSProvider({ children }: PropsWithChildren) {
         data = { error: { message: '同域转发返回非 JSON' }, raw: String(text || '').slice(0, 300) }
       }
       if (!proxyRes.ok) {
-        throw new Error(data?.error?.message || `请求失败: ${proxyRes.status}`)
+        const e: any = new Error(data?.error?.message || `请求失败: ${proxyRes.status}`)
+        e.status = proxyRes.status
+        e.phase = 'models'
+        throw e
       }
       if (data.data && Array.isArray(data.data)) {
         return data.data.map((m: any) => m.id).filter(Boolean)
@@ -1335,7 +1483,18 @@ export function OSProvider({ children }: PropsWithChildren) {
       })
       
       if (!response.ok) {
-        throw new Error(`请求失败: ${response.status}${response.status === 401 ? '（未授权：请检查 API Key / 权限）' : ''}`)
+        const text = await response.text().catch(() => '')
+        let msg = ''
+        try {
+          const j = text ? JSON.parse(text) : {}
+          msg = j?.error?.message || j?.message || ''
+        } catch {
+          msg = ''
+        }
+        const e: any = new Error(msg || `请求失败: ${response.status}${response.status === 401 ? '（未授权：请检查 API Key / 权限）' : ''}`)
+        e.status = response.status
+        e.phase = 'models'
+        throw e
       }
       
       const data = await response.json()
@@ -1347,7 +1506,7 @@ export function OSProvider({ children }: PropsWithChildren) {
       } else {
         throw new Error('返回数据格式错误')
       }
-    } catch (error) {
+    } catch (error: any) {
       // 同域转发兜底：解决 CORS / 部分机型“Failed to fetch”
       try {
         return await fetchViaProxy()
@@ -1355,7 +1514,14 @@ export function OSProvider({ children }: PropsWithChildren) {
         const msg2 = String(e2?.message || '')
         if (msg2) throw new Error(msg2)
       }
-      throw error
+      // 给上层 UI 统一一个“可读版本”
+      const pretty = summarizeLLMError(error, {
+        apiInterface,
+        baseUrl: override?.apiBaseUrl ?? llmConfig.apiBaseUrl,
+        model: '',
+        phase: 'models',
+      })
+      throw new Error(pretty)
     }
   }
 
@@ -1411,7 +1577,10 @@ export function OSProvider({ children }: PropsWithChildren) {
         window.clearTimeout(t)
         if (!response.ok) {
           const text = await response.text().catch(() => '')
-          throw new Error(text || `请求失败: ${response.status}`)
+          const e: any = new Error(text || `请求失败: ${response.status}`)
+          e.status = response.status
+          e.phase = 'chat'
+          throw e
         }
         const data = await response.json().catch(() => ({}))
         const content = data?.message?.content ?? data?.response ?? ''
@@ -1457,7 +1626,10 @@ export function OSProvider({ children }: PropsWithChildren) {
         window.clearTimeout(t)
         if (!response.ok) {
           const text = await response.text().catch(() => '')
-          throw new Error(text || `请求失败: ${response.status}`)
+          const e: any = new Error(text || `请求失败: ${response.status}`)
+          e.status = response.status
+          e.phase = 'chat'
+          throw e
         }
         const data = await response.json().catch(() => ({}))
         const parts = data?.candidates?.[0]?.content?.parts
@@ -1507,7 +1679,10 @@ export function OSProvider({ children }: PropsWithChildren) {
         window.clearTimeout(t)
         if (!response.ok) {
           const text = await response.text().catch(() => '')
-          throw new Error(text || `请求失败: ${response.status}`)
+          const e: any = new Error(text || `请求失败: ${response.status}`)
+          e.status = response.status
+          e.phase = 'chat'
+          throw e
         }
         const data = await response.json().catch(() => ({}))
         const parts = Array.isArray(data?.content) ? data.content : []
@@ -1546,8 +1721,18 @@ export function OSProvider({ children }: PropsWithChildren) {
       window.clearTimeout(t)
       
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error?.message || `请求失败: ${response.status}`)
+        const text = await response.text().catch(() => '')
+        let msg = ''
+        try {
+          const j = text ? JSON.parse(text) : {}
+          msg = j?.error?.message || j?.message || ''
+        } catch {
+          msg = ''
+        }
+        const e: any = new Error(msg || `请求失败: ${response.status}`)
+        e.status = response.status
+        e.phase = 'chat'
+        throw e
       }
       
       const data = await response.json()
@@ -1682,7 +1867,15 @@ export function OSProvider({ children }: PropsWithChildren) {
             `原始错误：${msg || 'TypeError'}`
         )
       }
-      throw error
+
+      // 统一分型：把常见错误转成“原因 + 建议”
+      const pretty = summarizeLLMError(error, {
+        apiInterface,
+        baseUrl: llmConfig.apiBaseUrl,
+        model: selectedModel,
+        phase: 'chat',
+      })
+      throw new Error(pretty)
     }
   }
 

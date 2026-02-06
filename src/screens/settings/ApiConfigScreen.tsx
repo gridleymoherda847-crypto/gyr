@@ -822,6 +822,9 @@ export default function ApiConfigScreen() {
                 className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
                 style={{ color: fontColor.value }}
               />
+              <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
+                提示：这里一般填写服务商给的“根地址”即可（例如 `https://xxx.com`）。本应用会自动规整并补齐版本尾缀（如 `/v1`），避免出现 `/v1/v1`。
+              </div>
               {isHttpsPage && baseUrl.trim().toLowerCase().startsWith('http://') && (
                 <div className="text-xs text-orange-600 bg-orange-50/60 px-3 py-2 rounded-2xl border border-orange-200 whitespace-pre-wrap">
                   你当前是 HTTPS 页面。Base URL 如果用 http://，浏览器通常会拦截（混合内容），表现为“少部分手机怎么都连不上/请求失败”。
@@ -856,7 +859,7 @@ export default function ApiConfigScreen() {
               {loading ? '获取中...' : '获取模型列表'}
             </button>
 
-            {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200">{error}</div>}
+            {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200 whitespace-pre-wrap">{error}</div>}
 
             {models.length > 0 && (
               <div className="space-y-2">
@@ -1567,7 +1570,7 @@ export default function ApiConfigScreen() {
               )}
 
               {!!editError && (
-                <div className="text-xs text-red-600 bg-red-50/70 border border-red-200 rounded-xl px-3 py-2">
+                <div className="text-xs text-red-600 bg-red-50/70 border border-red-200 rounded-xl px-3 py-2 whitespace-pre-wrap">
                   {editError}
                 </div>
               )}
