@@ -823,8 +823,18 @@ export default function ApiConfigScreen() {
                 style={{ color: fontColor.value }}
               />
               <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
-                提示：这里一般填写服务商给的“根地址”即可（例如 `https://xxx.com`）。本应用会自动规整并补齐版本尾缀（如 `/v1`），避免出现 `/v1/v1`。
+                {apiInterface === 'gemini_native'
+                  ? '提示：Gemini 原生一般填根地址（如 https://generativelanguage.googleapis.com），应用会自动规整为 /v1beta。若你用的是“OpenAI 兼容中转站”（常见特征：地址里有 /v1），请把「接口类型」改成 OpenAI 兼容。'
+                  : apiInterface === 'ollama'
+                    ? '提示：Ollama 本地一般填根地址（如 http://localhost:11434），应用会自动规整到 /api。'
+                    : '提示：OpenAI/Claude 兼容一般填根地址即可（例如 https://xxx.com 或 https://xxx.com/v1 都行）。应用会自动规整为 /v1，避免出现 /v1/v1。'}
               </div>
+              {apiInterface === 'gemini_native' && /\/v1(\/|$)/i.test(baseUrl.trim()) && !/\/v1beta(\/|$)/i.test(baseUrl.trim()) && (
+                <div className="text-xs text-orange-700 bg-orange-50/70 px-3 py-2 rounded-2xl border border-orange-200 whitespace-pre-wrap">
+                  检测到你选择了「Gemini 原生」，但 Base URL 看起来是 OpenAI 兼容地址（包含 /v1）。
+                  如果你使用的是中转站（OpenAI 兼容），请把「接口类型」切换为 OpenAI 兼容；否则请改用 Gemini 官方根地址（通常不包含 /v1）。
+                </div>
+              )}
               {isHttpsPage && baseUrl.trim().toLowerCase().startsWith('http://') && (
                 <div className="text-xs text-orange-600 bg-orange-50/60 px-3 py-2 rounded-2xl border border-orange-200 whitespace-pre-wrap">
                   你当前是 HTTPS 页面。Base URL 如果用 http://，浏览器通常会拦截（混合内容），表现为“少部分手机怎么都连不上/请求失败”。
@@ -1512,6 +1522,19 @@ export default function ApiConfigScreen() {
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-black/10 text-[13px] outline-none"
                   style={{ color: fontColor.value }}
                 />
+                <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
+                  {editApiInterface === 'gemini_native'
+                    ? '提示：Gemini 原生一般填根地址（如 https://generativelanguage.googleapis.com），应用会自动规整为 /v1beta。若你用的是“OpenAI 兼容中转站”（常见特征：地址里有 /v1），请把「接口类型」改成 OpenAI 兼容。'
+                    : editApiInterface === 'ollama'
+                      ? '提示：Ollama 本地一般填根地址（如 http://localhost:11434），应用会自动规整到 /api。'
+                      : '提示：OpenAI/Claude 兼容一般填根地址即可（例如 https://xxx.com 或 https://xxx.com/v1 都行）。应用会自动规整为 /v1，避免 /v1/v1。'}
+                </div>
+                {editApiInterface === 'gemini_native' && /\/v1(\/|$)/i.test(editBaseUrl.trim()) && !/\/v1beta(\/|$)/i.test(editBaseUrl.trim()) && (
+                  <div className="text-xs text-orange-700 bg-orange-50 px-3 py-2 rounded-xl border border-orange-200 whitespace-pre-wrap">
+                    检测到你选择了「Gemini 原生」，但 Base URL 看起来是 OpenAI 兼容地址（包含 /v1）。
+                    如果你使用的是中转站（OpenAI 兼容），请把「接口类型」切换为 OpenAI 兼容；否则请改用 Gemini 官方根地址（通常不包含 /v1）。
+                  </div>
+                )}
                 {isHttpsPage && editBaseUrl.trim().toLowerCase().startsWith('http://') && (
                   <div className="text-xs text-orange-600 bg-orange-50 px-3 py-2 rounded-xl border border-orange-200 whitespace-pre-wrap">
                     提示：HTTPS 页面下使用 http:// Base URL 可能会被浏览器拦截（混合内容）。
