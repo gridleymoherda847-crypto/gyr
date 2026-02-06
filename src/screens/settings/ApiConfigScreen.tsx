@@ -143,8 +143,8 @@ export default function ApiConfigScreen() {
   const [showTtsApiKey, setShowTtsApiKey] = useState(false)
   const [showEditApiKey, setShowEditApiKey] = useState(false)
   
-  // 高级选项展开状态
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  // 语音配置：克隆/导入音色区域默认直接展开（避免手机端误以为“功能丢了”）
+  const showAdvanced = true
   // 当前配置高级参数展开状态
   const [showCurrentAdvanced, setShowCurrentAdvanced] = useState(false)
   
@@ -682,10 +682,11 @@ export default function ApiConfigScreen() {
 
   return (
     <PageContainer>
-      <div className="flex h-full flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
+      <div className="flex h-full min-h-0 flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
         <AppHeader title="API 配置" onBack={() => navigate('/apps/settings')} />
         
-        <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 pb-12 flex flex-col gap-4 sm:gap-5">
+        {/* 这里不要隐藏滚动条：否则“语音克隆/导入”等长内容在手机端像“消失” */}
+        <div className="flex-1 min-h-0 overflow-y-scroll custom-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 pb-16 flex flex-col gap-4 sm:gap-5 touch-pan-y">
           {/* 当前使用的配置（常驻展示） */}
           <div className="order-1">
             {currentConfigId && (() => {
@@ -1345,42 +1346,30 @@ export default function ApiConfigScreen() {
                   </p>
                 </div>
 
-                {/* 克隆/导入音色入口（放在更靠上位置，避免用户以为“没了”） */}
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl bg-purple-50/40 border border-white/30 hover:bg-purple-50/60 transition-colors"
-                >
+                {/* 克隆/导入音色（默认展示，不做收纳） */}
+                <div className="w-full px-3 py-2.5 rounded-2xl bg-purple-50/40 border border-white/30">
                   <div className="text-left">
                     <div className="text-sm font-semibold" style={{ color: fontColor.value }}>🎭 克隆/导入音色</div>
                     <div className="text-xs opacity-60" style={{ color: fontColor.value }}>
-                      {showAdvanced ? '点此收起' : '点此展开（上传音频克隆 / 导入 Voice ID / 刷新我已克隆）'}
+                      这里可以：上传音频克隆 / 导入 Voice ID / 刷新我已克隆的音色
                     </div>
                   </div>
-                  <svg
-                    className={`w-5 h-5 opacity-50 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
-                    style={{ color: fontColor.value }}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
+                </div>
                 
                 {/* 语速调节 */}
                 <div className="space-y-2">
                   <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
                     语速：{ttsSpeed.toFixed(1)}x
                   </label>
-                  <input
+                <input
                     type="range"
                     min="0.5"
                     max="2"
                     step="0.1"
                     value={ttsSpeed}
                     onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-white/50 rounded-lg appearance-none cursor-pointer"
+                    // 手机上 range 的滑块经常被裁掉一半：把输入本身高度加大
+                    className="w-full h-8 bg-white/40 rounded-lg appearance-none cursor-pointer"
                   />
                   <div className="flex justify-between text-xs opacity-50" style={{ color: fontColor.value }}>
                     <span>慢 0.5x</span>
