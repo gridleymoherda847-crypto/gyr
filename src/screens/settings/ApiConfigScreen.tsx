@@ -563,7 +563,18 @@ export default function ApiConfigScreen() {
         setTimeout(() => setCloneSuccess(''), 3000)
       }
     } catch (err) {
-      setTtsTestError('获取音色失败：' + (err as Error).message)
+      const msg = String((err as any)?.message || err || '')
+      if (/failed to fetch|networkerror|load failed/i.test(msg) || err instanceof TypeError) {
+        setTtsTestError(
+          '获取音色失败：网络请求被浏览器拦截或无法连接（常见是跨域/CORS）。\n' +
+            '建议：\n' +
+            '- 确认你选择的区域正确（国内/海外）\n' +
+            '- 尝试换浏览器/换网络\n' +
+            '- 也可以先去 MiniMax 官网克隆，再回这里点“刷新我已克隆的音色”同步\n'
+        )
+        return
+      }
+      setTtsTestError('获取音色失败：' + (msg || '未知错误'))
     } finally {
       setFetchVoicesLoading(false)
     }
@@ -586,6 +597,13 @@ export default function ApiConfigScreen() {
     
     try {
       const baseUrl = getBaseUrl(ttsRegion)
+      // 简单校验：避免用户误选极大文件导致长时间无反应
+      try {
+        const maxMB = 25
+        if (file.size > maxMB * 1024 * 1024) {
+          throw new Error(`音频文件过大（>${maxMB}MB）。建议剪短到 10秒-5分钟再试。`)
+        }
+      } catch {}
       
       // 1. 上传音频文件
       const formData = new FormData()
@@ -603,6 +621,14 @@ export default function ApiConfigScreen() {
       if (!uploadResponse.ok) {
         const errText = await uploadResponse.text()
         console.error('Upload error:', errText)
+        // 尝试从返回里提取可读错误
+        try {
+          const j = errText ? JSON.parse(errText) : {}
+          const m = j?.base_resp?.status_msg || j?.error?.message || j?.message
+          if (m) throw new Error(String(m))
+        } catch {
+          // ignore
+        }
         throw new Error(`上传失败: ${uploadResponse.status}`)
       }
       
@@ -636,6 +662,13 @@ export default function ApiConfigScreen() {
       if (!cloneResponse.ok) {
         const errText = await cloneResponse.text()
         console.error('Clone error:', errText)
+        try {
+          const j = errText ? JSON.parse(errText) : {}
+          const m = j?.base_resp?.status_msg || j?.error?.message || j?.message
+          if (m) throw new Error(String(m))
+        } catch {
+          // ignore
+        }
         throw new Error(`克隆失败: ${cloneResponse.status}`)
       }
       
@@ -666,7 +699,18 @@ export default function ApiConfigScreen() {
       setTimeout(() => setCloneSuccess(''), 5000)
       
     } catch (err) {
-      setCloneError((err as Error).message)
+      const msg = String((err as any)?.message || err || '')
+      if (/failed to fetch|networkerror|load failed/i.test(msg) || err instanceof TypeError) {
+        setCloneError(
+          '克隆失败：网络请求被浏览器拦截或无法连接（常见是跨域/CORS）。\n' +
+            '建议：\n' +
+            '- 先确认你选择的区域正确（国内/海外）\n' +
+            '- 尝试换浏览器/换网络\n' +
+            '- 如果仍失败：用下方“MiniMax 官网克隆页面”完成克隆，再回这里点“刷新我已克隆的音色”同步\n'
+        )
+        return
+      }
+      setCloneError(msg || '克隆失败：未知错误')
     } finally {
       setCloneLoading(false)
     }
@@ -686,7 +730,14 @@ export default function ApiConfigScreen() {
         <AppHeader title="API 配置" onBack={() => navigate('/apps/settings')} />
         
         {/* 这里不要隐藏滚动条：否则“语音克隆/导入”等长内容在手机端像“消失” */}
-        <div className="flex-1 min-h-0 overflow-y-scroll custom-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 pb-16 flex flex-col gap-4 sm:gap-5 touch-pan-y">
+        {/* 移动端滚动兼容：
+           - 外层固定（body overflow hidden）时，必须依赖内部滚动容器
+           - 这里用 overflow-y-auto + iOS momentum scroll，避免“滑不动/被吃手势”
+           - 底部 padding 只留安全区 + 少量空间，避免出现一大块“空白遮挡” */}
+        {/* iOS/Safari 在“overflow 滚动容器 + display:flex”组合下偶发滚动失效（表现为：展开后卡住/滑不动）。
+            这里把“滚动容器”和“flex 排版容器”拆成两层：外层只负责滚动，内层负责 flex 排版/排序。 */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] custom-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 pb-[calc(2.25rem+env(safe-area-inset-bottom))] touch-pan-y">
+          <div className="flex flex-col gap-4 sm:gap-5">
           {/* 当前使用的配置（常驻展示） */}
           <div className="order-1">
             {currentConfigId && (() => {
@@ -1259,8 +1310,8 @@ export default function ApiConfigScreen() {
             {/* 折叠内容 */}
             {showTTSSection && (
               // 移动端常见问题：外层滚动容器高度计算异常/被裁切，导致“展开后下面空白像丢功能”
-              // 解决：语音配置面板自身也提供滚动（限制最大高度），保证克隆/导入区域一定可见
-              <div className="p-3 sm:p-4 pt-0 pb-4 space-y-3 border-t border-white/10 max-h-[72vh] overflow-y-auto custom-scrollbar">
+              // 解决：不要在面板内部再做限高滚动（容易被“框”裁切/误以为丢功能）；统一交给整页滚动
+              <div className="p-3 sm:p-4 pt-0 pb-4 space-y-3 border-t border-white/10">
                 {/* 区域选择 */}
                 <div className="space-y-2">
                   <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>
@@ -1371,8 +1422,13 @@ export default function ApiConfigScreen() {
                     value={ttsSpeed}
                     onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
                     // 手机上 range 的滑块经常被裁掉一半：把输入本身高度加大
-                    className="w-full h-8 bg-white/40 rounded-lg appearance-none cursor-pointer"
+                    // 同时避免“卡在语速这里滑不动”：滑块会吃掉手势，强制允许纵向 pan 作为滚动
+                    className="w-full h-8 bg-white/40 rounded-lg appearance-none cursor-pointer touch-pan-y"
+                    style={{ touchAction: 'pan-y' }}
                   />
+                <div className="text-[11px] opacity-50 -mt-1" style={{ color: fontColor.value }}>
+                  提示：在滑块上左右拖动调语速；上下滑动可继续滚动页面。
+                </div>
                   <div className="flex justify-between text-xs opacity-50" style={{ color: fontColor.value }}>
                     <span>慢 0.5x</span>
                     <span>正常 1x</span>
@@ -1647,6 +1703,7 @@ export default function ApiConfigScreen() {
           
           {/* 底部留白 */}
           <div className="order-[99] h-4" />
+          </div>
         </div>
       </div>
 

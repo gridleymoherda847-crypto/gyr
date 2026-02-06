@@ -104,7 +104,8 @@ export default function PhoneShell({ children }: PropsWithChildren) {
         >
           {/* 虚拟状态栏（可隐藏） */}
           {!hideStatusBar && <VirtualStatusBar />}
-          <div className="flex-1 overflow-hidden">{children}</div>
+          {/* 关键：必须 min-h-0，否则子页面的 overflow-y 滚动在移动端容易“滑不动/被裁切” */}
+          <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
           
           {/* 顶部通知浮窗 - 放在内层容器里，自动跟随安全区域 */}
           {unreadNotifications.length > 0 && (
@@ -158,7 +159,8 @@ export default function PhoneShell({ children }: PropsWithChildren) {
             <div className="relative z-10 flex h-full flex-col">
               {/* 虚拟状态栏（可隐藏） */}
               {!hideStatusBar && <VirtualStatusBar />}
-              <div className="flex-1 overflow-hidden">{children}</div>
+              {/* 关键：必须 min-h-0，否则子页面的 overflow-y 滚动在移动端容易“滑不动/被裁切” */}
+              <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
             </div>
 
             {/* 顶部通知浮窗 */}
