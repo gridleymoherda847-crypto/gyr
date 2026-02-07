@@ -1072,17 +1072,20 @@ export default function ChatScreen() {
 
             let content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> = m.content || ''
             // 图片：如果是用户发送的图片，传递给支持vision的API
+            // 安全：GIF/WebP动图等 Gemini 不支持，统一降级为文本（避免 mime type not supported 报错）
             if (m.type === 'image') {
-              if (m.isUser && m.content && m.content.startsWith('data:image')) {
-                // 多模态格式：图片+文本（OpenAI vision API格式）
-                // 确保data URL格式正确：data:image/xxx;base64,xxx
+              const imgUrl = String(m.content || '').trim()
+              const isGif = /\.gif(\?|$)/i.test(imgUrl) || /^data:image\/gif/i.test(imgUrl)
+              if (isGif) {
+                content = m.isUser ? '[用户发送了一张动图/GIF]' : '[对方发送了一张动图/GIF]'
+                used += 20
+              } else if (m.isUser && imgUrl && imgUrl.startsWith('data:image')) {
                 content = [
                   { type: 'text', text: '[用户发送了一张图片，请描述你看到的内容并自然回应]' },
-                  { type: 'image_url', image_url: { url: m.content } }
+                  { type: 'image_url', image_url: { url: imgUrl } }
                 ]
-                used += 100 // 图片占用估算
+                used += 100
               } else {
-                // 旧格式图片（blob URL等）或非用户图片，用文本描述
                 content = '[对方发送了一张图片]'
                 used += 15
               }

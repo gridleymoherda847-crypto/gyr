@@ -1583,6 +1583,24 @@ export function OSProvider({ children }: PropsWithChildren) {
           return { ...m, content: text || '[图片]' }
         })
       }
+      // ★ 全局安全网：从消息中剔除 GIF 图片（Gemini/中转不支持 image/gif）
+      const _isGifUrl = (u: string) => /\.gif(\?|$)/i.test(u) || /^data:image\/gif/i.test(u)
+      messages = messages.map(m => {
+        if (!Array.isArray(m.content)) return m
+        const hasGif = m.content.some((p: any) => {
+          const url = p?.image_url?.url || p?.imageUrl?.url || ''
+          return (p?.type === 'image_url' || p?.type === 'image') && _isGifUrl(url)
+        })
+        if (!hasGif) return m
+        const filtered = m.content
+          .filter((p: any) => {
+            const url = p?.image_url?.url || p?.imageUrl?.url || ''
+            return !((p?.type === 'image_url' || p?.type === 'image') && _isGifUrl(url))
+          })
+        filtered.push({ type: 'text', text: '[动图/GIF，已省略]' } as any)
+        return { ...m, content: filtered }
+      }) as typeof messages
+
       const hasMultimodal = messages.some(m => Array.isArray(m.content))
 
       // ====== 1) Ollama 原生 ======

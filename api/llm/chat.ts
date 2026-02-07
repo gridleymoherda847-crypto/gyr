@@ -1,5 +1,39 @@
 import { isSafeTargetUrl, json, normalizeApiBaseUrl, readJsonBody, setNoStore } from './_utils'
 
+/**
+ * 安全网：从 OpenAI messages 里剔除 Gemini/中转不支持的 MIME（image/gif 等）
+ * - image_url 含 .gif 或 data:image/gif → 替换为纯文本占位
+ * - 防止前端遗漏、或旧消息/缓存导致 GIF 仍被发出
+ */
+function stripUnsupportedImages(messages: any[]): any[] {
+  if (!Array.isArray(messages)) return messages
+  const isGifUrl = (u: string) =>
+    /\.gif(\?|$)/i.test(u) || /^data:image\/gif/i.test(u)
+  return messages.map((m: any) => {
+    if (!m) return m
+    const c = m.content
+    if (!Array.isArray(c)) return m
+    // content 是多模态数组
+    const hasGif = c.some((p: any) => {
+      if (!p) return false
+      const url =
+        p?.image_url?.url || p?.imageUrl?.url || ''
+      return (p?.type === 'image_url' || p?.type === 'image') && isGifUrl(url)
+    })
+    if (!hasGif) return m
+    // 过滤掉 GIF，加一个文本占位
+    const filtered = c
+      .filter((p: any) => {
+        if (!p) return false
+        const url = p?.image_url?.url || p?.imageUrl?.url || ''
+        if ((p?.type === 'image_url' || p?.type === 'image') && isGifUrl(url)) return false
+        return true
+      })
+    filtered.push({ type: 'text', text: '[动图/GIF：已省略，不支持该格式]' })
+    return { ...m, content: filtered }
+  })
+}
+
 function safeJsonParse(text: string): any | null {
   const raw = String(text || '').trim()
   if (!raw) return null
@@ -201,7 +235,8 @@ export default async function handler(req: any, res: any) {
 
       try {
         // 兼容：如果前端用 OpenAI chat payload，后端在此转换为 Gemini contents
-        const openAIMessages = Array.isArray(payload?.messages) ? payload.messages : []
+        // ★ 安全网：先过滤掉 GIF（Gemini 不支持 image/gif）
+        const openAIMessages = stripUnsupportedImages(Array.isArray(payload?.messages) ? payload.messages : [])
         const { systemInstructionText, contents } = toGeminiContentsFromOpenAI(openAIMessages)
 
         const temperature =
@@ -455,7 +490,12 @@ export default async function handler(req: any, res: any) {
       return json(res, 400, { error: { message: 'Unsafe target url' } })
     }
 
-    const openaiPayload = wantsStream ? { ...(payload as any), stream: true } : payload
+    // ★ 安全网：剔除 GIF 图片，防止 Gemini 中转报 mime type not supported
+    const cleanedPayload = {
+      ...(payload as any),
+      messages: stripUnsupportedImages(Array.isArray(payload?.messages) ? payload.messages : []),
+    }
+    const openaiPayload = wantsStream ? { ...cleanedPayload, stream: true } : cleanedPayload
     let r: any
     try {
       r = await fetch(target.toString(), {

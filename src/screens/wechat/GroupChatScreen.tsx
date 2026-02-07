@@ -33,6 +33,8 @@ export default function GroupChatScreen() {
   const getImageDescription = async (imageUrl: string): Promise<string> => {
     const key = String(imageUrl || '').trim()
     if (!key) return '（空图片）'
+    // 安全网：GIF 图片 Gemini/中转不支持，直接跳过
+    if (/\.gif(\?|$)/i.test(key) || /^data:image\/gif/i.test(key)) return '（动图/GIF，跳过识别）'
     if (imageDescCacheRef.current[key]) return imageDescCacheRef.current[key]
     try {
       const res = await callLLM(
@@ -71,12 +73,12 @@ export default function GroupChatScreen() {
   
   // 获取所有表情包（全局 + 群成员的）
   const allStickersWithInfo = useMemo(() => {
-    const stickers: { id: string; url: string; category: string; keyword?: string }[] = []
+    const stickers: { id: string; url: string; category: string; keyword?: string; description?: string }[] = []
     // 先获取全局表情包（任意角色都可以，因为 getStickersByCharacter 会包含 characterId='all' 的）
     const globalStickers = getStickersByCharacter('')
     globalStickers.forEach(s => {
       if (!stickers.find(st => st.url === s.imageUrl)) {
-        stickers.push({ id: s.id, url: s.imageUrl, category: s.category || '未分类', keyword: s.keyword })
+        stickers.push({ id: s.id, url: s.imageUrl, category: s.category || '未分类', keyword: s.keyword, description: s.description })
       }
     })
     // 再获取群成员的表情包
@@ -84,7 +86,7 @@ export default function GroupChatScreen() {
       const memberStickers = getStickersByCharacter(m.id)
       memberStickers.forEach(s => {
         if (!stickers.find(st => st.url === s.imageUrl)) {
-          stickers.push({ id: s.id, url: s.imageUrl, category: s.category || '未分类', keyword: s.keyword })
+          stickers.push({ id: s.id, url: s.imageUrl, category: s.category || '未分类', keyword: s.keyword, description: s.description })
         }
       })
     })
@@ -493,9 +495,12 @@ ${params.recentMessages || '（暂无消息）'}`
         new Set(
           recentForVision
             .filter(m =>
-              (m.type === 'image' || m.type === 'sticker') &&
+              // 不再把表情包/GIF 发给识图 API（Gemini/中转不支持 image/gif）
+              m.type === 'image' &&
               typeof m.content === 'string' &&
-              String(m.content || '').trim()
+              String(m.content || '').trim() &&
+              !/\.gif(\?|$)/i.test(String(m.content || '')) &&
+              !/^data:image\/gif/i.test(String(m.content || ''))
             )
             .map(m => String(m.content || '').trim())
         )
@@ -513,9 +518,15 @@ ${params.recentMessages || '（暂无消息）'}`
           return `【图片内容：${desc}】`
         }
         if (m.type === 'sticker') {
+          // 不走识图（GIF 会导致 Gemini/中转报 mime type not supported）
+          // 用关键词/备注/分类替代（和私聊一致）
           const u = String(m.content || '').trim()
-          const desc = u ? (imageDescCacheRef.current[u] || '无法识别表情包内容') : '无法识别表情包内容'
-          return `【表情包内容：${desc}】`
+          const st = allStickersWithInfo.find((s: any) => String(s?.url || '').trim() === u) || null
+          const desc = String(st?.description || '').trim()
+          const kw = String(st?.keyword || '').trim()
+          const cat = String(st?.category || '').trim()
+          const parts = [desc ? `备注=${desc}` : '', kw ? `关键词=${kw}` : '', cat ? `分类=${cat}` : ''].filter(Boolean)
+          return parts.length > 0 ? `【表情包】${parts.join('；')}` : '【表情包】'
         }
         if (m.type === 'voice') return '<语音>'
         if (m.type === 'transfer') return '<转账>'
