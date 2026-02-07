@@ -26,6 +26,39 @@ export default function ChatSettingsScreen() {
   const stickers = getStickersByCharacter(characterId || '')
   const publicStickers = getStickersByCharacter('all')
   const messages = getMessagesByCharacter(characterId || '')
+
+  // ===== 对话统计（回合/Token 预估）=====
+  const estimateTokens = (text: string) => {
+    const s = String(text || '')
+    let cjk = 0
+    let ascii = 0
+    let other = 0
+    for (let i = 0; i < s.length; i++) {
+      const code = s.charCodeAt(i)
+      if (code <= 0x7f) ascii++
+      else if ((code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3400 && code <= 0x4dbf)) cjk++
+      else other++
+    }
+    return Math.max(0, Math.ceil(cjk * 1.0 + other * 0.7 + ascii / 4))
+  }
+  const currentRounds = useMemo(() => {
+    return (messages || []).filter(m => (m as any)?.isUser && (m as any)?.type !== 'system').length
+  }, [messages])
+  const estimatedContextTokens = useMemo(() => {
+    const parts = (messages || []).map(m => {
+      const type = (m as any)?.type
+      if (type === 'image') return '[图片]'
+      if (type === 'sticker') return '[表情包]'
+      if (type === 'voice') return '[语音]'
+      if (type === 'transfer') return '[转账]'
+      if (type === 'location') return '[位置]'
+      if (type === 'period') return '[经期]'
+      if (type === 'doudizhu_share') return '[斗地主]'
+      if (type === 'pat') return '[拍一拍]'
+      return String((m as any)?.content || '').slice(0, 4000)
+    })
+    return estimateTokens(parts.join('\n'))
+  }, [messages])
   
   const bgInputRef = useRef<HTMLInputElement>(null)
   const stickerInputRef = useRef<HTMLInputElement>(null)
@@ -2103,6 +2136,27 @@ export default function ChatSettingsScreen() {
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* 对话统计（回合/Token） */}
+            <div className="rounded-2xl bg-white border border-gray-100 overflow-hidden">
+              <div className="px-4 py-3 flex items-center justify-between">
+                <span className="text-sm text-gray-800 font-medium">当前对话回合数</span>
+                <span className="text-sm text-gray-800">{currentRounds} 回合</span>
+              </div>
+              <div className="h-px bg-gray-100" />
+              <div className="px-4 py-3 flex items-center justify-between">
+                <span className="text-sm text-gray-800 font-medium">预估上下文 Token</span>
+                <span className="text-sm text-gray-800">{estimatedContextTokens} Tokens</span>
+              </div>
+              <div className="h-px bg-gray-100" />
+              <div className="px-4 py-3 flex items-center justify-between">
+                <span className="text-sm text-gray-800 font-medium">已有总结 Token</span>
+                <span className="text-sm text-gray-800">{estimateTokens(memorySummaryDraft || '')} Tokens</span>
+              </div>
+              <div className="px-4 pb-3 text-[11px] text-gray-400">
+                说明：Token 为预估值（用于参考上下文长度），不影响聊天观感。
+              </div>
+            </div>
+
             <div className="bg-gray-50 rounded-xl p-4">
               <div className="text-sm font-medium text-[#000] mb-1">每次回复读取的历史回合数</div>
               <div className="text-xs text-gray-500 mb-3">默认 100，最大 1000。回合数越大越不失忆，但会影响回复速度。</div>

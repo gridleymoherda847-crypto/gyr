@@ -28,6 +28,40 @@ export default function GroupChatScreen() {
   const selectedPersona = getCurrentPersona()
   getCurrentPeriod() // 调用以保持依赖
 
+  // ===== 对话统计（回合/Token 预估）=====
+  const estimateTokens = (text: string) => {
+    const s = String(text || '')
+    let cjk = 0
+    let ascii = 0
+    let other = 0
+    for (let i = 0; i < s.length; i++) {
+      const code = s.charCodeAt(i)
+      if (code <= 0x7f) ascii++
+      else if ((code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3400 && code <= 0x4dbf)) cjk++
+      else other++
+    }
+    return Math.max(0, Math.ceil(cjk * 1.0 + other * 0.7 + ascii / 4))
+  }
+  const currentRounds = useMemo(() => {
+    return (messages || []).filter(m => (m as any)?.isUser && (m as any)?.type !== 'system').length
+  }, [messages])
+  const estimatedContextTokens = useMemo(() => {
+    const parts = (messages || []).map(m => {
+      const type = (m as any)?.type
+      if (type === 'image') return '[图片]'
+      if (type === 'sticker') return '[表情包]'
+      if (type === 'voice') return '[语音]'
+      if (type === 'transfer') return '[转账]'
+      if (type === 'location') return '[位置]'
+      if (type === 'period') return '[经期]'
+      if (type === 'doudizhu_share') return '[斗地主]'
+      if (type === 'pat') return '[拍一拍]'
+      return String((m as any)?.content || '').slice(0, 4000)
+    })
+    return estimateTokens(parts.join('\n'))
+  }, [messages])
+  const memorySummaryTokens = useMemo(() => estimateTokens(String(group?.memorySummary || '')), [group?.memorySummary])
+
   // 群聊识图：缓存图片描述，避免同一张图反复 OCR
   const imageDescCacheRef = useRef<Record<string, string>>({})
   const getImageDescription = async (imageUrl: string): Promise<string> => {
@@ -2092,6 +2126,24 @@ ${history}`
                     {/* 折叠内容 */}
                     {memoryExpanded && group.memoryEnabled && (
                       <div className="px-0 pb-3 space-y-3">
+                        {/* 对话统计（回合/Token） */}
+                        <div className="rounded-2xl bg-white border border-gray-100 overflow-hidden">
+                          <div className="px-4 py-3 flex items-center justify-between">
+                            <span className="text-sm text-gray-800 font-medium">当前对话回合数</span>
+                            <span className="text-sm text-gray-800">{currentRounds} 回合</span>
+                          </div>
+                          <div className="h-px bg-gray-100" />
+                          <div className="px-4 py-3 flex items-center justify-between">
+                            <span className="text-sm text-gray-800 font-medium">预估上下文 Token</span>
+                            <span className="text-sm text-gray-800">{estimatedContextTokens} Tokens</span>
+                          </div>
+                          <div className="h-px bg-gray-100" />
+                          <div className="px-4 py-3 flex items-center justify-between">
+                            <span className="text-sm text-gray-800 font-medium">已有总结 Token</span>
+                            <span className="text-sm text-gray-800">{memorySummaryTokens} Tokens</span>
+                          </div>
+                        </div>
+
                         <div className="bg-gray-50 rounded-xl p-3">
                           <div className="text-xs text-gray-500 mb-2">把最近N回合对话总结成长期记忆</div>
                           <div className="flex items-center gap-2 mb-2">

@@ -367,8 +367,11 @@ export default function ChatScreen() {
   // 清空消息确认
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   
+  // 用户发表情包面板：应展示“总表情库”（不受角色绑定影响）
+  const libraryStickers = useMemo(() => getStickersByCharacter('all'), [getStickersByCharacter])
+
   // 发送用户表情包
-  const sendUserSticker = (sticker: typeof stickers[0]) => {
+  const sendUserSticker = (sticker: typeof libraryStickers[0]) => {
     if (!sticker?.imageUrl) return
     
     // 添加到最近使用
@@ -398,23 +401,23 @@ export default function ChatScreen() {
   // 获取表情包分类列表
   const stickerCategoryList = useMemo(() => {
     const categories = new Set<string>()
-    for (const s of stickers) {
+    for (const s of libraryStickers) {
       if (s.category) categories.add(s.category)
     }
     return Array.from(categories).sort((a, b) => a.localeCompare(b, 'zh-CN'))
-  }, [stickers])
+  }, [libraryStickers])
   
   // 获取当前标签页的表情包
   const currentTabStickers = useMemo(() => {
     if (stickerTab === 'recent') {
       // 返回最近使用的表情包
       return recentStickers
-        .map(id => stickers.find(s => s.id === id))
-        .filter((s): s is typeof stickers[0] => !!s)
+        .map(id => libraryStickers.find(s => s.id === id))
+        .filter((s): s is typeof libraryStickers[0] => !!s)
     }
     // 返回指定分类的表情包
-    return stickers.filter(s => s.category === stickerTab)
-  }, [stickerTab, stickers, recentStickers])
+    return libraryStickers.filter(s => s.category === stickerTab)
+  }, [stickerTab, libraryStickers, recentStickers])
   
   const imageInputRef = useRef<HTMLInputElement>(null)
   const aliveRef = useRef(true)
@@ -1095,7 +1098,7 @@ export default function ChatScreen() {
               // 表情包：排查/兼容优先 —— 不再把 GIF/贴纸图片发给模型（很多中转/Gemini 不支持 image/gif）
               // 只把“表情包备注/关键词/分类”作为文本上下文，让模型理解情绪含义即可。
               const st =
-                (stickers || []).find((s: any) => String(s?.imageUrl || '').trim() === url) ||
+                (libraryStickers || []).find((s: any) => String(s?.imageUrl || '').trim() === url) ||
                 null
               const desc = String(st?.description || '').trim()
               const kw = String(st?.keyword || '').trim()
