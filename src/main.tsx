@@ -99,7 +99,7 @@ if (isIOS) {
     if (!document.hidden) window.setTimeout(setAppHeight, 80)
   })
 
-  // iOS：禁用双指缩放/页面手势（避免“像电脑模式一样能拖动/缩放导致点击错位”）
+  // iOS：禁用双指缩放/页面手势（避免"像电脑模式一样能拖动/缩放导致点击错位"）
   const preventGesture = (e: Event) => {
     // Safari 的 gesture 事件是可 cancel 的
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -111,7 +111,71 @@ if (isIOS) {
   document.addEventListener('gestureend', preventGesture as any, { passive: false } as any)
 }
 
-// 尝试申请“持久化存储”（尽量避免浏览器回收 IndexedDB 导致数据丢失）
+// ========= 自动版本检测 + 强制刷新 =========
+// 每次从后台切回 / 每 5 分钟检查一次 index.html 是否已更新
+// 如果检测到新版本，清除 Service Worker / CacheStorage 并自动刷新
+;(function autoVersionCheck() {
+  const CHECK_INTERVAL = 5 * 60 * 1000 // 5 分钟
+  let lastCheck = Date.now()
+
+  async function checkForUpdate() {
+    try {
+      const now = Date.now()
+      if (now - lastCheck < 30_000) return // 30秒内不重复检查
+      lastCheck = now
+      const res = await fetch('/?__vc=' + now, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      })
+      if (!res.ok) return
+      const html = await res.text()
+      // Vite 构建的 JS 入口文件名带 hash，检测是否和当前加载的不同
+      const currentScripts = Array.from(document.querySelectorAll('script[src]'))
+        .map(s => (s as HTMLScriptElement).src)
+        .filter(s => s.includes('/assets/'))
+      if (currentScripts.length === 0) return // 开发模式，跳过
+
+      const hasNewVersion = currentScripts.some(src => {
+        const fileName = src.split('/').pop() || ''
+        return !html.includes(fileName)
+      })
+
+      if (hasNewVersion) {
+        console.log('[版本检测] 检测到新版本，准备刷新...')
+        // 注销 Service Worker
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations()
+          for (const r of regs) {
+            try { await r.unregister() } catch { /* */ }
+          }
+        }
+        // 清除浏览器 Cache Storage
+        if ('caches' in window) {
+          const keys = await caches.keys()
+          for (const key of keys) {
+            try { await caches.delete(key) } catch { /* */ }
+          }
+        }
+        window.location.reload()
+      }
+    } catch {
+      // 网络失败静默忽略
+    }
+  }
+
+  // 页面可见性变化时检测（从后台切回时）
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) checkForUpdate()
+  })
+
+  // 定时检测
+  setInterval(checkForUpdate, CHECK_INTERVAL)
+
+  // 首次延迟检测（给应用启动留时间）
+  setTimeout(checkForUpdate, 10_000)
+})()
+
+// 尝试申请"持久化存储"（尽量避免浏览器回收 IndexedDB 导致数据丢失）
 // 说明：不同浏览器支持程度不同；失败时静默忽略。
 try {
   const navAny = navigator as any
