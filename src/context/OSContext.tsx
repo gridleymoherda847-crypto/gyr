@@ -1816,11 +1816,52 @@ export function OSProvider({ children }: PropsWithChildren) {
         max_tokens: maxTokens,
       }
 
+      // 排查/稳定性：OpenAI 兼容优先走同域转发（避免 CORS/拿不到上游错误体，只能看到“500”）
+      // - 代理侧会尽可能把上游错误体转换成“可读文本”回传
+      const callOpenAICompatViaProxy = async (pl: any) => {
+        const proxyRes = await fetch('/api/llm/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiBaseUrl: cfg.apiBaseUrl,
+            apiKey: key,
+            apiInterface: 'openai_compatible',
+            payload: pl,
+          }),
+        })
+        if (!proxyRes.ok) {
+          const errData = await proxyRes.json().catch(() => ({}))
+          throw new Error(errData?.error?.message || `请求失败: ${proxyRes.status}`)
+        }
+        return await proxyRes.json().catch(() => ({}))
+      }
+
+      const extractOpenAIContent = (dataAny: any) => {
+        return (
+          dataAny?.choices?.[0]?.message?.content ??
+          dataAny?.choices?.[0]?.text ??
+          dataAny?.message?.content ??
+          dataAny?.content
+        )
+      }
+
       const controller = new AbortController()
       const timeoutMs = options?.timeoutMs ?? 600000
       const t = window.setTimeout(() => controller.abort(), timeoutMs)
 
-      // HTTPS 页面 + HTTP Base URL：浏览器会拦截混合内容，直接走同域转发
+      // 代理优先（尤其是排查阶段要看到上游详细报错）
+      try {
+        const proxyData = await callOpenAICompatViaProxy(payload)
+        const proxyContent = extractOpenAIContent(proxyData)
+        const proxyText = typeof proxyContent === 'string' ? proxyContent.trim() : ''
+        if (proxyText) return proxyText
+        // 如果代理返回了标准 OpenAI JSON：继续走下面的正常解析/报错逻辑
+      } catch {
+        // ignore and fall back to direct fetch
+      }
+
+      // 兜底：直连（本地开发/Vite 环境可能没有 /api/llm/chat）
+      // HTTPS 页面 + HTTP Base URL：浏览器会拦截混合内容（此时代理通常能绕过）
       if (window.location.protocol === 'https:' && base.trim().toLowerCase().startsWith('http://')) {
         throw new TypeError('Mixed content blocked')
       }
@@ -1880,8 +1921,10 @@ export function OSProvider({ children }: PropsWithChildren) {
         } catch {
           msg = ''
         }
+        // 直连时经常拿不到上游 JSON（网关返回 HTML/纯文本），这里把片段也带出来，方便排查
+        const rawSnippet = !msg && text ? String(text).trim().slice(0, 900) : ''
         const e: any = new Error(
-          (msg || `请求失败: ${status}`) +
+          (msg || (rawSnippet ? `请求失败: ${status}\n上游返回片段：${rawSnippet}` : `请求失败: ${status}`)) +
             (status === 400 && hasMultimodal
               ? '\n（提示：你的接口可能不支持“图片/贴纸”多模态格式。建议换支持 vision 的模型/中转，或尽量避免在本轮带图。）'
               : '')
@@ -1893,11 +1936,7 @@ export function OSProvider({ children }: PropsWithChildren) {
       
       const data = await response.json()
 
-      const content =
-        data?.choices?.[0]?.message?.content ??
-        data?.choices?.[0]?.text ??
-        data?.message?.content ??
-        data?.content
+      const content = extractOpenAIContent(data)
 
       const finalText = typeof content === 'string' ? content.trim() : ''
       if (!finalText) {
