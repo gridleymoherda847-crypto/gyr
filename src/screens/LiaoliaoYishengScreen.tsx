@@ -8438,11 +8438,12 @@ export default function LiaoliaoYishengScreen() {
       {/* 邀请好友弹窗 */}
       {showInvite && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setShowInvite(false)}>
-          <div className="w-full max-w-[420px] max-h-[75vh] rounded-t-3xl bg-white p-4 overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
+          <div className="w-full max-w-[420px] max-h-[75vh] rounded-t-3xl bg-white flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 pb-2 flex-shrink-0">
               <div className="text-sm font-bold text-gray-800">邀请好友进入平行世界</div>
               <button type="button" onClick={() => setShowInvite(false)} className="text-sm text-gray-500">关闭</button>
             </div>
+            <div className="flex-1 overflow-y-auto px-4 custom-scrollbar">
             <div className="text-[11px] text-gray-400 mb-3 leading-relaxed">
               邀请的好友会 <b className="text-purple-600">100%</b> 出现在你这局人生中，替换某个随机NPC（除父母外）。每个好友只会变成一个角色，不会重复。
             </div>
@@ -8563,18 +8564,20 @@ export default function LiaoliaoYishengScreen() {
               className="w-full h-16 p-3 rounded-xl border border-gray-200 text-sm outline-none resize-none"
             />
 
-            <div className="grid grid-cols-2 gap-2 mt-3">
+            </div>
+            {/* 底部按钮固定不滚动 */}
+            <div className="grid grid-cols-2 gap-2 p-4 pt-2 flex-shrink-0 border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => setShowInvite(false)}
-                className="py-2 rounded-xl bg-purple-100 text-purple-700 text-sm font-medium active:bg-purple-200"
+                className="py-2.5 rounded-xl bg-purple-500 text-white text-sm font-medium active:bg-purple-600"
               >
                 确定（{invitedNames.length}人）
               </button>
               <button
                 type="button"
                 onClick={() => setInvitedNames([])}
-                className="py-2 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium active:bg-gray-200"
+                className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium active:bg-gray-200"
               >
                 清空
               </button>
