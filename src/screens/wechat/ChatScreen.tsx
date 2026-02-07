@@ -2132,7 +2132,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         // - 不再做“关键词替换文本”
         // - 只要角色配置了表情包，就尽量在一组回复里夹带 1~N 条表情包消息
         // 只使用“本角色已配置”的表情包（公共库不自动使用，必须在消息设置里手动添加给该角色）
-        const stickerPool = stickers.filter(s => s.characterId === character.id)
+        const stickerPool = stickers.filter(s => s.characterId === character.id || s.characterId === 'all')
         const stickerCandidates: number[] = []
         const usedStickerIds = new Set<string>()
 
@@ -2198,10 +2198,27 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             }
           }
           // 只在“有匹配”时才发表情包；没有匹配就不夹带（避免看起来像随机乱发表情）
-          if (!(bestScore > 0 && best.length > 0)) return null
-          const picked = best[Math.floor(Math.random() * best.length)]
-          if (picked?.id) usedStickerIds.add(picked.id)
-          return picked || null
+          // 如果有匹配（评分>0），优先发匹配的
+          if (bestScore > 0 && best.length > 0) {
+            const picked = best[Math.floor(Math.random() * best.length)]
+            if (picked?.id) usedStickerIds.add(picked.id)
+            return picked || null
+          }
+          // 没匹配上：检查是否所有表情都无备注/关键词
+          const hasAnyHints = candidates.some(st => extractStickerHints(st).length > 0)
+          if (!hasAnyHints) {
+            // 全部无备注，随机选一张（总比不发强）
+            const picked = candidates[Math.floor(Math.random() * candidates.length)]
+            if (picked?.id) usedStickerIds.add(picked.id)
+            return picked || null
+          }
+          // 有写备注但没匹配上：30%概率随机发一张（模拟真人随手发表情的习惯）
+          if (Math.random() < 0.3) {
+            const picked = candidates[Math.floor(Math.random() * candidates.length)]
+            if (picked?.id) usedStickerIds.add(picked.id)
+            return picked || null
+          }
+          return null
         }
         
         // 检查是否有待处理的用户转账
