@@ -172,9 +172,12 @@ export default function StickerManagerScreen() {
   const imgInputRef = useRef<HTMLInputElement>(null)
   const packInputRef = useRef<HTMLInputElement>(null)
   const quickImportRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingImportCategoryRef = useRef<string>('')
   const [quickImportCategory, setQuickImportCategory] = useState('')
   const [showQuickImportModal, setShowQuickImportModal] = useState(false)
+  const [showSourcePicker, setShowSourcePicker] = useState<'quick' | 'category' | null>(null)
   const [urlImportInput, setUrlImportInput] = useState('')
   const [urlImportLoading, setUrlImportLoading] = useState(false)
 
@@ -748,7 +751,7 @@ export default function StickerManagerScreen() {
                             disabled={busy}
                             onClick={() => {
                               pendingImportCategoryRef.current = cat.name
-                              imgInputRef.current?.click()
+                              setShowSourcePicker('category')
                             }}
                             className="px-3 py-1.5 rounded-full bg-[#07C160] text-white text-xs font-medium disabled:opacity-50"
                           >
@@ -872,34 +875,16 @@ export default function StickerManagerScreen() {
           </div>
         </div>
 
-        {/* 隐藏 input：按分类导入 */}
-        {/* accept 不限制为 image/* —— 在手机上 image/* 只弹出相册/相机，没有"浏览文件"选项 */}
+        {/* 隐藏 input：相册选图（accept=image/* 会在手机上弹出相册选择器） */}
         <input
           ref={imgInputRef}
           type="file"
-          accept="image/*,.gif,.png,.jpg,.jpeg,.webp,.svg,.bmp,.ico,.tiff,.avif,image/gif,image/png,image/jpeg,image/webp"
+          accept="image/*"
           multiple
           className="hidden"
           onChange={(e) => {
-            const files = e.target.files
-            if (files && files.length > 0) {
-              // 客户端过滤：只保留图片文件
-              const dt = new DataTransfer()
-              let skipped = 0
-              for (let i = 0; i < files.length; i++) {
-                const f = files[i]
-                const isImage = f.type.startsWith('image/') || /\.(gif|png|jpe?g|webp|svg|bmp|ico|tiff|avif)$/i.test(f.name)
-                if (isImage) dt.items.add(f)
-                else skipped++
-              }
-              if (dt.files.length > 0) {
-                const cat = pendingImportCategoryRef.current
-                handleBatchImportImages(cat, dt.files)
-              } else if (skipped > 0) {
-                setToast('选择的文件不是图片格式，请重新选择')
-                window.setTimeout(() => setToast(null), 2500)
-              }
-            }
+            const cat = pendingImportCategoryRef.current
+            handleBatchImportImages(cat, e.target.files)
             e.currentTarget.value = ''
           }}
         />
@@ -956,6 +941,123 @@ export default function StickerManagerScreen() {
             e.currentTarget.value = ''
           }}
         />
+
+        {/* 拍照专用 input（capture=environment 触发相机） */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const files = e.target.files
+            if (!files || files.length === 0) return
+            if (showSourcePicker === 'category') {
+              const cat = pendingImportCategoryRef.current
+              handleBatchImportImages(cat, files)
+            } else {
+              handleQuickImport(files)
+            }
+            e.currentTarget.value = ''
+            setShowSourcePicker(null)
+          }}
+        />
+        {/* 文件管理器专用 input（不设 accept=image/* 也不设 capture，强制弹出文件管理器） */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="*/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = e.target.files
+            if (!files || files.length === 0) return
+            if (showSourcePicker === 'category') {
+              // 过滤图片
+              const dt = new DataTransfer()
+              for (let i = 0; i < files.length; i++) {
+                const f = files[i]
+                if (f.type.startsWith('image/') || /\.(gif|png|jpe?g|webp|svg|bmp)$/i.test(f.name)) dt.items.add(f)
+              }
+              if (dt.files.length > 0) {
+                const cat = pendingImportCategoryRef.current
+                handleBatchImportImages(cat, dt.files)
+              } else {
+                setToast('未选择到图片文件')
+                window.setTimeout(() => setToast(null), 2500)
+              }
+            } else {
+              handleQuickImport(files)
+            }
+            e.currentTarget.value = ''
+            setShowSourcePicker(null)
+          }}
+        />
+
+        {/* 来源选择弹窗：图片/拍照/文件 三选一 */}
+        {showSourcePicker && (
+          <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40" onClick={() => setShowSourcePicker(null)}>
+            <div className="w-full max-w-[420px] rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] animate-[slideUp_0.25s_ease-out]" onClick={e => e.stopPropagation()}>
+              <div className="p-4">
+                <div className="text-sm font-bold text-gray-800 text-center mb-4">选择导入方式</div>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (showSourcePicker === 'category') {
+                        imgInputRef.current?.click()
+                      } else {
+                        // quick import: 用 imgInputRef 选图片
+                        imgInputRef.current?.click()
+                      }
+                      setShowSourcePicker(null)
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-green-50 border border-green-200 active:bg-green-100"
+                  >
+                    <span className="text-2xl">🖼️</span>
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-gray-800">从相册选择</div>
+                      <div className="text-[11px] text-gray-500">选择手机相册里的图片</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      cameraInputRef.current?.click()
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-blue-50 border border-blue-200 active:bg-blue-100"
+                  >
+                    <span className="text-2xl">📷</span>
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-gray-800">拍照</div>
+                      <div className="text-[11px] text-gray-500">用相机拍一张表情包</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fileInputRef.current?.click()
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-purple-50 border border-purple-200 active:bg-purple-100"
+                  >
+                    <span className="text-2xl">📁</span>
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-gray-800">从文件选择</div>
+                      <div className="text-[11px] text-gray-500">从手机文件管理器选择图片/JSON</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSourcePicker(null)}
+                className="w-full py-3 text-sm text-gray-500 font-medium border-t border-gray-100 active:bg-gray-50"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 快速导入弹窗 */}
         {showQuickImportModal && (
@@ -1041,7 +1143,7 @@ export default function StickerManagerScreen() {
                 <button
                   type="button"
                   disabled={!quickImportCategory.trim()}
-                  onClick={() => quickImportRef.current?.click()}
+                  onClick={() => setShowSourcePicker('quick')}
                   className="mt-2 w-full py-2 rounded-full text-[12px] font-semibold text-white disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)' }}
                 >

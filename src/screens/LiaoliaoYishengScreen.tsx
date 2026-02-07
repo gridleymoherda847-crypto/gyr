@@ -186,7 +186,7 @@ type GameState = {
   }
   hasPastLover: boolean // 本局是否已有前世爱人
   spouseId: string | null // 主角道侣（只能有一个）
-  friendNames: string[] // 邀请好友名字池（仅复刻名字）
+  friendNames: { name: string; gender: 'male' | 'female' }[] // 邀请好友（名字+性别）
   usedFriendNames: string[] // 已被占用的好友名字（避免重复）
   lastEventId: string | null // 防止连续年刷同一事件
   treasureCd: number // 意外收获冷却（年）
@@ -971,37 +971,22 @@ function getPersonMaxLifespan(p: Person): number {
   return base + extra
 }
 
-function maybeApplyFriendCameo(rng: ReturnType<typeof makeRng>, g: GameState, p: Person): { g: GameState; p: Person } {
+function maybeApplyFriendCameo(_rng: ReturnType<typeof makeRng>, g: GameState, p: Person): { g: GameState; p: Person } {
   if (!g.friendNames || g.friendNames.length === 0) return { g, p }
   if (p.role === 'parent') return { g, p }
-  function splitSurnameGiven(full: string) {
-    const surnames = [...SURNAMES].sort((a, b) => b.length - a.length)
-    for (const s of surnames) {
-      if (full.startsWith(s) && full.length > s.length) return { surname: s, given: full.slice(s.length) }
-    }
-    // 兜底：按首字分
-    return { surname: full.slice(0, 1), given: full.slice(1) }
-  }
-  function inferGenderByGiven(full: string): 'male' | 'female' | null {
-    const { given } = splitSurnameGiven(full)
-    if (MALE_NAMES.includes(given)) return 'male'
-    if (FEMALE_NAMES.includes(given)) return 'female'
-    return null
-  }
-
-  const available = g.friendNames
-    .filter(n => !g.usedFriendNames.includes(n))
-    // 尽量避免名字与NPC性别明显不符（如男叫“婉儿”）
-    .filter(n => {
-      const inf = inferGenderByGiven(n)
-      return inf ? inf === p.gender : true
-    })
+  // 好友100%替换：每个好友必定1对1替换某个NPC（名字+性别都用好友的）
+  // 兼容旧存档（friendNames 可能是 string[]）
+  const _friendList: { name: string; gender: 'male' | 'female' }[] = (g.friendNames as any[]).map((f: any) =>
+    typeof f === 'string' ? { name: f, gender: p.gender } : f
+  )
+  const available = _friendList.filter(f => !g.usedFriendNames.includes(f.name))
   if (available.length === 0) return { g, p }
-  // 25% 概率把某个好友名字“复刻”到本NPC（只替换名字，不搬人设）
-  if (!rng.chance(0.25)) return { g, p }
-  const cameoName = rng.pickOne(available)
-  const p2: Person = { ...p, name: cameoName, flags: [...(p.flags || []), 'cameo_friend_name'] }
-  const g2: GameState = { ...g, usedFriendNames: [...g.usedFriendNames, cameoName] }
+  // 浼樺厛鎵炬€у埆鍖归厤鐨勫ソ鍙嬶紱娌℃湁鍒欏己鍒惰鐩栨€у埆
+  let friend = available.find(f => f.gender === p.gender)
+  if (!friend) friend = available[0]
+  if (!friend) return { g, p }
+  const p2: Person = { ...p, name: friend.name, gender: friend.gender, flags: [...(p.flags || []), 'cameo_friend_name'] }
+  const g2: GameState = { ...g, usedFriendNames: [...g.usedFriendNames, friend.name] }
   return { g: g2, p: p2 }
 }
 
@@ -5250,8 +5235,9 @@ export default function LiaoliaoYishengScreen() {
   const [game, setGame] = useState<GameState | null>(null)
   const [selectedGender, setSelectedGender] = useState<'male' | 'female'>('female')
   const [showInvite, setShowInvite] = useState(false)
-  const [invitedNames, setInvitedNames] = useState<string[]>([])
+  const [invitedNames, setInvitedNames] = useState<{ name: string; gender: 'male' | 'female' }[]>([])
   const [inviteInput, setInviteInput] = useState('')
+  const [inviteGender, setInviteGender] = useState<'male' | 'female'>('male')
   const [savedStories, setSavedStories] = useState<SavedStory[]>(() => loadSavedStories())
   const [showSavedStories, setShowSavedStories] = useState(false)
   const [viewStory, setViewStory] = useState<SavedStory | null>(null)
@@ -5448,7 +5434,9 @@ export default function LiaoliaoYishengScreen() {
             },
             hasPastLover: !!parsed?.hasPastLover,
             spouseId: parsed?.spouseId ?? (Array.isArray(parsed?.relations) ? (parsed.relations.find((r: any) => r?.role === 'lover')?.id ?? null) : null),
-            friendNames: Array.isArray(parsed?.friendNames) ? parsed.friendNames : [],
+            friendNames: Array.isArray(parsed?.friendNames)
+              ? parsed.friendNames.map((f: any) => typeof f === 'string' ? { name: f, gender: 'male' as const } : f)
+              : [],
             usedFriendNames: Array.isArray(parsed?.usedFriendNames) ? parsed.usedFriendNames : [],
             lastEventId: parsed?.lastEventId ?? null,
             treasureCd: typeof parsed?.treasureCd === 'number' ? parsed.treasureCd : 0,
@@ -7131,7 +7119,7 @@ export default function LiaoliaoYishengScreen() {
               >
                 邀请好友进入平行世界
                 <div className="text-[11px] text-gray-400 mt-0.5">
-                  已选择 {invitedNames.length} 个名字（只复刻名字）
+                  {invitedNames.length > 0 ? `已邀请 ${invitedNames.length} 位好友` : '好友会100%出现在你的人生里'}
                 </div>
               </button>
               <button
@@ -8447,7 +8435,7 @@ export default function LiaoliaoYishengScreen() {
         </div>
       )}
 
-      {/* 邀请好友弹窗（只复刻名字） */}
+      {/* 邀请好友弹窗 */}
       {showInvite && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setShowInvite(false)}>
           <div className="w-full max-w-[420px] max-h-[75vh] rounded-t-3xl bg-white p-4 overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
@@ -8455,63 +8443,133 @@ export default function LiaoliaoYishengScreen() {
               <div className="text-sm font-bold text-gray-800">邀请好友进入平行世界</div>
               <button type="button" onClick={() => setShowInvite(false)} className="text-sm text-gray-500">关闭</button>
             </div>
+            <div className="text-[11px] text-gray-400 mb-3 leading-relaxed">
+              邀请的好友会 <b className="text-purple-600">100%</b> 出现在你这局人生中，替换某个随机NPC（除父母外）。每个好友只会变成一个角色，不会重复。
+            </div>
 
-            <div className="text-xs text-gray-500 mb-2">从微信角色名单快速选择（仅复刻名字，不搬人设）</div>
+            {/* 已邀请列表 */}
+            {invitedNames.length > 0 && (
+              <div className="mb-3">
+                <div className="text-xs text-gray-500 mb-1.5">已邀请（{invitedNames.length}人）</div>
+                <div className="flex flex-wrap gap-2">
+                  {invitedNames.map((f, i) => (
+                    <div key={i} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-purple-50 border border-purple-200">
+                      <span className={f.gender === 'male' ? 'text-blue-600' : 'text-pink-500'}>{f.gender === 'male' ? '♂' : '♀'}</span>
+                      <span className="text-gray-800">{f.name}</span>
+                      <button type="button" onClick={() => setInvitedNames(invitedNames.filter((_, j) => j !== i))} className="ml-0.5 text-gray-400 hover:text-red-500">×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 从微信角色快速选 */}
+            <div className="text-xs text-gray-500 mb-1.5">从微信角色快速选择</div>
             <div className="flex flex-wrap gap-2 mb-3">
               {(() => {
-                let names: string[] = []
+                let chars: { name: string; gender?: string }[] = []
                 try {
                   const raw = localStorage.getItem('wechat_characters_backup')
                   if (raw) {
                     const parsed = JSON.parse(raw)
                     if (Array.isArray(parsed)) {
-                      names = parsed.map((x: any) => String(x?.name || '')).filter(Boolean)
+                      chars = parsed.map((x: any) => ({ name: String(x?.name || ''), gender: x?.gender })).filter((x: any) => x.name)
                     }
                   }
                 } catch { /* ignore */ }
-                names = Array.from(new Set(names)).slice(0, 30)
-                if (names.length === 0) {
-                  return <div className="text-xs text-gray-400">（未找到微信角色备份，可手动输入名字）</div>
+                const seen = new Set<string>()
+                chars = chars.filter(c => { if (seen.has(c.name)) return false; seen.add(c.name); return true }).slice(0, 30)
+                if (chars.length === 0) {
+                  return <div className="text-xs text-gray-400">（未找到微信角色，可手动输入）</div>
                 }
-                return names.map(n => {
-                  const picked = invitedNames.includes(n)
+                return chars.map(c => {
+                  const picked = invitedNames.some(f => f.name === c.name)
                   return (
                     <button
-                      key={n}
+                      key={c.name}
                       type="button"
-                      onClick={() => setInvitedNames(picked ? invitedNames.filter(x => x !== n) : [...invitedNames, n])}
-                      className={`px-3 py-1 rounded-full text-xs border ${picked ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-700 border-gray-200'}`}
+                      onClick={() => {
+                        if (picked) {
+                          setInvitedNames(invitedNames.filter(f => f.name !== c.name))
+                        } else {
+                          const g = c.gender === 'female' ? 'female' as const : 'male' as const
+                          setInvitedNames([...invitedNames, { name: c.name, gender: g }])
+                        }
+                      }}
+                      className={`px-3 py-1 rounded-full text-xs border ${picked ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-700 border-gray-200'}`}
                     >
-                      {n}
+                      {c.name}
                     </button>
                   )
                 })
               })()}
             </div>
 
-            <div className="text-xs text-gray-500 mb-2">或手动输入（每行一个名字）</div>
-            <textarea
-              value={inviteInput}
-              onChange={(e) => setInviteInput(e.target.value)}
-              placeholder="例如：\n小明\n阿雪\n清玄"
-              className="w-full h-24 p-3 rounded-xl border border-gray-200 text-sm outline-none"
-            />
-            <div className="grid grid-cols-2 gap-2 mt-2">
+            {/* 手动输入 */}
+            <div className="text-xs text-gray-500 mb-1.5">手动添加好友</div>
+            <div className="flex gap-2 mb-2">
+              <input
+                value={inviteInput}
+                onChange={(e) => setInviteInput(e.target.value)}
+                placeholder="输入好友名字"
+                className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none"
+              />
+              <div className="flex rounded-xl overflow-hidden border border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setInviteGender('male')}
+                  className={`px-3 py-2 text-xs font-medium ${inviteGender === 'male' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600'}`}
+                >
+                  男
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInviteGender('female')}
+                  className={`px-3 py-2 text-xs font-medium ${inviteGender === 'female' ? 'bg-pink-500 text-white' : 'bg-white text-gray-600'}`}
+                >
+                  女
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => {
-                  const list = inviteInput
-                    .split(/\r?\n/)
-                    .map(s => s.trim())
-                    .filter(Boolean)
-                  if (list.length > 0) {
-                    setInvitedNames(Array.from(new Set([...invitedNames, ...list])).slice(0, 50))
+                  const name = inviteInput.trim()
+                  if (name && !invitedNames.some(f => f.name === name)) {
+                    setInvitedNames([...invitedNames, { name, gender: inviteGender }])
                     setInviteInput('')
                   }
                 }}
+                className="px-4 py-2 rounded-xl bg-purple-500 text-white text-sm font-medium active:bg-purple-600"
+              >
+                添加
+              </button>
+            </div>
+            <div className="text-[11px] text-gray-400 mb-3">也可以每行一个名字批量添加（默认使用当前选择的性别）</div>
+            <textarea
+              value=""
+              onChange={(e) => {
+                const lines = e.target.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+                if (lines.length > 0) {
+                  const newFriends = lines
+                    .filter(n => !invitedNames.some(f => f.name === n))
+                    .map(n => ({ name: n, gender: inviteGender }))
+                  if (newFriends.length > 0) {
+                    setInvitedNames([...invitedNames, ...newFriends].slice(0, 50))
+                  }
+                  e.target.value = ''
+                }
+              }}
+              placeholder={'批量粘贴（每行一个名字）'}
+              className="w-full h-16 p-3 rounded-xl border border-gray-200 text-sm outline-none resize-none"
+            />
+
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => setShowInvite(false)}
                 className="py-2 rounded-xl bg-purple-100 text-purple-700 text-sm font-medium active:bg-purple-200"
               >
-                加入选择
+                确定（{invitedNames.length}人）
               </button>
               <button
                 type="button"
@@ -8520,10 +8578,6 @@ export default function LiaoliaoYishengScreen() {
               >
                 清空
               </button>
-            </div>
-
-            <div className="mt-3 text-xs text-gray-500">
-              已选择：<span className="text-gray-800 font-medium">{invitedNames.length}</span> 个
             </div>
           </div>
         </div>
