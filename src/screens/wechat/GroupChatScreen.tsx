@@ -9,7 +9,7 @@ import { getGlobalPresets, getLorebookEntriesByLorebookId, getLorebookEntriesFor
 
 export default function GroupChatScreen() {
   const navigate = useNavigate()
-  const { fontColor, callLLM } = useOS()
+  const { fontColor, callLLM, ttsConfig } = useOS()
   const { groupId } = useParams<{ groupId: string }>()
   const { 
     getGroup, getGroupMessages, addMessage, updateMessage, updateGroup, deleteGroup, deleteMessage,
@@ -223,7 +223,93 @@ export default function GroupChatScreen() {
   const [periodFlowDraft, setPeriodFlowDraft] = useState<'none' | 'light' | 'medium' | 'heavy'>('none')
   const [periodNoteDraft, setPeriodNoteDraft] = useState('')
   const [infoDialog, setInfoDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
-  
+
+  // ===== 群聊语音 =====
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null)
+  const groupAudioRef = useRef<HTMLAudioElement | null>(null)
+  const voiceGenLockRef = useRef<Record<string, boolean>>({})
+
+  // 决定某个成员是否发语音
+  const shouldSendVoiceForMember = useCallback((memberId: string) => {
+    if (!ttsConfig.enabled || !group?.voiceEnabled) return false
+    const member = characters.find(c => c.id === memberId)
+    // 成员必须启用了语音 + 有 voiceId
+    const memberVoiceId = group?.memberVoiceSettings?.[memberId]?.voiceId || member?.voiceId
+    if (!memberVoiceId) return false
+    const freq = group?.voiceFrequency || 'sometimes'
+    const rand = Math.random()
+    if (freq === 'always') return true
+    if (freq === 'often') return rand < 0.5
+    if (freq === 'sometimes') return rand < 0.2
+    if (freq === 'rarely') return rand < 0.05
+    return false
+  }, [ttsConfig.enabled, group?.voiceEnabled, group?.voiceFrequency, group?.memberVoiceSettings, characters])
+
+  // 为指定成员生成语音
+  const generateVoiceUrlForMember = useCallback(async (text: string, memberId: string): Promise<string | null> => {
+    const member = characters.find(c => c.id === memberId)
+    const voiceId = group?.memberVoiceSettings?.[memberId]?.voiceId || member?.voiceId || ttsConfig.voiceId
+    if (!voiceId || !ttsConfig.apiKey) return null
+    const controller = new AbortController()
+    const timeoutMs = 45_000
+    const t = window.setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const baseUrl = ttsConfig.region === 'global' ? 'https://api.minimax.chat' : 'https://api.minimaxi.com'
+      const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${ttsConfig.apiKey}`, 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: ttsConfig.model || 'speech-02-turbo',
+          text: text.slice(0, 500),
+          stream: false,
+          voice_setting: { voice_id: voiceId, speed: ttsConfig.speed || 1, vol: 1, pitch: 0 },
+          audio_setting: { sample_rate: 24000, bitrate: 128000, format: 'mp3', channel: 1 },
+          output_format: 'url',
+        }),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        if (data.base_resp?.status_code === 0 && data.data?.audio) {
+          let audioUrl = data.data.audio
+          if (!audioUrl.startsWith('http')) {
+            const bytes = new Uint8Array(audioUrl.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || [])
+            const blob = new Blob([bytes], { type: 'audio/mp3' })
+            audioUrl = URL.createObjectURL(blob)
+          }
+          return audioUrl
+        }
+      }
+      return null
+    } catch { return null } finally { window.clearTimeout(t) }
+  }, [characters, group?.memberVoiceSettings, ttsConfig])
+
+  const regenGroupVoice = useCallback(async (msgId: string, text: string, memberId: string) => {
+    if (!msgId || !text) return
+    if (voiceGenLockRef.current[msgId]) return
+    voiceGenLockRef.current[msgId] = true
+    try {
+      updateMessage(msgId, { voiceStatus: 'pending', voiceError: '' })
+      const url = await generateVoiceUrlForMember(text, memberId)
+      if (!url) {
+        updateMessage(msgId, { voiceStatus: 'error', voiceError: '语音生成失败，点击可重试。', voiceUrl: undefined as any })
+        return
+      }
+      updateMessage(msgId, { voiceUrl: url, voiceStatus: 'ready', voiceError: '' })
+    } finally { voiceGenLockRef.current[msgId] = false }
+  }, [generateVoiceUrlForMember, updateMessage])
+
+  const playGroupVoice = useCallback((messageId: string, voiceUrl: string) => {
+    if (groupAudioRef.current) { groupAudioRef.current.pause(); groupAudioRef.current = null }
+    if (playingVoiceId === messageId) { setPlayingVoiceId(null); return }
+    const audio = new Audio(voiceUrl)
+    groupAudioRef.current = audio
+    setPlayingVoiceId(messageId)
+    audio.onended = () => { setPlayingVoiceId(null); groupAudioRef.current = null }
+    audio.onerror = () => { setPlayingVoiceId(null); groupAudioRef.current = null }
+    audio.play().catch(() => { setPlayingVoiceId(null) })
+  }, [playingVoiceId])
+
   // 图片上传
   const imageInputRef = useRef<HTMLInputElement>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
@@ -634,23 +720,53 @@ ${uniqueNames.join('、')}
         
         const translationMode = (member as any).language !== 'zh' && !!(member as any).chatTranslationEnabled
         const dual = translationMode ? parseDual(reply.content) : null
+        const textContent = dual ? dual.orig : reply.content
 
-        const newMsg = addMessage({
-          characterId: '',
-          groupId: group.id,
-          groupSenderId: member.id,
-          content: dual ? dual.orig : reply.content,
-          isUser: false,
-          type: 'text',
-          replyToMessageId,
-          messageLanguage: translationMode ? (member as any).language : undefined,
-          chatTranslationEnabledAtSend: translationMode ? true : undefined,
-          translationStatus: translationMode ? (dual ? 'done' : 'error') : undefined,
-          translatedZh: dual ? dual.zh : undefined,
-        })
-        
-        // 更新这个成员最近的消息ID
-        recentMessageIdBySender[member.name] = newMsg.id
+        // 判断是否发语音
+        const sendAsVoice = shouldSendVoiceForMember(member.id)
+
+        if (sendAsVoice) {
+          const voiceDuration = Math.max(2, Math.min(60, Math.ceil(textContent.length / 5)))
+          const isChinese = (member as any).language === 'zh' || /[\u4e00-\u9fa5]/.test(textContent.slice(0, 20))
+          const dualZh = dual?.zh ? String(dual.zh).trim() : ''
+          const voiceMsg = addMessage({
+            characterId: '',
+            groupId: group.id,
+            groupSenderId: member.id,
+            content: '[语音消息]',
+            isUser: false,
+            type: 'voice',
+            voiceText: isChinese ? textContent : (dualZh ? `${textContent}（${dualZh}）` : textContent),
+            voiceOriginalText: textContent,
+            voiceDuration,
+            voiceUrl: undefined as any,
+            voiceStatus: 'pending',
+            voiceError: '',
+            replyToMessageId,
+          })
+          // 异步生成语音
+          ;(async () => {
+            const url = await generateVoiceUrlForMember(textContent, member.id)
+            if (url) updateMessage(voiceMsg.id, { voiceUrl: url, voiceStatus: 'ready', voiceError: '' })
+            else updateMessage(voiceMsg.id, { voiceStatus: 'error', voiceError: '语音生成失败，点击可重试。' })
+          })()
+          recentMessageIdBySender[member.name] = voiceMsg.id
+        } else {
+          const newMsg = addMessage({
+            characterId: '',
+            groupId: group.id,
+            groupSenderId: member.id,
+            content: textContent,
+            isUser: false,
+            type: 'text',
+            replyToMessageId,
+            messageLanguage: translationMode ? (member as any).language : undefined,
+            chatTranslationEnabledAtSend: translationMode ? true : undefined,
+            translationStatus: translationMode ? (dual ? 'done' : 'error') : undefined,
+            translatedZh: dual ? dual.zh : undefined,
+          })
+          recentMessageIdBySender[member.name] = newMsg.id
+        }
         
         updateGroup(group.id, { lastMessageAt: Date.now() })
       }
@@ -661,7 +777,7 @@ ${uniqueNames.join('、')}
       setAiTyping(false)
       setGenerateSelectedMembers([])
     }
-  }, [aiTyping, group, members, messages, selectedPersona, characters, callLLM, addMessage, updateGroup])
+  }, [aiTyping, group, members, messages, selectedPersona, characters, callLLM, addMessage, updateGroup, updateMessage, shouldSendVoiceForMember, generateVoiceUrlForMember])
   
   const handleSendImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1126,6 +1242,76 @@ ${history}`
     if (msg.type === 'pat') {
       return null
     }
+    // 语音消息渲染
+    if (msg.type === 'voice') {
+      const duration = (msg as any).voiceDuration || 3
+      const status = (() => {
+        const explicit = (msg as any).voiceStatus
+        if (explicit) return explicit
+        if ((msg as any).voiceUrl === '') return 'error'
+        return (msg as any).voiceUrl ? 'ready' : 'pending'
+      })()
+      const hasUrl = status === 'ready' && !!(msg as any).voiceUrl
+      const isPlaying = playingVoiceId === msg.id
+      const barWidth = Math.min(280, Math.max(140, 100 + duration * 6))
+      return (
+        <div className="min-w-[140px] max-w-[300px]">
+          <button type="button"
+            onClick={() => {
+              if (hasUrl && (msg as any).voiceUrl) playGroupVoice(msg.id, (msg as any).voiceUrl)
+              else if (status === 'error') {
+                const raw = String((msg as any).voiceOriginalText || '').trim()
+                if (!raw) { setInfoDialog({ open: true, title: '语音不可重试', message: '找不到原文内容。' }); return }
+                void regenGroupVoice(msg.id, raw, msg.groupSenderId || '')
+              }
+            }}
+            disabled={!hasUrl && status !== 'error'}
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-transform active:scale-[0.98] bg-white text-gray-800 shadow-sm border border-gray-100 ${!hasUrl ? 'opacity-70' : ''}`}
+            style={{ width: barWidth }}
+          >
+            {status !== 'ready' ? (
+              status === 'error' ? (
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-red-50 border border-red-200">
+                  <span className="text-red-600 text-[12px] font-bold">!</span>
+                </div>
+              ) : (
+                <div className="w-8 h-8 rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0" />
+              )
+            ) : isPlaying ? (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100">
+                <div className="flex items-center gap-0.5">
+                  <div className="w-1 h-3 rounded-full bg-gray-600 animate-pulse" />
+                  <div className="w-1 h-4 rounded-full bg-gray-600 animate-pulse" style={{ animationDelay: '0.1s' }} />
+                  <div className="w-1 h-3 rounded-full bg-gray-600 animate-pulse" style={{ animationDelay: '0.2s' }} />
+                </div>
+              </div>
+            ) : (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100">
+                <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+              </div>
+            )}
+            <div className="flex-1 flex items-center justify-center gap-1">
+              {[...Array(Math.min(12, Math.max(5, Math.floor(duration / 1.5))))].map((_, i) => (
+                <div key={i} className={`w-1 rounded-full transition-all bg-gray-300 ${isPlaying ? 'animate-pulse' : ''}`}
+                  style={{ height: `${10 + Math.random() * 12}px`, animationDelay: `${i * 0.08}s` }} />
+              ))}
+            </div>
+            <span className="text-sm font-medium flex-shrink-0 text-gray-500">{duration}"</span>
+          </button>
+          {status === 'error' && (
+            <div className="mt-2 px-3 py-2 rounded-xl text-[12px] bg-red-50/80 border border-red-200 text-red-700 whitespace-pre-wrap">
+              {String((msg as any).voiceError || '语音生成失败，点击可重试。')}
+            </div>
+          )}
+          {(msg as any).voiceText && (
+            <div className="mt-2 px-3 py-2 rounded-xl text-sm bg-white/90 border border-gray-200 text-gray-700">
+              <div className="text-xs mb-1 text-gray-400">转文字</div>
+              <div className="whitespace-pre-wrap break-words leading-relaxed">{(msg as any).voiceText}</div>
+            </div>
+          )}
+        </div>
+      )
+    }
     return <span className="whitespace-pre-wrap break-words">{msg.content}</span>
   }
   
@@ -1266,9 +1452,9 @@ ${history}`
                     })()}
                     
                     <div className={`px-3 py-2 rounded-2xl text-sm ${
-                      msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'period' || msg.type === 'doudizhu_share'
+                      msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'period' || msg.type === 'doudizhu_share' || msg.type === 'voice'
                         ? 'p-0 bg-transparent' : msg.isUser ? 'text-gray-800 rounded-tr-md' : 'text-gray-800 rounded-tl-md shadow-sm'
-                    }`} style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'period' || msg.type === 'doudizhu_share' ? undefined : bubbleStyle}>
+                    }`} style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'period' || msg.type === 'doudizhu_share' || msg.type === 'voice' ? undefined : bubbleStyle}>
                       {editingMessageId === msg.id ? (
                         <div className="flex flex-col gap-1">
                           <textarea value={editingContent} onChange={(e) => setEditingContent(e.target.value)}
@@ -1890,6 +2076,87 @@ ${history}`
                       className={`w-12 h-7 rounded-full transition-colors ${group.patEnabled !== false ? 'bg-green-500' : 'bg-gray-300'}`}>
                       <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${group.patEnabled !== false ? 'translate-x-6' : 'translate-x-1'}`} />
                     </button>
+                  </div>
+
+                  {/* 语音设置 */}
+                  <div className="border-t border-gray-100">
+                    <div className="flex items-center justify-between py-3">
+                      <div>
+                        <div className="text-sm text-gray-800">语音消息</div>
+                        <div className="text-xs text-gray-400">AI 回复时随机发语音</div>
+                      </div>
+                      <button type="button" onClick={() => updateGroup(group.id, { voiceEnabled: !group.voiceEnabled })}
+                        className={`w-12 h-7 rounded-full transition-colors ${group.voiceEnabled ? 'bg-green-500' : 'bg-gray-300'}`}>
+                        <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${group.voiceEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                    {group.voiceEnabled && (
+                      <div className="pb-3 space-y-3">
+                        {!ttsConfig.enabled && (
+                          <div className="px-3 py-2 rounded-lg bg-yellow-50 border border-yellow-200 text-xs text-yellow-700">
+                            请先在「设置 → API配置 → 语音配置」中启用语音并填写 API Key
+                          </div>
+                        )}
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1">发语音频率</div>
+                          <select value={group.voiceFrequency || 'sometimes'}
+                            onChange={e => updateGroup(group.id, { voiceFrequency: e.target.value as any })}
+                            className="w-full px-3 py-2 rounded-lg bg-gray-100 text-sm outline-none">
+                            <option value="always">总是 (100%)</option>
+                            <option value="often">经常 (50%)</option>
+                            <option value="sometimes">偶尔 (20%)</option>
+                            <option value="rarely">很少 (5%)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500 mb-2">成员语音设置</div>
+                          <div className="text-xs text-gray-400 mb-2">默认使用各成员私聊中绑定的语音，也可单独覆盖</div>
+                          <div className="space-y-2">
+                            {members.map(m => {
+                              const memberVoiceId = group.memberVoiceSettings?.[m.id]?.voiceId || ''
+                              const privateVoiceId = m.voiceId || ''
+                              return (
+                                <div key={m.id} className="flex items-center gap-2">
+                                  <div className="w-7 h-7 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
+                                    {m.avatar ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> :
+                                      <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-[10px]">{m.name[0]}</div>}
+                                  </div>
+                                  <span className="text-xs text-gray-700 min-w-[40px] truncate">{m.name}</span>
+                                  <select value={memberVoiceId}
+                                    onChange={e => {
+                                      const v = e.target.value
+                                      const prev = group.memberVoiceSettings || {}
+                                      if (!v) {
+                                        const { [m.id]: _, ...rest } = prev
+                                        updateGroup(group.id, { memberVoiceSettings: Object.keys(rest).length ? rest : undefined })
+                                      } else {
+                                        updateGroup(group.id, { memberVoiceSettings: { ...prev, [m.id]: { voiceId: v } } })
+                                      }
+                                    }}
+                                    className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-gray-100 text-xs outline-none">
+                                    <option value="">{privateVoiceId ? `默认（私聊: ${privateVoiceId}）` : '未设置语音'}</option>
+                                    <option value="female-shaonv">少女 - 温柔甜美</option>
+                                    <option value="female-yujie">御姐 - 成熟知性</option>
+                                    <option value="female-chengshu">成熟女性 - 稳重大方</option>
+                                    <option value="female-tianmei">甜美 - 可爱甜蜜</option>
+                                    <option value="male-qn-qingse">青涩青年 - 年轻活力</option>
+                                    <option value="male-qn-jingying">精英青年 - 自信干练</option>
+                                    <option value="male-qn-badao">霸道青年 - 强势霸气</option>
+                                    <option value="presenter_male">男主持 - 专业播音</option>
+                                    <option value="presenter_female">女主持 - 专业播音</option>
+                                    <option value="audiobook_male_1">有声书男1</option>
+                                    <option value="audiobook_female_1">有声书女1</option>
+                                    {ttsConfig.customVoices?.map(cv => (
+                                      <option key={cv.id} value={cv.id}>🎙 {cv.name}{cv.desc ? ` - ${cv.desc}` : ''}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

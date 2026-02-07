@@ -249,6 +249,10 @@ export type GroupChat = {
     user?: { bgColor?: string; bgOpacity?: number; borderColor?: string; borderOpacity?: number }
     [memberId: string]: { bgColor?: string; bgOpacity?: number; borderColor?: string; borderOpacity?: number } | undefined
   }
+  // 语音设置
+  voiceEnabled?: boolean // 群聊语音总开关
+  voiceFrequency?: 'always' | 'often' | 'sometimes' | 'rarely' // 发语音频率
+  memberVoiceSettings?: Record<string, { voiceId?: string }> // 每个成员的语音覆盖
   // 关系网
   relations?: GroupRelation[]
 }
@@ -1443,15 +1447,20 @@ export function WeChatProvider({ children }: PropsWithChildren) {
 
   const addStickerToCharacter = (stickerId: string, targetCharacterId: string) => {
     const sticker = stickers.find(s => s.id === stickerId)
-    if (sticker) {
-      addSticker({
-        characterId: targetCharacterId,
-        imageUrl: sticker.imageUrl,
-        keyword: sticker.keyword,
-        category: sticker.category,
-        description: sticker.description,
-      })
-    }
+    if (!sticker) return
+    // ★ 防止重复：如果目标角色已有同一张图片的表情包，跳过不再复制
+    const alreadyExists = stickers.some(s =>
+      s.characterId === targetCharacterId &&
+      s.imageUrl === sticker.imageUrl
+    )
+    if (alreadyExists) return
+    addSticker({
+      characterId: targetCharacterId,
+      imageUrl: sticker.imageUrl,
+      keyword: sticker.keyword,
+      category: sticker.category,
+      description: sticker.description,
+    })
   }
 
   const addStickerToAll = (sticker: Omit<StickerConfig, 'id' | 'characterId'>) => {

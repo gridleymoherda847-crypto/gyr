@@ -2370,8 +2370,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         const desiredStickerCount =
           stickerPool.length > 0
             ? Math.min(
-                Math.max(1, Math.ceil(replies.length / 4)), // 1条起步，回复越多越可能多插
-                3,
+                // 20%~40%的回复后面跟表情包
+                Math.max(1, Math.round(stickerCandidates.length * (0.2 + Math.random() * 0.2))),
+                4,
                 stickerCandidates.length
               )
             : 0
