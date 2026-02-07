@@ -350,11 +350,19 @@ export const FUND_FEE_RATE = 0.015 // 1.5%
 // 表情包配置
 export type StickerConfig = {
   id: string
-  characterId: string // 'all' 表示所有角色
+  characterId: string // 兼容旧数据：现在统一使用 'all' 作为“总表情库”
   imageUrl: string
+  // 引用码：稳定且可复制，用于“精确指定某张表情包”
+  // - 默认由 imageUrl 生成（同一张图永远同一个引用码）
+  refKey?: string
   keyword: string
   category?: string // 情绪分类：开心、难过、生气、害羞、撒娇等
   description?: string // 表情包备注/描述，用于精准匹配（如"你真可爱"、"生气了"）
+  // 绑定关系：哪些角色“可使用”该表情包（仅影响 AI 发送/角色表情面板）
+  // 说明：
+  // - 总表情库只有一份表情包记录（characterId='all'）
+  // - 角色绑定不会复制数据，只会把角色ID写进 boundCharacterIds
+  boundCharacterIds?: string[]
 }
 
 // 表情包分类
@@ -712,6 +720,90 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   const [stickers, setStickers] = useState<StickerConfig[]>(() => 
     []
   )
+
+  // 表情包迁移/去重：把旧的“按角色复制一份”迁移为“总库单份 + 绑定关系”
+  // - 统一将 sticker.characterId 归一为 'all'
+  // - 旧数据中 characterId!=all 视为“绑定到该角色”
+  // - 同一 imageUrl 的多条记录会合并为一条（绑定关系做并集，保留信息更完整的一条作为主记录）
+  const normalizeStickersForBindingModel = (raw: StickerConfig[]): StickerConfig[] => {
+    const list = Array.isArray(raw) ? raw : []
+    const normUrl = (u: any) => String(u || '').trim()
+    const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)))
+    const computeRefKey = (url: string) => {
+      const s = String(url || '').trim()
+      if (!s) return ''
+      // cyrb53: stable hash -> base36, short and readable
+      let h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0
+      for (let i = 0; i < s.length; i++) {
+        const ch = s.charCodeAt(i)
+        h1 = Math.imul(h1 ^ ch, 2654435761)
+        h2 = Math.imul(h2 ^ ch, 1597334677)
+      }
+      h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+      h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+      const x = 4294967296 * (2097151 & h2) + (h1 >>> 0)
+      return x.toString(36)
+    }
+
+    const byUrl = new Map<string, StickerConfig[]>()
+    const invalid: StickerConfig[] = []
+    for (const s of list) {
+      const url = normUrl((s as any)?.imageUrl)
+      if (!url) {
+        invalid.push(s)
+        continue
+      }
+      const arr = byUrl.get(url) || []
+      arr.push(s)
+      byUrl.set(url, arr)
+    }
+
+    const pickBest = (arr: StickerConfig[]) => {
+      let best = arr[0]
+      let bestScore = -1
+      for (const s of arr) {
+        const score =
+          (String((s as any).description || '').trim() ? 2 : 0) +
+          (String((s as any).keyword || '').trim() ? 1 : 0) +
+          (String((s as any).category || '').trim() ? 1 : 0)
+        if (score > bestScore) {
+          bestScore = score
+          best = s
+        }
+      }
+      return best
+    }
+
+    const out: StickerConfig[] = []
+    for (const [url, arr] of byUrl.entries()) {
+      const base = pickBest(arr)
+      const bound: string[] = []
+      for (const s of arr) {
+        const cid = String((s as any).characterId || '').trim()
+        if (cid && cid !== 'all') bound.push(cid)
+        const b = (s as any).boundCharacterIds
+        if (Array.isArray(b)) bound.push(...b.map((x: any) => String(x || '').trim()))
+      }
+
+      const merged: StickerConfig = {
+        ...base,
+        imageUrl: url,
+        characterId: 'all',
+        refKey: String((base as any).refKey || '').trim() || computeRefKey(url),
+        boundCharacterIds: uniq(bound),
+      }
+      if (!merged.boundCharacterIds || merged.boundCharacterIds.length === 0) {
+        delete (merged as any).boundCharacterIds
+      }
+      out.push(merged)
+    }
+
+    // 无效 URL 的记录：也归一为 'all'，不做去重
+    for (const s of invalid) {
+      out.push({ ...s, characterId: 'all' })
+    }
+    return out
+  }
   const [favoriteDiaries, setFavoriteDiaries] = useState<FavoriteDiary[]>(() =>
     []
   )
@@ -1020,7 +1112,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       }))
       setCharacters(resetTyping)
       setMessages(nextMessages)
-      setStickers(nextStickers)
+      // 表情包：迁移到“总库单份 + 绑定关系”模型，并自动合并重复
+      const normalizedStickers = normalizeStickersForBindingModel(nextStickers || [])
+      setStickers(normalizedStickers)
       setFavoriteDiaries(nextFavoriteDiaries)
       setMyDiaries(nextMyDiaries)
       setStickerCategories(nextStickerCategories)
@@ -1251,8 +1345,27 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     setCharacters(prev => prev.filter(c => c.id !== id))
     setMessages(prev => prev.filter(m => m.characterId !== id))
     // ★ 表情包不随角色删除！表情包是独立资产，用户手动上传的。
-    // 只把该角色专属的表情包"解绑"变为全局（characterId → 'all'），而不是删除。
-    setStickers(prev => prev.map(s => s.characterId === id ? { ...s, characterId: 'all' } : s))
+    // 新模型：总表情库只存一份（characterId='all'），角色“绑定关系”独立。
+    // 删除角色时：清理其绑定关系；若有旧数据残留 characterId===id，也迁移回总库。
+    setStickers(prev => prev.map(s => {
+      const scid = String((s as any).characterId || '').trim()
+      const bound = Array.isArray((s as any).boundCharacterIds) ? (s as any).boundCharacterIds : []
+      const nextBound = bound.filter((x: any) => String(x || '').trim() !== id)
+      if (scid === id) {
+        const next: any = { ...s, characterId: 'all' }
+        // 旧的“专属表情”删除角色后保留在总库，但不再绑定到任何角色
+        if (nextBound.length > 0) next.boundCharacterIds = nextBound
+        else delete next.boundCharacterIds
+        return next
+      }
+      if (scid === 'all' && bound.length !== nextBound.length) {
+        const next: any = { ...s }
+        if (nextBound.length > 0) next.boundCharacterIds = nextBound
+        else delete next.boundCharacterIds
+        return next
+      }
+      return s
+    }))
     // 同步清理朋友圈数据：
     // - 删除该角色发布的动态
     // - 清理他在他人动态里的点赞/评论（含回复）
@@ -1425,11 +1538,69 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   // ==================== 表情包操作 ====================
 
   const addSticker = (sticker: Omit<StickerConfig, 'id'>) => {
-    const newSticker: StickerConfig = {
-      ...sticker,
-      id: `sticker_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    const url = String((sticker as any)?.imageUrl || '').trim()
+    const incomingBound = Array.isArray((sticker as any)?.boundCharacterIds)
+      ? (sticker as any).boundCharacterIds.map((x: any) => String(x || '').trim()).filter(Boolean)
+      : []
+    // 新模型：所有表情包都写入总库（characterId='all'），角色只记录绑定关系
+    const normalized: Omit<StickerConfig, 'id'> = {
+      ...(sticker as any),
+      characterId: 'all',
+      boundCharacterIds: incomingBound.length > 0 ? Array.from(new Set(incomingBound)) : undefined,
+      imageUrl: url,
+      refKey: String((sticker as any)?.refKey || '').trim() || (() => {
+        const s = String(url || '').trim()
+        if (!s) return undefined
+        let h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0
+        for (let i = 0; i < s.length; i++) {
+          const ch = s.charCodeAt(i)
+          h1 = Math.imul(h1 ^ ch, 2654435761)
+          h2 = Math.imul(h2 ^ ch, 1597334677)
+        }
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+        const x = 4294967296 * (2097151 & h2) + (h1 >>> 0)
+        return x.toString(36)
+      })(),
     }
-    setStickers(prev => [...prev, newSticker])
+
+    // 去重：同一 imageUrl 只保留一份，合并绑定关系与缺失字段
+    setStickers(prev => {
+      if (url) {
+        const idx = prev.findIndex(s => String((s as any).imageUrl || '').trim() === url)
+        if (idx >= 0) {
+          const existing = prev[idx]
+          const prevBound = Array.isArray((existing as any).boundCharacterIds) ? (existing as any).boundCharacterIds : []
+          const nextBound = Array.from(new Set([...prevBound, ...(normalized as any).boundCharacterIds || []].filter(Boolean)))
+          const merged: StickerConfig = {
+            ...(existing as any),
+            // 归一为总库
+            characterId: 'all',
+            imageUrl: url,
+            refKey: String((existing as any).refKey || '').trim() || (normalized as any).refKey,
+            boundCharacterIds: nextBound.length > 0 ? nextBound : undefined,
+            // 尽量补齐信息（不覆盖用户已有内容）
+            description: String((existing as any).description || '').trim()
+              ? (existing as any).description
+              : (normalized as any).description,
+            category: String((existing as any).category || '').trim()
+              ? (existing as any).category
+              : (normalized as any).category,
+            keyword: String((existing as any).keyword || '').trim()
+              ? (existing as any).keyword
+              : (normalized as any).keyword,
+          }
+          const next = [...prev]
+          next[idx] = merged
+          return next
+        }
+      }
+      const newSticker: StickerConfig = {
+        ...(normalized as any),
+        id: `sticker_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      }
+      return [...prev, newSticker]
+    })
   }
 
   const removeSticker = (id: string) => {
@@ -1441,26 +1612,33 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   }
 
   const getStickersByCharacter = useCallback(
-    (characterId: string) => stickers.filter(s => s.characterId === characterId || s.characterId === 'all'),
+    (characterId: string) => {
+      const cid = String(characterId || '').trim()
+      // 总表情库：返回全部（统一存为 characterId='all'）
+      if (!cid || cid === 'all') {
+        return stickers.filter(s => String((s as any).characterId || '').trim() === 'all')
+      }
+      // 角色视图：只返回“已绑定到该角色”的总库表情包
+      // （兼容旧数据：如果仍有 characterId===cid 的记录，也一并返回）
+      return stickers.filter(s => {
+        const scid = String((s as any).characterId || '').trim()
+        if (scid === cid) return true
+        if (scid !== 'all') return false
+        const bound = (s as any).boundCharacterIds
+        return Array.isArray(bound) && bound.includes(cid)
+      })
+    },
     [stickers]
   )
 
   const addStickerToCharacter = (stickerId: string, targetCharacterId: string) => {
     const sticker = stickers.find(s => s.id === stickerId)
-    if (!sticker) return
-    // ★ 防止重复：如果目标角色已有同一张图片的表情包，跳过不再复制
-    const alreadyExists = stickers.some(s =>
-      s.characterId === targetCharacterId &&
-      s.imageUrl === sticker.imageUrl
-    )
-    if (alreadyExists) return
-    addSticker({
-      characterId: targetCharacterId,
-      imageUrl: sticker.imageUrl,
-      keyword: sticker.keyword,
-      category: sticker.category,
-      description: sticker.description,
-    })
+    const cid = String(targetCharacterId || '').trim()
+    if (!sticker || !cid) return
+    // 新模型：不复制表情包，只记录“绑定关系”
+    const prev = Array.isArray((sticker as any).boundCharacterIds) ? (sticker as any).boundCharacterIds : []
+    const next = Array.from(new Set([...prev, cid].filter(Boolean)))
+    updateSticker(stickerId, { characterId: 'all', boundCharacterIds: next })
   }
 
   const addStickerToAll = (sticker: Omit<StickerConfig, 'id' | 'characterId'>) => {

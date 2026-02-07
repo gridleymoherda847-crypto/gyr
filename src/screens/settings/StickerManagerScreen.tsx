@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PageContainer from '../../components/PageContainer'
 import AppHeader from '../../components/AppHeader'
@@ -149,6 +149,18 @@ export default function StickerManagerScreen() {
     renameStickerCategory,
   } = useWeChat()
 
+  // 新模型：表情包永远写入“总表情库”（characterId='all'），如果是从某个角色跳转来的导入，则仅增加绑定关系
+  const addStickerToLibrary = useCallback((sticker: Omit<any, 'id'>) => {
+    const bound = targetCharacterId !== 'all' ? [targetCharacterId] : []
+    const incoming = Array.isArray((sticker as any).boundCharacterIds) ? (sticker as any).boundCharacterIds : []
+    const mergedBound = Array.from(new Set([...incoming, ...bound].map(x => String(x || '').trim()).filter(Boolean)))
+    addSticker({
+      ...(sticker as any),
+      characterId: 'all',
+      boundCharacterIds: mergedBound.length > 0 ? mergedBound : undefined,
+    })
+  }, [addSticker, targetCharacterId])
+
   const [newCategoryName, setNewCategoryName] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -259,12 +271,10 @@ export default function StickerManagerScreen() {
       addStickerCategory(cat)
     }
     
-    const targetId = targetCharacterId
     let count = 0
     
     for (const { keyword, url } of parsed.slice(0, 500)) { // 限制最多500张
-      addSticker({
-        characterId: targetId,
+      addStickerToLibrary({
         keyword,
         imageUrl: url,
         category: cat,
@@ -321,9 +331,6 @@ export default function StickerManagerScreen() {
       addStickerCategory(catName)
     }
 
-    // 导入：写入到目标（默认 all，或从 query 传入角色）
-    const targetId = targetCharacterId
-    
     // 支持多种字段名
     const items = rawStickers
       .map(s => {
@@ -347,8 +354,7 @@ export default function StickerManagerScreen() {
     }
 
     for (const s of items) {
-      addSticker({
-        characterId: targetId,
+      addStickerToLibrary({
         keyword: s.keyword,
         imageUrl: s.imageUrl,
         category: catName,
@@ -374,10 +380,8 @@ export default function StickerManagerScreen() {
     try {
       const list = Array.from(files).slice(0, 120)
       const imgs = await Promise.all(list.map(fileToBase64))
-      const targetId = targetCharacterId
       for (let i = 0; i < list.length; i++) {
-        addSticker({
-          characterId: targetId,
+        addStickerToLibrary({
           keyword: filenameToKeyword(list[i].name),
           imageUrl: imgs[i],
           category: cat,
@@ -448,15 +452,13 @@ export default function StickerManagerScreen() {
     }
     
     let importedCount = 0
-    const targetId = targetCharacterId
     
     try {
       // 处理图片文件
       if (imageFiles.length > 0) {
         const imgs = await Promise.all(imageFiles.slice(0, 200).map(fileToBase64))
         for (let i = 0; i < imageFiles.length && i < 200; i++) {
-          addSticker({
-            characterId: targetId,
+          addStickerToLibrary({
             keyword: filenameToKeyword(imageFiles[i].name),
             imageUrl: imgs[i],
             category: cat,
@@ -482,8 +484,7 @@ export default function StickerManagerScreen() {
             const entries = extractStickerUrlEntries(text)
             if (entries.length > 0) {
               for (const e of entries.slice(0, 800)) {
-                addSticker({
-                  characterId: targetId,
+                addStickerToLibrary({
                   keyword: safeName(e.keyword) || '表情',
                   imageUrl: e.url,
                   category: cat,
@@ -549,8 +550,7 @@ export default function StickerManagerScreen() {
             .slice(0, 300)
 
           for (const s of items) {
-            addSticker({
-              characterId: targetId,
+            addStickerToLibrary({
               keyword: s.keyword,
               imageUrl: s.imageUrl,
               category: cat,
@@ -570,8 +570,7 @@ export default function StickerManagerScreen() {
           const entries = extractStickerUrlEntries(text)
           if (entries.length === 0) continue
           for (const e of entries.slice(0, 500)) {
-            addSticker({
-              characterId: targetId,
+            addStickerToLibrary({
               keyword: safeName(e.keyword) || '表情',
               imageUrl: e.url,
               category: cat,
@@ -591,8 +590,7 @@ export default function StickerManagerScreen() {
           const entries = extractStickerUrlEntries(text)
           if (entries.length === 0) continue
           for (const e of entries.slice(0, 800)) {
-            addSticker({
-              characterId: targetId,
+            addStickerToLibrary({
               keyword: safeName(e.keyword) || '表情',
               imageUrl: e.url,
               category: cat,
@@ -855,6 +853,27 @@ export default function StickerManagerScreen() {
                                   placeholder="备注（如：你真可爱）"
                                   className="mt-1 w-full px-1.5 py-1 rounded bg-gray-50 border border-gray-200 outline-none text-[10px] text-gray-600"
                                 />
+                                {String((s as any).refKey || '').trim() && (
+                                  <div className="mt-1 flex items-center justify-between gap-2">
+                                    <span className="text-[10px] text-gray-400 font-mono truncate">
+                                      引用码：{String((s as any).refKey)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const v = String((s as any).refKey || '').trim()
+                                        if (!v) return
+                                        navigator.clipboard.writeText(v).then(() => {
+                                          setToast('已复制引用码')
+                                          window.setTimeout(() => setToast(null), 1400)
+                                        }).catch(() => {})
+                                      }}
+                                      className="text-[10px] text-purple-600 flex-shrink-0"
+                                    >
+                                      复制
+                                    </button>
+                                  </div>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => removeSticker(s.id)}

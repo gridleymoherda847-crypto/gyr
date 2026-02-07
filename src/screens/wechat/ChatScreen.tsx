@@ -1100,10 +1100,12 @@ export default function ChatScreen() {
               const desc = String(st?.description || '').trim()
               const kw = String(st?.keyword || '').trim()
               const cat = String(st?.category || '').trim()
+              const ref = String((st as any)?.refKey || '').trim()
               const parts = [
                 desc ? `备注=${desc}` : '',
                 kw ? `关键词=${kw}` : '',
                 cat ? `分类=${cat}` : '',
+                ref ? `引用=${ref}` : '',
               ].filter(Boolean)
               content = parts.length > 0 ? `【表情包】${parts.join('；')}` : '【表情包】（无备注）'
               used += 22
@@ -2131,8 +2133,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         // 表情包策略（活人感必须项）：
         // - 不再做“关键词替换文本”
         // - 只要角色配置了表情包，就尽量在一组回复里夹带 1~N 条表情包消息
-        // 只使用“本角色已配置”的表情包（公共库不自动使用，必须在消息设置里手动添加给该角色）
-        const stickerPool = stickers.filter(s => s.characterId === character.id || s.characterId === 'all')
+        // 只使用“本角色已绑定”的表情包（总表情库不会因绑定而复制；未绑定的不参与发送）
+        // 注意：getStickersByCharacter(characterId) 现在返回的就是“已绑定到该角色”的总库表情包
+        const stickerPool = stickers
         const stickerCandidates: number[] = []
         const usedStickerIds = new Set<string>()
 
@@ -2354,6 +2357,26 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           return { name, address: (m[2] || '').trim(), city: (m[3] || '').trim() }
         }
 
+        // 兼容：模型偶尔会“把表情包上下文当成要发的文字”输出，例如：
+        // 【表情包】备注=要哭了；关键词=xxx；分类=小狗
+        // 这里把它识别出来，转换为真正的表情包消息（不显示这坨字）
+        const parseStickerMetaLine = (text: string) => {
+          const t = String(text || '').trim()
+          if (!t) return null
+          if (!/^[【\[]\s*表情包/.test(t)) return null
+          // 去掉开头的【表情包】/[表情包]
+          const rest = t.replace(/^[【\[]\s*表情包\s*[】\]]/, '').trim()
+          const pick = (k: string) => {
+            const m = rest.match(new RegExp(`${k}\\s*=\\s*([^；;]+)`))
+            return (m?.[1] || '').trim()
+          }
+          const desc = pick('备注') || pick('描述')
+          const kw = pick('关键词') || pick('关键字') || pick('keyword')
+          const cat = pick('分类') || pick('类目')
+          const ref = pick('引用') || pick('引用码') || pick('ref') || pick('refKey')
+          return { desc, kw, cat, ref, raw: rest }
+        }
+
         // 预扫描：找出适合插表情包的“文本回复行”
         if (stickerPool.length > 0) {
           for (let i = 0; i < replies.length; i++) {
@@ -2364,6 +2387,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             if (parseTweetCommand(t)) continue
             if (parseXProfileCommand(t)) continue
             if (parseLocationCommand(t)) continue
+            if (parseStickerMetaLine(t)) continue
             stickerCandidates.push(i)
           }
         }
@@ -2422,8 +2446,27 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           const tweetCmd = parseTweetCommand(trimmedContent)
           const xProfileCmd = parseXProfileCommand(trimmedContent)
           const locationCmd = parseLocationCommand(trimmedContent)
+          const stickerMeta = parseStickerMetaLine(trimmedContent)
           
           safeTimeoutEx(() => {
+            if (stickerMeta) {
+              // 把“表情包描述文本”转换为真正的表情包消息
+              const byRef =
+                stickerMeta.ref
+                  ? stickerPool.find((s: any) => String((s as any).refKey || '').trim() === String(stickerMeta.ref || '').trim())
+                  : null
+              const basis = [stickerMeta.desc, stickerMeta.kw, stickerMeta.cat].filter(Boolean).join(' ')
+              const picked = byRef || pickStickerForText(basis || trimmedContent)
+              if (picked?.imageUrl) {
+                addMessage({
+                  characterId: character.id,
+                  content: picked.imageUrl,
+                  isUser: false,
+                  type: 'sticker',
+                })
+              }
+              return
+            }
             if (locationCmd) {
               addMessage({
                 characterId: character.id,

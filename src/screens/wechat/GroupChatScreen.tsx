@@ -229,6 +229,44 @@ export default function GroupChatScreen() {
   const groupAudioRef = useRef<HTMLAudioElement | null>(null)
   const voiceGenLockRef = useRef<Record<string, boolean>>({})
 
+  // ===== 群聊表情包：拦截模型输出的“表情包描述文本”，改为真正发送表情包 =====
+  const parseStickerMetaLine = (text: string) => {
+    const t = String(text || '').trim()
+    if (!t) return null
+    if (!/^[【\[]\s*表情包/.test(t)) return null
+    const rest = t.replace(/^[【\[]\s*表情包\s*[】\]]/, '').trim()
+    const pick = (k: string) => {
+      const m = rest.match(new RegExp(`${k}\\s*=\\s*([^；;]+)`))
+      return (m?.[1] || '').trim()
+    }
+    const desc = pick('备注') || pick('描述')
+    const kw = pick('关键词') || pick('关键字') || pick('keyword')
+    const cat = pick('分类') || pick('类目')
+    const ref = pick('引用') || pick('引用码') || pick('ref') || pick('refKey')
+    return { desc, kw, cat, ref, raw: rest }
+  }
+
+  const pickStickerForMemberText = (memberId: string, basisText: string) => {
+    const basis = String(basisText || '').trim()
+    const pool = getStickersByCharacter(memberId)
+    const candidates = pool.length > 0 ? pool : getStickersByCharacter('')
+    if (candidates.length === 0) return null
+    const hayOf = (s: any) => [s.description, s.keyword, s.category].map((x: any) => String(x || '').trim()).filter(Boolean).join(' ')
+    const tokens = basis.split(/\s+/).map(s => s.trim()).filter(Boolean).slice(0, 12)
+    let bestScore = -1
+    let best: any[] = []
+    for (const s of candidates) {
+      const hay = hayOf(s)
+      let score = 0
+      if (basis && hay && (hay.includes(basis) || basis.includes(hay))) score += 3
+      for (const tk of tokens) if (tk && hay.includes(tk)) score += 1
+      if (score > bestScore) { bestScore = score; best = [s] }
+      else if (score === bestScore) best.push(s)
+    }
+    const picked = (best.length > 0 ? best : candidates)[Math.floor(Math.random() * (best.length > 0 ? best.length : candidates.length))]
+    return picked || null
+  }
+
   // 决定某个成员是否发语音
   const shouldSendVoiceForMember = useCallback((memberId: string) => {
     if (!ttsConfig.enabled || !group?.voiceEnabled) return false
@@ -611,7 +649,9 @@ ${params.recentMessages || '（暂无消息）'}`
           const desc = String(st?.description || '').trim()
           const kw = String(st?.keyword || '').trim()
           const cat = String(st?.category || '').trim()
+          const ref = String((st as any)?.refKey || '').trim()
           const parts = [desc ? `备注=${desc}` : '', kw ? `关键词=${kw}` : '', cat ? `分类=${cat}` : ''].filter(Boolean)
+          if (ref) parts.push(`引用=${ref}`)
           return parts.length > 0 ? `【表情包】${parts.join('；')}` : '【表情包】'
         }
         if (m.type === 'voice') return '<语音>'
@@ -721,11 +761,33 @@ ${uniqueNames.join('、')}
         const translationMode = (member as any).language !== 'zh' && !!(member as any).chatTranslationEnabled
         const dual = translationMode ? parseDual(reply.content) : null
         const textContent = dual ? dual.orig : reply.content
+        const stickerMeta = parseStickerMetaLine(String(textContent || '').trim())
 
         // 判断是否发语音
         const sendAsVoice = shouldSendVoiceForMember(member.id)
 
-        if (sendAsVoice) {
+        // 如果模型输出了“【表情包】备注=...”，优先按表情包处理（不显示那坨字）
+        if (stickerMeta) {
+          const basis = [stickerMeta.desc, stickerMeta.kw, stickerMeta.cat].filter(Boolean).join(' ')
+          const byRef =
+            stickerMeta.ref
+              ? getStickersByCharacter(member.id).find((s: any) => String((s as any).refKey || '').trim() === String(stickerMeta.ref || '').trim()) ||
+                getStickersByCharacter('').find((s: any) => String((s as any).refKey || '').trim() === String(stickerMeta.ref || '').trim())
+              : null
+          const picked = byRef || pickStickerForMemberText(member.id, basis || String(textContent || ''))
+          if (picked?.imageUrl) {
+            const stMsg = addMessage({
+              characterId: '',
+              groupId: group.id,
+              groupSenderId: member.id,
+              content: picked.imageUrl,
+              isUser: false,
+              type: 'sticker',
+              replyToMessageId,
+            })
+            recentMessageIdBySender[member.name] = stMsg.id
+          }
+        } else if (sendAsVoice) {
           const voiceDuration = Math.max(2, Math.min(60, Math.ceil(textContent.length / 5)))
           const isChinese = (member as any).language === 'zh' || /[\u4e00-\u9fa5]/.test(textContent.slice(0, 20))
           const dualZh = dual?.zh ? String(dual.zh).trim() : ''

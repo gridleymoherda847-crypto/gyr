@@ -14,7 +14,7 @@ export default function ChatSettingsScreen() {
   const { characterId } = useParams<{ characterId: string }>()
   const { 
     getCharacter, updateCharacter, deleteCharacter, 
-    getStickersByCharacter, addSticker, removeSticker,
+    getStickersByCharacter, addSticker, updateSticker,
     characters, addStickerToCharacter,
     userPersonas, getUserPersona, getCurrentPersona,
     stickerCategories, addStickerCategory, removeStickerCategory,
@@ -478,7 +478,9 @@ export default function ChatSettingsScreen() {
     // 关键词不再用于触发逻辑，这里仅作内部标识（导出包/排序等）
     const internalName = `sticker_${Date.now()}`
     addSticker({
-      characterId: character.id,
+      // 写入总表情库，并绑定到当前角色（不复制）
+      characterId: 'all',
+      boundCharacterIds: [character.id],
       keyword: internalName,
       imageUrl: newStickerImage,
       category: newStickerCategory || undefined
@@ -1582,8 +1584,8 @@ export default function ChatSettingsScreen() {
                 </div>
               </div>
 
-              {/* 已添加（本角色） */}
-              <div className="text-sm font-medium text-[#000] mb-3">已添加（本角色）({myStickers.length})</div>
+              {/* 已绑定（本角色） */}
+              <div className="text-sm font-medium text-[#000] mb-3">已绑定（本角色）({myStickers.length})</div>
               
               {myStickers.length === 0 ? (
                 <div className="text-center text-gray-400 text-sm py-8">
@@ -1619,7 +1621,7 @@ export default function ChatSettingsScreen() {
                                 <img src={sticker.imageUrl} alt="" className="w-10 h-10 object-contain rounded" />
                                 <div className="flex-1">
                                   <div className="text-xs text-gray-400 flex items-center gap-2">
-                                    <span>仅此角色</span>
+                                    <span>已绑定</span>
                                   </div>
                                 </div>
 
@@ -1632,10 +1634,15 @@ export default function ChatSettingsScreen() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => removeSticker(sticker.id)}
+                                  onClick={() => {
+                                    const bound = Array.isArray((sticker as any).boundCharacterIds) ? (sticker as any).boundCharacterIds : []
+                                    const next = bound.filter((x: any) => String(x || '').trim() !== character.id)
+                                    // 角色内“删除”=解绑，不删除总库资产
+                                    updateSticker(sticker.id, { boundCharacterIds: next.length > 0 ? next : undefined })
+                                  }}
                                   className="text-red-500 text-xs"
                                 >
-                                  删除
+                                  移除
                                 </button>
                               </div>
                             ))}
