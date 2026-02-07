@@ -2142,6 +2142,14 @@ ${history}`
                             <span className="text-sm text-gray-800 font-medium">已有总结 Token</span>
                             <span className="text-sm text-gray-800">{memorySummaryTokens} Tokens</span>
                           </div>
+                          <div className="h-px bg-gray-100" />
+                          <div className="px-4 py-3 flex items-center justify-between">
+                            <span className="text-sm text-gray-800 font-medium">读取当前群聊总上下文 Token</span>
+                            <span className="text-sm text-gray-800">{estimatedContextTokens + memorySummaryTokens} Tokens</span>
+                          </div>
+                          <div className="px-4 pb-3 text-[11px] text-gray-400">
+                            说明：总上下文=预估上下文+记忆总结。该统计不包含：系统提示词、创作工坊预设、世界书注入、工具/识图等额外提示，也不包含模型输出Token。
+                          </div>
                         </div>
 
                         <div className="bg-gray-50 rounded-xl p-3">
