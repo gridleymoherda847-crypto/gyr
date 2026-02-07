@@ -1620,54 +1620,141 @@ export function OSProvider({ children }: PropsWithChildren) {
 
       // ====== 2) Gemini 原生 ======
       if (apiInterface === 'gemini_native') {
-        const sys = messages.filter(m => m.role === 'system').map(m => (typeof m.content === 'string' ? m.content : '')).filter(Boolean).join('\n\n').trim()
-        const contents = messages
-          .filter(m => m.role !== 'system')
-          .map((m) => {
-            const role = m.role === 'assistant' ? 'model' : 'user'
-            const text =
-              typeof m.content === 'string'
-                ? m.content
-                : Array.isArray(m.content)
-                  ? m.content.map(p => (p?.text ? String(p.text) : p?.type === 'image_url' || p?.type === 'image' ? '[图片]' : '')).filter(Boolean).join('\n')
-                  : String(m.content || '')
-            return { role, parts: [{ text }] }
-          })
-        const modelPath = selectedModel.startsWith('models/') ? selectedModel : `models/${selectedModel}`
-        const url = `${base}/${modelPath}:generateContent?key=${encodeURIComponent(key)}`
+        // 排查阶段：Gemini 统一走同域转发（/api/llm/chat），并开启 stream=true
+        // - 避免 Serverless “等完整响应”超时
+        // - 后端会把 Gemini 流实时转换为 OpenAI SSE；这里把 SSE 读完再返回字符串
+        const readOpenAISSE = async (resp: Response): Promise<string> => {
+          const reader = resp.body?.getReader?.()
+          if (!reader) throw new Error('SSE stream not readable')
+          const decoder = new TextDecoder()
+          let buf = ''
+          let out = ''
+          while (true) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value || new Uint8Array(), { stream: true })
+            while (true) {
+              const idx = buf.indexOf('\n')
+              if (idx < 0) break
+              const line = buf.slice(0, idx).trim()
+              buf = buf.slice(idx + 1)
+              if (!line) continue
+              if (!line.startsWith('data:')) continue
+              const data = line.replace(/^data:\s*/i, '')
+              if (data === '[DONE]') return out
+              try {
+                const j: any = JSON.parse(data)
+                const delta = j?.choices?.[0]?.delta
+                const content = typeof delta?.content === 'string' ? delta.content : ''
+                if (content) out += content
+                const finish = j?.choices?.[0]?.finish_reason
+                if (finish) {
+                  // 结束帧
+                  return out
+                }
+              } catch {
+                // 非 JSON：作为纯文本拼进来（便于看到错误）
+                out += data
+              }
+            }
+          }
+          return out
+        }
+
         const controller = new AbortController()
         const timeoutMs = options?.timeoutMs ?? 600000
         const t = window.setTimeout(() => controller.abort(), timeoutMs)
-        const body: any = {
-          contents,
-          generationConfig: {
-            temperature,
-            maxOutputTokens: maxTokens,
-          },
+        try {
+          const proxyRes = await fetch('/api/llm/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'text/event-stream',
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+              apiBaseUrl: cfg.apiBaseUrl,
+              apiKey: key,
+              apiInterface: 'gemini_native',
+              payload: {
+                model: selectedModel,
+                messages,
+                temperature,
+                max_tokens: maxTokens,
+                stream: true,
+              },
+            }),
+          })
+
+          const ct = String(proxyRes.headers.get('content-type') || '').toLowerCase()
+          if (proxyRes.ok && ct.includes('text/event-stream')) {
+            const sseText = (await readOpenAISSE(proxyRes)).trim()
+            if (!sseText) throw new Error('模型返回空内容（Gemini SSE）')
+            return sseText
+          }
+
+          // 兜底：非流式 JSON
+          const data: any = await proxyRes.json().catch(() => ({}))
+          const content =
+            data?.choices?.[0]?.message?.content ??
+            data?.choices?.[0]?.text ??
+            data?.message?.content ??
+            data?.content
+          const finalText = typeof content === 'string' ? content.trim() : ''
+          if (!finalText) throw new Error('模型返回空内容（Gemini via proxy）。')
+          return finalText
+        } catch (e: any) {
+          // 本地开发可能没有 /api/llm/chat：回退到直连（旧逻辑）
+          try {
+            const sys = messages.filter(m => m.role === 'system').map(m => (typeof m.content === 'string' ? m.content : '')).filter(Boolean).join('\n\n').trim()
+            const contents = messages
+              .filter(m => m.role !== 'system')
+              .map((m) => {
+                const role = m.role === 'assistant' ? 'model' : 'user'
+                const text =
+                  typeof m.content === 'string'
+                    ? m.content
+                    : Array.isArray(m.content)
+                      ? m.content.map(p => (p?.text ? String(p.text) : p?.type === 'image_url' || p?.type === 'image' ? '[图片]' : '')).filter(Boolean).join('\n')
+                      : String(m.content || '')
+                return { role, parts: [{ text }] }
+              })
+            const modelPath = selectedModel.startsWith('models/') ? selectedModel : `models/${selectedModel}`
+            const url = `${base}/${modelPath}:generateContent?key=${encodeURIComponent(key)}`
+            const body: any = {
+              contents,
+              generationConfig: {
+                temperature,
+                maxOutputTokens: maxTokens,
+              },
+            }
+            if (sys) body.systemInstruction = { parts: [{ text: sys }] }
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            })
+            if (!response.ok) {
+              const text = await response.text().catch(() => '')
+              const err: any = new Error(text || `请求失败: ${response.status}`)
+              err.status = response.status
+              err.phase = 'chat'
+              throw err
+            }
+            const data = await response.json().catch(() => ({}))
+            const parts = data?.candidates?.[0]?.content?.parts
+            const text = Array.isArray(parts) ? parts.map((p: any) => p?.text).filter(Boolean).join('') : ''
+            const finalText = typeof text === 'string' ? text.trim() : ''
+            if (!finalText) {
+              throw new Error('模型返回空内容（Gemini）。请检查：模型名是否正确、API Key 权限是否包含 Generative Language API。')
+            }
+            return finalText
+          } catch {
+            throw e
+          }
+        } finally {
+          window.clearTimeout(t)
         }
-        if (sys) body.systemInstruction = { parts: [{ text: sys }] }
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify(body),
-        })
-        window.clearTimeout(t)
-        if (!response.ok) {
-          const text = await response.text().catch(() => '')
-          const e: any = new Error(text || `请求失败: ${response.status}`)
-          e.status = response.status
-          e.phase = 'chat'
-          throw e
-        }
-        const data = await response.json().catch(() => ({}))
-        const parts = data?.candidates?.[0]?.content?.parts
-        const text = Array.isArray(parts) ? parts.map((p: any) => p?.text).filter(Boolean).join('') : ''
-        const finalText = typeof text === 'string' ? text.trim() : ''
-        if (!finalText) {
-          throw new Error('模型返回空内容（Gemini）。请检查：模型名是否正确、API Key 权限是否包含 Generative Language API。')
-        }
-        return finalText
       }
 
       // ====== 3) Claude（Anthropic）原生 ======
