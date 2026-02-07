@@ -1246,7 +1246,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   const deleteCharacter = (id: string) => {
     setCharacters(prev => prev.filter(c => c.id !== id))
     setMessages(prev => prev.filter(m => m.characterId !== id))
-    setStickers(prev => prev.filter(s => s.characterId !== id && s.characterId !== 'all'))
+    // ★ 表情包不随角色删除！表情包是独立资产，用户手动上传的。
+    // 只把该角色专属的表情包"解绑"变为全局（characterId → 'all'），而不是删除。
+    setStickers(prev => prev.map(s => s.characterId === id ? { ...s, characterId: 'all' } : s))
     // 同步清理朋友圈数据：
     // - 删除该角色发布的动态
     // - 清理他在他人动态里的点赞/评论（含回复）

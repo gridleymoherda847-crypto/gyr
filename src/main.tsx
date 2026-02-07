@@ -111,14 +111,114 @@ if (isIOS) {
   document.addEventListener('gestureend', preventGesture as any, { passive: false } as any)
 }
 
-// ========= 自动版本检测 + 强制刷新 =========
+// ========= 自动版本检测 + 弹窗提示手动刷新 =========
 // 每次从后台切回 / 每 5 分钟检查一次 index.html 是否已更新
-// 如果检测到新版本，清除 Service Worker / CacheStorage 并自动刷新
+// 检测到新版本后弹出提示横幅，用户点击按钮后才刷新（不自动刷新）
 ;(function autoVersionCheck() {
   const CHECK_INTERVAL = 5 * 60 * 1000 // 5 分钟
   let lastCheck = Date.now()
+  let bannerShown = false // 防止重复弹出
+
+  function showUpdateBanner() {
+    if (bannerShown) return
+    bannerShown = true
+
+    // 创建横幅容器
+    const banner = document.createElement('div')
+    banner.id = '__lp_update_banner__'
+    banner.style.cssText = [
+      'position:fixed',
+      'top:0',
+      'left:0',
+      'right:0',
+      'z-index:999999',
+      'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)',
+      'color:#fff',
+      'padding:12px 16px',
+      'font-size:14px',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+      'display:flex',
+      'align-items:center',
+      'justify-content:space-between',
+      'gap:10px',
+      'box-shadow:0 2px 12px rgba(0,0,0,0.25)',
+      'animation:__lp_slideDown 0.3s ease-out',
+    ].join(';')
+
+    // 添加动画 CSS
+    const style = document.createElement('style')
+    style.textContent = `
+      @keyframes __lp_slideDown {
+        from { transform: translateY(-100%); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+    `
+    document.head.appendChild(style)
+
+    // 文字区
+    const textDiv = document.createElement('div')
+    textDiv.style.cssText = 'flex:1;line-height:1.4;'
+    textDiv.innerHTML = '<b>有新版本可用</b><br><span style="font-size:12px;opacity:0.9;">已修复若干问题并优化体验，点击刷新即可更新</span>'
+
+    // 刷新按钮
+    const btn = document.createElement('button')
+    btn.textContent = '立即刷新'
+    btn.style.cssText = [
+      'background:#fff',
+      'color:#764ba2',
+      'border:none',
+      'border-radius:20px',
+      'padding:8px 18px',
+      'font-size:13px',
+      'font-weight:600',
+      'cursor:pointer',
+      'white-space:nowrap',
+      'flex-shrink:0',
+    ].join(';')
+    btn.addEventListener('click', async () => {
+      btn.textContent = '刷新中...'
+      btn.style.opacity = '0.6'
+      // 注销 Service Worker + 清除 Cache Storage
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations()
+          for (const r of regs) { try { await r.unregister() } catch { /* */ } }
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys()
+          for (const key of keys) { try { await caches.delete(key) } catch { /* */ } }
+        }
+      } catch { /* ignore */ }
+      window.location.reload()
+    })
+
+    // 关闭按钮（用户可以暂时忽略）
+    const closeBtn = document.createElement('button')
+    closeBtn.textContent = '✕'
+    closeBtn.style.cssText = [
+      'background:transparent',
+      'color:#fff',
+      'border:none',
+      'font-size:18px',
+      'cursor:pointer',
+      'padding:4px 8px',
+      'opacity:0.7',
+      'flex-shrink:0',
+    ].join(';')
+    closeBtn.addEventListener('click', () => {
+      banner.remove()
+      // 10 分钟后允许再次弹出
+      setTimeout(() => { bannerShown = false }, 10 * 60 * 1000)
+    })
+
+    banner.appendChild(textDiv)
+    banner.appendChild(btn)
+    banner.appendChild(closeBtn)
+    document.body.appendChild(banner)
+  }
 
   async function checkForUpdate() {
+    if (bannerShown) return // 已弹出横幅，不重复检测
     try {
       const now = Date.now()
       if (now - lastCheck < 30_000) return // 30秒内不重复检查
@@ -141,22 +241,8 @@ if (isIOS) {
       })
 
       if (hasNewVersion) {
-        console.log('[版本检测] 检测到新版本，准备刷新...')
-        // 注销 Service Worker
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations()
-          for (const r of regs) {
-            try { await r.unregister() } catch { /* */ }
-          }
-        }
-        // 清除浏览器 Cache Storage
-        if ('caches' in window) {
-          const keys = await caches.keys()
-          for (const key of keys) {
-            try { await caches.delete(key) } catch { /* */ }
-          }
-        }
-        window.location.reload()
+        console.log('[版本检测] 检测到新版本，显示更新提示...')
+        showUpdateBanner()
       }
     } catch {
       // 网络失败静默忽略
