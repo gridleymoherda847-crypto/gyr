@@ -1822,20 +1822,78 @@ export function OSProvider({ children }: PropsWithChildren) {
 
       // 排查/稳定性：OpenAI 兼容优先走同域转发（避免 CORS/拿不到上游错误体，只能看到“500”）
       // - 代理侧会尽可能把上游错误体转换成“可读文本”回传
-      const callOpenAICompatViaProxy = async (pl: any) => {
+      const readOpenAISSE = async (resp: Response): Promise<string> => {
+        const reader = resp.body?.getReader?.()
+        if (!reader) throw new Error('SSE stream not readable')
+        const decoder = new TextDecoder()
+        let buf = ''
+        let out = ''
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value || new Uint8Array(), { stream: true })
+          while (true) {
+            const idx = buf.indexOf('\n')
+            if (idx < 0) break
+            const line = buf.slice(0, idx).trim()
+            buf = buf.slice(idx + 1)
+            if (!line) continue
+            if (!line.startsWith('data:')) continue
+            const data = line.replace(/^data:\s*/i, '')
+            if (data === '[DONE]') return out
+            try {
+              const j: any = JSON.parse(data)
+              const delta = j?.choices?.[0]?.delta
+              const content = typeof delta?.content === 'string' ? delta.content : ''
+              if (content) out += content
+              // 有些中转会在 SSE 里塞 error 对象
+              const errMsg =
+                j?.error?.message ||
+                j?.error?.msg ||
+                j?.message
+              if (!content && typeof errMsg === 'string' && errMsg.trim()) out += errMsg.trim()
+              const finish = j?.choices?.[0]?.finish_reason
+              if (finish) return out
+            } catch {
+              // 非 JSON：作为纯文本拼进来（便于看到错误）
+              out += data
+            }
+          }
+        }
+        return out
+      }
+
+      const callOpenAICompatViaProxy = async (pl: any, opts?: { stream?: boolean; signal?: AbortSignal }) => {
+        const wantStream = !!opts?.stream
         const proxyRes = await fetch('/api/llm/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(wantStream ? { Accept: 'text/event-stream' } : {}),
+          },
+          signal: opts?.signal,
           body: JSON.stringify({
             apiBaseUrl: cfg.apiBaseUrl,
             apiKey: key,
             apiInterface: 'openai_compatible',
-            payload: pl,
+            payload: wantStream ? { ...(pl as any), stream: true } : pl,
           }),
         })
         if (!proxyRes.ok) {
-          const errData = await proxyRes.json().catch(() => ({}))
-          throw new Error(errData?.error?.message || `请求失败: ${proxyRes.status}`)
+          const raw = await proxyRes.text().catch(() => '')
+          let msg = ''
+          try {
+            const j = raw ? JSON.parse(raw) : {}
+            msg = j?.error?.message || j?.message || ''
+          } catch {
+            msg = ''
+          }
+          const snippet = raw ? raw.trim().slice(0, 900) : ''
+          throw new Error(msg || (snippet ? `请求失败: ${proxyRes.status}\n上游返回片段：${snippet}` : `请求失败: ${proxyRes.status}`))
+        }
+        const ct = String(proxyRes.headers.get('content-type') || '').toLowerCase()
+        if (wantStream && ct.includes('text/event-stream')) {
+          return { __streamText: await readOpenAISSE(proxyRes) }
         }
         return await proxyRes.json().catch(() => ({}))
       }
@@ -1855,7 +1913,12 @@ export function OSProvider({ children }: PropsWithChildren) {
 
       // 代理优先（尤其是排查阶段要看到上游详细报错）
       try {
-        const proxyData = await callOpenAICompatViaProxy(payload)
+        // 优先走流式：避免 serverless 等完整响应超时；同时更容易把上游错误吐到前端
+        const proxyStreamAny: any = await callOpenAICompatViaProxy(payload, { stream: true, signal: controller.signal })
+        const streamText = typeof proxyStreamAny?.__streamText === 'string' ? proxyStreamAny.__streamText.trim() : ''
+        if (streamText) return streamText
+
+        const proxyData = await callOpenAICompatViaProxy(payload, { stream: false, signal: controller.signal })
         const proxyContent = extractOpenAIContent(proxyData)
         const proxyText = typeof proxyContent === 'string' ? proxyContent.trim() : ''
         if (proxyText) return proxyText

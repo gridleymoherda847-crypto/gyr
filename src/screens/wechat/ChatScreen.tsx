@@ -1089,21 +1089,21 @@ export default function ChatScreen() {
             }
             else if (m.type === 'sticker') {
               const url = String(m.content || '').trim()
-              // 表情包：尽量走 vision，让模型“看到”用户发的表情包（仅当是 data:image 或 http(s) 图片）
-              if (
-                m.isUser &&
-                url &&
-                (/^data:image\//i.test(url) || /^https?:\/\//i.test(url))
-              ) {
-                content = [
-                  { type: 'text', text: '[用户发送了一个表情包/贴纸，请根据图片内容理解情绪与含义并自然回应]' },
-                  { type: 'image_url', image_url: { url } },
-                ]
-                used += 100
-              } else {
-                content = '<STICKER />'
-                used += 10
-              }
+              // 表情包：排查/兼容优先 —— 不再把 GIF/贴纸图片发给模型（很多中转/Gemini 不支持 image/gif）
+              // 只把“表情包备注/关键词/分类”作为文本上下文，让模型理解情绪含义即可。
+              const st =
+                (stickers || []).find((s: any) => String(s?.imageUrl || '').trim() === url) ||
+                null
+              const desc = String(st?.description || '').trim()
+              const kw = String(st?.keyword || '').trim()
+              const cat = String(st?.category || '').trim()
+              const parts = [
+                desc ? `备注=${desc}` : '',
+                kw ? `关键词=${kw}` : '',
+                cat ? `分类=${cat}` : '',
+              ].filter(Boolean)
+              content = parts.length > 0 ? `【表情包】${parts.join('；')}` : '【表情包】（无备注）'
+              used += 22
             }
             else if (m.type === 'transfer') {
               const amt = (m.transferAmount ?? 0).toFixed(2)
@@ -2194,10 +2194,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               best.push(st)
             }
           }
-          const picked =
-            bestScore > 0 && best.length > 0
-              ? best[Math.floor(Math.random() * best.length)]
-              : candidates[Math.floor(Math.random() * candidates.length)]
+          // 只在“有匹配”时才发表情包；没有匹配就不夹带（避免看起来像随机乱发表情）
+          if (!(bestScore > 0 && best.length > 0)) return null
+          const picked = best[Math.floor(Math.random() * best.length)]
           if (picked?.id) usedStickerIds.add(picked.id)
           return picked || null
         }
@@ -5541,7 +5540,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       const previewCount = Math.min(4, fwdMsgs.length)
       
       return (
-        <div className="min-w-[180px] max-w-[240px] rounded-xl overflow-hidden bg-white border border-gray-200 shadow-sm">
+        <div data-allow-msg-menu="1" className="min-w-[180px] max-w-[240px] rounded-xl overflow-hidden bg-white border border-gray-200 shadow-sm">
           <div className="px-3 py-2 border-b border-gray-100">
             <div className="text-[12px] text-gray-500 mb-1">
               {msg.forwardedFrom ? `来自与${msg.forwardedFrom}的聊天` : '聊天记录'}
@@ -5927,7 +5926,24 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             // 性能优化：让浏览器跳过离屏渲染（不改变功能/滚动行为）
             style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 64px' }}
           >
-            <div className="px-3 py-1.5 rounded-lg bg-white/90 shadow-sm text-xs text-gray-500">
+            <div
+              data-msg-id={msg.id}
+              data-allow-msg-menu="1"
+              className="px-3 py-1.5 rounded-lg bg-white/90 shadow-sm text-xs text-gray-500 cursor-pointer active:opacity-80"
+              onClick={(e) => {
+                if (editMode) return
+                if (character?.offlineMode) return
+                e.preventDefault()
+                e.stopPropagation()
+                openMsgActionMenu(msg as any, e.currentTarget as HTMLElement)
+              }}
+              onContextMenu={(e) => {
+                if (editMode) return
+                if (character?.offlineMode) return
+                e.preventDefault()
+                openMsgActionMenu(msg as any, e.currentTarget as HTMLElement)
+              }}
+            >
               {msg.content}
             </div>
           </div>
@@ -8432,7 +8448,17 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-2xl bg-black/75 text-white shadow-lg border border-white/10 backdrop-blur">
               {/* 重新生成（放到最后一条AI消息的菜单里，避免按钮碍事） */}
               {(() => {
-                const last = messages.length > 0 ? messages[messages.length - 1] : null
+                const last = (() => {
+                  // 重新生成应该针对“最后一条AI正文回复”，忽略尾随的 system/pat/sticker（否则非中文翻译气泡经常没有“重新生成”）
+                  for (let i = messages.length - 1; i >= 0; i--) {
+                    const m = messages[i]
+                    if (!m) continue
+                    if (m.isUser) continue
+                    if (m.type === 'system' || m.type === 'pat' || m.type === 'sticker') continue
+                    return m
+                  }
+                  return messages.length > 0 ? messages[messages.length - 1] : null
+                })()
                 const canRegen =
                   !showTyping &&
                   !!last &&
