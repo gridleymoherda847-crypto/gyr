@@ -505,11 +505,15 @@ function summarizeLLMError(error: any, _ctx: { apiInterface: LLMApiInterface; ba
 
   // 7) 服务器故障
   if ((status != null && status >= 500) || /server error|bad gateway|gateway|服务不可用|内部错误/i.test(msg)) {
+    const detail = msg
+      ? `\n\n【上游原始返回片段】\n${msg.slice(0, 1200)}`
+      : ''
     return (
       `服务端异常（${status || '5xx'}）：上游/中转站故障。\n` +
       '建议：\n' +
       '- 稍后重试或点击“重新生成”\n' +
-      '- 换模型/换一个中转站\n'
+      '- 换模型/换一个中转站\n' +
+      detail
     ).trim()
   }
 
