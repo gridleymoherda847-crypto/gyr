@@ -873,15 +873,33 @@ export default function StickerManagerScreen() {
         </div>
 
         {/* 隐藏 input：按分类导入 */}
+        {/* accept 不限制为 image/* —— 在手机上 image/* 只弹出相册/相机，没有"浏览文件"选项 */}
         <input
           ref={imgInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.gif,.png,.jpg,.jpeg,.webp,.svg,.bmp,.ico,.tiff,.avif,image/gif,image/png,image/jpeg,image/webp"
           multiple
           className="hidden"
           onChange={(e) => {
-            const cat = pendingImportCategoryRef.current
-            handleBatchImportImages(cat, e.target.files)
+            const files = e.target.files
+            if (files && files.length > 0) {
+              // 客户端过滤：只保留图片文件
+              const dt = new DataTransfer()
+              let skipped = 0
+              for (let i = 0; i < files.length; i++) {
+                const f = files[i]
+                const isImage = f.type.startsWith('image/') || /\.(gif|png|jpe?g|webp|svg|bmp|ico|tiff|avif)$/i.test(f.name)
+                if (isImage) dt.items.add(f)
+                else skipped++
+              }
+              if (dt.files.length > 0) {
+                const cat = pendingImportCategoryRef.current
+                handleBatchImportImages(cat, dt.files)
+              } else if (skipped > 0) {
+                setToast('选择的文件不是图片格式，请重新选择')
+                window.setTimeout(() => setToast(null), 2500)
+              }
+            }
             e.currentTarget.value = ''
           }}
         />
