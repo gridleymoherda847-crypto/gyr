@@ -1869,7 +1869,8 @@ export function OSProvider({ children }: PropsWithChildren) {
                   .map((p: any) => (typeof p?.text === 'string' ? p.text : typeof p === 'string' ? p : ''))
                   .filter(Boolean)
                   .join('')
-              } else if (typeof delta?.text === 'string') content = delta.text
+              } else if (delta?.content && typeof delta?.content === 'object' && typeof delta?.content?.text === 'string') content = delta.content.text
+              else if (typeof delta?.text === 'string') content = delta.text
               if (content) out += content
               // 有些中转会在 SSE 里塞 error 对象
               const errMsg =
@@ -1940,6 +1941,16 @@ export function OSProvider({ children }: PropsWithChildren) {
           }
           return out.join('')
         }
+        const fromObject = (v: any): string => {
+          if (!v || typeof v !== 'object') return ''
+          if (typeof v.text === 'string') return v.text
+          if (typeof v.content === 'string') return v.content
+          // OpenAI responses style: {type:'output_text', text:'...'}
+          if (typeof v.type === 'string' && typeof v.value === 'string') return v.value
+          // Sometimes nested: { data: { text } }
+          if (typeof v?.data?.text === 'string') return v.data.text
+          return ''
+        }
 
         const content0 =
           dataAny?.choices?.[0]?.message?.content ??
@@ -1957,10 +1968,19 @@ export function OSProvider({ children }: PropsWithChildren) {
           ''
 
         if (typeof content0 === 'string') return content0
+        const o1 = fromObject(content0)
+        if (o1) return o1
         const t1 = fromParts(content0)
         if (t1) return t1
+        const o2 = fromObject(dataAny?.choices?.[0]?.message?.content)
+        if (o2) return o2
         const t2 = fromParts(dataAny?.choices?.[0]?.message?.content)
         if (t2) return t2
+        // 工具调用兜底：避免“看起来像空回复”
+        const toolCalls = dataAny?.choices?.[0]?.message?.tool_calls || dataAny?.choices?.[0]?.tool_calls
+        if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+          return '（模型返回了工具调用，但当前接口/中转未输出文本内容。请关闭工具调用或更换接口类型/模型。）'
+        }
         return ''
       }
 

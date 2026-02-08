@@ -1793,11 +1793,11 @@ export default function ApiConfigScreen() {
             onClick={() => setEditingConfigId(null)}
             role="presentation"
           />
-          <div className="relative w-full max-w-[420px] rounded-2xl bg-white/95 border border-white/30 shadow-xl overflow-hidden">
+          <div className="relative w-full max-w-[420px] rounded-2xl bg-white/95 border border-white/30 shadow-xl overflow-hidden max-h-[85vh] flex flex-col">
             <div className="px-4 py-3 border-b border-black/10 text-center text-sm font-semibold" style={{ color: fontColor.value }}>
               编辑 API 配置
             </div>
-            <div className="p-4 space-y-3">
+            <div className="flex-1 min-h-0 overflow-y-auto [-webkit-overflow-scrolling:touch] p-4 space-y-3">
               <div className="space-y-1.5">
                 <label className="text-xs opacity-60" style={{ color: fontColor.value }}>配置名称</label>
                 <input
