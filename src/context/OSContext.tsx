@@ -1862,7 +1862,14 @@ export function OSProvider({ children }: PropsWithChildren) {
             try {
               const j: any = JSON.parse(data)
               const delta = j?.choices?.[0]?.delta
-              const content = typeof delta?.content === 'string' ? delta.content : ''
+              let content = ''
+              if (typeof delta?.content === 'string') content = delta.content
+              else if (Array.isArray(delta?.content)) {
+                content = delta.content
+                  .map((p: any) => (typeof p?.text === 'string' ? p.text : typeof p === 'string' ? p : ''))
+                  .filter(Boolean)
+                  .join('')
+              } else if (typeof delta?.text === 'string') content = delta.text
               if (content) out += content
               // 有些中转会在 SSE 里塞 error 对象
               const errMsg =
@@ -1916,13 +1923,45 @@ export function OSProvider({ children }: PropsWithChildren) {
         return await proxyRes.json().catch(() => ({}))
       }
 
-      const extractOpenAIContent = (dataAny: any) => {
-        return (
+      const extractOpenAIContent = (dataAny: any): string => {
+        const fromParts = (v: any): string => {
+          if (typeof v === 'string') return v
+          if (!Array.isArray(v)) return ''
+          const out: string[] = []
+          for (const p of v) {
+            if (!p) continue
+            if (typeof p === 'string') { out.push(p); continue }
+            // OpenAI responses / 部分中转：[{type:'text', text:'...'}]
+            if (typeof p?.text === 'string') { out.push(p.text); continue }
+            if (typeof p?.content === 'string') { out.push(p.content); continue }
+            if (typeof p?.delta?.text === 'string') { out.push(p.delta.text); continue }
+            if (typeof p?.delta?.content === 'string') { out.push(p.delta.content); continue }
+            if (typeof p?.value === 'string') { out.push(p.value); continue }
+          }
+          return out.join('')
+        }
+
+        const content0 =
           dataAny?.choices?.[0]?.message?.content ??
           dataAny?.choices?.[0]?.text ??
           dataAny?.message?.content ??
-          dataAny?.content
-        )
+          dataAny?.content ??
+          // OpenAI Responses API 风格（部分“自定义兼容”会这么回）
+          dataAny?.output_text ??
+          dataAny?.output?.[0]?.content ??
+          dataAny?.output?.[0]?.content?.[0]?.text ??
+          // Gemini 风格（有些 new api 会把 gemini 直接透传）
+          (Array.isArray(dataAny?.candidates?.[0]?.content?.parts)
+            ? dataAny.candidates[0].content.parts.map((p: any) => p?.text).filter(Boolean).join('')
+            : '') ??
+          ''
+
+        if (typeof content0 === 'string') return content0
+        const t1 = fromParts(content0)
+        if (t1) return t1
+        const t2 = fromParts(dataAny?.choices?.[0]?.message?.content)
+        if (t2) return t2
+        return ''
       }
 
       const controller = new AbortController()
