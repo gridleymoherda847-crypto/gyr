@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS, type LLMApiInterface, type TTSRegion, type TTSVoice } from '../../context/OSContext'
 import AppHeader from '../../components/AppHeader'
@@ -34,6 +34,25 @@ export default function ApiConfigScreen() {
   const { llmConfig, setLLMConfig, ttsConfig, setTTSConfig, textToSpeech, fontColor, fetchAvailableModels, testLLMConfig } = useOS()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isHttpsPage = typeof window !== 'undefined' && window.location?.protocol === 'https:'
+
+  // ===== 进入 API 配置提示（每次进入都提示，除非用户二次确认“不再提示”）=====
+  const API_GUIDE_DISMISSED_KEY = 'littlephone_api_config_guide_dismissed_v1'
+  const [apiGuideOpen, setApiGuideOpen] = useState(false)
+  const [apiGuideDontShowAgain, setApiGuideDontShowAgain] = useState(false)
+  const [apiGuideConfirmOpen, setApiGuideConfirmOpen] = useState(false)
+  useEffect(() => {
+    let dismissed = false
+    try {
+      dismissed = localStorage.getItem(API_GUIDE_DISMISSED_KEY) === '1'
+    } catch {
+      dismissed = false
+    }
+    if (!dismissed) {
+      setApiGuideOpen(true)
+      setApiGuideDontShowAgain(false)
+      setApiGuideConfirmOpen(false)
+    }
+  }, [])
 
   const getBaseUrlPlaceholder = (t: LLMApiInterface) => {
     if (t === 'gemini_native') return 'https://generativelanguage.googleapis.com'
@@ -726,6 +745,100 @@ export default function ApiConfigScreen() {
 
   return (
     <PageContainer>
+      {/* ===== 进入 API 配置提示弹窗 ===== */}
+      {apiGuideOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/55" />
+          <div className="relative w-full max-w-[360px] rounded-2xl bg-white shadow-xl border border-black/10 overflow-hidden">
+            <div className="px-4 py-3 border-b border-black/10 text-center">
+              <div className="text-[15px] font-semibold text-gray-900">重要提示：需要自备 API 才能使用</div>
+            </div>
+            <div className="px-4 py-3 text-[13px] text-gray-800 space-y-3 leading-relaxed">
+              <div>
+                <div className="font-semibold">1) 本小手机不内置任何模型服务</div>
+                <div>你必须自行接入可用的 API（填写 URL + API Key + 选择模型），否则 AI 功能无法正常工作。</div>
+              </div>
+              <div>
+                <div className="font-semibold">2) URL 和 API Key 不能自己瞎编</div>
+                <div>乱填/乱编会导致“测试失败 / 空回复 / 格式不兼容”等问题。</div>
+              </div>
+              <div>
+                <div className="font-semibold">3) 新手最简单的方式</div>
+                <div>可自行在某书/某鱼等渠道购买现成的 API/中转服务。购买与使用方法请直接咨询你的商家。</div>
+              </div>
+              <div>
+                <div className="font-semibold">4) 作者声明（请务必读完）</div>
+                <div>作者不提供任何 API，也不提供填写教程/购买渠道/代购。如需使用，请自行解决服务来源与配置问题。</div>
+              </div>
+              <div className="pt-1 flex items-center gap-2">
+                <label className="flex items-center gap-2 text-[12px] text-gray-600 select-none">
+                  <input
+                    type="checkbox"
+                    checked={apiGuideDontShowAgain}
+                    onChange={(e) => setApiGuideDontShowAgain(e.target.checked)}
+                    className="w-4 h-4 accent-red-600"
+                  />
+                  不再提示
+                </label>
+              </div>
+            </div>
+            <div className="px-4 pb-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (apiGuideDontShowAgain) {
+                    setApiGuideConfirmOpen(true)
+                  } else {
+                    setApiGuideOpen(false)
+                  }
+                }}
+                className="w-full py-2.5 rounded-xl border-2 border-red-500 text-red-600 font-semibold bg-white hover:bg-red-50 active:opacity-80"
+              >
+                我知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 二次确认：永久关闭提示 */}
+      {apiGuideOpen && apiGuideConfirmOpen && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/65" />
+          <div className="relative w-full max-w-[340px] rounded-2xl bg-white shadow-xl border border-black/10 overflow-hidden">
+            <div className="px-4 py-3 border-b border-black/10 text-center">
+              <div className="text-[15px] font-semibold text-gray-900">二次确认</div>
+            </div>
+            <div className="px-4 py-4 text-[13px] text-gray-800 leading-relaxed">
+              勾选“不再提示”后，今后进入 API 配置将不再弹出本提示。<br />
+              请确认你已知晓：本应用不提供任何 API 服务，需要自备 API 并自行配置。
+            </div>
+            <div className="px-4 pb-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setApiGuideConfirmOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-600 bg-white hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.setItem(API_GUIDE_DISMISSED_KEY, '1')
+                  } catch {}
+                  setApiGuideConfirmOpen(false)
+                  setApiGuideOpen(false)
+                }}
+                className="flex-1 py-2.5 rounded-xl border-2 border-red-500 text-red-600 font-semibold bg-white hover:bg-red-50 active:opacity-80"
+              >
+                我确定明白
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex h-full min-h-0 flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
         <AppHeader title="API 配置" onBack={() => navigate('/apps/settings')} />
         
