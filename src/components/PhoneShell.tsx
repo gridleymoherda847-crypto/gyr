@@ -1,9 +1,11 @@
 import { type PropsWithChildren, useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useOS } from '../context/OSContext'
 import VirtualStatusBar from './VirtualStatusBar'
 
 export default function PhoneShell({ children }: PropsWithChildren) {
-  const { wallpaper, currentFont, fontColor, notifications, markNotificationRead } = useOS()
+  const location = useLocation()
+  const { wallpaper, currentFont, fontColor, fontSizeTier, notifications, markNotificationRead } = useOS()
   const isImageUrl =
     wallpaper.startsWith('data:') ||
     wallpaper.startsWith('http') ||
@@ -73,6 +75,20 @@ export default function PhoneShell({ children }: PropsWithChildren) {
   }, [notifications, markNotificationRead])
 
   const unreadNotifications = notifications.filter(n => !n.read).slice(0, 3)
+  const fontPx = fontSizeTier === 'small' ? 15 : fontSizeTier === 'large' ? 19 : fontSizeTier === 'xlarge' ? 21 : 17
+  const isHome = (location?.pathname || '') === '/'
+  const appliedFontPx = isHome ? 17 : fontPx
+
+  // 全局字号：Tailwind 的 text-* 大多基于 rem，所以必须改 root 才能全局生效
+  useEffect(() => {
+    const px = appliedFontPx
+    document.documentElement.style.fontSize = `${px}px`
+    document.body.style.fontSize = `${px}px`
+    return () => {
+      document.documentElement.style.fontSize = ''
+      document.body.style.fontSize = ''
+    }
+  }, [appliedFontPx])
 
   return (
     <>
@@ -82,7 +98,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
         className="md:hidden fixed inset-0 select-none overflow-hidden"
         style={{
           fontFamily: currentFont.fontFamily,
-          fontSize: '17px',
+          fontSize: `${appliedFontPx}px`,
           color: fontColor.value,
           background: isImageUrl ? undefined : wallpaper,
           backgroundImage: isImageUrl ? `url("${wallpaper}")` : undefined,
@@ -138,7 +154,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           className="relative rounded-[50px] bg-[#1a1a1a] p-[3px] shadow-[0_25px_60px_rgba(0,0,0,0.4)]"
           style={{ 
             fontFamily: currentFont.fontFamily,
-            fontSize: '17px',
+            fontSize: `${appliedFontPx}px`,
             color: fontColor.value,
             width: '390px',
             height: '844px',

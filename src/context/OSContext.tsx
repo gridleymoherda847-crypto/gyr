@@ -85,12 +85,18 @@ export type WeatherData = {
   city: string
   updatedAt: number
 }
+export type ManualWeatherType = 'sunny' | 'cloudy' | 'rain' | 'snow' | 'fog' | 'storm'
 export type LocationSettings = {
   mode: LocationMode
   manualCity: string
+  manualWeatherType?: ManualWeatherType
+  manualTempC?: number
   latitude?: number
   longitude?: number
 }
+
+// 全局字体大小（影响整个小手机 UI）
+export type FontSizeTier = 'small' | 'medium' | 'large' | 'xlarge'
 
 // 音乐相关类型
 export type Song = {
@@ -142,7 +148,9 @@ const WEATHER_STORAGE_KEY = 'littlephone_weather'
 // 默认位置设置
 const defaultLocationSettings: LocationSettings = {
   mode: 'manual',
-  manualCity: '北京'
+  manualCity: '北京',
+  manualWeatherType: 'sunny',
+  manualTempC: 18,
 }
 
 // 默认天气
@@ -209,6 +217,8 @@ type OSContextValue = {
   isHydrated: boolean
   time: string; wallpaper: string
   currentFont: FontOption; fontColor: ColorOption; userProfile: UserProfile
+  fontSizeTier: FontSizeTier
+  setFontSizeTier: (tier: FontSizeTier) => void
   llmConfig: LLMConfig; ttsConfig: TTSConfig; miCoinBalance: number; notifications: Notification[]
   characters: VirtualCharacter[]; chatLog: ChatMessage[]
   customAppIcons: Record<string, string>; decorImage: string; homeAvatar: string
@@ -321,6 +331,7 @@ const STORAGE_KEYS = {
   miCoinBalance: 'os_micoin_balance',
   currentFontId: 'os_current_font_id',
   fontColorId: 'os_font_color_id',
+  fontSizeTier: 'os_font_size_tier',
   wallpaper: 'os_wallpaper',
   customAppIcons: 'os_custom_app_icons',
   decorImage: 'os_decor_image',
@@ -585,6 +596,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [fontColor, setFontColorState] = useState<ColorOption>(() => {
     return COLOR_OPTIONS[3]
   })
+  const [fontSizeTier, setFontSizeTierState] = useState<FontSizeTier>('medium')
   const [userProfile, setUserProfileState] = useState<UserProfile>(defaultUserProfile)
   const [llmConfig, setLLMConfigState] = useState<LLMConfig>(defaultLLMConfig)
   const [ttsConfig, setTTSConfigState] = useState<TTSConfig>(defaultTTSConfig)
@@ -645,6 +657,7 @@ export function OSProvider({ children }: PropsWithChildren) {
           STORAGE_KEYS.miCoinBalance,
           STORAGE_KEYS.currentFontId,
           STORAGE_KEYS.fontColorId,
+          STORAGE_KEYS.fontSizeTier,
           MUSIC_STORAGE_KEY,
           MUSIC_VERSION_KEY,
           LOCATION_STORAGE_KEY,
@@ -669,6 +682,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         nextMi,
         nextFontId,
         nextColorId,
+        nextFontSizeTier,
         nextLocation,
         nextWeather,
         _savedVersion, // 不再用于强制重置，但保留读取以备将来使用
@@ -693,6 +707,7 @@ export function OSProvider({ children }: PropsWithChildren) {
           (FONT_OPTIONS.find(f => f.id === 'elegant')?.id || FONT_OPTIONS[0].id)
         ),
         kvGetJSONDeep<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id),
+        kvGetJSONDeep<FontSizeTier>(STORAGE_KEYS.fontSizeTier, 'medium'),
         kvGetJSONDeep<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings),
         kvGetJSONDeep<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather),
         kvGetJSONDeep<string>(MUSIC_VERSION_KEY, ''),
@@ -812,8 +827,37 @@ export function OSProvider({ children }: PropsWithChildren) {
       setMiCoinBalance(nextMi)
       setCurrentFontState(FONT_OPTIONS.find(f => f.id === nextFontId) || currentFont)
       setFontColorState(COLOR_OPTIONS.find(c => c.id === nextColorId) || fontColor)
-      setLocationSettingsState(nextLocation)
-      setWeather(nextWeather)
+      setFontSizeTierState((nextFontSizeTier === 'small' || nextFontSizeTier === 'medium' || nextFontSizeTier === 'large' || nextFontSizeTier === 'xlarge') ? nextFontSizeTier : 'medium')
+      const fixedLocation = { ...(nextLocation as any), mode: 'manual' } as LocationSettings
+      setLocationSettingsState(fixedLocation)
+      // weather：如果已保存过手动天气（weather.updatedAt>0），优先尊重；否则用手动配置生成一个
+      if (nextWeather && typeof nextWeather.updatedAt === 'number' && nextWeather.updatedAt > 0) {
+        setWeather(nextWeather)
+      } else {
+        // 这里不调用 refreshWeather（避免依赖顺序），直接生成
+        try {
+          const t = typeof fixedLocation.manualTempC === 'number' && Number.isFinite(fixedLocation.manualTempC) ? fixedLocation.manualTempC : 18
+          const type = fixedLocation.manualWeatherType || 'sunny'
+          const map: Record<ManualWeatherType, { desc: string; icon: string }> = {
+            sunny: { desc: '晴', icon: '☀️' },
+            cloudy: { desc: '多云', icon: '⛅' },
+            rain: { desc: '下雨', icon: '🌧️' },
+            snow: { desc: '下雪', icon: '❄️' },
+            fog: { desc: '有雾', icon: '🌫️' },
+            storm: { desc: '雷雨', icon: '⛈️' },
+          }
+          const w = map[type] || map.sunny
+          setWeather({
+            temp: `${Math.round(t)}°`,
+            desc: w.desc,
+            icon: w.icon,
+            city: String(fixedLocation.manualCity || '').trim() || '未知',
+            updatedAt: Date.now(),
+          })
+        } catch {
+          setWeather(nextWeather)
+        }
+      }
       setMusicPlaylist(nextPlaylist)
       // 加载自定义壁纸、图标等
       if (nextWallpaper) setWallpaper(nextWallpaper)
@@ -869,6 +913,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.miCoinBalance, miCoinBalance) }, [miCoinBalance, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontSizeTier, fontSizeTier) }, [fontSizeTier, isHydrated])
   // 壁纸、自定义图标等持久化
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.wallpaper, wallpaper) }, [wallpaper, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.customAppIcons, customAppIcons) }, [customAppIcons, isHydrated])
@@ -893,6 +938,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.customFonts, customFonts) }, [customFonts, isHydrated])
 
   const setCurrentFont = (font: FontOption) => setCurrentFontState(font)
+  const setFontSizeTier = (tier: FontSizeTier) => setFontSizeTierState(tier)
   const setIconTheme = (theme: IconTheme) => setIconThemeState(theme)
   
   // 自定义字体管理
@@ -976,6 +1022,38 @@ export function OSProvider({ children }: PropsWithChildren) {
     }
     img.src = DEFAULT_WALLPAPER
   }, [])
+
+  // 校验当前壁纸：避免“更新后壁纸突然全黑/丢失”
+  useEffect(() => {
+    const w = String(wallpaper || '').trim()
+    if (!w) {
+      setWallpaperError(true)
+      setWallpaper(FALLBACK_WALLPAPER)
+      return
+    }
+    const isImageUrl =
+      w.startsWith('data:') ||
+      w.startsWith('http') ||
+      w.startsWith('blob') ||
+      w.startsWith('/')
+    if (!isImageUrl) {
+      setWallpaperError(false)
+      return
+    }
+    // blob: 跨刷新不可用，容易变黑：直接降级为 fallback（避免用户看到黑屏）
+    if (w.startsWith('blob:')) {
+      setWallpaperError(true)
+      setWallpaper(FALLBACK_WALLPAPER)
+      return
+    }
+    const img = new Image()
+    img.onload = () => setWallpaperError(false)
+    img.onerror = () => {
+      setWallpaperError(true)
+      setWallpaper(FALLBACK_WALLPAPER)
+    }
+    img.src = w
+  }, [wallpaper])
 
   // 初始化音频元素
   useEffect(() => {
@@ -1305,113 +1383,56 @@ export function OSProvider({ children }: PropsWithChildren) {
   // 位置设置
   const setLocationSettings = (settings: Partial<LocationSettings>) => {
     setLocationSettingsState(prev => {
-      const next = { ...prev, ...settings }
+      // 移除自动定位：强制保持 manual
+      const next = { ...prev, ...settings, mode: 'manual' as const }
       if (!!(window as any).__LP_IMPORTING__) return next
       void kvSetJSON(LOCATION_STORAGE_KEY, next)
       return next
     })
   }
 
-  // 获取天气图标
-  const getWeatherIcon = (code: number): string => {
-    if (code === 0) return '☀️'
-    if (code <= 3) return '⛅'
-    if (code <= 49) return '🌫️'
-    if (code <= 59) return '🌧️'
-    if (code <= 69) return '🌨️'
-    if (code <= 79) return '❄️'
-    if (code <= 99) return '⛈️'
-    return '☀️'
-  }
-
-  // 获取天气描述
-  const getWeatherDesc = (code: number): string => {
-    if (code === 0) return '晴'
-    if (code <= 3) return '多云'
-    if (code <= 49) return '雾'
-    if (code <= 59) return '小雨'
-    if (code <= 69) return '雨夹雪'
-    if (code <= 79) return '雪'
-    if (code <= 99) return '雷雨'
-    return '晴'
+  const getManualWeather = (settings: LocationSettings): WeatherData => {
+    const t = typeof settings.manualTempC === 'number' && Number.isFinite(settings.manualTempC) ? settings.manualTempC : 18
+    const type = settings.manualWeatherType || 'sunny'
+    const map: Record<ManualWeatherType, { desc: string; icon: string }> = {
+      sunny: { desc: '晴', icon: '☀️' },
+      cloudy: { desc: '多云', icon: '⛅' },
+      rain: { desc: '下雨', icon: '🌧️' },
+      snow: { desc: '下雪', icon: '❄️' },
+      fog: { desc: '有雾', icon: '🌫️' },
+      storm: { desc: '雷雨', icon: '⛈️' },
+    }
+    const w = map[type] || map.sunny
+    return {
+      temp: `${Math.round(t)}°`,
+      desc: w.desc,
+      icon: w.icon,
+      city: String(settings.manualCity || '').trim() || '未知',
+      updatedAt: Date.now(),
+    }
   }
 
   // 刷新天气
   const refreshWeather = async () => {
+    // 避免并发刷新导致“看起来没反应/被覆盖”
+    if ((refreshWeather as any).__inFlight) return
+    ;(refreshWeather as any).__inFlight = true
     try {
-      let lat: number | undefined
-      let lon: number | undefined
-      let cityName = locationSettings.manualCity
-
-      if (locationSettings.mode === 'auto') {
-        // 自动定位
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 })
-        })
-        lat = position.coords.latitude
-        lon = position.coords.longitude
-        
-        // 反向地理编码获取城市名
-        try {
-          const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=zh`)
-          const geoData = await geoRes.json()
-          cityName = geoData.address?.city || geoData.address?.town || geoData.address?.county || '未知'
-        } catch {
-          cityName = '当前位置'
-        }
-        
-        // 保存坐标
-        setLocationSettings({ latitude: lat, longitude: lon })
-      } else {
-        // 手动定位 - 根据城市名获取坐标
-        try {
-          const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityName)}&format=json&limit=1&accept-language=zh`)
-          const geoData = await geoRes.json()
-          if (geoData.length > 0) {
-            lat = parseFloat(geoData[0].lat)
-            lon = parseFloat(geoData[0].lon)
-          }
-        } catch {
-          // 使用默认北京坐标
-          lat = 39.9
-          lon = 116.4
-        }
-      }
-
-      if (lat && lon) {
-        // 获取天气数据
-        const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
-        const weatherData = await weatherRes.json()
-        
-        if (weatherData.current_weather) {
-          const newWeather: WeatherData = {
-            temp: `${Math.round(weatherData.current_weather.temperature)}°`,
-            desc: getWeatherDesc(weatherData.current_weather.weathercode),
-            icon: getWeatherIcon(weatherData.current_weather.weathercode),
-            city: cityName,
-            updatedAt: Date.now()
-          }
-          setWeather(newWeather)
-          void kvSetJSON(WEATHER_STORAGE_KEY, newWeather)
-        }
-      }
+      const newWeather = getManualWeather(locationSettings)
+      setWeather(newWeather)
+      void kvSetJSON(WEATHER_STORAGE_KEY, newWeather)
     } catch (error) {
       console.error('获取天气失败:', error)
+      // 兜底：仍然给 UI 一个“可见变化”
+      const newWeather = { ...getManualWeather(locationSettings), desc: '获取失败', icon: '⚠️', updatedAt: Date.now() }
+      setWeather(newWeather)
+      void kvSetJSON(WEATHER_STORAGE_KEY, newWeather)
+    } finally {
+      ;(refreshWeather as any).__inFlight = false
     }
   }
 
-  // 初始化时获取天气（如果超过30分钟未更新）
-  useEffect(() => {
-    const shouldRefresh = Date.now() - weather.updatedAt > 30 * 60 * 1000
-    if (shouldRefresh) {
-      refreshWeather()
-    }
-  }, [])
-
-  // 位置设置变化时刷新天气
-  useEffect(() => {
-    refreshWeather()
-  }, [locationSettings.mode, locationSettings.manualCity])
+  // 注意：天气支持手动设置，因此不再自动刷新覆盖用户自定义值
 
   // 获取可用模型列表
   const fetchAvailableModels = async (override?: { apiBaseUrl?: string; apiKey?: string; apiInterface?: LLMApiInterface }): Promise<string[]> => {
@@ -2276,6 +2297,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   const value = useMemo<OSContextValue>(() => ({
     isHydrated,
     time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance,
+    fontSizeTier, setFontSizeTier,
     notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, wallpaperError,
     locationSettings, weather, setLocationSettings, refreshWeather,
     musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, audioRef,
@@ -2289,7 +2311,7 @@ export function OSProvider({ children }: PropsWithChildren) {
     memo, setMemo,
     customFonts, addCustomFont, removeCustomFont, getAllFontOptions,
     fetchAvailableModels, testLLMConfig, callLLM,
-  }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance,
+  }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, fontSizeTier,
       notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo, customFonts,
       locationSettings, weather,
       musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, isHydrated, fetchAvailableModels])

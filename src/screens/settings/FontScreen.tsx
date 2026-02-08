@@ -6,7 +6,7 @@ import PageContainer from '../../components/PageContainer'
 
 export default function FontScreen() {
   const navigate = useNavigate()
-  const { currentFont, setCurrentFont, fontColor, customFonts, addCustomFont, removeCustomFont } = useOS()
+  const { currentFont, setCurrentFont, fontColor, customFonts, addCustomFont, removeCustomFont, fontSizeTier, setFontSizeTier } = useOS()
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const [showUploadDialog, setShowUploadDialog] = useState(false)
@@ -156,6 +156,41 @@ export default function FontScreen() {
         
         <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 space-y-3 sm:space-y-4">
           <p className="text-sm opacity-50 mb-2" style={{ color: fontColor.value }}>选择你喜欢的字体风格</p>
+
+          {/* 字体大小（全局） */}
+          <div className="bg-white/60 backdrop-blur rounded-2xl p-3 sm:p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-gray-700">字体大小</div>
+              <div className="text-[11px] text-gray-400">应用于大部分页面</div>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {([
+                { id: 'small', label: '小' },
+                { id: 'medium', label: '中' },
+                { id: 'large', label: '大' },
+                { id: 'xlarge', label: '超大' },
+              ] as const).map((opt) => {
+                const active = fontSizeTier === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setFontSizeTier(opt.id)}
+                    className={`py-2 rounded-xl text-sm font-medium transition-all press-effect ${
+                      active ? 'bg-black text-white' : 'bg-white/70 text-gray-700 border border-black/10'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="mt-2 text-[11px] text-gray-500 leading-relaxed">
+              说明：字体大小会影响绝大多数 App 内页面。
+              <br />
+              不影响：主屏幕（桌面）与桌面内的游戏大厅悬浮窗（避免布局被挤满变丑）。
+            </div>
+          </div>
           
           {/* 内置字体 */}
           {FONT_OPTIONS.map((font) => {

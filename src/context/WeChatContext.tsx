@@ -232,6 +232,7 @@ export type GroupChat = {
   name: string
   avatar: string // 群头像（可以是自定义图片或空字符串）
   memberIds: string[] // 成员角色ID列表
+  memberRemarks?: Record<string, string> // 群备注：仅在本群内显示/使用
   createdAt: number
   lastMessageAt: number
   // 群设置

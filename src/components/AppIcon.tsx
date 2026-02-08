@@ -22,10 +22,11 @@ export default function AppIcon({ appId, label, icon, gradient, size = 'normal' 
   
   // 简洁主题使用白色背景
   const isMinimal = iconTheme === 'minimal' && !customAppIcons[appId]
+  const hasCustom = !!customAppIcons[appId]
   
   const sizeClasses = size === 'dock' 
-    ? 'w-14 h-14 sm:w-16 sm:h-16 rounded-[15px] sm:rounded-[17px]' 
-    : 'w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-[17px] sm:rounded-[19px]'
+    ? 'w-[56px] h-[56px] sm:w-[64px] sm:h-[64px] rounded-[15px] sm:rounded-[17px]' 
+    : 'w-[64px] h-[64px] sm:w-[72px] sm:h-[72px] rounded-[17px] sm:rounded-[19px]'
 
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-1.5 press-effect">
@@ -37,7 +38,11 @@ export default function AppIcon({ appId, label, icon, gradient, size = 'normal' 
         <img 
           src={iconSrc} 
           alt={label} 
-          className={`relative z-10 ${isMinimal ? 'w-10 h-10 sm:w-12 sm:h-12 object-contain' : 'w-full h-full object-cover'}`}
+          className={`relative z-10 ${
+            iconTheme === 'minimal'
+              ? (hasCustom ? 'w-[88%] h-[88%] object-cover rounded-xl' : 'w-[88%] h-[88%] object-contain')
+              : (isMinimal ? 'w-10 h-10 sm:w-12 sm:h-12 object-contain' : 'w-full h-full object-cover')
+          }`}
         />
       </div>
       

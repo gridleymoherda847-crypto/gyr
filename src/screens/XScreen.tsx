@@ -242,11 +242,13 @@ export default function XScreen() {
   const [otherProfileTipOpen, setOtherProfileTipOpen] = useState(false)
   const [otherProfileTipDontShow, setOtherProfileTipDontShow] = useState(false)
   const [otherBioEditOpen, setOtherBioEditOpen] = useState(false)
+  const [otherNameDraft, setOtherNameDraft] = useState('')
   const [otherBioDraft, setOtherBioDraft] = useState('')
   const [otherFollowerDraft, setOtherFollowerDraft] = useState('')
   const [profileEditOpen, setProfileEditOpen] = useState(false)
   const [profileDraftName, setProfileDraftName] = useState('')
   const [profileDraftBio, setProfileDraftBio] = useState('')
+  const [profileDraftFollower, setProfileDraftFollower] = useState('')
   const [profileTab, setProfileTab] = useState<'posts' | 'replies'>('posts')
   const [tipDialog, setTipDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
 
@@ -855,6 +857,15 @@ export default function XScreen() {
       
       // 判断是否是用户自己的帖子（好友会来护驾）
       const isMyPost = openPost.authorId === 'me'
+      const myFollowerCount = Math.max(0, data.meFollowerCount || 0)
+      const fanCount = (() => {
+        if (!isMyPost) return 0
+        if (myFollowerCount >= 100000) return 8
+        if (myFollowerCount >= 10000) return 5
+        if (myFollowerCount >= 1000) return 3
+        if (myFollowerCount >= 100) return 1
+        return 0
+      })()
       
       // 如果是用户的帖子，让 chat 好友参与互动
       let friendSection = ''
@@ -889,6 +900,16 @@ ${chatFriendList}
       }
       
       const want = 8 + Math.floor(Math.random() * 13) // 8~20
+      const passerbyWant = Math.max(2, want - fanCount)
+      const fanHint = fanCount > 0
+        ? `\n【粉丝评论（重要）】\n` +
+          `用户当前粉丝数量：${myFollowerCount}\n` +
+          `请额外生成 ${fanCount} 条“用户的粉丝”评论，放在 fanReplies 数组中。\n` +
+          `粉丝评论特点：\n` +
+          `- 100% 认识用户，是刷到偶像动态的感觉（支持/玩梗/安利/护短都行）\n` +
+          `- authorName 要像真实粉丝名字，且必须在名字里体现“粉丝”身份（比如“粉丝小雨”“${meName}的粉丝-阿米”）\n` +
+          `- 允许少量阴阳黑粉，但整体更像“粉丝圈”\n`
+        : ''
       const replyToSection = uniqueRepliedTo.length > 0 
         ? `\n【重要】用户回复了这些人：${uniqueRepliedTo.join('、')}\n` +
           `这些被回复的人必须在本次评论中出现，并回复用户！\n` +
@@ -904,8 +925,9 @@ ${chatFriendList}
         `用户（我）的最近评论：\n${myRecent || '（无）'}\n` +
         replyToSection +
         friendSection +
+        fanHint +
         `\n要求：\n` +
-        `- 生成 ${want} 条路人评论\n` +
+        `- 生成 ${passerbyWant} 条路人评论（放在 replies 数组中）\n` +
         `- 如果用户发过评论：本次新评论中，必须有 20%~40% 是“在和用户评论互动”的（回复/引用/阴阳/支持/反驳都行）\n` +
         `- 其余可以是路人互相对线/玩梗/补充信息\n` +
         `- 长度分布：至少 2 条超短（比如“？”“笑死”“懂了”）\n` +
@@ -918,10 +940,12 @@ ${chatFriendList}
         `JSON 格式：\n` +
         `{\n` +
         `  "replies": [ { "authorName": "名字", "text": "评论" } ]` +
+        (fanCount > 0 ? `,\n  "fanReplies": [ { "authorName": "粉丝名字", "text": "评论" } ]` : '') +
         (friendsToInclude.length > 0 ? `,\n  "friendReplies": [ { "characterId": "...", "text": "评论" } ]` : '') +
         `\n}\n`
       const parsed = await callJson(sys, '现在生成 replies。', 900)
       const raw = Array.isArray((parsed as any).replies) ? (parsed as any).replies : []
+      const fanRaw = Array.isArray((parsed as any).fanReplies) ? (parsed as any).fanReplies : []
       const friendRaw = Array.isArray((parsed as any).friendReplies) ? (parsed as any).friendReplies : []
 
       let next = data
@@ -929,7 +953,8 @@ ${chatFriendList}
 
       // 兜底：批量给“非中文且没带括号翻译”的评论补翻译
       const all = [
-        ...raw.slice(0, want).map((r: any) => ({ kind: 'reply' as const, obj: r, field: 'text' as const })),
+        ...raw.slice(0, passerbyWant).map((r: any) => ({ kind: 'reply' as const, obj: r, field: 'text' as const })),
+        ...fanRaw.slice(0, fanCount).map((r: any) => ({ kind: 'fan' as const, obj: r, field: 'text' as const })),
         ...friendRaw.slice(0, friendsToInclude.length).map((r: any) => ({ kind: 'friend' as const, obj: r, field: 'text' as const })),
       ]
       const need = all
@@ -948,7 +973,7 @@ ${chatFriendList}
       }
       
       // 处理路人评论
-      for (const r of raw.slice(0, want)) {
+      for (const r of raw.slice(0, passerbyWant)) {
         const authorName = String(r?.authorName || '').trim()
         const text = String(r?.text || '').trim()
         if (!text) continue
@@ -957,6 +982,23 @@ ${chatFriendList}
           next = d2
           return { id: userId, name: (authorName || 'User').trim() || 'User' }
         })()
+        newReplies.push(xNewReply(openPost.id, ensured.id, ensured.name, text))
+      }
+
+      // 处理粉丝评论（会同步到 followers 列表，便于后续互动）
+      for (const r of fanRaw.slice(0, fanCount)) {
+        const authorName = String(r?.authorName || '').trim() || `${meName}的粉丝`
+        const text = String(r?.text || '').trim()
+        if (!text) continue
+        const ensured = (() => {
+          const { data: d2, userId } = xEnsureUser(next, { name: authorName })
+          next = d2
+          return { id: userId, name: authorName }
+        })()
+        // 把这个粉丝记到 followers（只做抽样记录，不追求和 followerCount 一致）
+        if (!next.followers?.includes(ensured.id)) {
+          next = { ...next, followers: [...(next.followers || []), ensured.id].slice(-120) }
+        }
         newReplies.push(xNewReply(openPost.id, ensured.id, ensured.name, text))
       }
       
@@ -1037,6 +1079,16 @@ ${chatFriendList}
         
         if (picked.length === 0) return
 
+        // 我当前粉丝体量：影响“粉丝评论”数量（不额外增加一次调用，复用本次 JSON 输出）
+        const myFollowerCount = Math.max(0, next.meFollowerCount || 0)
+        const fanCount = (() => {
+          if (myFollowerCount >= 100000) return 6
+          if (myFollowerCount >= 10000) return 4
+          if (myFollowerCount >= 1000) return 2
+          if (myFollowerCount >= 100) return 1
+          return 0
+        })()
+
         const friendList = picked
           .map((c) => {
             const isMentioned = mentionedFriends.some(m => m.id === c.id)
@@ -1056,6 +1108,11 @@ ${chatFriendList}
           `用户（我）刚发布了一条推文。\n` +
           `推文内容：${text}\n` +
           mentionHint +
+          (fanCount > 0
+            ? `\n【粉丝评论】用户当前粉丝数量：${myFollowerCount}\n` +
+              `请额外生成 ${fanCount} 条“粉丝评论”，放在 fanReplies 数组中，格式：{ "authorName": "粉丝名字", "text": "评论" }\n` +
+              `粉丝评论特点：刷到喜欢的博主动态，会支持/玩梗/安利/护短；名字要体现粉丝身份（如“粉丝小雨”“${meName}的粉丝-阿米”）；每条<=50字\n`
+            : '') +
           `\n` +
           `现在你要让以下“Chat 好友”分别评论这条推文，每人 1 条：\n` +
           `${friendList}\n` +
@@ -1081,25 +1138,32 @@ ${chatFriendList}
           `- 允许一点情绪/吐槽，但禁止辱女/性羞辱\n` +
           `- 【翻译强制】如果某条评论 text 不是中文（或主要为外语），必须写成：外语原文（简体中文翻译）\n` +
           `- 只输出 JSON，不要解释\n` +
-          `JSON：{ "comments": [ { "characterId": "...", "text": "..." } ] }\n`
+          `JSON：{ "comments": [ { "characterId": "...", "text": "..." } ]${fanCount > 0 ? ', "fanReplies": [ { "authorName": "粉丝名字", "text": "评论" } ]' : ''} }\n`
 
         const parsed = await callJson(sys, '现在生成 comments。', 360)
         const raw = Array.isArray((parsed as any)?.comments) ? (parsed as any).comments : []
+        const fanRaw = Array.isArray((parsed as any)?.fanReplies) ? (parsed as any).fanReplies : []
         if (raw.length === 0) return
 
         // 兜底：批量补翻译（只处理非中文且未带括号翻译的）
-        const need: Array<{ i: number; t: string }> = raw
-          .slice(0, picked.length)
-          .map((it: any, i: number) => ({ i, t: String(it?.text || '').trim() }))
-          .filter((x: { i: number; t: string }) => needsInlineZh(x.t))
+        const allToTranslate: Array<{ i: number; t: string; kind: 'friend' | 'fan' }> = [
+          ...raw.slice(0, picked.length).map((it: any, i: number) => ({ i, t: String(it?.text || '').trim(), kind: 'friend' as const })),
+          ...fanRaw.slice(0, fanCount).map((it: any, i: number) => ({ i, t: String(it?.text || '').trim(), kind: 'fan' as const })),
+        ]
+        const need: Array<{ i: number; t: string; kind: 'friend' | 'fan' }> = allToTranslate.filter((x) => needsInlineZh(x.t))
         if (need.length > 0) {
-          const zhs = await translateBatchToZh(need.map((x: { i: number; t: string }) => x.t))
+          const zhs = await translateBatchToZh(need.map((x) => x.t))
           if (zhs.length === need.length) {
-            need.forEach((x: { i: number; t: string }, j: number) => {
+            need.forEach((x, j: number) => {
               const zh = (zhs[j] || '').trim()
               if (!zh) return
-              const cur = String(raw[x.i]?.text || '').trim()
-              if (cur) raw[x.i].text = `${cur}（${zh}）`
+              if (x.kind === 'friend') {
+                const cur = String(raw[x.i]?.text || '').trim()
+                if (cur) raw[x.i].text = `${cur}（${zh}）`
+              } else {
+                const cur = String(fanRaw[x.i]?.text || '').trim()
+                if (cur) fanRaw[x.i].text = `${cur}（${zh}）`
+              }
             })
           }
         }
@@ -1123,6 +1187,21 @@ ${chatFriendList}
             next2 = d2
             return { id: userId, name: c.name }
           })()
+          newReplies.push(xNewReply(mePost.id, ensured.id, ensured.name, commentText))
+        }
+        // 粉丝评论（与 Chat 好友一起出现）
+        for (const it of fanRaw.slice(0, fanCount)) {
+          const authorName = String(it?.authorName || '').trim() || `${meName}的粉丝`
+          const commentText = String(it?.text || '').trim()
+          if (!commentText) continue
+          const ensured = (() => {
+            const { data: d2, userId } = xEnsureUser(next2, { name: authorName })
+            next2 = d2
+            return { id: userId, name: authorName }
+          })()
+          if (!next2.followers?.includes(ensured.id)) {
+            next2 = { ...next2, followers: [...(next2.followers || []), ensured.id].slice(-120) }
+          }
           newReplies.push(xNewReply(mePost.id, ensured.id, ensured.name, commentText))
         }
         if (newReplies.length === 0) return
@@ -1663,15 +1742,23 @@ ${chatFriendList}
     const meta = getUserMeta('me')
     setProfileDraftName(String(meta.name || ''))
     setProfileDraftBio(String(meta.bio || ''))
+    setProfileDraftFollower(String(Math.max(0, data?.meFollowerCount || 0)))
     setProfileEditOpen(true)
   }
 
   const saveProfileEditor = () => {
     const name = profileDraftName.trim().slice(0, 24)
     const bio = profileDraftBio.trim().slice(0, 120)
+    const followerDraft = profileDraftFollower.trim()
+    const followerNum = followerDraft ? Math.max(0, parseInt(followerDraft, 10) || 0) : undefined
     setData((prev) => {
       if (!prev) return prev
-      const next: XDataV1 = { ...prev, meDisplayName: name || prev.meName, meBio: bio }
+      const next: XDataV1 = {
+        ...prev,
+        meDisplayName: name || prev.meName,
+        meBio: bio,
+        meFollowerCount: typeof followerNum === 'number' ? followerNum : (prev.meFollowerCount || 0),
+      }
       void xSave(next)
       return next
     })
@@ -3019,6 +3106,7 @@ ${chatFriendList}
                   type="button"
                   onClick={() => {
                     setOtherBioDraft(meta.bio || '')
+                    setOtherNameDraft(meta.name || '')
                     // 获取当前存储的粉丝数或自动计算的粉丝数
                     const storedUser = (data?.users || []).find((u) => u.id === uid)
                     setOtherFollowerDraft(storedUser?.followerCount?.toString() || followerCount.toString())
@@ -3069,6 +3157,17 @@ ${chatFriendList}
               <div className="px-4 py-3 border-b border-black/5 text-center text-sm font-semibold">修改资料</div>
               <div className="p-4 space-y-3">
                 <div>
+                  <label className="text-[11px] text-gray-500 mb-1 block">昵称</label>
+                  <input
+                    value={otherNameDraft}
+                    onChange={(e) => setOtherNameDraft(e.target.value)}
+                    placeholder="输入昵称..."
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none"
+                    maxLength={24}
+                  />
+                  <div className="text-[11px] text-gray-400 text-right">{otherNameDraft.length}/24</div>
+                </div>
+                <div>
                   <label className="text-[11px] text-gray-500 mb-1 block">签名</label>
                   <textarea
                     value={otherBioDraft}
@@ -3105,6 +3204,7 @@ ${chatFriendList}
                   onClick={() => {
                     setData((prev) => {
                       if (!prev) return prev
+                      const nextName = otherNameDraft.trim().slice(0, 24) || meta.name
                       // 解析粉丝数
                       const followerNum = otherFollowerDraft.trim() ? Math.max(0, parseInt(otherFollowerDraft, 10) || 0) : undefined
                       // 检查用户是否已存在于 users 数组
@@ -3112,13 +3212,19 @@ ${chatFriendList}
                       let users
                       if (existingUser) {
                         // 用户存在，更新 bio 和 followerCount
-                        users = (prev.users || []).map((u) => (u.id === uid ? { ...u, bio: otherBioDraft, followerCount: followerNum } : u))
+                        users = (prev.users || []).map((u) => (u.id === uid ? { ...u, name: nextName, bio: otherBioDraft, followerCount: followerNum } : u))
                       } else {
                         // 用户不存在（可能是角色），先确保用户存在再更新
-                        const { data: ensured } = xEnsureUser(prev, { id: uid, name: meta.name, handle: meta.handle, bio: otherBioDraft })
-                        users = ensured.users.map((u) => (u.id === uid ? { ...u, followerCount: followerNum } : u))
+                        const { data: ensured } = xEnsureUser(prev, { id: uid, name: nextName, handle: meta.handle, bio: otherBioDraft })
+                        users = ensured.users.map((u) => (u.id === uid ? { ...u, name: nextName, followerCount: followerNum } : u))
                       }
-                      const next = { ...prev, users }
+                      // 同步更新：历史内容里存了 authorName/peerName，改名后一起更新，避免“显示还是旧名”
+                      const nextPosts = (prev.posts || []).map((p) => (p.authorId === uid ? { ...p, authorName: nextName } : p))
+                      const nextReplies = (prev.replies || []).map((r) => (r.authorId === uid ? { ...r, authorName: nextName } : r))
+                      const nextNotifs = (prev.notifications || []).map((n) => (n.fromUserId === uid ? { ...n, fromUserName: nextName } : n))
+                      const nextDms = (prev.dms || []).map((t) => (t.peerId === uid ? { ...t, peerName: nextName } : t))
+
+                      const next = { ...prev, users, posts: nextPosts, replies: nextReplies, notifications: nextNotifs, dms: nextDms }
                       void xSave(next)
                       return next
                     })
@@ -3320,6 +3426,18 @@ ${chatFriendList}
               placeholder="昵称"
               className="w-full px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none"
             />
+            <div>
+              <label className="text-[11px] text-gray-500 mb-1 block">粉丝数量</label>
+              <input
+                type="number"
+                value={profileDraftFollower}
+                onChange={(e) => setProfileDraftFollower(e.target.value)}
+                placeholder="输入粉丝数量..."
+                className="w-full px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none"
+                min={0}
+              />
+              <div className="text-[11px] text-gray-400 mt-1">会覆盖自动增长的粉丝数</div>
+            </div>
             <textarea
               value={profileDraftBio}
               onChange={(e) => setProfileDraftBio(e.target.value)}

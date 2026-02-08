@@ -158,7 +158,11 @@ if (isIOS) {
     // 文字区
     const textDiv = document.createElement('div')
     textDiv.style.cssText = 'flex:1;line-height:1.4;'
-    textDiv.innerHTML = '<b>有新版本可用</b><br><span style="font-size:12px;opacity:0.9;">已修复若干问题并优化体验，点击刷新即可更新</span>'
+    textDiv.innerHTML =
+      '<b>有新版本可用</b><br>' +
+      '<span style="font-size:12px;opacity:0.9;">' +
+      '更新内容（简要）：手动天气/温度设置；主屏布局优化；群备注；X 粉丝评论；图标主题与自定义图标显示优化。' +
+      '</span>'
 
     // 刷新按钮
     const btn = document.createElement('button')

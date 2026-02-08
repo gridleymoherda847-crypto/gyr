@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS } from '../../context/OSContext'
 import AppHeader from '../../components/AppHeader'
@@ -8,27 +8,17 @@ const COMMON_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都
 
 export default function LocationScreen() {
   const navigate = useNavigate()
-  const { locationSettings, setLocationSettings, weather, refreshWeather } = useOS()
+  const { locationSettings, setLocationSettings, weather } = useOS()
   const [customCity, setCustomCity] = useState(locationSettings.manualCity)
-  const [loading, setLoading] = useState(false)
+  const [manualTemp, setManualTemp] = useState(() => String(locationSettings.manualTempC ?? 18))
+  const [manualType, setManualType] = useState(locationSettings.manualWeatherType || 'sunny')
+  const [saved, setSaved] = useState(false)
 
-  const handleModeChange = async (mode: 'auto' | 'manual') => {
-    if (mode === 'auto') {
-      setLoading(true)
-      try {
-        // 请求定位权限
-        await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 })
-        })
-        setLocationSettings({ mode: 'auto' })
-      } catch (error) {
-        alert('无法获取定位，请检查浏览器权限设置')
-      }
-      setLoading(false)
-    } else {
-      setLocationSettings({ mode: 'manual' })
-    }
-  }
+  useEffect(() => {
+    setCustomCity(locationSettings.manualCity)
+    setManualTemp(String(locationSettings.manualTempC ?? 18))
+    setManualType(locationSettings.manualWeatherType || 'sunny')
+  }, [locationSettings.manualCity])
 
   const handleCitySelect = (city: string) => {
     setCustomCity(city)
@@ -40,11 +30,18 @@ export default function LocationScreen() {
       setLocationSettings({ manualCity: customCity.trim(), mode: 'manual' })
     }
   }
-
-  const handleRefresh = async () => {
-    setLoading(true)
-    await refreshWeather()
-    setLoading(false)
+  
+  const handleSave = () => {
+    const t = manualTemp.trim()
+    const num = t === '' ? 18 : Math.max(-80, Math.min(80, Number(t)))
+    setLocationSettings({
+      manualCity: String(customCity || '').trim() || locationSettings.manualCity,
+      manualWeatherType: manualType as any,
+      manualTempC: Number.isFinite(num) ? num : 18,
+      mode: 'manual',
+    })
+    setSaved(true)
+    setTimeout(() => setSaved(false), 1200)
   }
 
   return (
@@ -63,107 +60,94 @@ export default function LocationScreen() {
               </div>
               <div className="text-5xl">{weather.icon}</div>
             </div>
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className="mt-3 w-full py-2 bg-white/20 rounded-lg text-sm font-medium active:scale-95 disabled:opacity-50"
-            >
-              {loading ? '刷新中...' : '刷新天气'}
-            </button>
-          </div>
-
-          {/* 定位方式 */}
-          <div className="bg-white/60 backdrop-blur rounded-2xl p-4 mb-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">定位方式</h3>
-            <div className="space-y-2">
-              <button
-                onClick={() => handleModeChange('auto')}
-                disabled={loading}
-                className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${
-                  locationSettings.mode === 'auto' 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span>📡</span>
-                  <span className="font-medium">自动定位</span>
-                </div>
-                {locationSettings.mode === 'auto' && <span>✓</span>}
-              </button>
-              
-              <button
-                onClick={() => handleModeChange('manual')}
-                className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${
-                  locationSettings.mode === 'manual' 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span>✏️</span>
-                  <span className="font-medium">手动设置</span>
-                </div>
-                {locationSettings.mode === 'manual' && <span>✓</span>}
-              </button>
-            </div>
-            
-            {locationSettings.mode === 'auto' && (
-              <p className="text-xs text-gray-500 mt-2">
-                需要浏览器授权定位权限，将根据真实位置获取天气
-              </p>
-            )}
+            <div className="mt-3 text-xs opacity-80">这里的天气为手动设置，不会自动请求定位或刷新覆盖。</div>
           </div>
 
           {/* 手动设置城市 */}
-          {locationSettings.mode === 'manual' && (
-            <div className="bg-white/60 backdrop-blur rounded-2xl p-4 mb-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">选择城市</h3>
-              
-              {/* 自定义输入 */}
-              <div className="flex gap-2 mb-3">
-                <input
-                  type="text"
-                  value={customCity}
-                  onChange={(e) => setCustomCity(e.target.value)}
-                  placeholder="输入城市名称"
-                  className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                />
+          <div className="bg-white/60 backdrop-blur rounded-2xl p-4 mb-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">选择城市（仅手动定位）</h3>
+            
+            {/* 自定义输入 */}
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                value={customCity}
+                onChange={(e) => setCustomCity(e.target.value)}
+                placeholder="输入城市名称"
+                className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+              <button
+                onClick={handleCustomCitySubmit}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium active:scale-95"
+              >
+                确定
+              </button>
+            </div>
+            
+            {/* 常用城市 */}
+            <div className="flex flex-wrap gap-2">
+              {COMMON_CITIES.map(city => (
                 <button
-                  onClick={handleCustomCitySubmit}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium active:scale-95"
+                  key={city}
+                  onClick={() => handleCitySelect(city)}
+                  className={`px-3 py-1.5 rounded-full text-sm transition-all ${
+                    locationSettings.manualCity === city
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
                 >
-                  确定
+                  {city}
                 </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 手动设置天气 */}
+          <div className="bg-white/60 backdrop-blur rounded-2xl p-4 mb-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">自定义天气</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-xs text-gray-500 mb-1">天气</div>
+                <select
+                  value={manualType}
+                  onChange={(e) => setManualType(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-lg bg-gray-100 text-sm outline-none"
+                >
+                  <option value="sunny">晴</option>
+                  <option value="cloudy">多云</option>
+                  <option value="rain">下雨</option>
+                  <option value="snow">下雪</option>
+                  <option value="fog">有雾</option>
+                  <option value="storm">雷雨</option>
+                </select>
               </div>
-              
-              {/* 常用城市 */}
-              <div className="flex flex-wrap gap-2">
-                {COMMON_CITIES.map(city => (
-                  <button
-                    key={city}
-                    onClick={() => handleCitySelect(city)}
-                    className={`px-3 py-1.5 rounded-full text-sm transition-all ${
-                      locationSettings.manualCity === city
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {city}
-                  </button>
-                ))}
+              <div>
+                <div className="text-xs text-gray-500 mb-1">温度（°C）</div>
+                <input
+                  type="number"
+                  value={manualTemp}
+                  onChange={(e) => setManualTemp(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-gray-100 text-sm outline-none"
+                  min={-80}
+                  max={80}
+                />
               </div>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={handleSave}
+              className="mt-3 w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium active:scale-95"
+            >
+              {saved ? '已保存' : '保存'}
+            </button>
+          </div>
 
           {/* 说明 */}
           <div className="bg-white/40 backdrop-blur rounded-2xl p-4">
             <h3 className="text-sm font-medium text-gray-700 mb-2">说明</h3>
             <ul className="text-xs text-gray-500 space-y-1">
-              <li>• 天气数据来自 Open-Meteo（免费API）</li>
-              <li>• 自动定位需要浏览器授权</li>
-              <li>• 天气每30分钟自动刷新一次</li>
-              <li>• 点击主页天气可手动刷新</li>
+              <li>• 位置与天气均为手动设置（支持国内/国外任意城市）</li>
+              <li>• 不会请求自动定位权限</li>
             </ul>
           </div>
         </div>

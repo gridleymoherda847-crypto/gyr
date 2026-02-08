@@ -45,7 +45,8 @@ export default function HomeScreen() {
     time, fontColor, currentFont, 
     musicPlaying, currentSong, musicProgress, toggleMusic, nextSong, prevSong,
     anniversaries, memo, iconTheme, customAppIcons, decorImage,
-    homeAvatar, setHomeAvatar, signature, setSignature, waterCount, addWater
+    homeAvatar, setHomeAvatar, signature, setSignature, waterCount, addWater,
+    weather, locationSettings
   } = useOS()
   
   const [rotation, setRotation] = useState(0)
@@ -140,36 +141,40 @@ export default function HomeScreen() {
           <div className="flex items-center justify-between">
             <div>
               <div 
-                className="text-4xl font-bold"
+                className="text-[40px] font-bold leading-none"
                 style={{ color: fontColor.value, fontFamily: currentFont.fontFamily }}
               >
                 {time}
               </div>
-              <div className="text-sm opacity-70 mt-1" style={{ color: fontColor.value }}>
-                {dateStr} {weekDay}
+              <div className="text-[11px] opacity-70 mt-1 leading-tight" style={{ color: fontColor.value }}>
+                <Link to="/apps/settings/location" className="hover:opacity-80 transition-opacity">
+                  {dateStr} {weekDay} · 📍 {weather.city || locationSettings.manualCity}
+                </Link>
               </div>
             </div>
-            {/* 音乐播放器迷你版 */}
-            <Link to="/apps/music" className="flex items-center gap-3">
-              <div 
-                className="relative w-14 h-14 rounded-full overflow-hidden shadow-lg border-2 border-white/50"
-                style={{
-                  transform: `rotate(${rotation}deg)`,
-                  transition: musicPlaying ? 'none' : 'transform 0.3s ease',
-                }}
-              >
-                {currentSong?.cover ? (
-                  <img src={currentSong.cover} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-pink-200 to-pink-300 flex items-center justify-center">
-                    <span className="text-lg">🎵</span>
+            <div className="flex items-center gap-3">
+              {/* 音乐播放器迷你版 */}
+              <Link to="/apps/music" className="flex items-center gap-3">
+                <div 
+                  className="relative w-14 h-14 rounded-full overflow-hidden shadow-lg border-2 border-white/50"
+                  style={{
+                    transform: `rotate(${rotation}deg)`,
+                    transition: musicPlaying ? 'none' : 'transform 0.3s ease',
+                  }}
+                >
+                  {currentSong?.cover ? (
+                    <img src={currentSong.cover} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-pink-200 to-pink-300 flex items-center justify-center">
+                      <span className="text-lg">🎵</span>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-3 h-3 rounded-full bg-white shadow" />
                   </div>
-                )}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-3 h-3 rounded-full bg-white shadow" />
                 </div>
-              </div>
-            </Link>
+              </Link>
+            </div>
           </div>
           
           {/* 音乐控制条 */}
@@ -401,22 +406,24 @@ export default function HomeScreen() {
               <button 
                 type="button"
                 onClick={() => { setTempSignature(signature); setShowSignatureEdit(true) }}
-                className="text-sm font-medium truncate block w-full text-left hover:opacity-70 transition-opacity"
+                className="text-[13px] font-medium truncate block w-full text-left hover:opacity-70 transition-opacity"
                 style={{ color: fontColor.value, fontFamily: currentFont.fontFamily }}
               >
                 {signature || '点击编辑签名'}
               </button>
               <div 
-                className="text-xs opacity-70"
+                className="text-[11px] opacity-70 leading-tight"
                 style={{ color: fontColor.value }}
               >
-                {dateStr} · {weekDay}
+                <Link to="/apps/settings/location" className="hover:opacity-80 transition-opacity">
+                  {dateStr} · {weekDay} · 📍 {weather.city || locationSettings.manualCity}
+                </Link>
               </div>
             </div>
             
             {/* 时间 */}
             <div 
-              className="text-4xl font-bold ml-2"
+              className="text-[40px] font-bold ml-2 leading-none"
               style={{ 
                 color: fontColor.value, 
                 fontFamily: currentFont.fontFamily,
@@ -426,6 +433,7 @@ export default function HomeScreen() {
               {time}
             </div>
           </div>
+          {/* 位置已合并到日期行里，避免占布局 */}
         </div>
       </div>
 

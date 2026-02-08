@@ -28,6 +28,25 @@ export default function GroupChatScreen() {
   const selectedPersona = getCurrentPersona()
   getCurrentPeriod() // 调用以保持依赖
 
+  // 群备注（仅本群显示/使用）
+  const getNameInGroup = useCallback((id: string) => {
+    if (!group) return '群友'
+    if (id === 'user') return selectedPersona?.name || '我'
+    const remark = String(group.memberRemarks?.[id] || '').trim()
+    if (remark) return remark
+    return characters.find(c => c.id === id)?.name || '群友'
+  }, [group, characters, selectedPersona?.name])
+
+  const [memberRemarkDrafts, setMemberRemarkDrafts] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (!group) return
+    const next: Record<string, string> = {}
+    for (const id of group.memberIds) {
+      next[id] = String(group.memberRemarks?.[id] || '')
+    }
+    setMemberRemarkDrafts(next)
+  }, [group?.id])
+
   // ===== 对话统计（回合/Token 预估）=====
   const estimateTokens = (text: string) => {
     const s = String(text || '')
@@ -507,7 +526,7 @@ export default function GroupChatScreen() {
     return limited.map(m => {
       const sender = m.isUser
         ? (selectedPersona?.name || '用户')
-        : characters.find(c => c.id === m.groupSenderId)?.name || '群友'
+        : getNameInGroup(m.groupSenderId || '')
       return `${sender}: ${m.content?.slice(0, 200) || ''}`
     }).join('\n')
   }
@@ -519,8 +538,11 @@ export default function GroupChatScreen() {
     
     // 2. 每个成员的人设
     const memberProfiles = members.map(m => {
+      const displayName = getNameInGroup(m.id)
+      const rawName = m.name
       const translationMode = (m as any).language !== 'zh' && !!(m as any).chatTranslationEnabled
-      return `【${m.name}】
+      return `【${displayName}】
+${displayName !== rawName ? `- 群备注名：${displayName}\n- 原名：${rawName}` : `- 名称：${rawName}`}
 - 性别：${m.gender === 'male' ? '男' : m.gender === 'female' ? '女' : '其他'}
 - 主要语言：${languageName((m as any).language || 'zh')}${translationMode ? '（已开启聊天翻译：输出 外语原文 ||| 中文翻译）' : ''}
 - 人设：${m.prompt || '普通朋友'}
@@ -535,8 +557,8 @@ export default function GroupChatScreen() {
     
     // 5. 关系网（必读）
     const relationsText = (group.relations || []).length > 0 ? (group.relations || []).map(rel => {
-      const p1Name = rel.person1Id === 'user' ? (selectedPersona?.name || '我') : (characters.find(c => c.id === rel.person1Id)?.name || '未知')
-      const p2Name = rel.person2Id === 'user' ? (selectedPersona?.name || '我') : (characters.find(c => c.id === rel.person2Id)?.name || '未知')
+      const p1Name = getNameInGroup(rel.person1Id)
+      const p2Name = getNameInGroup(rel.person2Id)
       let line = `- ${p1Name} ↔ ${p2Name}：${rel.relationship}`
       if (rel.story) line += `\n  背景故事：${rel.story}`
       return line
@@ -555,8 +577,9 @@ ${memberProfiles}
 
 ${relationsText ? '【关系网（必读，影响成员间互动方式）】\n' + relationsText + '\n\n' : ''}【群聊信息】
 - 群名：${group.name}
-- 群成员：${members.map(m => m.name).join('、')}
+- 群成员：${members.map(m => getNameInGroup(m.id)).join('、')}
 - 用户名：${selectedPersona?.name || '我'}
+${Object.keys(group.memberRemarks || {}).length ? `\n【群备注（成员在本群里的显示名）】\n${Object.entries(group.memberRemarks || {}).map(([id, name]) => `- ${characters.find(c => c.id === id)?.name || '未知'} → ${String(name || '').trim()}`).join('\n')}\n` : ''}
 
 【当前时间】
 ${getCurrentTimeStr()}
@@ -629,14 +652,14 @@ ${params.recentMessages || '（暂无消息）'}`
       // 确定要回复的成员名字
       let targetMemberNames: string[]
       if (specificMembers && specificMembers.length > 0) {
-        targetMemberNames = members.filter(m => specificMembers.includes(m.id)).map(m => m.name)
+        targetMemberNames = members.filter(m => specificMembers.includes(m.id)).map(m => getNameInGroup(m.id))
       } else {
         // 随机选择
         const shuffled = [...members].sort(() => Math.random() - 0.5)
         const count = Math.min(replyCount, members.length * 3)
         targetMemberNames = []
         for (let i = 0; i < count; i++) {
-          targetMemberNames.push(shuffled[i % shuffled.length].name)
+          targetMemberNames.push(getNameInGroup(shuffled[i % shuffled.length].id))
         }
       }
       
@@ -645,7 +668,7 @@ ${params.recentMessages || '（暂无消息）'}`
       // ========= 群聊识图：把最近图片转成可读文本，写进上下文 =========
       const userName = selectedPersona?.name || '用户'
       const senderNameOf = (m: any) =>
-        m.isUser ? userName : characters.find(c => c.id === m.groupSenderId)?.name || '未知'
+        m.isUser ? userName : getNameInGroup(String(m.groupSenderId || ''))
       
       // 只识别最近少量图片，避免一次生成耗费过多 API
       const recentForVision = messages.slice(-30)
@@ -769,14 +792,14 @@ ${uniqueNames.join('、')}
       for (const msg of messages.slice(-30)) {
         const senderName = msg.isUser 
           ? (selectedPersona?.name || '我') 
-          : characters.find(c => c.id === msg.groupSenderId)?.name
+          : getNameInGroup(msg.groupSenderId || '')
         if (senderName) {
           recentMessageIdBySender[senderName] = msg.id
         }
       }
       
       for (const reply of parsedReplies) {
-        const member = members.find(m => m.name === reply.name)
+        const member = members.find(m => getNameInGroup(m.id) === reply.name || m.name === reply.name)
         if (!member) continue
         
         const charCount = reply.content.length
@@ -1486,6 +1509,7 @@ ${history}`
           ) : (
             messages.map(msg => {
               const sender = msg.isUser ? null : characters.find(c => c.id === msg.groupSenderId)
+              const senderDisplayName = msg.isUser ? (selectedPersona?.name || '我') : getNameInGroup(msg.groupSenderId || '')
               const isForwardSelected = forwardSelectedIds.has(msg.id)
               const bubbleStyle = getBubbleStyle(msg.isUser, msg.groupSenderId)
               
@@ -1528,18 +1552,18 @@ ${history}`
                       selectedPersona?.avatar ? <img src={selectedPersona.avatar} alt="" className="w-full h-full object-cover" /> :
                       <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm">{(selectedPersona?.name || '我')[0]}</div>
                     ) : sender?.avatar ? <img src={sender.avatar} alt="" className="w-full h-full object-cover" /> :
-                      <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-sm">{sender?.name?.[0] || '?'}</div>
+                      <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-sm">{senderDisplayName?.[0] || '?'}</div>
                     }
                   </button>
                   
                   <div className={`flex flex-col max-w-[70%] ${msg.isUser ? 'items-end' : 'items-start'}`}>
-                    {!msg.isUser && sender && <span className="text-xs text-gray-500 mb-1">{sender.name}</span>}
+                    {!msg.isUser && sender && <span className="text-xs text-gray-500 mb-1">{senderDisplayName}</span>}
                     
                     {/* 引用显示 */}
                     {msg.replyToMessageId && (() => {
                       const replyTo = messages.find(m => m.id === msg.replyToMessageId)
                       if (!replyTo) return null
-                      const replyToSender = replyTo.isUser ? (selectedPersona?.name || '我') : characters.find(c => c.id === replyTo.groupSenderId)?.name || '群友'
+                      const replyToSender = replyTo.isUser ? (selectedPersona?.name || '我') : getNameInGroup(replyTo.groupSenderId || '')
                       return (
                         <div className="text-[10px] text-gray-400 mb-1 px-2 py-1 bg-black/5 rounded max-w-full truncate">
                           引用 {replyToSender}: {replyTo.content?.slice(0, 30)}...
@@ -1621,7 +1645,7 @@ ${history}`
         {replyingToMessage && (
           <div className="px-3 py-2 bg-gray-50 border-t border-gray-200 flex items-start gap-2">
             <div className="flex-1 min-w-0">
-              <div className="text-xs text-gray-500 mb-1">引用 {replyingToMessage.isUser ? (selectedPersona?.name || '我') : characters.find(c => c.id === replyingToMessage.groupSenderId)?.name || '群友'}</div>
+              <div className="text-xs text-gray-500 mb-1">引用 {replyingToMessage.isUser ? (selectedPersona?.name || '我') : getNameInGroup(replyingToMessage.groupSenderId || '')}</div>
               <div className="text-sm text-gray-700 truncate">{replyingToMessage.content}</div>
             </div>
             <button type="button" onClick={() => setReplyingToMessageId(null)} className="text-gray-400 hover:text-gray-600">
@@ -2012,7 +2036,7 @@ ${history}`
                             {m.avatar ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> :
                               <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-xs">{m.name[0]}</div>}
                           </div>
-                          <span className="text-[10px] text-gray-500 mt-1 truncate max-w-[40px]">{m.name}</span>
+                      <span className="text-[10px] text-gray-500 mt-1 truncate max-w-[40px]">{getNameInGroup(m.id)}</span>
                         </div>
                       ))}
                       {/* + 按钮 */}
@@ -2028,6 +2052,52 @@ ${history}`
                         </button>
                       )}
                     </div>
+                  </div>
+
+                  {/* 群备注 */}
+                  <div className="mb-4">
+                    <div className="text-sm text-gray-600 mb-2">群备注</div>
+                    <div className="text-xs text-gray-400 mb-2">仅本群生效；成员与 AI 都会读取群备注名</div>
+                    <div className="space-y-2">
+                      {members.map((m) => (
+                        <div key={m.id} className="rounded-xl bg-gray-50 p-2">
+                          <div className="text-[11px] text-gray-500 mb-1">原名：{m.name}</div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={memberRemarkDrafts[m.id] ?? ''}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setMemberRemarkDrafts((prev) => ({ ...prev, [m.id]: v }))
+                              }}
+                              placeholder="输入群备注（留空=使用原名）"
+                              className="flex-1 px-3 py-2 rounded-lg bg-white border border-black/10 text-[12px] text-gray-900 outline-none"
+                              maxLength={24}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setMemberRemarkDrafts((prev) => ({ ...prev, [m.id]: '' }))}
+                              className="px-2.5 py-2 rounded-lg bg-white border border-black/10 text-[12px] text-gray-600"
+                            >
+                              清空
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const obj: Record<string, string> = {}
+                        for (const [id, name] of Object.entries(memberRemarkDrafts || {})) {
+                          const v = String(name || '').trim()
+                          if (v) obj[id] = v
+                        }
+                        updateGroup(group.id, { memberRemarks: Object.keys(obj).length ? obj : undefined })
+                      }}
+                      className="mt-2 w-full py-2 rounded-lg bg-gray-900 text-white text-sm font-medium"
+                    >
+                      保存群备注
+                    </button>
                   </div>
                   
                   <button type="button" onClick={() => { setShowSettings(false); setShowDeleteConfirm(true) }}
@@ -2724,7 +2794,7 @@ ${history}`
                       return (
                         <button key={g.id} type="button" onClick={() => {
                           const selectedMessages = messages.filter(m => forwardSelectedIds.has(m.id)).sort((a, b) => a.timestamp - b.timestamp).map(m => ({
-                            senderName: m.isUser ? (selectedPersona?.name || '我') : (characters.find(ch => ch.id === m.groupSenderId)?.name || '群友'),
+                            senderName: m.isUser ? (selectedPersona?.name || '我') : getNameInGroup(m.groupSenderId || ''),
                             content: m.content, timestamp: m.timestamp, type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
                           }))
                           addMessage({ characterId: '', groupId: g.id, content: `[转发了${selectedMessages.length}条消息]`, isUser: true, type: 'chat_forward', forwardedMessages: selectedMessages, forwardedFrom: group.name })
@@ -2753,7 +2823,7 @@ ${history}`
                   {characters.filter(c => !c.isHiddenFromChat).map(c => (
                     <button key={c.id} type="button" onClick={() => {
                       const selectedMessages = messages.filter(m => forwardSelectedIds.has(m.id)).sort((a, b) => a.timestamp - b.timestamp).map(m => ({
-                        senderName: m.isUser ? (selectedPersona?.name || '我') : (characters.find(ch => ch.id === m.groupSenderId)?.name || '群友'),
+                        senderName: m.isUser ? (selectedPersona?.name || '我') : getNameInGroup(m.groupSenderId || ''),
                         content: m.content, timestamp: m.timestamp, type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
                       }))
                       addMessage({ characterId: c.id, content: `[转发了${selectedMessages.length}条消息]`, isUser: true, type: 'chat_forward', forwardedMessages: selectedMessages, forwardedFrom: group.name })

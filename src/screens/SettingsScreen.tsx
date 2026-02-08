@@ -217,7 +217,6 @@ export default function SettingsScreen() {
 
           <SettingsGroup title="个性化">
             <SettingsItem label="壁纸设置" to="/apps/settings/wallpaper" />
-            <SettingsItem label="图标管理" to="/apps/settings/icons" />
             <SettingsItem label="字体设置" value={currentFont.name} to="/apps/settings/font" />
             <SettingsItem label="字体颜色" value={fontColor.name} to="/apps/settings/color" />
             <SettingsItem label="表情包管理" to="/apps/settings/stickers" />
@@ -227,18 +226,17 @@ export default function SettingsScreen() {
           <SettingsGroup title="主题">
             <div className="rounded-2xl border border-white/35 bg-white/70 overflow-hidden">
               <div className="px-4 py-3">
-                <div className="text-sm font-medium text-gray-800 mb-3">图标风格</div>
-                <div className="flex gap-3">
+                <div className="text-sm font-medium text-gray-800 mb-3">主题与图标</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* 美化图标 */}
                   <button
                     type="button"
                     onClick={() => {
                       setIconTheme('custom')
                       setShowThemeTip(true)
                     }}
-                    className={`flex-1 rounded-xl p-3 border-2 transition-all ${
-                      iconTheme === 'custom' 
-                        ? 'border-pink-400 bg-pink-50' 
-                        : 'border-gray-200 bg-white/50'
+                    className={`rounded-xl p-3 border-2 transition-all ${
+                      iconTheme === 'custom' ? 'border-pink-400 bg-pink-50' : 'border-gray-200 bg-white/50'
                     }`}
                   >
                     <div className="text-center">
@@ -247,16 +245,16 @@ export default function SettingsScreen() {
                       <div className="text-[10px] text-gray-400">使用作者的精美图标</div>
                     </div>
                   </button>
+
+                  {/* 简约图标 */}
                   <button
                     type="button"
                     onClick={() => {
                       setIconTheme('minimal')
                       setShowThemeTip(true)
                     }}
-                    className={`flex-1 rounded-xl p-3 border-2 transition-all ${
-                      iconTheme === 'minimal' 
-                        ? 'border-gray-800 bg-gray-50' 
-                        : 'border-gray-200 bg-white/50'
+                    className={`rounded-xl p-3 border-2 transition-all ${
+                      iconTheme === 'minimal' ? 'border-gray-800 bg-gray-50' : 'border-gray-200 bg-white/50'
                     }`}
                   >
                     <div className="text-center">
@@ -265,65 +263,96 @@ export default function SettingsScreen() {
                       <div className="text-[10px] text-gray-400">线条风格，自定义百搭</div>
                     </div>
                   </button>
-                </div>
-              </div>
-              
-              {/* 唱片封面设置 - 仅在自定义模式下显示 */}
-              {iconTheme === 'minimal' && (
-                <div className="border-t border-white/30 px-4 py-3">
-                  <div className="text-sm font-medium text-gray-800 mb-3">唱片封面</div>
-                  <div className="flex items-center gap-3">
-                    {/* 预览 */}
-                    <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100 border border-gray-200 flex-shrink-0">
-                      {decorImage ? (
-                        <img src={decorImage} alt="唱片封面" className="w-full h-full object-cover" />
-                      ) : (
-                        <svg viewBox="0 0 100 100" className="w-full h-full">
-                          <circle cx="50" cy="50" r="48" fill="white" stroke="#333" strokeWidth="1.5"/>
-                          <circle cx="50" cy="50" r="38" fill="none" stroke="#333" strokeWidth="0.5" strokeDasharray="3 3"/>
-                          <circle cx="50" cy="50" r="18" fill="none" stroke="#333" strokeWidth="1"/>
-                          <circle cx="50" cy="50" r="8" fill="#333"/>
-                        </svg>
-                      )}
-                    </div>
-                    <div className="flex-1 flex flex-col gap-2">
+
+                  {/* 第二行：美化图标下只显示“图标管理”占一行；简约图标下显示“唱片封面 + 图标管理”两格 */}
+                  {iconTheme === 'minimal' ? (
+                    <>
+                      {/* 唱片封面 */}
                       <button
                         type="button"
                         onClick={() => discImageInputRef.current?.click()}
-                        className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs text-gray-700 hover:bg-gray-200 transition-colors"
+                        className="rounded-xl p-3 border-2 border-gray-800 bg-gray-50 transition-all"
+                        title="唱片封面（简约图标下生效）"
                       >
-                        上传封面
+                        <div className="flex flex-col items-center">
+                          <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200 mb-2">
+                            {decorImage ? (
+                              <img src={decorImage} alt="唱片封面" className="w-full h-full object-cover" />
+                            ) : (
+                              <svg viewBox="0 0 100 100" className="w-full h-full">
+                                <circle cx="50" cy="50" r="48" fill="white" stroke="#333" strokeWidth="1.5"/>
+                                <circle cx="50" cy="50" r="38" fill="none" stroke="#333" strokeWidth="0.5" strokeDasharray="3 3"/>
+                                <circle cx="50" cy="50" r="18" fill="none" stroke="#333" strokeWidth="1"/>
+                                <circle cx="50" cy="50" r="8" fill="#333"/>
+                              </svg>
+                            )}
+                          </div>
+                          <div className="text-xs font-medium text-gray-700">唱片封面</div>
+                          <div className="text-[10px] text-gray-400">点击上传/更换</div>
+                          {decorImage && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                setDecorImage('')
+                              }}
+                              className="mt-2 px-2.5 py-1 rounded-lg bg-red-50 text-[10px] text-red-500 hover:bg-red-100 transition-colors"
+                            >
+                              恢复默认
+                            </button>
+                          )}
+                        </div>
                       </button>
-                      {decorImage && (
-                        <button
-                          type="button"
-                          onClick={() => setDecorImage('')}
-                          className="px-3 py-1.5 rounded-lg bg-red-50 text-xs text-red-500 hover:bg-red-100 transition-colors"
-                        >
-                          恢复默认
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <input
-                    ref={discImageInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0]
-                      if (!file) return
-                      const reader = new FileReader()
-                      reader.onload = () => {
-                        const result = reader.result as string
-                        setDecorImage(result)
-                      }
-                      reader.readAsDataURL(file)
-                      if (discImageInputRef.current) discImageInputRef.current.value = ''
-                    }}
-                  />
+
+                      {/* 图标管理 */}
+                      <button
+                        type="button"
+                        onClick={() => navigate('/apps/settings/icons')}
+                        className="rounded-xl p-3 border-2 border-gray-200 bg-white/50 hover:bg-white/60 transition-all"
+                      >
+                        <div className="text-center">
+                          <div className="text-2xl mb-1">🧩</div>
+                          <div className="text-xs font-medium text-gray-700">图标管理</div>
+                          <div className="text-[10px] text-gray-400">自定义应用图标</div>
+                        </div>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/apps/settings/icons')}
+                      className="col-span-2 rounded-xl p-3 border-2 border-gray-200 bg-white/50 hover:bg-white/60 transition-all"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="text-left">
+                          <div className="text-xs font-medium text-gray-700">图标管理</div>
+                          <div className="text-[10px] text-gray-400">自定义应用图标</div>
+                        </div>
+                        <div className="text-2xl">🧩</div>
+                      </div>
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
+              
+              <input
+                ref={discImageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = () => {
+                    const result = reader.result as string
+                    setDecorImage(result)
+                  }
+                  reader.readAsDataURL(file)
+                  if (discImageInputRef.current) discImageInputRef.current.value = ''
+                }}
+              />
             </div>
           </SettingsGroup>
 
