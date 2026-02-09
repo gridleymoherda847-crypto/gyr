@@ -4,6 +4,7 @@
  */
 
 import FingerprintJS from '@fingerprintjs/fingerprintjs'
+import { kvGet, kvRemove, kvSet, kvSetJSON, kvGetJSON } from '../storage/kv'
 
 // Supabase 配置
 const SUPABASE_URL = 'https://mrohruvzkxlnbjbrcqvp.supabase.co'
@@ -11,6 +12,11 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 // 本地存储 key
 const LOCAL_STORAGE_KEY = 'mina_phone_activation'
+const KV_STORAGE_KEY = 'mina_phone_activation_kv'
+const LOCAL_FP_KEY = 'mina_fp_cached'
+const KV_FP_KEY = 'mina_fp_cached_kv'
+const LOCAL_FALLBACK_ID_KEY = 'mina_device_id'
+const KV_FALLBACK_ID_KEY = 'mina_device_id_kv'
 
 // 类型定义
 type RedemptionCode = {
@@ -35,17 +41,41 @@ export async function getDeviceFingerprint(): Promise<string> {
   if (cachedFingerprint) return cachedFingerprint
   
   try {
+    // 0) 优先使用“已缓存的指纹”（避免某些浏览器/隐私策略导致 visitorId 偶发变化，引发反复需要换绑/重激活）
+    try {
+      const pinned = localStorage.getItem(LOCAL_FP_KEY)
+      if (pinned) {
+        cachedFingerprint = pinned
+        return pinned
+      }
+    } catch {}
+    try {
+      const pinnedKv = await kvGet(KV_FP_KEY)
+      if (pinnedKv) {
+        try { localStorage.setItem(LOCAL_FP_KEY, pinnedKv) } catch {}
+        cachedFingerprint = pinnedKv
+        return pinnedKv
+      }
+    } catch {}
+
     const fp = await FingerprintJS.load()
     const result = await fp.get()
     cachedFingerprint = result.visitorId
+    try { localStorage.setItem(LOCAL_FP_KEY, cachedFingerprint) } catch {}
+    try { await kvSet(KV_FP_KEY, cachedFingerprint) } catch {}
     return cachedFingerprint
   } catch (error) {
     console.error('获取设备指纹失败:', error)
     // 降级方案：使用随机 ID 存储到 localStorage
-    let fallbackId = localStorage.getItem('mina_device_id')
+    let fallbackId: string | null = null
+    try { fallbackId = localStorage.getItem(LOCAL_FALLBACK_ID_KEY) } catch {}
+    if (!fallbackId) {
+      try { fallbackId = await kvGet(KV_FALLBACK_ID_KEY) } catch {}
+    }
     if (!fallbackId) {
       fallbackId = 'fallback_' + Math.random().toString(36).substring(2) + Date.now().toString(36)
-      localStorage.setItem('mina_device_id', fallbackId)
+      try { localStorage.setItem(LOCAL_FALLBACK_ID_KEY, fallbackId) } catch {}
+      try { await kvSet(KV_FALLBACK_ID_KEY, fallbackId) } catch {}
     }
     cachedFingerprint = fallbackId
     return cachedFingerprint
@@ -70,10 +100,12 @@ export function getLocalActivationStatus(): ActivationStatus {
 
 // 保存激活状态到本地
 function saveLocalActivation(code: string, activatedAt: string) {
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({
-    code,
-    activatedAt,
-  }))
+  const payload = { code, activatedAt }
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload))
+  } catch {}
+  // 冗余保存一份到 IndexedDB（localforage），降低“某些浏览器 localStorage 退出即清”导致反复输入兑换码的概率
+  void kvSetJSON(KV_STORAGE_KEY, payload).catch(() => {})
 }
 
 // 验证兑换码（主函数）
@@ -264,7 +296,8 @@ export async function checkDeviceActivationDetailed(): Promise<ActivationCheckRe
     
     if (codes.length === 0) {
       // 兑换码不存在了，清除本地状态
-      localStorage.removeItem(LOCAL_STORAGE_KEY)
+      try { localStorage.removeItem(LOCAL_STORAGE_KEY) } catch {}
+      try { await kvRemove(KV_STORAGE_KEY) } catch {}
       return { ok: false, reason: 'code_missing' }
     }
     
@@ -276,7 +309,8 @@ export async function checkDeviceActivationDetailed(): Promise<ActivationCheckRe
     }
     
     // 设备不匹配（可能已迁移到其他设备），清除本地状态
-    localStorage.removeItem(LOCAL_STORAGE_KEY)
+    try { localStorage.removeItem(LOCAL_STORAGE_KEY) } catch {}
+    try { await kvRemove(KV_STORAGE_KEY) } catch {}
     return { ok: false, reason: 'mismatch' }
     
   } catch (error) {
@@ -287,6 +321,22 @@ export async function checkDeviceActivationDetailed(): Promise<ActivationCheckRe
 
 // 清除本地激活状态（用于调试）
 export function clearLocalActivation() {
-  localStorage.removeItem(LOCAL_STORAGE_KEY)
+  try { localStorage.removeItem(LOCAL_STORAGE_KEY) } catch {}
+  void kvRemove(KV_STORAGE_KEY).catch(() => {})
   cachedFingerprint = null
+}
+
+// 从 IndexedDB 里尝试恢复激活状态（当 localStorage 丢失但 IndexedDB 仍在时可自动修复）
+export async function recoverActivationFromKv(): Promise<boolean> {
+  try {
+    const v = await kvGetJSON<{ code?: string; activatedAt?: string } | null>(KV_STORAGE_KEY, null)
+    const code = String((v as any)?.code || '').trim()
+    const activatedAt = String((v as any)?.activatedAt || '').trim()
+    if (!code) return false
+    // 写回 localStorage，后续走现有快速路径
+    try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ code, activatedAt })) } catch {}
+    return true
+  } catch {
+    return false
+  }
 }

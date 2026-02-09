@@ -5,7 +5,7 @@ import { WeChatProvider, useWeChat } from './context/WeChatContext'
 import PhoneShell from './components/PhoneShell'
 import ErrorBoundary from './components/ErrorBoundary'
 import ActivationScreen from './components/ActivationScreen'
-import { checkDeviceActivationDetailed, getLocalActivationStatus } from './services/redemption'
+import { checkDeviceActivationDetailed, getLocalActivationStatus, recoverActivationFromKv } from './services/redemption'
 
 // 路由按需加载（减少首屏体积，避免移动端黑屏）
 const HomeScreen = lazy(() => import('./screens/HomeScreen'))
@@ -144,11 +144,16 @@ function InnerApp() {
 
     const checkActivation = async () => {
       // 先检查本地状态（快速）
-      const local = getLocalActivationStatus()
+      let local = getLocalActivationStatus()
       if (!local.isActivated) {
-        setIsActivated(false)
-        setCheckingActivation(false)
-        return
+        // 某些浏览器/内置 WebView 会在关闭后清 localStorage，但 IndexedDB 还在：尝试自动恢复，避免反复输入兑换码
+        const recovered = await recoverActivationFromKv()
+        local = getLocalActivationStatus()
+        if (!recovered || !local.isActivated) {
+          setIsActivated(false)
+          setCheckingActivation(false)
+          return
+        }
       }
       
       // 后台验证服务器状态
