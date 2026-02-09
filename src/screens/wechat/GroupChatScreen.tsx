@@ -179,6 +179,7 @@ export default function GroupChatScreen() {
   }, [stickerTab, allStickersWithInfo, recentStickers])
   
   const [inputText, setInputText] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
   const [aiTyping, setAiTyping] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   // 群聊绑定世界书（来自创作工坊）
@@ -1507,9 +1508,10 @@ ${history}`
           {messages.length === 0 ? (
             <div className="text-center text-gray-400 text-sm py-8 bg-white/50 rounded-xl">暂无消息，开始聊天吧</div>
           ) : (
-            messages.map(msg => {
+            messages.map((msg, idx) => {
               const sender = msg.isUser ? null : characters.find(c => c.id === msg.groupSenderId)
               const senderDisplayName = msg.isUser ? (selectedPersona?.name || '我') : getNameInGroup(msg.groupSenderId || '')
+              const isLastBubble = idx === messages.length - 1
               const isForwardSelected = forwardSelectedIds.has(msg.id)
               const bubbleStyle = getBubbleStyle(msg.isUser, msg.groupSenderId)
               
@@ -1571,10 +1573,27 @@ ${history}`
                       )
                     })()}
                     
-                    <div className={`px-3 py-2 rounded-2xl text-sm ${
+                    <div
+                      className={`px-3 py-2 rounded-2xl text-sm ${
                       msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'period' || msg.type === 'doudizhu_share' || msg.type === 'voice'
                         ? 'p-0 bg-transparent' : msg.isUser ? 'text-gray-800 rounded-tr-md' : 'text-gray-800 rounded-tl-md shadow-sm'
-                    }`} style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'period' || msg.type === 'doudizhu_share' || msg.type === 'voice' ? undefined : bubbleStyle}>
+                    } ${isLastBubble && !forwardMode && !editingMessageId ? 'cursor-pointer' : ''}`}
+                      style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'period' || msg.type === 'doudizhu_share' || msg.type === 'voice' ? undefined : bubbleStyle}
+                      onClick={(e) => {
+                        // 快捷：点击“最后一条气泡”进入引用回复
+                        if (forwardMode) return
+                        if (editingMessageId) return
+                        if (!isLastBubble) return
+                        const target = e.target as HTMLElement | null
+                        if (target && target.closest('button, a, input, textarea, select, [role="button"]')) return
+                        setReplyingToMessageId(msg.id)
+                        setShowPlusMenu(false)
+                        setShowStickerPanel(false)
+                        setActivePanel(null)
+                        setShowGenerateSelector(false)
+                        setTimeout(() => inputRef.current?.focus(), 0)
+                      }}
+                    >
                       {editingMessageId === msg.id ? (
                         <div className="flex flex-col gap-1">
                           <textarea value={editingContent} onChange={(e) => setEditingContent(e.target.value)}
@@ -1674,6 +1693,7 @@ ${history}`
             </button>
             
             <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
+              ref={inputRef}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
               onFocus={() => { setShowPlusMenu(false); setShowStickerPanel(false); setShowGenerateSelector(false) }}
               placeholder="输入消息..." className="flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/90 outline-none text-gray-800 text-sm" disabled={aiTyping} />
