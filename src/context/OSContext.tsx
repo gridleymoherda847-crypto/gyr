@@ -2240,75 +2240,12 @@ export function OSProvider({ children }: PropsWithChildren) {
       }
     }
 
-    const pickProbeModels = (iface: LLMApiInterface): string[] => {
-      if (iface === 'gemini_native') {
-        return ['models/gemini-2.0-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro']
-      }
-      if (iface === 'anthropic_native') {
-        return ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229', 'claude-3-sonnet-20240229']
-      }
-      if (iface === 'ollama') {
-        return ['llama3.1', 'qwen2.5', 'gemma2']
-      }
-      // openai_compatible（含各种中转/new-api/one-api/卖家网关等）
-      return [
-        'gpt-4o-mini',
-        'gpt-4o',
-        'gpt-4.1-mini',
-        'gpt-4.1',
-        'gpt-4-turbo',
-        'gpt-4',
-        'gpt-3.5-turbo',
-        'deepseek-chat',
-        'deepseek-reasoner',
-        'qwen-plus',
-        'qwen-turbo',
-        'glm-4',
-        'moonshot-v1-8k',
-      ]
-    }
-
+    // 聊天时严格使用用户选择的模型，避免“自动换更贵模型”带来价格争议
     const requestedModel = String(cfg.selectedModel || '').trim()
-    const candidates = Array.from(new Set([requestedModel, ...pickProbeModels(apiInterface)].filter(Boolean))).slice(0, 16)
-    if (candidates.length === 0) throw new Error('请先在「设置 -> API 配置」中填写 Base URL / API Key')
-
-    const shouldRetryModelError = (err: any) => {
-      const status = Number((err as any)?.status || (err as any)?.upstreamStatus || 0)
-      const msg = String(err?.message || err || '')
-      const m = msg.toLowerCase()
-      // 仅在“模型不存在/不支持”这类情况下尝试换模型，避免把 Key/网络问题重复打很多次
-      if (status === 404) return true
-      if (m.includes('model') && (m.includes('not found') || m.includes('no such') || m.includes('unknown') || m.includes('invalid'))) return true
-      if (msg.includes('模型不存在') || msg.includes('找不到模型') || msg.includes('model not found') || msg.includes('not found')) return true
-      return false
+    if (!requestedModel) {
+      throw new Error('未选择模型：请到「设置 → API 配置」点击「测试连接」自动填入一个可用模型，或手动选择模型后再聊天。')
     }
-
-    let lastErr: any = null
-    for (const modelCandidate of candidates) {
-      try {
-        const out = await callCore(modelCandidate)
-        // 若用户没选模型：自动探测到可用模型后，悄悄写回当前配置，避免每次都探测（体验优先，不弹窗不打扰）
-        if (!requestedModel) {
-          try {
-            const same =
-              String(llmConfig.apiBaseUrl || '').trim() === String(cfg.apiBaseUrl || '').trim() &&
-              String(llmConfig.apiKey || '').trim() === String(cfg.apiKey || '').trim() &&
-              String(llmConfig.apiInterface || 'openai_compatible') === String(apiInterface || 'openai_compatible')
-            if (same && String(llmConfig.selectedModel || '').trim() !== modelCandidate) {
-              setLLMConfigState(prev => ({ ...prev, selectedModel: modelCandidate }))
-            }
-          } catch {}
-        }
-        return out
-      } catch (e: any) {
-        lastErr = e
-        if (modelCandidate !== candidates[candidates.length - 1] && (!requestedModel || shouldRetryModelError(e))) {
-          continue
-        }
-        throw e
-      }
-    }
-    throw new Error(String(lastErr?.message || lastErr || '请求失败'))
+    return await callCore(requestedModel)
   }
 
   // 测试连接：不要求先进入聊天再发现问题
