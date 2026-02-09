@@ -522,14 +522,51 @@ export default function GroupChatScreen() {
   
   // 构建用于总结的历史
   const buildHistoryForSummary = (msgs: typeof messages, rounds: number) => {
-    const nonSystem = msgs.filter(m => m.type !== 'system')
-    const limited = nonSystem.slice(-rounds * 2)
-    return limited.map(m => {
-      const sender = m.isUser
-        ? (selectedPersona?.name || '用户')
-        : getNameInGroup(m.groupSenderId || '')
-      return `${sender}: ${m.content?.slice(0, 200) || ''}`
-    }).join('\n')
+    const maxRounds = Math.min(1000, Math.max(1, Math.floor(rounds || 1)))
+    let userRounds = 0
+    const picked: typeof messages = []
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]
+      if (!m) continue
+      if (m.type === 'system') continue
+      if (m.isUser) {
+        userRounds += 1
+        if (userRounds > maxRounds) break
+      }
+      picked.push(m)
+    }
+    const chronological = picked.reverse()
+    const MAX_CHARS = 20000
+    const formatWithCap = (cap: number) => {
+      const lines: string[] = []
+      for (const m of chronological) {
+        const sender = m.isUser
+          ? (selectedPersona?.name || '用户')
+          : getNameInGroup(m.groupSenderId || '')
+        const type = m.type
+        if (type === 'image') {
+          lines.push(`${sender}: <图片>`)
+        } else if (type === 'sticker') {
+          lines.push(`${sender}: <表情包>`)
+        } else if (type === 'voice') {
+          const vt = String((m as any).voiceText || (m as any).voiceOriginalText || '').trim()
+          lines.push(`${sender}: <语音>${vt ? ' ' + vt.slice(0, cap) : ''}`)
+        } else if (type === 'transfer') {
+          lines.push(`${sender}: <转账 ${(m as any).transferAmount ?? ''} ${(m as any).transferNote ?? ''} ${(m as any).transferStatus ?? ''}>`)
+        } else if (type === 'music') {
+          lines.push(`${sender}: <音乐 ${(m as any).musicTitle ?? ''} ${(m as any).musicArtist ?? ''} ${(m as any).musicStatus ?? ''}>`)
+        } else {
+          const txt = String((m as any).content || '').replace(/\s+/g, ' ').trim()
+          lines.push(`${sender}: ${txt.slice(0, cap)}`)
+        }
+      }
+      return lines.join('\n')
+    }
+    for (const cap of [240, 180, 130, 95, 75]) {
+      const s = formatWithCap(cap)
+      if (s.length <= MAX_CHARS) return s
+    }
+    return formatWithCap(75).slice(0, MAX_CHARS)
   }
   
   // 构建系统提示（参考私聊：人设 → 世界书 → 上下文）

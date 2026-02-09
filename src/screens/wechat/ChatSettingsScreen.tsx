@@ -578,7 +578,7 @@ export default function ChatSettingsScreen() {
   const buildHistoryForSummary = (all: any[], rounds: number) => {
     const maxRounds = Math.min(1000, Math.max(1, Math.floor(rounds || 1)))
     let userRounds = 0
-    const lines: string[] = []
+    const picked: any[] = []
     for (let i = all.length - 1; i >= 0; i--) {
       const m = all[i]
       if (!m) continue
@@ -587,19 +587,40 @@ export default function ChatSettingsScreen() {
         userRounds += 1
         if (userRounds > maxRounds) break
       }
-      if (m.type === 'image') {
-        lines.push(`${m.isUser ? '我' : character.name}：<图片>`)
-      } else if (m.type === 'sticker') {
-        lines.push(`${m.isUser ? '我' : character.name}：<表情包>`)
-      } else if (m.type === 'transfer') {
-        lines.push(`${m.isUser ? '我' : character.name}：<转账 ${m.transferAmount ?? ''} ${m.transferNote ?? ''} ${m.transferStatus ?? ''}>`)
-      } else if (m.type === 'music') {
-        lines.push(`${m.isUser ? '我' : character.name}：<音乐 ${m.musicTitle ?? ''} ${m.musicArtist ?? ''} ${m.musicStatus ?? ''}>`)
-      } else {
-        lines.push(`${m.isUser ? '我' : character.name}：${String(m.content || '')}`)
-      }
+      picked.push(m)
     }
-    return lines.reverse().join('\n').slice(-20000)
+    const chronological = picked.reverse()
+    const MAX_CHARS = 20000
+    const formatWithCap = (cap: number) => {
+      const lines: string[] = []
+      for (const m of chronological) {
+        const who = m.isUser ? '我' : character.name
+        const type = m.type
+        if (type === 'image') {
+          lines.push(`${who}：<图片>`)
+        } else if (type === 'sticker') {
+          lines.push(`${who}：<表情包>`)
+        } else if (type === 'transfer') {
+          lines.push(`${who}：<转账 ${m.transferAmount ?? ''} ${m.transferNote ?? ''} ${m.transferStatus ?? ''}>`)
+        } else if (type === 'music') {
+          lines.push(`${who}：<音乐 ${m.musicTitle ?? ''} ${m.musicArtist ?? ''} ${m.musicStatus ?? ''}>`)
+        } else if (type === 'voice') {
+          const vt = String((m.voiceText || m.voiceOriginalText || '')).trim()
+          lines.push(`${who}：<语音>${vt ? ' ' + vt.slice(0, cap) : ''}`)
+        } else {
+          const txt = String(m.content || '').replace(/\s+/g, ' ').trim()
+          lines.push(`${who}：${txt.slice(0, cap)}`)
+        }
+      }
+      return lines.join('\n')
+    }
+    // 先用较高 cap，如果超长就逐步缩短，尽量保证“选中的回合都能读到”，而不是只保留最后几条
+    for (const cap of [260, 200, 140, 100, 80]) {
+      const s = formatWithCap(cap)
+      if (s.length <= MAX_CHARS) return s
+    }
+    // 仍超长：最后兜底截断（保留开头，避免只剩最后几条）
+    return formatWithCap(80).slice(0, MAX_CHARS)
   }
 
   const selectedPersona = character.selectedUserPersonaId 
