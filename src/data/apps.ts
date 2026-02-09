@@ -19,8 +19,9 @@ export const GRID_APPS: AppMeta[] = [
 // Dock 栏应用
 export const DOCK_APPS: AppMeta[] = [
   { id: 'settings', name: '设置', route: '/apps/settings', icon: '/icons/settings.png', gradient: 'from-pink-100 to-pink-200' },
-  { id: 'manual', name: '使用手册', route: '/apps/manual', icon: '/icons/manual.svg', gradient: 'from-emerald-400 to-teal-400' },
-  { id: 'preset', name: '创作工坊', route: '/apps/preset', icon: '/icons/sms.png', gradient: 'from-blue-400 to-cyan-400' },
+  // Dock：避免过于突兀的彩色外框，统一使用浅色底
+  { id: 'manual', name: '使用手册', route: '/apps/manual', icon: '/icons/manual.svg', gradient: 'from-pink-100 to-pink-200' },
+  { id: 'preset', name: '创作工坊', route: '/apps/preset', icon: '/icons/sms.png', gradient: 'from-pink-100 to-pink-200' },
 ]
 
 export const ALL_APPS: AppMeta[] = [...GRID_APPS, ...DOCK_APPS]
