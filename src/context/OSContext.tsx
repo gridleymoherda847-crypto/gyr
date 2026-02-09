@@ -1578,11 +1578,12 @@ export function OSProvider({ children }: PropsWithChildren) {
     const apiInterface = cfg.apiInterface ?? 'openai_compatible'
     const base = normalizeApiBaseUrl(cfg.apiBaseUrl, apiInterface)
     const key = cfg.apiKey
-    const selectedModel = cfg.selectedModel
     if (!base || !key) throw new Error('请先在「设置 -> API 配置」中填写 Base URL 和 API Key')
-    if (!selectedModel) throw new Error('请先选择一个模型')
 
-    try {
+    const callCore = async (selectedModel: string): Promise<string> => {
+      if (!selectedModel) throw new Error('请先选择一个模型')
+
+      try {
       const maxTokens = options?.maxTokens ?? 900
       const temperature = options?.temperature ?? 0.7
       
@@ -2236,7 +2237,78 @@ export function OSProvider({ children }: PropsWithChildren) {
         phase: 'chat',
       })
       throw new Error(pretty)
+      }
     }
+
+    const pickProbeModels = (iface: LLMApiInterface): string[] => {
+      if (iface === 'gemini_native') {
+        return ['models/gemini-2.0-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro']
+      }
+      if (iface === 'anthropic_native') {
+        return ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229', 'claude-3-sonnet-20240229']
+      }
+      if (iface === 'ollama') {
+        return ['llama3.1', 'qwen2.5', 'gemma2']
+      }
+      // openai_compatible（含各种中转/new-api/one-api/卖家网关等）
+      return [
+        'gpt-4o-mini',
+        'gpt-4o',
+        'gpt-4.1-mini',
+        'gpt-4.1',
+        'gpt-4-turbo',
+        'gpt-4',
+        'gpt-3.5-turbo',
+        'deepseek-chat',
+        'deepseek-reasoner',
+        'qwen-plus',
+        'qwen-turbo',
+        'glm-4',
+        'moonshot-v1-8k',
+      ]
+    }
+
+    const requestedModel = String(cfg.selectedModel || '').trim()
+    const candidates = Array.from(new Set([requestedModel, ...pickProbeModels(apiInterface)].filter(Boolean))).slice(0, 16)
+    if (candidates.length === 0) throw new Error('请先在「设置 -> API 配置」中填写 Base URL / API Key')
+
+    const shouldRetryModelError = (err: any) => {
+      const status = Number((err as any)?.status || (err as any)?.upstreamStatus || 0)
+      const msg = String(err?.message || err || '')
+      const m = msg.toLowerCase()
+      // 仅在“模型不存在/不支持”这类情况下尝试换模型，避免把 Key/网络问题重复打很多次
+      if (status === 404) return true
+      if (m.includes('model') && (m.includes('not found') || m.includes('no such') || m.includes('unknown') || m.includes('invalid'))) return true
+      if (msg.includes('模型不存在') || msg.includes('找不到模型') || msg.includes('model not found') || msg.includes('not found')) return true
+      return false
+    }
+
+    let lastErr: any = null
+    for (const modelCandidate of candidates) {
+      try {
+        const out = await callCore(modelCandidate)
+        // 若用户没选模型：自动探测到可用模型后，悄悄写回当前配置，避免每次都探测（体验优先，不弹窗不打扰）
+        if (!requestedModel) {
+          try {
+            const same =
+              String(llmConfig.apiBaseUrl || '').trim() === String(cfg.apiBaseUrl || '').trim() &&
+              String(llmConfig.apiKey || '').trim() === String(cfg.apiKey || '').trim() &&
+              String(llmConfig.apiInterface || 'openai_compatible') === String(apiInterface || 'openai_compatible')
+            if (same && String(llmConfig.selectedModel || '').trim() !== modelCandidate) {
+              setLLMConfigState(prev => ({ ...prev, selectedModel: modelCandidate }))
+            }
+          } catch {}
+        }
+        return out
+      } catch (e: any) {
+        lastErr = e
+        if (modelCandidate !== candidates[candidates.length - 1] && (!requestedModel || shouldRetryModelError(e))) {
+          continue
+        }
+        throw e
+      }
+    }
+    throw new Error(String(lastErr?.message || lastErr || '请求失败'))
   }
 
   // 测试连接：不要求先进入聊天再发现问题
@@ -2251,19 +2323,65 @@ export function OSProvider({ children }: PropsWithChildren) {
     const apiInterface = (override.apiInterface || 'openai_compatible') as LLMApiInterface
     if (!apiBaseUrl || !apiKey) throw new Error('请先填写 Base URL 和 API Key')
 
-    const modelList = await fetchAvailableModels({ apiBaseUrl, apiKey, apiInterface })
-    const modelUsed = String(override.model || '').trim() || modelList[0] || ''
-    if (!modelUsed) throw new Error('无法获取模型列表：请先点击“获取模型列表”或检查 Base URL / API Key / 接口类型')
+    const pickProbeModels = (iface: LLMApiInterface): string[] => {
+      // 目标：让“只填 URL+Key 的小白用户”也能直接测试成功，即使 /models 不可用
+      if (iface === 'gemini_native') {
+        return ['models/gemini-2.0-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro']
+      }
+      if (iface === 'anthropic_native') {
+        return ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229', 'claude-3-sonnet-20240229']
+      }
+      if (iface === 'ollama') {
+        return ['llama3.1', 'qwen2.5', 'gemma2']
+      }
+      // openai_compatible（含各种中转/new-api/one-api/卖家网关等）
+      return [
+        'gpt-4o-mini',
+        'gpt-4o',
+        'gpt-4.1-mini',
+        'gpt-4.1',
+        'gpt-4-turbo',
+        'gpt-4',
+        'gpt-3.5-turbo',
+        // 常见国产网关/聚合平台会暴露这些模型名
+        'deepseek-chat',
+        'deepseek-reasoner',
+        'qwen-plus',
+        'qwen-turbo',
+        'glm-4',
+        'moonshot-v1-8k',
+      ]
+    }
 
-    const reply = await callLLMWithConfig(
-      { apiBaseUrl, apiKey, apiInterface, selectedModel: modelUsed },
-      [
-        { role: 'system', content: '你是连接测试。你只允许回复一个词：OK。禁止输出其他任何内容。' },
-        { role: 'user', content: 'test' },
-      ],
-      { temperature: 0, maxTokens: 8, timeoutMs: 60_000 }
-    )
-    return { modelUsed, reply: (reply || '').trim() }
+    const manual = String(override.model || '').trim()
+    let modelList: string[] = []
+    try {
+      modelList = await fetchAvailableModels({ apiBaseUrl, apiKey, apiInterface })
+    } catch {
+      modelList = []
+    }
+    const candidates = Array.from(
+      new Set([manual, ...(Array.isArray(modelList) ? modelList : []), ...pickProbeModels(apiInterface)].filter(Boolean))
+    ).slice(0, 18)
+    if (candidates.length === 0) throw new Error('无法探测可用模型：请检查 Base URL / API Key / 接口类型')
+
+    let lastErr: any = null
+    for (const modelUsed of candidates) {
+      try {
+        const reply = await callLLMWithConfig(
+          { apiBaseUrl, apiKey, apiInterface, selectedModel: modelUsed },
+          [
+            { role: 'system', content: '你是连接测试。你只允许回复一个词：OK。禁止输出其他任何内容。' },
+            { role: 'user', content: 'test' },
+          ],
+          { temperature: 0, maxTokens: 8, timeoutMs: 60_000 }
+        )
+        return { modelUsed, reply: (reply || '').trim() }
+      } catch (e: any) {
+        lastErr = e
+      }
+    }
+    throw new Error(String(lastErr?.message || lastErr || '测试失败：无法自动探测可用模型'))
   }
 
   // 调用LLM API（使用用户自己配置的API，不消耗米币）

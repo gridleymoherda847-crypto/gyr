@@ -227,7 +227,11 @@ export default function ApiConfigScreen() {
         isHttpsPage && baseUrl.trim().toLowerCase().startsWith('http://')
           ? '\n\n提示：当前是 HTTPS 页面，Base URL 用 http:// 会被浏览器拦截（混合内容）。'
           : ''
-      setError(`获取模型失败（已加载默认列表）。\n${raw}${hint}`.trim())
+      // 体验优先：模型列表拉不到不影响聊天，只要能测试成功即可自动填入可用模型
+      setError(
+        `获取模型列表失败（不影响使用）。建议直接点「测试连接」自动匹配可用模型。\n` +
+          `${raw ? raw.slice(0, 300) : ''}${hint}`.trim()
+      )
       setModels(['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'claude-3-opus', 'claude-3-sonnet'])
     } finally { setLoading(false) }
   }
@@ -254,6 +258,17 @@ export default function ApiConfigScreen() {
       setLlmTestOk(
         `连接正常：模型「${modelUsed}」回复「${text || 'OK'}」${ok ? '' : '（提示：上游没严格按 OK 返回，但已能正常调用）'}`
       )
+      // 体验优化：测试成功后自动选中可用模型，避免用户还要手动挑
+      if (modelUsed) {
+        selectedModelRef.current = modelUsed
+        setSelectedModel(modelUsed)
+        // 让模型列表里一定包含它（即使 /models 拉取失败）
+        setModels(prev => {
+          const arr = Array.isArray(prev) ? prev : []
+          if (arr.includes(modelUsed)) return arr
+          return [modelUsed, ...arr].slice(0, 200)
+        })
+      }
     } catch (err: any) {
       setLlmTestError(String(err?.message || err || '测试失败'))
     } finally {
@@ -305,7 +320,10 @@ export default function ApiConfigScreen() {
         isHttpsPage && editBaseUrl.trim().toLowerCase().startsWith('http://')
           ? '\n\n提示：HTTPS 页面下使用 http:// Base URL 可能会被浏览器拦截（混合内容）。'
           : ''
-      setEditError(`获取模型失败。\n${raw}${hint}`.trim())
+      setEditError(
+        `获取模型列表失败（不影响使用）。建议直接点「测试连接」自动匹配可用模型。\n` +
+          `${raw ? raw.slice(0, 300) : ''}${hint}`.trim()
+      )
     } finally {
       setEditLoading(false)
     }
@@ -333,6 +351,15 @@ export default function ApiConfigScreen() {
       setEditTestOk(
         `连接正常：模型「${modelUsed}」回复「${text || 'OK'}」${ok ? '' : '（提示：上游没严格按 OK 返回，但已能正常调用）'}`
       )
+      // 体验优化：测试成功后自动填入可用模型
+      if (modelUsed) {
+        setEditSelectedModel(modelUsed)
+        setEditModels(prev => {
+          const arr = Array.isArray(prev) ? prev : []
+          if (arr.includes(modelUsed)) return arr
+          return [modelUsed, ...arr].slice(0, 200)
+        })
+      }
     } catch (err: any) {
       setEditTestError(String(err?.message || err || '测试失败'))
     } finally {
