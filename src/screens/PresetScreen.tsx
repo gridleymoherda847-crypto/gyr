@@ -60,9 +60,9 @@ const STORAGE_KEY = 'littlephone_workshop_config'
 
 const DEFAULT_NARRATIVE: NarrativeConfig = {
   sensoryFirst: false,
-  characterProxy: true,
-  noOOC: true,
-  immersive: true,
+  characterProxy: false,
+  noOOC: false,
+  immersive: false,
   customPrompt: '',
 }
 
@@ -365,118 +365,26 @@ export default function PresetScreen() {
           {/* ========== 叙事设置 Tab ========== */}
           {activeTab === 'narrative' && (
             <div className="mt-4 space-y-4">
-              
-              {/* 叙事风格开关 */}
-              <div className="p-4 rounded-2xl bg-white shadow-sm border border-gray-100">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-lg">🎭</span>
-                  <span className="font-semibold text-gray-800">叙事风格</span>
-                </div>
-                
-                <div className="space-y-4">
-                  {/* 感官优先描写 */}
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 mr-3">
-                      <div className="font-medium text-gray-800">感官优先描写</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        Show Don't Tell，用感官细节替代抽象形容
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => updateNarrative({ sensoryFirst: !config.narrative.sensoryFirst })}
-                      className={`w-12 h-7 rounded-full transition-colors flex-shrink-0 ${
-                        config.narrative.sensoryFirst ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                    >
-                      <div className={`w-6 h-6 rounded-full bg-white shadow transition-transform mt-0.5 ${
-                        config.narrative.sensoryFirst ? 'translate-x-5' : 'translate-x-0.5'
-                      }`} />
-                    </button>
-                  </div>
-                  
-                  {/* 角色思维代理 */}
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 mr-3">
-                      <div className="font-medium text-gray-800">角色思维代理</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        完全接管角色心智，用角色的逻辑思考
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => updateNarrative({ characterProxy: !config.narrative.characterProxy })}
-                      className={`w-12 h-7 rounded-full transition-colors flex-shrink-0 ${
-                        config.narrative.characterProxy ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                    >
-                      <div className={`w-6 h-6 rounded-full bg-white shadow transition-transform mt-0.5 ${
-                        config.narrative.characterProxy ? 'translate-x-5' : 'translate-x-0.5'
-                      }`} />
-                    </button>
-                  </div>
-                  
-                  {/* 保持角色一致性 */}
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 mr-3">
-                      <div className="font-medium text-gray-800">保持角色一致性</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        角色始终按照人设行动，不会突然性格改变
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => updateNarrative({ noOOC: !config.narrative.noOOC })}
-                      className={`w-12 h-7 rounded-full transition-colors flex-shrink-0 ${
-                        config.narrative.noOOC ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                    >
-                      <div className={`w-6 h-6 rounded-full bg-white shadow transition-transform mt-0.5 ${
-                        config.narrative.noOOC ? 'translate-x-5' : 'translate-x-0.5'
-                      }`} />
-                    </button>
-                  </div>
-                  
-                  {/* 保持沉浸感 */}
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 mr-3">
-                      <div className="font-medium text-gray-800">保持沉浸感</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        剧情自然结束，不添加多余的总结或说明
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => updateNarrative({ immersive: !config.narrative.immersive })}
-                      className={`w-12 h-7 rounded-full transition-colors flex-shrink-0 ${
-                        config.narrative.immersive ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                    >
-                      <div className={`w-6 h-6 rounded-full bg-white shadow transition-transform mt-0.5 ${
-                        config.narrative.immersive ? 'translate-x-5' : 'translate-x-0.5'
-                      }`} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
-              {/* 自定义提示词 */}
+              {/* 叙事风格：清空内置规则，仅保留用户自定义提示词 */}
               <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-100">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-lg">✍️</span>
-                  <span className="font-semibold text-gray-800">自定义提示词</span>
+                  <span className="font-semibold text-gray-800">叙事风格提示词（由你填写）</span>
+                </div>
+
+                <div className="text-xs text-gray-600 mb-3 leading-relaxed">
+                  默认不再注入任何内置“叙事风格条款”。如果你需要规则/风格/格式要求，请在下面自行填写（也可粘贴/上传）。
                 </div>
                 
                 <textarea
                   value={config.narrative.customPrompt}
                   onChange={(e) => updateNarrative({ customPrompt: e.target.value })}
-                  placeholder="在这里写入你的自定义指令，会追加到系统提示词中...
+                  placeholder="在这里写入你的提示词，会追加到系统提示词中（可为空）。
 
 例如：
-- 角色说话时带有特定口癖
-- 特定的世界观设定
-- 输出格式要求
-- 等等..."
+- 说话风格：口语化、带一点吐槽
+- 叙事偏好：多用细节，不要总结
+- 输出格式：每条消息尽量短一点"
                   rows={8}
                   className="w-full p-3 rounded-xl bg-white border border-purple-200 text-sm text-gray-800 outline-none resize-none focus:border-purple-400 transition-colors"
                 />
@@ -508,7 +416,7 @@ export default function PresetScreen() {
                 onClick={() => setConfig(prev => ({ ...prev, narrative: DEFAULT_NARRATIVE }))}
                 className="w-full py-3 rounded-xl bg-gray-100 text-gray-600 text-sm hover:bg-gray-200 transition-colors"
               >
-                重置叙事设置
+                清空叙事提示词
               </button>
             </div>
           )}
@@ -1165,39 +1073,11 @@ function EntryFormModal({ entry, onSave, onClose }: EntryFormModalProps) {
 function generatePresetContent(config: WorkshopConfig): string {
   const parts: string[] = []
   
-  // 叙事风格指令
-  const narrativeRules: string[] = []
-  
-  if (config.narrative.sensoryFirst) {
-    narrativeRules.push('- 感官优先：描写诉诸感官（视觉、听觉、嗅觉、触觉），用具体细节替代抽象形容。')
-  }
-  
-  if (config.narrative.characterProxy) {
-    narrativeRules.push('- 角色思维代理：完全接管角色心智，用角色的逻辑思考和行动。')
-  }
-  
-  if (config.narrative.noOOC) {
-    narrativeRules.push('- 保持角色一致性：角色始终按照人设行动，不会突然性格改变。')
-  }
-  
-  if (config.narrative.immersive) {
-    narrativeRules.push('- 保持沉浸感：剧情自然结束，不添加多余的总结或说明。')
-  }
-  
-  if (narrativeRules.length > 0) {
-    parts.push(`【叙事风格】\n${narrativeRules.join('\n')}`)
-  }
-  
-  // 自定义提示词
+  // 叙事风格：默认不注入任何内置规则，仅注入用户自定义提示词（可为空）
   if (config.narrative.customPrompt.trim()) {
-    parts.push(`【自定义指令】\n${config.narrative.customPrompt.trim()}`)
+    // 保持“读取顺序”一致：创作工坊提示词永远位于系统提示最前，并明确其优先级
+    parts.push(`【创作工坊提示词/叙事设置（最高优先级）】\n${config.narrative.customPrompt.trim()}`)
   }
-  
-  // 输出格式
-  parts.push(`【输出要求】
-- 语言：简体中文（除非角色设定为其他语言）
-- 风格：自然对话，根据角色性格调整语气
-- 直接进入剧情`)
   
   return parts.join('\n\n')
 }
