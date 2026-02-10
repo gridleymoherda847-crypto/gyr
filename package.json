@@ -18,7 +18,9 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.26",
     "@fingerprintjs/fingerprintjs": "^5.0.1",
+    "ai": "^6.0.78",
     "localforage": "^1.10.0",
     "mammoth": "^1.11.0",
     "react": "^19.2.3",

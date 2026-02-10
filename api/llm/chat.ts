@@ -1,4 +1,6 @@
 import { isSafeTargetUrl, json, normalizeApiBaseUrl, readJsonBody, setNoStore } from './_utils'
+import { streamText } from 'ai'
+import { createOpenAI } from '@ai-sdk/openai'
 
 /**
  * 安全网：从 OpenAI messages 里剔除 Gemini/中转不支持的 MIME（image/gif 等）
@@ -141,6 +143,50 @@ function toGeminiContentsFromOpenAI(messages: any[]) {
     })
 
   return { systemInstructionText: sys, contents }
+}
+
+function toAISDKMessagesFromOpenAI(openaiMessages: any[]) {
+  const safeRole = (r: any) => {
+    const role = String(r || '').trim()
+    if (role === 'system' || role === 'user' || role === 'assistant' || role === 'tool') return role
+    // 兜底：未知角色按 user 处理，避免 SDK 直接报错
+    return 'user'
+  }
+
+  const toParts = (content: any) => {
+    if (typeof content === 'string') return content
+    if (!Array.isArray(content)) return String(content ?? '')
+
+    const parts: any[] = []
+    for (const p of content) {
+      if (!p) continue
+      // OpenAI: { type:'text', text:'...' }
+      if (p.type === 'text' && typeof p.text === 'string') {
+        if (p.text.trim()) parts.push({ type: 'text', text: p.text })
+        continue
+      }
+      // OpenAI: { type:'image_url', image_url:{ url:'https://...' } }
+      if ((p.type === 'image_url' || p.type === 'image') && (p.image_url?.url || p.imageUrl?.url)) {
+        const url = String(p.image_url?.url || p.imageUrl?.url || '').trim()
+        if (url) parts.push({ type: 'image', image: url })
+        continue
+      }
+      // 其它未知 part：降级为文本占位
+      const raw = typeof p === 'string' ? p : JSON.stringify(p)
+      if (raw && raw.trim()) parts.push({ type: 'text', text: `[不支持的消息片段：${raw.slice(0, 160)}]` })
+    }
+
+    // 没有任何 part 时，至少返回空串（SDK 要求有 content）
+    if (parts.length === 0) return ''
+    return parts
+  }
+
+  return (Array.isArray(openaiMessages) ? openaiMessages : [])
+    .filter((m) => m && typeof m === 'object')
+    .map((m) => ({
+      role: safeRole(m.role),
+      content: toParts(m.content),
+    }))
 }
 
 function mapGeminiFinishReasonToOpenAI(reason: any): 'stop' | 'length' | 'content_filter' | null {
@@ -478,7 +524,8 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // ====== B) OpenAI 兼容：可选 stream=true，尽量直通不拼接 ======
+    // ====== B) OpenAI 兼容：使用 Vercel AI SDK 处理流式 ======
+    // 注意：此项目的前端仍消费 OpenAI SSE（choices[].delta.content），因此这里输出仍保持 OpenAI SSE 形态，避免前端先一起改。
     const base = normalizeApiBaseUrl(apiBaseUrl)
     let target: URL
     try {
@@ -490,130 +537,133 @@ export default async function handler(req: any, res: any) {
       return json(res, 400, { error: { message: 'Unsafe target url' } })
     }
 
-    // ★ 安全网：剔除 GIF 图片，防止 Gemini 中转报 mime type not supported
-    const cleanedPayload = {
-      ...(payload as any),
-      messages: stripUnsupportedImages(Array.isArray(payload?.messages) ? payload.messages : []),
+    const modelId = String(payload?.model || '').trim()
+    if (!modelId) {
+      return json(res, 400, { error: { message: 'Missing model' } })
     }
-    const openaiPayload = wantsStream ? { ...cleanedPayload, stream: true } : cleanedPayload
-    let r: any
+
+    // ★ 安全网：剔除 GIF 图片，防止部分中转/Gemini兼容层报 mime type not supported
+    const cleanedMessages = stripUnsupportedImages(Array.isArray(payload?.messages) ? payload.messages : [])
+    const sdkMessages = toAISDKMessagesFromOpenAI(cleanedMessages)
+
+    const temperature = typeof payload?.temperature === 'number' ? payload.temperature : undefined
+    const maxOutputTokens =
+      typeof payload?.max_tokens === 'number'
+        ? payload.max_tokens
+        : typeof payload?.maxOutputTokens === 'number'
+          ? payload.maxOutputTokens
+          : undefined
+
+    // 动态初始化 provider（用户自带 Key + Base URL）
+    const openai = createOpenAI({
+      apiKey,
+      baseURL: base,
+      // 说明：AI SDK 6 的 OpenAI provider 暂无 compatibility:'strict' 这个配置项；
+      // 未来切前端 useChat 后，我们可在此改为 pipeDataStreamToResponse / toDataStreamResponse。
+    })
+
+    const controller = new AbortController()
+    const timeoutMs = 600000
+    const t = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      r = await fetch(target.toString(), {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          ...(wantsStream ? { Accept: 'text/event-stream' } : {}),
-        },
-        body: JSON.stringify(openaiPayload),
+      try {
+        // 客户端断开时取消上游请求
+        req?.on?.('close', () => controller.abort())
+      } catch {
+        // ignore
+      }
+
+      const result = streamText({
+        model: openai.chat(modelId),
+        messages: sdkMessages,
+        ...(typeof temperature === 'number' ? { temperature } : {}),
+        ...(typeof maxOutputTokens === 'number' ? { maxOutputTokens } : {}),
+        abortSignal: controller.signal,
+        // 允许更高兼容性：部分中转会较慢
+        maxRetries: 1,
+      })
+
+      if (wantsStream) {
+        startSSE(res, 200)
+        const id = `chatcmpl_${Date.now()}_${Math.random().toString(16).slice(2)}`
+        const created = Math.floor(Date.now() / 1000)
+        // role 帧
+        sseData(res, {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: modelId,
+          choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+        })
+
+        for await (const delta of result.textStream) {
+          if (!delta) continue
+          sseData(res, {
+            id,
+            object: 'chat.completion.chunk',
+            created,
+            model: modelId,
+            choices: [{ index: 0, delta: { content: delta }, finish_reason: null }],
+          })
+        }
+
+        sseData(res, {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: modelId,
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        })
+        return sseDone(res)
+      }
+
+      // 非流式：聚合成一个 OpenAI chat completion 响应
+      let out = ''
+      for await (const delta of result.textStream) {
+        out += delta || ''
+      }
+      return json(res, 200, {
+        id: `chatcmpl_${Date.now()}`,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: modelId,
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: String(out || '') },
+          finish_reason: 'stop',
+        }],
       })
     } catch (e: any) {
-      // 排查阶段：不要 500；把网络错误也吐给前端
-      const info = buildDebugError(e, { stage: 'openai_fetch' })
+      const info = buildDebugError(e, { stage: 'openai_ai_sdk' })
       if (wantsStream) {
         startSSE(res, 200)
         sseData(res, {
           id: `chatcmpl_${Date.now()}`,
           object: 'chat.completion.chunk',
           created: Math.floor(Date.now() / 1000),
-          model: String(openaiPayload?.model || 'unknown'),
+          model: modelId || 'unknown',
           choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
         })
         sseData(res, {
           id: `chatcmpl_${Date.now()}`,
           object: 'chat.completion.chunk',
           created: Math.floor(Date.now() / 1000),
-          model: String(openaiPayload?.model || 'unknown'),
+          model: modelId || 'unknown',
           choices: [{ index: 0, delta: { content: debugErrorToText(info) }, finish_reason: null }],
         })
         sseData(res, {
           id: `chatcmpl_${Date.now()}`,
           object: 'chat.completion.chunk',
           created: Math.floor(Date.now() / 1000),
-          model: String(openaiPayload?.model || 'unknown'),
+          model: modelId || 'unknown',
           choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
         })
         return sseDone(res)
       }
-      return sendNonStreamErrorAsOpenAI(res, String(openaiPayload?.model || 'unknown'), info)
+      return sendNonStreamErrorAsOpenAI(res, modelId || 'unknown', info)
+    } finally {
+      clearTimeout(t)
     }
-
-    if (wantsStream) {
-      if (!r.ok) {
-        const rawText = await r.text().catch(() => '')
-        const parsed = safeJsonParse(rawText)
-        const info = buildDebugError(new Error('OpenAI-compatible upstream error'), {
-          upstreamStatus: r.status,
-          upstreamData: parsed ?? undefined,
-          upstreamRaw: parsed ? undefined : rawText.slice(0, 2000),
-        })
-        startSSE(res, 200)
-        sseData(res, {
-          id: `chatcmpl_${Date.now()}`,
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: String(openaiPayload?.model || 'unknown'),
-          choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
-        })
-        sseData(res, {
-          id: `chatcmpl_${Date.now()}`,
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: String(openaiPayload?.model || 'unknown'),
-          choices: [{ index: 0, delta: { content: debugErrorToText(info) }, finish_reason: null }],
-        })
-        sseData(res, {
-          id: `chatcmpl_${Date.now()}`,
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: String(openaiPayload?.model || 'unknown'),
-          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-        })
-        return sseDone(res)
-      }
-
-      startSSE(res, 200)
-      const reader = (r as any).body?.getReader?.()
-      if (!reader) {
-        sseData(res, { error: { message: 'Upstream stream not readable' } })
-        return sseDone(res)
-      }
-      try {
-        const decoder = new TextDecoder()
-        while (true) {
-          const { value, done } = await reader.read()
-          if (done) break
-          // OpenAI SSE：直接透传（不在内存拼接完整字符串）
-          res.write(decoder.decode(value || new Uint8Array(), { stream: true }))
-        }
-      } catch (e: any) {
-        const info = buildDebugError(e, { stage: 'openai_stream_passthrough' })
-        sseData(res, {
-          id: `chatcmpl_${Date.now()}`,
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: String(openaiPayload?.model || 'unknown'),
-          choices: [{ index: 0, delta: { content: debugErrorToText(info) }, finish_reason: null }],
-        })
-      }
-      return sseDone(res)
-    }
-
-    // 非流式：上游错误也不要直接让前端看到 500/难读错误，直接把细节吐给 UI
-    if (!r.ok) {
-      const rawText = await r.text().catch(() => '')
-      const parsed = safeJsonParse(rawText)
-      const info = buildDebugError(new Error('OpenAI-compatible upstream error'), {
-        upstreamStatus: r.status,
-        upstreamData: parsed ?? undefined,
-        upstreamRaw: parsed ? undefined : rawText.slice(0, 2000),
-      })
-      return sendNonStreamErrorAsOpenAI(res, String(openaiPayload?.model || 'unknown'), info)
-    }
-
-    const rawText = await r.text().catch(() => '')
-    const data: any = safeJsonParse(rawText) ?? {}
-    return json(res, 200, data)
   } catch (e: any) {
     // 排查阶段：不要返回 500；把错误细节以“可在聊天里直接看到”的形式返回
     const info = buildDebugError(e, { stage: 'handler' })
