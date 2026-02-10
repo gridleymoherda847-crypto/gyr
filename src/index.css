@@ -62,8 +62,8 @@ html.ios-pwa body {
 }
 
 html.ios-pwa body {
-  /* 如果仍然露出“底色”，至少不要是黑色（默认白底，并优先跟随壁纸背景变量） */
-  background: var(--safe-area-bg, #fff) !important;
+  /* 如果仍然露出“底色”，默认用黑色（避免 iOS 全屏/PWA 下出现白边） */
+  background: var(--safe-area-bg, #000) !important;
   background-size: cover !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
@@ -88,7 +88,7 @@ html.ios-safe-area {
 html.ios-safe-area,
 html.ios-safe-area body {
   /* 让背景延伸到安全区域外 */
-  background: var(--safe-area-bg, #fff);
+  background: var(--safe-area-bg, #000);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

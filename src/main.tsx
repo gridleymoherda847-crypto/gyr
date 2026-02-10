@@ -85,6 +85,14 @@ if (isIOS && isIOSStandalone) {
 // iOS 设备：自动启用安全区域适配（无需用户手动开关）
 if (isIOS) {
   document.documentElement.classList.add('ios-safe-area')
+  // 先给一个安全的默认底色，避免在壁纸/React 挂载前出现“白边”
+  try {
+    if (!document.documentElement.style.getPropertyValue('--safe-area-bg')) {
+      document.documentElement.style.setProperty('--safe-area-bg', '#000')
+    }
+  } catch {
+    // ignore
+  }
 }
 
 // iOS 视口高度修复：用 innerHeight 兜底（解决部分机型 PWA 底部露黑）
