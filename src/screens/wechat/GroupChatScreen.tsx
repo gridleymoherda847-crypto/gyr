@@ -826,6 +826,10 @@ ${uniqueNames.join('、')}
       // 逐条发送，根据字数间隔1-5秒
       // 记录每个成员最近发送的消息ID，用于引用
       const recentMessageIdBySender: Record<string, string> = {}
+      const nameKeyOfMember = (memberId: string, fallback?: string) => {
+        const k = getNameInGroup(memberId)
+        return (k && String(k).trim()) ? String(k).trim() : (fallback || '')
+      }
       
       // 先记录现有消息中每个人最近的消息
       for (const msg of messages.slice(-30)) {
@@ -835,6 +839,17 @@ ${uniqueNames.join('、')}
         if (senderName) {
           recentMessageIdBySender[senderName] = msg.id
         }
+      }
+
+      const resolveReplyToMessageId = (replyToName: string) => {
+        const key = String(replyToName || '').trim()
+        if (!key) return undefined
+        if (recentMessageIdBySender[key]) return recentMessageIdBySender[key]
+        // 兼容：模型可能输出“原名/群备注”中的任意一种
+        const target = members.find(m => nameKeyOfMember(m.id, m.name) === key || m.name === key)
+        if (!target) return undefined
+        const k1 = nameKeyOfMember(target.id, target.name)
+        return recentMessageIdBySender[k1] || recentMessageIdBySender[target.name]
       }
       
       for (const reply of parsedReplies) {
@@ -851,7 +866,7 @@ ${uniqueNames.join('、')}
         // 查找引用目标
         let replyToMessageId: string | undefined
         if (reply.replyTo) {
-          replyToMessageId = recentMessageIdBySender[reply.replyTo]
+          replyToMessageId = resolveReplyToMessageId(reply.replyTo)
         }
         
         const translationMode = (member as any).language !== 'zh' && !!(member as any).chatTranslationEnabled
@@ -881,7 +896,7 @@ ${uniqueNames.join('、')}
               type: 'sticker',
               replyToMessageId,
             })
-            recentMessageIdBySender[member.name] = stMsg.id
+            recentMessageIdBySender[nameKeyOfMember(member.id, member.name)] = stMsg.id
           }
         } else if (sendAsVoice) {
           const voiceDuration = Math.max(2, Math.min(60, Math.ceil(textContent.length / 5)))
@@ -908,7 +923,7 @@ ${uniqueNames.join('、')}
             if (url) updateMessage(voiceMsg.id, { voiceUrl: url, voiceStatus: 'ready', voiceError: '' })
             else updateMessage(voiceMsg.id, { voiceStatus: 'error', voiceError: '语音生成失败，点击可重试。' })
           })()
-          recentMessageIdBySender[member.name] = voiceMsg.id
+          recentMessageIdBySender[nameKeyOfMember(member.id, member.name)] = voiceMsg.id
         } else {
           const newMsg = addMessage({
             characterId: '',
@@ -923,7 +938,7 @@ ${uniqueNames.join('、')}
             translationStatus: translationMode ? (dual ? 'done' : 'error') : undefined,
             translatedZh: dual ? dual.zh : undefined,
           })
-          recentMessageIdBySender[member.name] = newMsg.id
+          recentMessageIdBySender[nameKeyOfMember(member.id, member.name)] = newMsg.id
         }
         
         updateGroup(group.id, { lastMessageAt: Date.now() })

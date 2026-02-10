@@ -1358,24 +1358,31 @@ export default function ChatScreen() {
         
         // 听歌邀请逻辑已改为“卡片→确认进入一起听界面”，这里禁止把歌单塞进 prompt（会导致模型在生产环境疯狂报歌名）
         
-        // 计算时间差（增强“活人感”）
-        const nowTs = character.timeSyncEnabled !== false
-          ? Date.now()
-          : (character.manualTime ? new Date(character.manualTime).getTime() : Date.now())
+        // 时间感知：
+        // - timeSyncEnabled=true  : 注入真实当前时间/时间戳
+        // - timeSyncEnabled=false : 仅当用户设置了 manualTime 才注入“手动时间”；否则不提供任何时间信息（也不应从气泡时间戳推断）
+        const timeSyncOn = character.timeSyncEnabled !== false
+        const manualNow =
+          character.timeSyncEnabled === false && character.manualTime
+            ? new Date(character.manualTime).getTime()
+            : null
+        const timeAwarenessOn = timeSyncOn || manualNow !== null
+        const nowTsInternal = Date.now()
+        const nowTsForLogic = manualNow ?? nowTsInternal
         const nonSystem = workingMessages.filter(m => m.type !== 'system')
         const lastMsg = nonSystem.length > 0 ? nonSystem[nonSystem.length - 1] : null
         const prevMsg = nonSystem.length > 1 ? nonSystem[nonSystem.length - 2] : null
         const lastUserInHistory = [...nonSystem].reverse().find(m => m.isUser) || null
         // 关键：如果用户隔了很久才回，lastMsg 是“用户新发的这条”，gap 应该看它和 prevMsg 的间隔
         const gapMs = lastMsg
-          ? (lastMsg.isUser && prevMsg ? Math.max(0, lastMsg.timestamp - prevMsg.timestamp) : Math.max(0, nowTs - lastMsg.timestamp))
+          ? (lastMsg.isUser && prevMsg ? Math.max(0, lastMsg.timestamp - prevMsg.timestamp) : Math.max(0, nowTsForLogic - lastMsg.timestamp))
           : 0
-        const silenceSinceUserMs = lastUserInHistory ? Math.max(0, nowTs - lastUserInHistory.timestamp) : 0
+        const silenceSinceUserMs = lastUserInHistory ? Math.max(0, nowTsForLogic - lastUserInHistory.timestamp) : 0
                 // 重要：用户“没发新消息，只是点箭头”时也要算作无新发言（否则会把昨天那条当成“新消息”，错过“消失很久”的追问）
         const hasNewUserMessage = !!(lastMsg && lastMsg.isUser) && !opts?.forceNudge
         
 
-        // 最近消息时间线：让模型“看得见每条的时间”，避免把“领钱/转账”时间搞反
+        // 最近消息时间线：仅在“开启时间感知”时给模型具体时间戳
         const fmtTs = (ts: number) => new Date(ts).toLocaleString('zh-CN', { hour12: false })
         const summarizeMsg = (m: any) => {
           if (m.type === 'transfer') {
@@ -1433,7 +1440,9 @@ export default function ChatScreen() {
           if (m.type === 'sticker') return '表情包'
           return (m.content || '').replace(/\s+/g, ' ').slice(0, 28) || '（空）'
         }
-        const recentTimeline = nonSystem.slice(-12).map(m => `- ${fmtTs(m.timestamp)} ${m.isUser ? '我' : 'TA'}：${summarizeMsg(m)}`).join('\n')
+        const recentTimeline = timeAwarenessOn
+          ? nonSystem.slice(-12).map(m => `- ${fmtTs(m.timestamp)} ${m.isUser ? '我' : 'TA'}：${summarizeMsg(m)}`).join('\n')
+          : nonSystem.slice(-12).map(m => `- ${m.isUser ? '我' : 'TA'}：${summarizeMsg(m)}`).join('\n')
 
         // 朋友圈互通：把“你和TA相关的朋友圈”也塞进上下文，让角色能记得自己/用户最近发过什么
         const recentMomentsText = (() => {
@@ -1459,7 +1468,8 @@ export default function ChatScreen() {
                 })
                 .join('；')
               const commentsText = relatedComments ? `｜评论：${relatedComments}` : ''
-              return `- ${fmtTs(p.timestamp)} ${who}发朋友圈：${content}${zh}${commentsText}`
+              const timePart = timeAwarenessOn ? `${fmtTs(p.timestamp)} ` : ''
+              return `- ${timePart}${who}发朋友圈：${content}${zh}${commentsText}`
             })
             return lines.join('\n')
           } catch {
@@ -1553,12 +1563,13 @@ ${character.memorySummary ? character.memorySummary : '（暂无）'}
 - 如果需要引用过去，只允许用一句话“概括式提醒”（例如提到一个关键词/结论即可），不要写成大段情景复现。
 - 当用户没有提出相关话题时，你应该继续推进当前对话或换一个自然的新话题，而不是回放旧桥段。
 
-【当前时间（精确到秒）】
-${character.timeSyncEnabled ? new Date().toLocaleString('zh-CN', { hour12: false }) : (character.manualTime ? new Date(character.manualTime).toLocaleString('zh-CN', { hour12: false }) : new Date().toLocaleString('zh-CN', { hour12: false }))}
+${timeAwarenessOn ? `【当前时间（精确到秒）】
+${manualNow !== null ? new Date(manualNow).toLocaleString('zh-CN', { hour12: false }) : new Date().toLocaleString('zh-CN', { hour12: false })}
 
 【季节与天气感知】
 ${(() => {
-  const month = new Date().getMonth() + 1
+  const d = manualNow !== null ? new Date(manualNow) : new Date()
+  const month = d.getMonth() + 1
   const season = month >= 3 && month <= 5 ? '春天' : month >= 6 && month <= 8 ? '夏天' : month >= 9 && month <= 11 ? '秋天' : '冬天'
   const seasonDesc = month >= 3 && month <= 5 ? '春暖花开，万物复苏' : month >= 6 && month <= 8 ? '炎炎夏日，注意防暑' : month >= 9 && month <= 11 ? '秋高气爽，落叶纷飞' : '寒冬腊月，注意保暖'
   const weatherHint = month === 12 || month === 1 || month === 2 ? '天冷了要多穿衣服、喝热水' : month >= 6 && month <= 8 ? '天热了要注意防晒、多喝水' : '换季了要注意身体'
@@ -1566,14 +1577,14 @@ ${(() => {
 - 季节关怀：${weatherHint}
 - 你可以在聊天中自然提到天气/季节相关的话题，比如"今天好冷啊"、"最近天气不错"等
 - 在日记里也可以写关于天气、季节、时节的感受`
-})()}
+})()}` : ''}
 
 【最近消息时间线（必须参考，尤其是转账/已领取的时间，不能搞反）】
 ${recentTimeline || '（无）'}
 
 ${recentMomentsText ? `\n【近期朋友圈（你和用户相关，用于互通记忆）】\n${recentMomentsText}\n` : ''}
 
-【时间感（用自然语言，严禁报数字）】
+${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
 - 上一条消息时间：${prevMsg ? new Date(prevMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 这条消息时间：${lastMsg ? new Date(lastMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 用户上一条发言时间：${lastUserInHistory ? new Date(lastUserInHistory.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
@@ -1591,7 +1602,7 @@ ${recentMomentsText ? `\n【近期朋友圈（你和用户相关，用于互通�
   - 分享一下自己的日常、今天遇到的事
   - 问问用户那边天气怎么样
   - 随便聊点什么话题、发个表情
-  - 不要总是问"你去哪了"，要像真人一样自然
+  - 不要总是问"你去哪了"，要像真人一样自然` : '【时间同步已关闭】\\n- 你无法得知当前时间，也无法读取气泡下方的时间戳；禁止主动提及“几点/几号/过了多久/多久没回”。'}
 
 【回复要求】
 - 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复。
@@ -1923,13 +1934,13 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             llmMessages.push({ role: 'user', content: '再多说几句，像真人一样自然延展（不要重复）。' })
           } else {
             // silenceSinceUserMs 大：用户很久没说话，应该主动追问/关心，而不是继续机械接上次话题
-            llmMessages.push({ role: 'user', content: '用户没有新发言，请你根据时间差主动发一条关心/追问/吐槽的微信消息。' })
+            llmMessages.push({ role: 'user', content: '用户没有新发言，请你主动发一条关心/追问/吐槽的微信消息（禁止报时间数字）。' })
           }
         }
         
         // 时间感知强制触发条件：用户很久没回（>=2小时）必须先提到并追问
-        const shouldForceNudge = !hasNewUserMessage && silenceSinceUserMs >= 2 * 60 * 60 * 1000
-        const shouldForceAcknowledge = (hasNewUserMessage && gapMs >= 2 * 60 * 60 * 1000) || shouldForceNudge
+        const shouldForceNudge = timeAwarenessOn && !hasNewUserMessage && silenceSinceUserMs >= 2 * 60 * 60 * 1000
+        const shouldForceAcknowledge = timeAwarenessOn && ((hasNewUserMessage && gapMs >= 2 * 60 * 60 * 1000) || shouldForceNudge)
 
         const pickTimeAckRegex = (ms: number) => {
           const h = ms / 3600000
@@ -2774,12 +2785,21 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 safeSetPending(0)
               }
               
-              // 随机拍一拍：根据上下文内容有概率触发（约10%概率）
-              // 触发条件：回复内容包含友好/亲密/撒娇等关键词，或者随机触发
-              // AI随机拍一拍（需要开启拍一拍功能；线下模式绝对禁止）
+              // 拍一拍：仅在“上下文明确提及/语义强相关”时才触发，避免每次都拍
+              // 规则：
+              // - 线下模式：绝对禁止
+              // - 未开启拍一拍：不触发
+              // - 近期已经出现过拍一拍：不重复
+              // - 用户明确要求（拍拍/拍一拍/戳戳）：触发一次
+              // - 否则仅在“强亲密表达”且小概率下触发
               if (!character?.offlineMode && (character?.patEnabled ?? true)) {
-                const friendlyKeywords = /好|嗯|啊|呀|呢|啦|哦|嘿嘿|哈哈|嘻嘻|么么|爱你|想你|抱抱|摸摸|亲亲|撒娇|可爱|温柔|贴心/
-                const shouldPat = Math.random() < 0.1 || (friendlyKeywords.test(response || ''))
+                const recentNonSystem = (messagesRef.current || []).filter(m => m && m.type !== 'system').slice(-12)
+                const recentlyPatted = recentNonSystem.some(m => m.type === 'pat')
+                const lastUserText =
+                  [...recentNonSystem].reverse().find(m => m.isUser && m.type === 'text' && typeof m.content === 'string')?.content || ''
+                const userAskedPat = /拍一拍|拍拍|拍我|拍你|戳戳|拍一下/.test(String(lastUserText || ''))
+                const strongAffection = /(抱抱|亲亲|贴贴|摸摸|想你|爱你|么么)/.test(String(response || ''))
+                const shouldPat = !recentlyPatted && (userAskedPat || (strongAffection && Math.random() < 0.06))
                 if (shouldPat && character?.patMeText) {
                   const patDelay = totalDelay + 500 + Math.random() * 1000
                   safeTimeoutEx(() => {

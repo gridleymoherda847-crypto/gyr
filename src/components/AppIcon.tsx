@@ -20,7 +20,7 @@ export default function AppIcon({ appId, label, icon, gradient, size = 'normal' 
   }
   const iconSrc = getIconSrc()
   
-  // 简洁主题使用白色背景
+  // 简洁主题使用白色背景（但自定义图标不需要底色，避免出现“粉边/彩边”）
   const isMinimal = iconTheme === 'minimal' && !customAppIcons[appId]
   const hasCustom = !!customAppIcons[appId]
   
@@ -30,9 +30,23 @@ export default function AppIcon({ appId, label, icon, gradient, size = 'normal' 
 
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-1.5 press-effect">
-      <div className={`relative ${sizeClasses} ${isMinimal ? 'bg-white/90' : `bg-gradient-to-br ${gradient}`} shadow-[0_3px_12px_rgba(0,0,0,0.12)] flex items-center justify-center overflow-hidden`}>
+      <div
+        className={`relative ${sizeClasses} ${
+          hasCustom
+            ? 'bg-transparent'
+            : (isMinimal ? 'bg-white/90' : `bg-gradient-to-br ${gradient}`)
+        } shadow-[0_3px_12px_rgba(0,0,0,0.12)] flex items-center justify-center overflow-hidden`}
+      >
         {/* 光泽效果 - 简洁主题用更轻的效果 */}
-        <div className={`absolute inset-0 ${isMinimal ? 'bg-gradient-to-b from-white/20 via-transparent to-black/3' : 'bg-gradient-to-b from-white/30 via-transparent to-black/5'}`} />
+        {!hasCustom && (
+          <div
+            className={`absolute inset-0 ${
+              isMinimal
+                ? 'bg-gradient-to-b from-white/20 via-transparent to-black/3'
+                : 'bg-gradient-to-b from-white/30 via-transparent to-black/5'
+            }`}
+          />
+        )}
         
         {/* 图标 */}
         <img 

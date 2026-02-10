@@ -2404,19 +2404,40 @@ ${chatFriendList}
               <div className="text-[11px] text-gray-500 mb-2">搜索历史</div>
               <div className="flex flex-wrap gap-2">
                 {(data.searchHistory || []).slice(0, 10).map((h) => (
-                  <button
+                  <div
                     key={h}
-                    type="button"
-                    onClick={() => {
-                      setQuery(h)
-                      void doSearch(h, false)
-                    }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gray-100 text-[12px] text-gray-700 active:scale-[0.98]"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gray-100 text-[12px] text-gray-700"
                     title={h}
                   >
-                    <span className="w-5 h-5 rounded-full bg-white flex items-center justify-center text-[11px] text-gray-600">🔎</span>
-                    <span className="max-w-[120px] truncate">{h}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuery(h)
+                        void doSearch(h, false)
+                      }}
+                      className="flex items-center gap-1.5 active:scale-[0.98]"
+                    >
+                      <span className="w-5 h-5 rounded-full bg-white flex items-center justify-center text-[11px] text-gray-600">🔎</span>
+                      <span className="max-w-[110px] truncate">{h}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (!data) return
+                        const nextHistory = (data.searchHistory || []).filter((x) => x !== h).slice(0, 10)
+                        const next: XDataV1 = { ...data, searchHistory: nextHistory }
+                        setData(next)
+                        void xSave(next)
+                      }}
+                      className="w-5 h-5 rounded-full bg-white/80 text-gray-500 flex items-center justify-center active:scale-[0.98]"
+                      title="删除这条历史"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
+                      </svg>
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
