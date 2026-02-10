@@ -2291,6 +2291,20 @@ export function OSProvider({ children }: PropsWithChildren) {
     }
 
     const manual = String(override.model || '').trim()
+
+    // 用户手动指定了模型：只测试该模型，不要“自动换成别的模型”
+    if (manual) {
+      const reply = await callLLMWithConfig(
+        { apiBaseUrl, apiKey, apiInterface, selectedModel: manual },
+        [
+          { role: 'system', content: '你是连接测试。你只允许回复一个词：OK。禁止输出其他任何内容。' },
+          { role: 'user', content: 'test' },
+        ],
+        { temperature: 0, maxTokens: 8, timeoutMs: 60_000 }
+      )
+      return { modelUsed: manual, reply: (reply || '').trim() }
+    }
+
     let modelList: string[] = []
     try {
       modelList = await fetchAvailableModels({ apiBaseUrl, apiKey, apiInterface })
@@ -2298,7 +2312,7 @@ export function OSProvider({ children }: PropsWithChildren) {
       modelList = []
     }
     const candidates = Array.from(
-      new Set([manual, ...(Array.isArray(modelList) ? modelList : []), ...pickProbeModels(apiInterface)].filter(Boolean))
+      new Set([...(Array.isArray(modelList) ? modelList : []), ...pickProbeModels(apiInterface)].filter(Boolean))
     ).slice(0, 18)
     if (candidates.length === 0) throw new Error('无法探测可用模型：请检查 Base URL / API Key / 接口类型')
 

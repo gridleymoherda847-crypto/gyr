@@ -270,7 +270,10 @@ export default function ApiConfigScreen() {
         })
       }
     } catch (err: any) {
-      setLlmTestError(String(err?.message || err || '测试失败'))
+      const raw = String(err?.message || err || '测试失败')
+      setLlmTestError(
+        `${raw}\n\n建议：换一个模型再试（模型名必须和卖家提供的一致）。如果你买的是 Gemini：常见是 gemini-2.5-pro / gemini-2.5-flash；如果是 OpenAI 兼容：常见是 gpt-4o-mini / gpt-4o / gpt-3.5-turbo；也可能是 deepseek-chat / qwen-plus 等。`
+      )
     } finally {
       setLlmTestLoading(false)
     }
@@ -361,7 +364,10 @@ export default function ApiConfigScreen() {
         })
       }
     } catch (err: any) {
-      setEditTestError(String(err?.message || err || '测试失败'))
+      const raw = String(err?.message || err || '测试失败')
+      setEditTestError(
+        `${raw}\n\n建议：换一个模型再试（模型名必须和卖家提供的一致）。也可以先点「获取模型列表」（如果能获取），再从列表里选一个。`
+      )
     } finally {
       setEditTestLoading(false)
     }
@@ -1155,9 +1161,20 @@ export default function ApiConfigScreen() {
 
             {error && <div className="text-xs sm:text-sm text-red-500 bg-red-50/50 px-3 py-2.5 rounded-2xl border border-red-200 whitespace-pre-wrap">{error}</div>}
 
-            {models.length > 0 && (
-              <div className="space-y-2">
-                <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>选择模型</label>
+            <div className="space-y-2">
+              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>模型（可手动输入）</label>
+              <input
+                value={selectedModel}
+                onChange={(e) => {
+                  const v = e.target.value
+                  selectedModelRef.current = v
+                  setSelectedModel(v)
+                }}
+                placeholder="例如：gemini-2.5-pro / gpt-4o-mini / deepseek-chat"
+                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-sm sm:text-base"
+                style={{ color: fontColor.value }}
+              />
+              {models.length > 0 && (
                 <div className="relative">
                   <select
                     value={selectedModel}
@@ -1169,13 +1186,13 @@ export default function ApiConfigScreen() {
                     className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base"
                     style={{ color: fontColor.value }}
                   >
-                    <option value="" disabled>请选择模型</option>
+                    <option value="">从列表选择（可选）</option>
                     {models.map((model) => <option key={model} value={model}>{model}</option>)}
                   </select>
                   <svg className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* 存储按钮 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1190,7 +1207,7 @@ export default function ApiConfigScreen() {
               </button>
               <button 
                 onClick={handleSaveAsConfig} 
-                disabled={!newConfigName.trim() || !baseUrl.trim() || !apiKey.trim()}
+                disabled={!newConfigName.trim() || !baseUrl.trim() || !apiKey.trim() || !(selectedModelRef.current || selectedModel || '').trim()}
                 className={`w-full py-3 sm:py-3.5 rounded-2xl font-semibold text-white transition-all press-effect disabled:opacity-50 ${
                   saved ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-[0_6px_20px_rgba(59,130,246,0.3)]'
                 }`}
