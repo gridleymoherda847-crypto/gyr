@@ -209,6 +209,7 @@ export default function XScreen() {
   const [openPostId, setOpenPostId] = useState<string | null>(null)
   const [openProfileUserId, setOpenProfileUserId] = useState<string | null>(null)
   const [postMenu, setPostMenu] = useState<{ open: boolean; postId?: string }>({ open: false })
+  const [replyMenu, setReplyMenu] = useState<{ open: boolean; replyId?: string }>({ open: false })
 
   // DM detail
   const [openThreadId, setOpenThreadId] = useState<string | null>(null)
@@ -1288,6 +1289,7 @@ ${chatFriendList}
     const next: XDataV1 = { ...data, replies: nextReplies, posts: nextPosts }
     setData(next)
     await xSave(next)
+    if (replyingTo?.id === replyId) setReplyingTo(null)
   }
 
   const toggleLike = async (postId: string) => {
@@ -2661,16 +2663,17 @@ ${chatFriendList}
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-[13px] font-bold text-gray-900 truncate">{r.authorName}</div>
                         <div className="flex items-center gap-2">
-                          {r.authorId !== 'me' && (
-                            <button
-                              type="button"
-                              onClick={() => setReplyingTo({ id: r.id, authorName: r.authorName })}
-                              className="text-[11px] text-blue-500 hover:text-blue-600"
-                            >
-                              回复
-                            </button>
-                          )}
                           <div className="text-[11px] text-gray-400">{fmtRelative(r.createdAt)}</div>
+                          <button
+                            type="button"
+                            onClick={() => setReplyMenu({ open: true, replyId: r.id })}
+                            className="w-7 h-7 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center active:scale-[0.98]"
+                            title="更多"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12h.01M12 12h.01M18 12h.01" />
+                            </svg>
+                          </button>
                         </div>
                       </div>
                       <div className="mt-1 text-[13px] text-gray-900 whitespace-pre-wrap break-words">{r.text}</div>
@@ -3547,18 +3550,16 @@ ${chatFriendList}
               onCancel={() => setPostMenu({ open: false })}
             >
               <div className="space-y-2">
-                {isMePost && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPostMenu({ open: false })
-                      void deletePostById(p.id)
-                    }}
-                    className="w-full py-2 rounded-xl bg-red-50 text-red-600 text-[13px] font-semibold active:scale-[0.99]"
-                  >
-                    删除这条
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPostMenu({ open: false })
+                    void deletePostById(p.id)
+                  }}
+                  className="w-full py-2 rounded-xl bg-red-50 text-red-600 text-[13px] font-semibold active:scale-[0.99]"
+                >
+                  删除此贴
+                </button>
                 {!isMePost && (
                   <button
                     type="button"
@@ -3604,6 +3605,49 @@ ${chatFriendList}
                   className="w-full py-2 rounded-xl bg-white border border-black/10 text-gray-800 text-[13px] font-semibold active:scale-[0.99]"
                 >
                   查看主页
+                </button>
+              </div>
+            </WeChatDialog>
+          )
+        })()}
+
+        {/* 评论三点菜单 */}
+        {replyMenu.open && replyMenu.replyId && data && (() => {
+          const r = (data.replies || []).find(x => x.id === replyMenu.replyId)
+          if (!r) return null
+          const isMeReply = r.authorId === 'me'
+          return (
+            <WeChatDialog
+              open={true}
+              title="评论"
+              message={`${r.authorName} · ${fmtRelative(r.createdAt)}`}
+              confirmText="关闭"
+              cancelText="操作"
+              onConfirm={() => setReplyMenu({ open: false })}
+              onCancel={() => setReplyMenu({ open: false })}
+            >
+              <div className="space-y-2">
+                {!isMeReply && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplyMenu({ open: false })
+                      setReplyingTo({ id: r.id, authorName: r.authorName })
+                    }}
+                    className="w-full py-2 rounded-xl bg-gray-900 text-white text-[13px] font-semibold active:scale-[0.99]"
+                  >
+                    回复
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReplyMenu({ open: false })
+                    void deleteReplyById(r.id, r.postId)
+                  }}
+                  className="w-full py-2 rounded-xl bg-red-50 text-red-600 text-[13px] font-semibold active:scale-[0.99]"
+                >
+                  删除
                 </button>
               </div>
             </WeChatDialog>
