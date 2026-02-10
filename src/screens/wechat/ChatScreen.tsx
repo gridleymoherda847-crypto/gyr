@@ -266,21 +266,21 @@ export default function ChatScreen() {
   
   // 查手机等待提示语
   const phonePeekLoadingMessages = useMemo(() => [
-    '正在联系二舅，他是个黑客...',
-    '二舅正在尝试破解对方手机密码...',
+    '正在联系二舅，请稍等…',
+    '二舅正在尝试打开对方的“公开信息”入口…',
     '哎呦！差点被发现！再等会儿...',
-    '悄咪咪的，打枪的不要！',
+    '悄咪咪的，别吵别吵…',
     '这么难的技术，慢点正常啦~',
-    '二舅说密码有点复杂，稍等...',
-    '正在绕过防火墙...',
+    '二舅说验证有点复杂，稍等...',
+    '正在进行兼容处理…',
     '快了快了，马上就好...',
     '二舅喝口水，别催了...',
     '正在下载聊天记录...',
     '数据传输中，保持耐心...',
-    '二舅说这手机防护挺强的...',
-    '差一点点就破解了...',
+    '二舅说这手机保护挺强的...',
+    '差一点点就打开了...',
     '别动别动，让二舅专心点...',
-    '正在悄悄窃取对方隐私...',
+    '正在整理对方的公开信息…',
     '二舅：这活儿不好干啊...',
   ], [])
   
@@ -1483,7 +1483,7 @@ export default function ChatScreen() {
         const emojiHabit = pick(['🙂', '🙃', '😅', '😑', '😤', '🥲', '😌', '🤔', ''])
         const mildSwears = pick2(['靠', '卧槽', '我靠', '妈的', '真他妈', '烦死了', '离谱死了'])
         const noMisogynyBan =
-          '严禁出现任何辱女/性羞辱/骂女性的词汇（包括但不限于：婊、婊子、贱人、母狗、骚、破鞋、鸡、绿茶婊、女拳等）。' +
+          '严禁出现任何辱女/性羞辱/针对性别的侮辱词汇。' +
           '允许表达不爽/脏话，但不能指向女性或用性羞辱。'
 
         // 构建系统提示（严格顺序：预设 → 角色设定 → 我的人设 → 长期记忆摘要 → 时间感 → 输出 → 说话风格）
@@ -4661,13 +4661,13 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       if (p < 18) return '正在注入世界书…'
       if (p < 35) return '读取角色人设中…'
       if (p < 52) return '翻看你们的聊天记录…'
-      if (p < 70) return '正在窃取对方的日记信息…'
-      if (p < 85) return '哎呀差点被发现了，继续窃取中…'
+      if (p < 70) return '正在整理对方的日记信息…'
+      if (p < 85) return '哎呀差点被发现了，继续整理中…'
       return '写作中…'
     }
     const playful = [
       '嘘…别出声，翻页声有点大…',
-      '咳…我只是路过（继续窃取中）',
+      '咳…我只是路过（继续整理中）',
       '差点被锁屏抓到…继续！',
       '这段有点劲爆，先缓存一下…',
     ]
@@ -8203,7 +8203,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 <div className="text-center px-6">
                   <div className="w-16 h-16 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                   <div className="text-sm text-gray-700 font-medium animate-pulse">{phonePeekLoadingMsg}</div>
-                  <div className="text-xs text-gray-400 mt-2">正在窃取对方手机数据...</div>
+                  <div className="text-xs text-gray-400 mt-2">正在整理对方手机数据...</div>
                 </div>
               </div>
             )}
