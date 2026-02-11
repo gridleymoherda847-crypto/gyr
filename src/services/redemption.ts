@@ -17,6 +17,55 @@ const LOCAL_FP_KEY = 'mina_fp_cached'
 const KV_FP_KEY = 'mina_fp_cached_kv'
 const LOCAL_FALLBACK_ID_KEY = 'mina_device_id'
 const KV_FALLBACK_ID_KEY = 'mina_device_id_kv'
+// Cookie 兜底：部分浏览器可能会清理 localStorage / IndexedDB，但 cookie 往往还能保留更久一点
+const COOKIE_ACT_KEY = 'mina_act'
+const COOKIE_FP_KEY = 'mina_fp'
+const COOKIE_FALLBACK_ID_KEY = 'mina_did'
+
+function getCookie(name: string): string | null {
+  try {
+    const raw = String(document?.cookie || '')
+    if (!raw) return null
+    const parts = raw.split(';')
+    for (const p of parts) {
+      const s = p.trim()
+      if (!s) continue
+      if (!s.startsWith(name + '=')) continue
+      const v = s.slice(name.length + 1)
+      return v ? decodeURIComponent(v) : ''
+    }
+  } catch {}
+  return null
+}
+
+function setCookie(name: string, value: string, maxAgeDays = 3650) {
+  try {
+    const maxAge = Math.max(1, Math.floor(maxAgeDays)) * 24 * 60 * 60
+    const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : ''
+    document.cookie = `${name}=${encodeURIComponent(String(value || ''))}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure}`
+  } catch {}
+}
+
+function deleteCookie(name: string) {
+  try {
+    const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : ''
+    document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax${secure}`
+  } catch {}
+}
+
+async function tryRequestPersistentStorage(): Promise<boolean> {
+  try {
+    const nav: any = navigator as any
+    if (!nav?.storage) return false
+    const persisted = typeof nav.storage.persisted === 'function' ? await nav.storage.persisted() : false
+    if (persisted) return true
+    if (typeof nav.storage.persist === 'function') {
+      const ok = await nav.storage.persist()
+      return !!ok
+    }
+  } catch {}
+  return false
+}
 
 // 类型定义
 type RedemptionCode = {
@@ -41,11 +90,23 @@ export async function getDeviceFingerprint(): Promise<string> {
   if (cachedFingerprint) return cachedFingerprint
   
   try {
+    // -1) cookie 兜底（某些环境 localStorage/IDB 会被清掉，但 cookie 还在）
+    try {
+      const pinnedC = getCookie(COOKIE_FP_KEY)
+      if (pinnedC) {
+        cachedFingerprint = pinnedC
+        try { localStorage.setItem(LOCAL_FP_KEY, pinnedC) } catch {}
+        try { await kvSet(KV_FP_KEY, pinnedC) } catch {}
+        return pinnedC
+      }
+    } catch {}
+
     // 0) 优先使用“已缓存的指纹”（避免某些浏览器/隐私策略导致 visitorId 偶发变化，引发反复需要换绑/重激活）
     try {
       const pinned = localStorage.getItem(LOCAL_FP_KEY)
       if (pinned) {
         cachedFingerprint = pinned
+        try { setCookie(COOKIE_FP_KEY, pinned) } catch {}
         return pinned
       }
     } catch {}
@@ -53,6 +114,7 @@ export async function getDeviceFingerprint(): Promise<string> {
       const pinnedKv = await kvGet(KV_FP_KEY)
       if (pinnedKv) {
         try { localStorage.setItem(LOCAL_FP_KEY, pinnedKv) } catch {}
+        try { setCookie(COOKIE_FP_KEY, pinnedKv) } catch {}
         cachedFingerprint = pinnedKv
         return pinnedKv
       }
@@ -63,6 +125,7 @@ export async function getDeviceFingerprint(): Promise<string> {
     cachedFingerprint = result.visitorId
     try { localStorage.setItem(LOCAL_FP_KEY, cachedFingerprint) } catch {}
     try { await kvSet(KV_FP_KEY, cachedFingerprint) } catch {}
+    try { setCookie(COOKIE_FP_KEY, cachedFingerprint) } catch {}
     return cachedFingerprint
   } catch (error) {
     console.error('获取设备指纹失败:', error)
@@ -70,14 +133,19 @@ export async function getDeviceFingerprint(): Promise<string> {
     let fallbackId: string | null = null
     try { fallbackId = localStorage.getItem(LOCAL_FALLBACK_ID_KEY) } catch {}
     if (!fallbackId) {
+      try { fallbackId = getCookie(COOKIE_FALLBACK_ID_KEY) } catch {}
+    }
+    if (!fallbackId) {
       try { fallbackId = await kvGet(KV_FALLBACK_ID_KEY) } catch {}
     }
     if (!fallbackId) {
       fallbackId = 'fallback_' + Math.random().toString(36).substring(2) + Date.now().toString(36)
       try { localStorage.setItem(LOCAL_FALLBACK_ID_KEY, fallbackId) } catch {}
       try { await kvSet(KV_FALLBACK_ID_KEY, fallbackId) } catch {}
+      try { setCookie(COOKIE_FALLBACK_ID_KEY, fallbackId) } catch {}
     }
     cachedFingerprint = fallbackId
+    try { setCookie(COOKIE_FP_KEY, cachedFingerprint) } catch {}
     return cachedFingerprint
   }
 }
@@ -95,6 +163,16 @@ export function getLocalActivationStatus(): ActivationStatus {
       }
     }
   } catch {}
+  // cookie 兜底
+  try {
+    const savedC = getCookie(COOKIE_ACT_KEY)
+    if (savedC) {
+      const data = JSON.parse(savedC)
+      if (data && data.code) {
+        return { isActivated: true, code: data.code, activatedAt: data.activatedAt }
+      }
+    }
+  } catch {}
   return { isActivated: false }
 }
 
@@ -104,8 +182,14 @@ function saveLocalActivation(code: string, activatedAt: string) {
   try {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload))
   } catch {}
+  // cookie 再存一份
+  try {
+    setCookie(COOKIE_ACT_KEY, JSON.stringify(payload))
+  } catch {}
   // 冗余保存一份到 IndexedDB（localforage），降低“某些浏览器 localStorage 退出即清”导致反复输入兑换码的概率
   void kvSetJSON(KV_STORAGE_KEY, payload).catch(() => {})
+  // 尝试申请“持久化存储”（降低 iOS/移动端系统清理概率）
+  void tryRequestPersistentStorage().catch(() => {})
 }
 
 // 验证兑换码（主函数）
@@ -273,6 +357,8 @@ export async function checkDeviceActivationDetailed(): Promise<ActivationCheckRe
   if (!local.isActivated || !local.code) {
     return { ok: false, reason: 'no_local' }
   }
+  // 有激活记录时，后台尝试申请持久化存储（不阻塞）
+  void tryRequestPersistentStorage().catch(() => {})
   
   // 2. 验证服务器端
   const fingerprint = await getDeviceFingerprint()
@@ -298,6 +384,7 @@ export async function checkDeviceActivationDetailed(): Promise<ActivationCheckRe
       // 兑换码不存在了，清除本地状态
       try { localStorage.removeItem(LOCAL_STORAGE_KEY) } catch {}
       try { await kvRemove(KV_STORAGE_KEY) } catch {}
+      try { deleteCookie(COOKIE_ACT_KEY) } catch {}
       return { ok: false, reason: 'code_missing' }
     }
     
@@ -311,6 +398,7 @@ export async function checkDeviceActivationDetailed(): Promise<ActivationCheckRe
     // 设备不匹配（可能已迁移到其他设备），清除本地状态
     try { localStorage.removeItem(LOCAL_STORAGE_KEY) } catch {}
     try { await kvRemove(KV_STORAGE_KEY) } catch {}
+    try { deleteCookie(COOKIE_ACT_KEY) } catch {}
     return { ok: false, reason: 'mismatch' }
     
   } catch (error) {
@@ -323,11 +411,26 @@ export async function checkDeviceActivationDetailed(): Promise<ActivationCheckRe
 export function clearLocalActivation() {
   try { localStorage.removeItem(LOCAL_STORAGE_KEY) } catch {}
   void kvRemove(KV_STORAGE_KEY).catch(() => {})
+  try { deleteCookie(COOKIE_ACT_KEY) } catch {}
   cachedFingerprint = null
 }
 
 // 从 IndexedDB 里尝试恢复激活状态（当 localStorage 丢失但 IndexedDB 仍在时可自动修复）
 export async function recoverActivationFromKv(): Promise<boolean> {
+  // 先尝试 cookie（最轻量）
+  try {
+    const savedC = getCookie(COOKIE_ACT_KEY)
+    if (savedC) {
+      const data = JSON.parse(savedC)
+      const code = String((data as any)?.code || '').trim()
+      const activatedAt = String((data as any)?.activatedAt || '').trim()
+      if (code) {
+        try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ code, activatedAt })) } catch {}
+        try { await kvSetJSON(KV_STORAGE_KEY, { code, activatedAt }) } catch {}
+        return true
+      }
+    }
+  } catch {}
   try {
     const v = await kvGetJSON<{ code?: string; activatedAt?: string } | null>(KV_STORAGE_KEY, null)
     const code = String((v as any)?.code || '').trim()
@@ -335,6 +438,7 @@ export async function recoverActivationFromKv(): Promise<boolean> {
     if (!code) return false
     // 写回 localStorage，后续走现有快速路径
     try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ code, activatedAt })) } catch {}
+    try { setCookie(COOKIE_ACT_KEY, JSON.stringify({ code, activatedAt })) } catch {}
     return true
   } catch {
     return false
