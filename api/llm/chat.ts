@@ -1,6 +1,7 @@
 import { isSafeTargetUrl, json, normalizeApiBaseUrl, readJsonBody, setNoStore } from './_utils'
 import { streamText } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
+import { createParser } from 'eventsource-parser'
 
 /**
  * 安全网：从 OpenAI messages 里剔除 Gemini/中转不支持的 MIME（image/gif 等）
@@ -213,6 +214,54 @@ function startSSE(res: any, statusCode = 200) {
   }
 }
 
+function createGeminiStreamDecoder(opts: {
+  onJson: (j: any) => void
+  onDone: () => void
+}) {
+  let sseSeen = false
+  const parser = createParser({
+    onEvent: (event: any) => {
+      sseSeen = true
+      const data = String(event?.data || '').trim()
+      if (!data) return
+      if (data === '[DONE]') return opts.onDone()
+      try {
+        opts.onJson(JSON.parse(data))
+      } catch {
+        // ignore invalid JSON event
+      }
+    },
+  })
+
+  let buf = ''
+  const feed = (chunk: string) => {
+    // Always feed SSE parser (if stream is SSE, it will work; if NDJSON, it will do nothing)
+    try { parser.feed(chunk) } catch { /* ignore */ }
+    if (sseSeen) return
+    buf += chunk
+    while (true) {
+      const nl = buf.indexOf('\n')
+      if (nl < 0) break
+      const lineRaw = buf.slice(0, nl)
+      buf = buf.slice(nl + 1)
+      const line = String(lineRaw || '').trim()
+      if (!line) continue
+      if (line === '[DONE]') { opts.onDone(); return }
+      const payloadLine = line.startsWith('data:') ? line.replace(/^data:\s*/i, '') : line
+      if (!payloadLine || payloadLine === '[DONE]') { opts.onDone(); return }
+      try {
+        opts.onJson(JSON.parse(payloadLine))
+      } catch {
+        // Half JSON: put back and wait more
+        buf = `${payloadLine}\n${buf}`
+        break
+      }
+    }
+  }
+
+  return { feed }
+}
+
 function sseData(res: any, data: any) {
   try {
     res.write(`data: ${typeof data === 'string' ? data : JSON.stringify(data)}\n\n`)
@@ -403,7 +452,6 @@ export default async function handler(req: any, res: any) {
           return sseDone(res)
         }
 
-        let buf = ''
         const emitText = (txt: string) => {
           const t = String(txt || '')
           if (!t) return
@@ -440,45 +488,23 @@ export default async function handler(req: any, res: any) {
 
         try {
           // Gemini REST 流通常是 NDJSON；也可能是 SSE（data: {...}）
-          while (true) {
-            const { value, done } = await reader.read()
-            if (done) break
-            buf += decoder.decode(value || new Uint8Array(), { stream: true })
-
-            // 按行切分处理（NDJSON / SSE）
-            while (true) {
-              const nl = buf.indexOf('\n')
-              if (nl < 0) break
-              const lineRaw = buf.slice(0, nl)
-              buf = buf.slice(nl + 1)
-              const line = String(lineRaw || '').trim()
-              if (!line) continue
-              if (line === '[DONE]') {
-                emitFinish('STOP')
-                return
-              }
-              const payloadLine = line.startsWith('data:') ? line.replace(/^data:\s*/i, '') : line
-              if (!payloadLine || payloadLine === '[DONE]') {
-                emitFinish('STOP')
-                return
-              }
-              let j: any = null
-              try {
-                j = JSON.parse(payloadLine)
-              } catch {
-                // 可能是半截 JSON：拼回 buffer 继续等
-                buf = `${payloadLine}\n${buf}`
-                break
-              }
+          const decoder2 = createGeminiStreamDecoder({
+            onJson: (j: any) => {
               const parts = j?.candidates?.[0]?.content?.parts
               const txt = Array.isArray(parts) ? parts.map((p: any) => p?.text).filter(Boolean).join('') : ''
               if (txt) emitText(txt)
               const fr = j?.candidates?.[0]?.finishReason
-              if (fr) {
-                emitFinish(fr)
-                return
-              }
-            }
+              if (fr) emitFinish(fr)
+            },
+            onDone: () => emitFinish('STOP'),
+          })
+          while (true) {
+            const { value, done } = await reader.read()
+            if (done) break
+            const chunk = decoder.decode(value || new Uint8Array(), { stream: true })
+            if (!chunk) continue
+            decoder2.feed(chunk)
+            if (closed) return
           }
         } catch (e: any) {
           if (!closed) {

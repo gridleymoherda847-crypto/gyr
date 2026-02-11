@@ -86,8 +86,19 @@ export default function ChatScreen() {
   // 表情包：不按情绪匹配，随机使用本角色已配置的
   
   const [inputText, setInputText] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const composingRef = useRef(false)
+  const autosizeInput = useCallback((el?: HTMLTextAreaElement | null) => {
+    const textarea = el || inputRef.current
+    if (!textarea) return
+    try {
+      // 约4行（不同字体/行高下 96px 可能只有 3 行左右，略增大更稳）
+      const maxHeight = 128 // 与 class 的 max-h-[128px] 对齐
+      textarea.style.height = 'auto'
+      const next = Math.min(textarea.scrollHeight, maxHeight)
+      textarea.style.height = `${next}px`
+    } catch { /* ignore */ }
+  }, [])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
@@ -558,6 +569,11 @@ export default function ChatScreen() {
       timeoutsMetaRef.current = timeoutsMetaRef.current.filter(t => t.background)
     }
   }, [])
+
+  // 输入框自动增高（最多4行），避免长文本“挤成一行看不到前面”
+  useEffect(() => {
+    autosizeInput(inputRef.current)
+  }, [inputText, autosizeInput])
 
   // 线下模式分割线现在由 ChatSettingsScreen 在切换时直接插入
   // 这里只处理语音功能的自动关闭
@@ -6052,6 +6068,10 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         const offlineUserColor = character.offlineUserColor || '#2563eb'
         const offlineCharColor = character.offlineCharColor || '#7c3aed'
         const offlineDialogColor = character.offlineDialogColor || '#111827'
+        const narrationItalic = character.offlineNarrationItalic ?? true
+        const narrationBold = character.offlineNarrationBold ?? false
+        const quoteItalic = character.offlineQuoteItalic ?? false
+        const quoteBold = character.offlineQuoteBold ?? true
         
         // 获取线下模式字体（优先使用角色设置，否则跟随全局）
         const offlineFontFamily = (() => {
@@ -6065,13 +6085,24 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         
         // 处理引号内的文字：使用自定义对话颜色
         const renderOfflineContent = (content: string) => {
-          // 匹配中文引号内的内容
-          const parts = content.split(/(".*?")/g)
+          // 支持常见三种引号："..."、“...”、「...」
+          const parts = content.split(/(“[^”]*”|"[^"]*"|「[^」]*」)/g)
           return parts.map((part, i) => {
-            if (part.startsWith('"') && part.endsWith('"')) {
-              // 引号内的对话：使用对话颜色
+            const isQuote =
+              (part.startsWith('"') && part.endsWith('"')) ||
+              (part.startsWith('“') && part.endsWith('”')) ||
+              (part.startsWith('「') && part.endsWith('」'))
+            if (isQuote) {
+              // 引号内的对话：使用对话颜色 + 单独样式
               return (
-                <span key={i} className="font-medium" style={{ color: offlineDialogColor }}>
+                <span
+                  key={i}
+                  style={{
+                    color: offlineDialogColor,
+                    fontStyle: quoteItalic ? 'italic' : 'normal',
+                    fontWeight: quoteBold ? 600 : 400,
+                  }}
+                >
                   {part}
                 </span>
               )
@@ -6126,7 +6157,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               style={{ 
                 color: msg.isUser ? offlineUserColor : offlineCharColor,
                 fontFamily: offlineFontFamily,
-                fontStyle: msg.isUser ? 'italic' : 'normal',
+                fontStyle: narrationItalic ? 'italic' : 'normal',
+                fontWeight: narrationBold ? 600 : 400,
                 backgroundColor: `rgba(255, 255, 255, ${(character.offlineTextBgOpacity ?? 85) / 100})`,
               }}
               onClick={() => {
@@ -6685,38 +6717,77 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               </button>
             )}
             
-            {/* 表情包按钮 */}
-            <button
-              type="button"
-              onClick={() => {
-                setShowStickerPanel(!showStickerPanel)
-                setShowPlusMenu(false)
-                setActivePanel(null)
-              }}
-              className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90 flex-shrink-0 ${showStickerPanel ? 'bg-pink-100' : ''}`}
-            >
-              <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
-              </svg>
-            </button>
+            {/* 表情包按钮（线下模式改为“引号”按钮：插入“”并把光标放中间） */}
+            {character.offlineMode ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const el = inputRef.current
+                  const cur = String(inputText || '')
+                  const start = (el?.selectionStart ?? cur.length)
+                  const end = (el?.selectionEnd ?? cur.length)
+                  const before = cur.slice(0, start)
+                  const sel = cur.slice(start, end)
+                  const after = cur.slice(end)
+                  const next = sel ? `${before}“${sel}”${after}` : `${before}“”${after}`
+                  const cursor = sel ? (before.length + 2 + sel.length) : (before.length + 1)
+                  setInputText(next)
+                  // 等 state 落地后再设置光标
+                  setTimeout(() => {
+                    try {
+                      const el2 = inputRef.current
+                      if (!el2) return
+                      el2.focus()
+                      el2.setSelectionRange(cursor, cursor)
+                    } catch { /* ignore */ }
+                  }, 0)
+                }}
+                className="w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90 flex-shrink-0 bg-gray-100"
+                title="插入引号"
+              >
+                <span className="text-gray-700 text-[14px] font-semibold">“”</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStickerPanel(!showStickerPanel)
+                  setShowPlusMenu(false)
+                  setActivePanel(null)
+                }}
+                className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90 flex-shrink-0 ${showStickerPanel ? 'bg-pink-100' : ''}`}
+                title="表情包"
+              >
+                <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
+                </svg>
+              </button>
+            )}
             
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
               placeholder="输入消息..."
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={(e) => {
+                setInputText(e.target.value)
+                // 下一帧再读 scrollHeight，避免 setState 前后抖动
+                requestAnimationFrame(() => autosizeInput(e.currentTarget))
+              }}
               onCompositionStart={() => { composingRef.current = true }}
               onCompositionEnd={() => { composingRef.current = false }}
               onKeyDown={(e) => {
                 if (e.key !== 'Enter') return
+                // Shift+Enter 换行；Enter 发送（手机端也更符合聊天习惯）
+                if (e.shiftKey) return
+                e.preventDefault()
                 // 合成输入期间禁止 Enter 发送（否则会取到上一句 state）
                 if (composingRef.current) return
                 handleSend()
               }}
+              rows={1}
               // iOS（部分壳浏览器）会对 <16px 的输入框自动“放大页面”
               // 通过专用 class 在 iOS 上强制到 16px，避免“点输入框界面突然放大”
-              className="lp-chat-input flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/90 md:bg-white/80 md:backdrop-blur outline-none text-gray-800 text-sm"
+              className="lp-chat-input flex-1 min-w-0 px-3 py-2 rounded-2xl bg-white/90 md:bg-white/80 md:backdrop-blur outline-none text-gray-800 text-sm resize-none leading-relaxed max-h-[128px] overflow-y-auto"
             />
             
             {/* 手动：触发回复按钮（随时可按，可连续点继续生成） */}

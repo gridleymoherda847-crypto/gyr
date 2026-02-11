@@ -4,6 +4,8 @@ import { useOS, type LLMApiInterface, type TTSRegion, type TTSVoice } from '../.
 import AppHeader from '../../components/AppHeader'
 import PageContainer from '../../components/PageContainer'
 import { getAdvancedConfig } from '../PresetScreen'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
 
 // MiniMax 系统预设音色列表
 const SYSTEM_VOICE_OPTIONS: TTSVoice[] = [
@@ -141,6 +143,91 @@ export default function ApiConfigScreen() {
       return localStorage.getItem('mina_current_api_config_id') || null
     } catch { return null }
   })
+
+  // ===== 表单校验（react-hook-form + zod，仅做校验/错误聚合；不改变现有交互形态）=====
+  type LLMMainForm = {
+    newConfigName: string
+    apiInterface: LLMApiInterface
+    baseUrl: string
+    apiKey: string
+    selectedModel: string
+  }
+
+  const llmMainBaseSchema = z.object({
+    newConfigName: z.string().trim(),
+    apiInterface: z.enum(['openai_compatible', 'anthropic_native', 'gemini_native', 'ollama']),
+    baseUrl: z.string().trim().min(1, '请先填写 API Base URL'),
+    apiKey: z.string().trim().min(1, '请先填写 API Key'),
+    selectedModel: z.string().trim(),
+  })
+
+  const {
+    register: registerLLMMain,
+    setValue: setLLMMainValue,
+    clearErrors: clearLLMMainErrors,
+    setError: setLLMMainError,
+    formState: { errors: llmMainErrors },
+  } = useForm<LLMMainForm>({
+    defaultValues: {
+      newConfigName: newConfigName,
+      apiInterface,
+      baseUrl,
+      apiKey,
+      selectedModel: String(selectedModelRef.current || selectedModel || ''),
+    },
+  })
+
+  // 当代码里“程序性更新 state”（例如 loadConfig/清空）时，同步进 RHF，避免校验读到旧值
+  useEffect(() => {
+    setLLMMainValue('newConfigName', newConfigName || '')
+  }, [newConfigName, setLLMMainValue])
+  useEffect(() => {
+    setLLMMainValue('apiInterface', apiInterface)
+  }, [apiInterface, setLLMMainValue])
+  useEffect(() => {
+    setLLMMainValue('baseUrl', baseUrl || '')
+  }, [baseUrl, setLLMMainValue])
+  useEffect(() => {
+    setLLMMainValue('apiKey', apiKey || '')
+  }, [apiKey, setLLMMainValue])
+  useEffect(() => {
+    setLLMMainValue('selectedModel', String(selectedModelRef.current || selectedModel || ''))
+  }, [selectedModel, setLLMMainValue])
+
+  const validateLLMMain = (need: { name?: boolean; model?: boolean } = {}) => {
+    clearLLMMainErrors()
+    const data: LLMMainForm = {
+      newConfigName: String(newConfigName || ''),
+      apiInterface,
+      baseUrl: String(baseUrl || ''),
+      apiKey: String(apiKey || ''),
+      selectedModel: String(selectedModelRef.current || selectedModel || ''),
+    }
+    const parsed = llmMainBaseSchema.safeParse(data)
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const k = issue.path?.[0] as keyof LLMMainForm
+        if (k) setLLMMainError(k, { type: 'manual', message: issue.message })
+      }
+      return null
+    }
+    const v = parsed.data
+    if (need.name && !v.newConfigName.trim()) {
+      setLLMMainError('newConfigName', { type: 'manual', message: '请先填写配置名称' })
+      return null
+    }
+    if (need.model && !v.selectedModel.trim()) {
+      setLLMMainError('selectedModel', { type: 'manual', message: '请先填写/选择模型名' })
+      return null
+    }
+    return {
+      ...v,
+      newConfigName: v.newConfigName.trim(),
+      baseUrl: v.baseUrl.trim(),
+      apiKey: v.apiKey.trim(),
+      selectedModel: v.selectedModel.trim(),
+    }
+  }
   
   // TTS 配置状态
   const [ttsApiKey, setTtsApiKey] = useState(ttsConfig.apiKey)
@@ -204,10 +291,14 @@ export default function ApiConfigScreen() {
   }
 
   const fetchModels = async () => {
-    if (!baseUrl || !apiKey) { setError('请先填写 API Base URL 和 API Key'); return }
+    const v = validateLLMMain()
+    if (!v) {
+      setError(llmMainErrors.baseUrl?.message || llmMainErrors.apiKey?.message || '请先填写 API Base URL 和 API Key')
+      return
+    }
     setLoading(true); setError('')
     try {
-      const modelList = await fetchAvailableModels({ apiBaseUrl: baseUrl, apiKey, apiInterface })
+      const modelList = await fetchAvailableModels({ apiBaseUrl: v.baseUrl, apiKey: v.apiKey, apiInterface: v.apiInterface })
       setModels(modelList)
       // 获取成功后：直接弹出模型选择（减少“没反应”的错觉）
       if (modelList.length > 0) {
@@ -237,8 +328,9 @@ export default function ApiConfigScreen() {
   }
 
   const handleTestLLM = async () => {
-    if (!baseUrl.trim() || !apiKey.trim()) {
-      setLlmTestError('请先填写 API Base URL 和 API Key')
+    const v = validateLLMMain()
+    if (!v) {
+      setLlmTestError(llmMainErrors.baseUrl?.message || llmMainErrors.apiKey?.message || '请先填写 API Base URL 和 API Key')
       setLlmTestOk('')
       return
     }
@@ -248,9 +340,9 @@ export default function ApiConfigScreen() {
     try {
       const modelToTry = (selectedModelRef.current || selectedModel || '').trim() || undefined
       const { modelUsed, reply } = await testLLMConfig({
-        apiBaseUrl: baseUrl,
-        apiKey,
-        apiInterface,
+        apiBaseUrl: v.baseUrl,
+        apiKey: v.apiKey,
+        apiInterface: v.apiInterface,
         model: modelToTry,
       })
       const text = String(reply || '').trim()
@@ -418,16 +510,21 @@ export default function ApiConfigScreen() {
 
   // 保存当前配置为新条目
   const handleSaveAsConfig = () => {
-    if (!newConfigName.trim() || !baseUrl.trim() || !apiKey.trim()) return
-    const modelToSave = (selectedModelRef.current || selectedModel || '').trim()
+    const v = validateLLMMain({ name: true, model: true })
+    if (!v) {
+      // 兼容原 UI：仍在按钮下方显示提示
+      setError(llmMainErrors.newConfigName?.message || llmMainErrors.baseUrl?.message || llmMainErrors.apiKey?.message || llmMainErrors.selectedModel?.message || '')
+      return
+    }
+    const modelToSave = v.selectedModel
     const newConfig: ApiConfigItem = {
       id: `config_${Date.now()}`,
-      name: newConfigName.trim(),
-      baseUrl,
-      apiKey,
+      name: v.newConfigName,
+      baseUrl: v.baseUrl,
+      apiKey: v.apiKey,
       selectedModel: modelToSave,
       models,
-      apiInterface,
+      apiInterface: v.apiInterface,
       // 保存高级参数
       advanced: {
         temperature,
@@ -444,11 +541,11 @@ export default function ApiConfigScreen() {
     localStorage.setItem('mina_current_api_config_id', newConfig.id)
     // 同时更新到全局配置（立即使用）
     setLLMConfig({ 
-      apiBaseUrl: baseUrl, 
-      apiKey, 
+      apiBaseUrl: v.baseUrl, 
+      apiKey: v.apiKey, 
       selectedModel: modelToSave, 
       availableModels: models,
-      apiInterface,
+      apiInterface: v.apiInterface,
     })
     // 保存高级参数
     saveAdvancedConfig({ temperature, topP, maxTokens, frequencyPenalty, presencePenalty })
@@ -1074,11 +1171,18 @@ export default function ApiConfigScreen() {
               <input
                 type="text"
                 value={newConfigName}
-                onChange={(e) => setNewConfigName(e.target.value)}
+                {...registerLLMMain('newConfigName')}
+                onChange={(e) => {
+                  registerLLMMain('newConfigName').onChange(e)
+                  setNewConfigName(e.target.value)
+                }}
                 placeholder="例如：Gemini Pro、Claude 3.5、GPT-4"
                 className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
                 style={{ color: fontColor.value }}
               />
+              {llmMainErrors.newConfigName?.message && (
+                <div className="text-[11px] text-red-600">{String(llmMainErrors.newConfigName.message)}</div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -1086,7 +1190,11 @@ export default function ApiConfigScreen() {
               <div className="relative">
                 <select
                   value={apiInterface}
-                  onChange={(e) => setApiInterface(e.target.value as LLMApiInterface)}
+                  {...registerLLMMain('apiInterface')}
+                  onChange={(e) => {
+                    registerLLMMain('apiInterface').onChange(e)
+                    setApiInterface(e.target.value as LLMApiInterface)
+                  }}
                   className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 appearance-none focus:border-white/50 cursor-pointer text-sm sm:text-base"
                   style={{ color: fontColor.value }}
                 >
@@ -1107,11 +1215,18 @@ export default function ApiConfigScreen() {
               <input
                 type="url"
                 value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
+                {...registerLLMMain('baseUrl')}
+                onChange={(e) => {
+                  registerLLMMain('baseUrl').onChange(e)
+                  setBaseUrl(e.target.value)
+                }}
                 placeholder={getBaseUrlPlaceholder(apiInterface)}
                 className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
                 style={{ color: fontColor.value }}
               />
+              {llmMainErrors.baseUrl?.message && (
+                <div className="text-[11px] text-red-600">{String(llmMainErrors.baseUrl.message)}</div>
+              )}
               <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
                 {apiInterface === 'gemini_native'
                   ? '提示：Gemini 原生一般填根地址（如 https://generativelanguage.googleapis.com），应用会自动规整为 /v1beta。若你用的是“OpenAI 兼容中转站”（常见特征：地址里有 /v1），请把「接口类型」改成 OpenAI 兼容。'
@@ -1139,7 +1254,11 @@ export default function ApiConfigScreen() {
                 <input
                   type={showApiKey ? "text" : "password"}
                   value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  {...registerLLMMain('apiKey')}
+                  onChange={(e) => {
+                    registerLLMMain('apiKey').onChange(e)
+                    setApiKey(e.target.value)
+                  }}
                   placeholder="sk-xxxxxxxx"
                   className="w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-12 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-xs sm:text-sm"
                   style={{ color: fontColor.value }}
@@ -1153,6 +1272,9 @@ export default function ApiConfigScreen() {
                   {showApiKey ? '隐藏' : '查看'}
                 </button>
               </div>
+              {llmMainErrors.apiKey?.message && (
+                <div className="text-[11px] text-red-600">{String(llmMainErrors.apiKey.message)}</div>
+              )}
             </div>
 
             <button onClick={fetchModels} disabled={loading} className="w-full py-2.5 sm:py-3 rounded-2xl bg-white/50 hover:bg-white/60 border border-white/30 font-medium transition-colors disabled:opacity-50 press-effect text-sm sm:text-base" style={{ color: fontColor.value }}>
@@ -1165,8 +1287,10 @@ export default function ApiConfigScreen() {
               <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>模型（可手动输入）</label>
               <input
                 value={selectedModel}
+                {...registerLLMMain('selectedModel')}
                 onChange={(e) => {
                   const v = e.target.value
+                  registerLLMMain('selectedModel').onChange(e)
                   selectedModelRef.current = v
                   setSelectedModel(v)
                 }}
@@ -1174,12 +1298,16 @@ export default function ApiConfigScreen() {
                 className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-white/50 border border-white/30 placeholder:opacity-40 focus:border-white/50 text-sm sm:text-base"
                 style={{ color: fontColor.value }}
               />
+              {llmMainErrors.selectedModel?.message && (
+                <div className="text-[11px] text-red-600">{String(llmMainErrors.selectedModel.message)}</div>
+              )}
               {models.length > 0 && (
                 <div className="relative">
                   <select
                     value={selectedModel}
                     onChange={(e) => {
                       const v = e.target.value
+                      setLLMMainValue('selectedModel', v)
                       selectedModelRef.current = v
                       setSelectedModel(v)
                     }}

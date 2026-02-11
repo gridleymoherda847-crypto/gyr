@@ -8,7 +8,8 @@ export default function MusicScreen() {
   const { 
     musicPlaying, currentSong, musicProgress, musicPlaylist, 
     playSong, toggleMusic, nextSong, prevSong, seekMusic, toggleFavorite, isFavorite,
-    addSong, removeSong
+    addSong, removeSong,
+    musicPlayMode, cycleMusicPlayMode
   } = useOS()
   const [activeTab, setActiveTab] = useState<'recommend' | 'playlist' | 'favorites'>('recommend')
   const [searchQuery, setSearchQuery] = useState('')
@@ -44,6 +45,9 @@ export default function MusicScreen() {
   }
 
   const currentTime = currentSong ? (musicProgress / 100) * currentSong.duration : 0
+
+  const playModeLabel =
+    musicPlayMode === 'repeat_one' ? '单曲' : musicPlayMode === 'shuffle' ? '随机' : '顺序'
 
   // 从链接导入音乐
   const handleUrlImport = () => {
@@ -399,6 +403,14 @@ export default function MusicScreen() {
               
               {/* 控制按钮 */}
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={cycleMusicPlayMode}
+                  className="px-2 h-8 rounded-full bg-white/10 flex items-center justify-center"
+                  title={`播放模式：${playModeLabel}（点我切换）`}
+                >
+                  <span className="text-white/80 text-[11px]">{playModeLabel}</span>
+                </button>
                 <button 
                   type="button"
                   onClick={toggleMusic}
@@ -520,7 +532,15 @@ export default function MusicScreen() {
             </div>
 
             {/* 控制按钮 */}
-            <div className="px-8 pb-8 flex items-center justify-center gap-8">
+            <div className="px-8 pb-8 flex items-center justify-center gap-6">
+              <button
+                type="button"
+                onClick={cycleMusicPlayMode}
+                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center transition-transform active:scale-90"
+                title={`播放模式：${playModeLabel}（点我切换）`}
+              >
+                <span className="text-white text-xs font-medium">{playModeLabel}</span>
+              </button>
               <button 
                 type="button"
                 onClick={prevSong}

@@ -10,6 +10,28 @@ export async function compressImageFileToDataUrl(
   const mimeType = options?.mimeType ?? 'image/jpeg'
   const quality = Math.max(0.5, Math.min(0.95, options?.quality ?? 0.86))
 
+  // 优先使用成熟库（更稳的质量/尺寸控制，兼容 iOS）
+  try {
+    const mod: any = await import('browser-image-compression')
+    const imageCompression = mod?.default || mod
+    if (typeof imageCompression === 'function') {
+      const compressed: File = await imageCompression(file, {
+        maxWidthOrHeight: maxSide,
+        useWebWorker: true,
+        fileType: mimeType,
+        initialQuality: quality,
+      })
+      // browser-image-compression 提供的工具方法
+      const toDataUrl = imageCompression.getDataUrlFromFile || imageCompression.getDataUrlFromBlob
+      if (typeof toDataUrl === 'function') {
+        const dataUrl: string = await toDataUrl(compressed)
+        if (typeof dataUrl === 'string' && dataUrl.startsWith('data:')) return dataUrl
+      }
+    }
+  } catch {
+    // 回退到 canvas 方案
+  }
+
   const originalDataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error('read_error'))

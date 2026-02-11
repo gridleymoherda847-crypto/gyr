@@ -8,6 +8,7 @@ import {
   type PropsWithChildren,
 } from 'react'
 import { kvGet, kvGetJSONDeep, kvSet, kvSetJSON } from '../storage/kv'
+import { readOpenAISSEToText } from '../utils/sse'
 
 export type UserProfile = { avatar: string; nickname: string; persona: string }
 export type LLMApiInterface = 'openai_compatible' | 'anthropic_native' | 'gemini_native' | 'ollama'
@@ -110,6 +111,8 @@ export type Song = {
   source?: 'builtin' | 'data' | 'url'
 }
 
+export type MusicPlayMode = 'order' | 'shuffle' | 'repeat_one'
+
 export const FONT_OPTIONS: FontOption[] = [
   { id: 'cute-round', name: '可爱圆体', fontFamily: '"ZCOOL KuaiLe", "Baloo 2", cursive', preview: '可爱圆润 ABC 123' },
   { id: 'handwrite', name: '手写体', fontFamily: '"Ma Shan Zheng", cursive', preview: '手写风格 ABC 123' },
@@ -139,6 +142,7 @@ const DEFAULT_COVER = '/icons/music-cover.png'
 // 音乐列表存储键
 const MUSIC_STORAGE_KEY = 'littlephone_music_playlist'
 const MUSIC_VERSION_KEY = 'littlephone_music_version'
+const MUSIC_PLAY_MODE_KEY = 'littlephone_music_play_mode'
 const CURRENT_MUSIC_VERSION = '8' // 更新这个数字会强制重置音乐列表
 
 // 位置和天气存储键
@@ -233,6 +237,7 @@ type OSContextValue = {
   musicProgress: number
   musicPlaylist: Song[]
   musicFavorites: string[]
+  musicPlayMode: MusicPlayMode
   audioRef: React.RefObject<HTMLAudioElement | null>
   setWallpaper: (wallpaper: string) => void
   setCurrentFont: (font: FontOption) => void
@@ -265,6 +270,7 @@ type OSContextValue = {
   toggleMusic: () => void
   nextSong: () => void
   prevSong: () => void
+  cycleMusicPlayMode: () => void
   seekMusic: (progress: number) => void
   toggleFavorite: (songId: string) => void
   isFavorite: (songId: string) => boolean
@@ -623,7 +629,11 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [musicProgress, setMusicProgress] = useState(0)
   const [musicPlaylist, setMusicPlaylist] = useState<Song[]>(() => [...DEFAULT_SONGS])
   const [musicFavorites, setMusicFavorites] = useState<string[]>([])
+  const [musicPlayMode, setMusicPlayModeState] = useState<MusicPlayMode>('order')
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const currentSongRef = useRef<Song | null>(null)
+  const musicPlaylistRef = useRef<Song[]>([])
+  const musicPlayModeRef = useRef<MusicPlayMode>('order')
   
   // 图标主题
   const [iconTheme, setIconThemeState] = useState<IconTheme>('custom')
@@ -645,6 +655,16 @@ export function OSProvider({ children }: PropsWithChildren) {
     return () => clearInterval(tick)
   }, [])
 
+  useEffect(() => {
+    currentSongRef.current = currentSong
+  }, [currentSong])
+  useEffect(() => {
+    musicPlaylistRef.current = musicPlaylist
+  }, [musicPlaylist])
+  useEffect(() => {
+    musicPlayModeRef.current = musicPlayMode
+  }, [musicPlayMode])
+
   // 异步 Hydration：从 IndexedDB 加载；首次会从 localStorage 迁移（避免丢数据）
   useEffect(() => {
     let cancelled = false
@@ -660,6 +680,7 @@ export function OSProvider({ children }: PropsWithChildren) {
           STORAGE_KEYS.fontSizeTier,
           MUSIC_STORAGE_KEY,
           MUSIC_VERSION_KEY,
+          MUSIC_PLAY_MODE_KEY,
           LOCATION_STORAGE_KEY,
           WEATHER_STORAGE_KEY,
         ]
@@ -698,6 +719,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         nextAnniversaries,
         nextMemo,
         nextCustomFonts,
+        nextMusicPlayMode,
       ] = await Promise.all([
         kvGetJSONDeep<LLMConfig>(STORAGE_KEYS.llmConfig, defaultLLMConfig),
         kvGetJSONDeep<TTSConfig>(STORAGE_KEYS.ttsConfig, defaultTTSConfig),
@@ -723,6 +745,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<Anniversary[]>(STORAGE_KEYS.anniversaries, []),
         kvGetJSONDeep<Memo>(STORAGE_KEYS.memo, { content: '', image: '', todos: [] }),
         kvGetJSONDeep<CustomFont[]>(STORAGE_KEYS.customFonts, []),
+        kvGetJSONDeep<MusicPlayMode>(MUSIC_PLAY_MODE_KEY, 'order'),
       ])
 
       // 兜底：如果 IndexedDB 的 userProfile 丢失（回到默认），尝试从 localStorage 备份恢复
@@ -859,6 +882,11 @@ export function OSProvider({ children }: PropsWithChildren) {
         }
       }
       setMusicPlaylist(nextPlaylist)
+      setMusicPlayModeState(
+        nextMusicPlayMode === 'order' || nextMusicPlayMode === 'shuffle' || nextMusicPlayMode === 'repeat_one'
+          ? nextMusicPlayMode
+          : 'order'
+      )
       // 加载自定义壁纸、图标等
       if (nextWallpaper) setWallpaper(nextWallpaper)
       if (nextCustomAppIcons) setCustomAppIcons(nextCustomAppIcons)
@@ -1012,6 +1040,11 @@ export function OSProvider({ children }: PropsWithChildren) {
     void kvSetJSON(MUSIC_VERSION_KEY, CURRENT_MUSIC_VERSION)
   }, [musicPlaylist, isHydrated])
 
+  useEffect(() => {
+    if (!canPersist()) return
+    void kvSetJSON(MUSIC_PLAY_MODE_KEY, musicPlayMode)
+  }, [musicPlayMode, isHydrated])
+
   // 检查壁纸图片是否存在
   useEffect(() => {
     const img = new Image()
@@ -1069,14 +1102,49 @@ export function OSProvider({ children }: PropsWithChildren) {
         if (audioRef.current?.loop) {
           return
         }
-        // 自动播放下一首
-        const currentIndex = musicPlaylist.findIndex(s => s.id === currentSong?.id)
-        if (currentIndex < musicPlaylist.length - 1) {
-          playSong(musicPlaylist[currentIndex + 1])
-        } else {
+        const playlist = musicPlaylistRef.current || []
+        const cur = currentSongRef.current
+        if (!cur || playlist.length === 0) {
           setMusicPlaying(false)
           setMusicProgress(0)
+          return
         }
+
+        const mode = musicPlayModeRef.current || 'order'
+
+        // 单曲循环：不依赖 audio.loop，避免与“一起听歌”逻辑冲突
+        if (mode === 'repeat_one' || playlist.length === 1) {
+          try {
+            const audio = audioRef.current
+            if (!audio) return
+            audio.currentTime = 0
+            const p = audio.play()
+            if (p && typeof (p as any).catch === 'function') (p as any).catch(() => {})
+            setMusicPlaying(true)
+          } catch {
+            // ignore
+          }
+          return
+        }
+
+        const currentIndex = playlist.findIndex(s => s.id === cur.id)
+        const pickShuffleIndex = () => {
+          if (playlist.length <= 1) return 0
+          const base = currentIndex >= 0 ? currentIndex : 0
+          let idx = base
+          for (let tries = 0; tries < 6; tries++) {
+            idx = Math.floor(Math.random() * playlist.length)
+            if (idx !== base) break
+          }
+          return idx
+        }
+
+        const nextIndex =
+          mode === 'shuffle'
+            ? pickShuffleIndex()
+            : (currentIndex >= 0 ? (currentIndex + 1) % playlist.length : 0)
+
+        playSong(playlist[nextIndex])
       })
       // 添加错误监听
       audioRef.current.addEventListener('error', (e) => {
@@ -1088,6 +1156,10 @@ export function OSProvider({ children }: PropsWithChildren) {
       })
     }
   }, [currentSong, musicPlaylist])
+
+  const cycleMusicPlayMode = () => {
+    setMusicPlayModeState(prev => (prev === 'order' ? 'shuffle' : prev === 'shuffle' ? 'repeat_one' : 'order'))
+  }
 
   const setUserProfile = (profile: Partial<UserProfile>) => setUserProfileState((prev) => ({ ...prev, ...profile }))
   const setLLMConfig = (config: Partial<LLMConfig>) =>
@@ -1300,12 +1372,36 @@ export function OSProvider({ children }: PropsWithChildren) {
   }
 
   const nextSong = () => {
+    if (!musicPlaylist || musicPlaylist.length === 0) return
+    if (musicPlayMode === 'repeat_one' && currentSong) {
+      playSong(currentSong)
+      return
+    }
     const currentIndex = musicPlaylist.findIndex(s => s.id === currentSong?.id)
-    const nextIndex = currentIndex < musicPlaylist.length - 1 ? currentIndex + 1 : 0
+    if (musicPlayMode === 'shuffle') {
+      if (musicPlaylist.length === 1) {
+        playSong(musicPlaylist[0])
+        return
+      }
+      const base = currentIndex >= 0 ? currentIndex : 0
+      let idx = base
+      for (let tries = 0; tries < 6; tries++) {
+        idx = Math.floor(Math.random() * musicPlaylist.length)
+        if (idx !== base) break
+      }
+      playSong(musicPlaylist[idx])
+      return
+    }
+    const nextIndex = (currentIndex >= 0 ? currentIndex + 1 : 0) % musicPlaylist.length
     playSong(musicPlaylist[nextIndex])
   }
 
   const prevSong = () => {
+    if (!musicPlaylist || musicPlaylist.length === 0) return
+    if (musicPlayMode === 'repeat_one' && currentSong) {
+      playSong(currentSong)
+      return
+    }
     const currentIndex = musicPlaylist.findIndex(s => s.id === currentSong?.id)
     const prevIndex = currentIndex > 0 ? currentIndex - 1 : musicPlaylist.length - 1
     playSong(musicPlaylist[prevIndex])
@@ -1668,41 +1764,12 @@ export function OSProvider({ children }: PropsWithChildren) {
         // - 避免 Serverless “等完整响应”超时
         // - 后端会把 Gemini 流实时转换为 OpenAI SSE；这里把 SSE 读完再返回字符串
         const readOpenAISSE = async (resp: Response): Promise<string> => {
-          const reader = resp.body?.getReader?.()
-          if (!reader) throw new Error('SSE stream not readable')
-          const decoder = new TextDecoder()
-          let buf = ''
-          let out = ''
-          while (true) {
-            const { value, done } = await reader.read()
-            if (done) break
-            buf += decoder.decode(value || new Uint8Array(), { stream: true })
-            while (true) {
-              const idx = buf.indexOf('\n')
-              if (idx < 0) break
-              const line = buf.slice(0, idx).trim()
-              buf = buf.slice(idx + 1)
-              if (!line) continue
-              if (!line.startsWith('data:')) continue
-              const data = line.replace(/^data:\s*/i, '')
-              if (data === '[DONE]') return out
-              try {
-                const j: any = JSON.parse(data)
-                const delta = j?.choices?.[0]?.delta
-                const content = typeof delta?.content === 'string' ? delta.content : ''
-                if (content) out += content
-                const finish = j?.choices?.[0]?.finish_reason
-                if (finish) {
-                  // 结束帧
-                  return out
-                }
-              } catch {
-                // 非 JSON：作为纯文本拼进来（便于看到错误）
-                out += data
-              }
-            }
+          try {
+            return await readOpenAISSEToText(resp)
+          } catch {
+            // 兜底：保持旧行为（返回空串会触发更明确的错误提示）
+            return ''
           }
-          return out
         }
 
         const controller = new AbortController()
@@ -1863,52 +1930,11 @@ export function OSProvider({ children }: PropsWithChildren) {
       // 排查/稳定性：OpenAI 兼容优先走同域转发（避免 CORS/拿不到上游错误体，只能看到“500”）
       // - 代理侧会尽可能把上游错误体转换成“可读文本”回传
       const readOpenAISSE = async (resp: Response): Promise<string> => {
-        const reader = resp.body?.getReader?.()
-        if (!reader) throw new Error('SSE stream not readable')
-        const decoder = new TextDecoder()
-        let buf = ''
-        let out = ''
-        while (true) {
-          const { value, done } = await reader.read()
-          if (done) break
-          buf += decoder.decode(value || new Uint8Array(), { stream: true })
-          while (true) {
-            const idx = buf.indexOf('\n')
-            if (idx < 0) break
-            const line = buf.slice(0, idx).trim()
-            buf = buf.slice(idx + 1)
-            if (!line) continue
-            if (!line.startsWith('data:')) continue
-            const data = line.replace(/^data:\s*/i, '')
-            if (data === '[DONE]') return out
-            try {
-              const j: any = JSON.parse(data)
-              const delta = j?.choices?.[0]?.delta
-              let content = ''
-              if (typeof delta?.content === 'string') content = delta.content
-              else if (Array.isArray(delta?.content)) {
-                content = delta.content
-                  .map((p: any) => (typeof p?.text === 'string' ? p.text : typeof p === 'string' ? p : ''))
-                  .filter(Boolean)
-                  .join('')
-              } else if (delta?.content && typeof delta?.content === 'object' && typeof delta?.content?.text === 'string') content = delta.content.text
-              else if (typeof delta?.text === 'string') content = delta.text
-              if (content) out += content
-              // 有些中转会在 SSE 里塞 error 对象
-              const errMsg =
-                j?.error?.message ||
-                j?.error?.msg ||
-                j?.message
-              if (!content && typeof errMsg === 'string' && errMsg.trim()) out += errMsg.trim()
-              const finish = j?.choices?.[0]?.finish_reason
-              if (finish) return out
-            } catch {
-              // 非 JSON：作为纯文本拼进来（便于看到错误）
-              out += data
-            }
-          }
+        try {
+          return await readOpenAISSEToText(resp)
+        } catch {
+          return ''
         }
-        return out
       }
 
       const callOpenAICompatViaProxy = async (pl: any, opts?: { stream?: boolean; signal?: AbortSignal }) => {
@@ -2369,11 +2395,11 @@ export function OSProvider({ children }: PropsWithChildren) {
     fontSizeTier, setFontSizeTier,
     notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, wallpaperError,
     locationSettings, weather, setLocationSettings, refreshWeather,
-    musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, audioRef,
+    musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, musicPlayMode, audioRef,
     setWallpaper, setCurrentFont, setFontColor, setUserProfile, setLLMConfig, setTTSConfig, textToSpeech,
     setMiCoinBalance, addMiCoins, addNotification, markNotificationRead, addChatMessage, updateIntimacy,
     setCustomAppIcon, setDecorImage, setHomeAvatar, setSignature, waterCount, addWater, setWallpaperError,
-    playSong, pauseMusic, resumeMusic, toggleMusic, nextSong, prevSong, seekMusic, toggleFavorite, isFavorite, addSong, removeSong,
+    playSong, pauseMusic, resumeMusic, toggleMusic, nextSong, prevSong, cycleMusicPlayMode, seekMusic, toggleFavorite, isFavorite, addSong, removeSong,
     setMusicPlaying, setCurrentSong,
     iconTheme, setIconTheme,
     anniversaries, addAnniversary, updateAnniversary, removeAnniversary,
@@ -2383,7 +2409,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, fontSizeTier,
       notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo, customFonts,
       locationSettings, weather,
-      musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, isHydrated, fetchAvailableModels])
+      musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, musicPlayMode, isHydrated, fetchAvailableModels])
 
   return <OSContext.Provider value={value}>{children}</OSContext.Provider>
 }

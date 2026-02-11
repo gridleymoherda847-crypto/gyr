@@ -15,6 +15,9 @@ export default function MomentsTab({ onBack }: Props) {
   const [showPostModal, setShowPostModal] = useState(false)
   const [postContent, setPostContent] = useState('')
   const [postImages, setPostImages] = useState<string[]>([])
+  // 仅谁可见：空=全部好友可见；非空=仅这些好友可见/可互动（点赞/评论）
+  const [postVisibleToIds, setPostVisibleToIds] = useState<string[]>([])
+  const [visiblePickerOpen, setVisiblePickerOpen] = useState(false)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -117,7 +120,9 @@ export default function MomentsTab({ onBack }: Props) {
       }
 
       // 决定是评论还是发新朋友圈
-      const postsToComment = anyPosts.filter(p => p.authorId === 'user')
+      const postsToComment = anyPosts.filter(p =>
+        p.authorId === 'user' && (!p.visibleToIds || p.visibleToIds.length === 0 || p.visibleToIds.includes(friend.id))
+      )
       const shouldComment = willComment && postsToComment.length > 0
       
       if (shouldComment) {
@@ -267,16 +272,20 @@ ${recentChat || '（暂无）'}
     
     const newMomentContent = postContent
     const newMomentImages = postImages
+    const visibleToIds = postVisibleToIds
     const newMoment = addMoment({
       authorId: 'user',
       authorName: currentPersona?.name || '我',
       authorAvatar: currentPersona?.avatar || '',
       content: postContent,
       images: postImages,
+      visibleToIds: visibleToIds.length > 0 ? visibleToIds : undefined,
     })
     
     setPostContent('')
     setPostImages([])
+    setPostVisibleToIds([])
+    setVisiblePickerOpen(false)
     setShowPostModal(false)
     
     // 用户发朋友圈后，让大部分好友来评论
@@ -284,7 +293,9 @@ ${recentChat || '（暂无）'}
       const newMomentId = newMoment.id
       
       // 80%的好友会来评论
-      const shuffled = [...characters].sort(() => Math.random() - 0.5)
+      const candidates =
+        visibleToIds.length > 0 ? characters.filter(c => visibleToIds.includes(c.id)) : characters
+      const shuffled = [...candidates].sort(() => Math.random() - 0.5)
       const numCommenters = Math.max(1, Math.ceil(shuffled.length * 0.8))
       const commenters = shuffled.slice(0, Math.min(numCommenters, 15)) // 最多15个，避免太多API调用
       
@@ -583,6 +594,8 @@ ${params.userText}
             onClick={(e) => {
               e.stopPropagation()
               setShowPostModal(true)
+              setPostVisibleToIds([])
+              setVisiblePickerOpen(false)
             }}
             className="w-8 h-8 rounded-full bg-black/30 backdrop-blur flex items-center justify-center text-white"
             title="发布"
@@ -666,7 +679,14 @@ ${params.userText}
                   
                   {/* 底部操作 */}
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-400">{formatTime(moment.timestamp)}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs text-gray-400">{formatTime(moment.timestamp)}</span>
+                      {moment.authorId === 'user' && moment.visibleToIds && moment.visibleToIds.length > 0 && (
+                        <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                          仅 {moment.visibleToIds.length} 人可互动
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
@@ -782,7 +802,15 @@ ${params.userText}
       {showPostModal && (
         <div className="absolute inset-0 bg-white z-50 flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 border-b">
-            <button type="button" onClick={() => setShowPostModal(false)} className="text-gray-500">
+            <button
+              type="button"
+              onClick={() => {
+                setShowPostModal(false)
+                setPostVisibleToIds([])
+                setVisiblePickerOpen(false)
+              }}
+              className="text-gray-500"
+            >
               取消
             </button>
             <span className="font-semibold text-[#000]">发表图文</span>
@@ -803,6 +831,77 @@ ${params.userText}
               onChange={(e) => setPostContent(e.target.value)}
               className="w-full h-32 resize-none outline-none text-[#000]"
             />
+
+            {/* 仅谁可见 */}
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setVisiblePickerOpen(v => !v)}
+                className="w-full flex items-center justify-between text-left"
+              >
+                <div className="text-sm text-[#000] font-medium">仅谁可见</div>
+                <div className="text-xs text-gray-500">
+                  {postVisibleToIds.length === 0
+                    ? '全部好友可见'
+                    : `仅 ${postVisibleToIds
+                        .map(id => displayNameById[id] || id)
+                        .slice(0, 3)
+                        .join('、')}${postVisibleToIds.length > 3 ? ` 等${postVisibleToIds.length}人` : ''}`}
+                </div>
+              </button>
+
+              {visiblePickerOpen && (
+                <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setPostVisibleToIds([])}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
+                      postVisibleToIds.length === 0 ? 'bg-white border border-green-200 text-green-700' : 'bg-white/60 text-gray-700'
+                    }`}
+                  >
+                    <span>公开（全部好友可见）</span>
+                    {postVisibleToIds.length === 0 && <span className="text-green-600 text-xs">已选</span>}
+                  </button>
+
+                  <div className="text-[11px] text-gray-500 px-1">选择后：只有被选中的好友才可以给这条动态点赞/评论。</div>
+
+                  <div className="max-h-48 overflow-y-auto pr-1 space-y-1">
+                    {characters.map(c => {
+                      const checked = postVisibleToIds.includes(c.id)
+                      return (
+                        <label
+                          key={c.id}
+                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-white/70 cursor-pointer select-none"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-6 h-6 rounded overflow-hidden bg-gray-200 flex-shrink-0">
+                              {c.avatar ? (
+                                <img src={c.avatar} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-xs text-gray-600">
+                                  {c.name?.[0] || '友'}
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-sm text-gray-800 truncate">{c.name}</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setPostVisibleToIds(prev => {
+                                if (prev.includes(c.id)) return prev.filter(id => id !== c.id)
+                                return [...prev, c.id]
+                              })
+                            }}
+                          />
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
             
             {/* 图片预览 */}
             <div className="grid grid-cols-3 gap-2 mt-4">

@@ -179,7 +179,18 @@ export default function GroupChatScreen() {
   }, [stickerTab, allStickersWithInfo, recentStickers])
   
   const [inputText, setInputText] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const autosizeInput = useCallback((el?: HTMLTextAreaElement | null) => {
+    const textarea = el || inputRef.current
+    if (!textarea) return
+    try {
+      // 约4行（不同字体/行高下 96px 可能只有 3 行左右，略增大更稳）
+      const maxHeight = 128 // 与输入框 max-h 对齐
+      textarea.style.height = 'auto'
+      const next = Math.min(textarea.scrollHeight, maxHeight)
+      textarea.style.height = `${next}px`
+    } catch { /* ignore */ }
+  }, [])
   const [aiTyping, setAiTyping] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   // 群聊绑定世界书（来自创作工坊）
@@ -195,6 +206,11 @@ export default function GroupChatScreen() {
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+
+  // 输入框自动增高（最多4行）
+  useEffect(() => {
+    autosizeInput(inputRef.current)
+  }, [inputText, autosizeInput])
   
   // +号菜单
   const [showPlusMenu, setShowPlusMenu] = useState(false)
@@ -1745,11 +1761,25 @@ ${history}`
               </svg>
             </button>
             
-            <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
+            <textarea
+              value={inputText}
+              onChange={(e) => {
+                setInputText(e.target.value)
+                requestAnimationFrame(() => autosizeInput(e.currentTarget))
+              }}
               ref={inputRef}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+              rows={1}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                if (e.shiftKey) return // Shift+Enter 换行
+                e.preventDefault()
+                handleSend()
+              }}
               onFocus={() => { setShowPlusMenu(false); setShowStickerPanel(false); setShowGenerateSelector(false) }}
-              placeholder="输入消息..." className="flex-1 min-w-0 px-3 py-1.5 rounded-full bg-white/90 outline-none text-gray-800 text-sm" disabled={aiTyping} />
+              placeholder="输入消息..."
+              className="lp-chat-input flex-1 min-w-0 px-3 py-2 rounded-2xl bg-white/90 outline-none text-gray-800 text-sm resize-none leading-relaxed max-h-[128px] overflow-y-auto"
+              disabled={aiTyping}
+            />
             
             {/* 生成按钮 */}
             <div className="relative flex-shrink-0">

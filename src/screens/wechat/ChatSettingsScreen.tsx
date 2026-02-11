@@ -175,6 +175,10 @@ export default function ChatSettingsScreen() {
   const [offlineMinLengthDraft, setOfflineMinLengthDraft] = useState(character?.offlineMinLength || 50)
   const [offlineMaxLengthDraft, setOfflineMaxLengthDraft] = useState(character?.offlineMaxLength || 300)
   const [offlineFontIdDraft, setOfflineFontIdDraft] = useState(character?.offlineFontId || '')
+  const [offlineNarrationItalicDraft, setOfflineNarrationItalicDraft] = useState<boolean>(character?.offlineNarrationItalic ?? true)
+  const [offlineNarrationBoldDraft, setOfflineNarrationBoldDraft] = useState<boolean>(character?.offlineNarrationBold ?? false)
+  const [offlineQuoteItalicDraft, setOfflineQuoteItalicDraft] = useState<boolean>(character?.offlineQuoteItalic ?? false)
+  const [offlineQuoteBoldDraft, setOfflineQuoteBoldDraft] = useState<boolean>(character?.offlineQuoteBold ?? true)
   
   // 气泡设置状态
   const defaultBubble = { bgColor: '#fce7f3', bgOpacity: 100, borderColor: '#f9a8d4', borderOpacity: 0, textColor: '#111827' }
@@ -1191,6 +1195,79 @@ export default function ChatSettingsScreen() {
                       </select>
                       <div className="text-[11px] text-gray-400">设置线下模式的叙事文字字体，留空则使用全局设置</div>
                     </div>
+
+                    {/* 文字样式 */}
+                    <div className="space-y-3 pt-2 border-t border-gray-100">
+                      <div className="text-sm text-gray-700 font-medium">文字样式</div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">旁白部分</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !offlineNarrationItalicDraft
+                              setOfflineNarrationItalicDraft(next)
+                              updateCharacter(character.id, { offlineNarrationItalic: next })
+                            }}
+                            className={`px-2 py-1 rounded-lg text-xs border ${
+                              offlineNarrationItalicDraft ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-600'
+                            }`}
+                          >
+                            斜体
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !offlineNarrationBoldDraft
+                              setOfflineNarrationBoldDraft(next)
+                              updateCharacter(character.id, { offlineNarrationBold: next })
+                            }}
+                            className={`px-2 py-1 rounded-lg text-xs border ${
+                              offlineNarrationBoldDraft ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-600'
+                            }`}
+                          >
+                            加粗
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">引号部分</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !offlineQuoteItalicDraft
+                              setOfflineQuoteItalicDraft(next)
+                              updateCharacter(character.id, { offlineQuoteItalic: next })
+                            }}
+                            className={`px-2 py-1 rounded-lg text-xs border ${
+                              offlineQuoteItalicDraft ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-600'
+                            }`}
+                          >
+                            斜体
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !offlineQuoteBoldDraft
+                              setOfflineQuoteBoldDraft(next)
+                              updateCharacter(character.id, { offlineQuoteBold: next })
+                            }}
+                            className={`px-2 py-1 rounded-lg text-xs border ${
+                              offlineQuoteBoldDraft ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-600'
+                            }`}
+                          >
+                            加粗
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-gray-400">
+                        说明：旁白=不在引号内的叙述；引号=角色台词。支持 “…”、"..."、「...」 三种常见引号。
+                      </div>
+                    </div>
                     
                     {/* 文字底图透明度 */}
                     <div className="space-y-2 pt-2 border-t border-gray-100">
@@ -1292,11 +1369,37 @@ export default function ChatSettingsScreen() {
                     <div className="space-y-2 pt-2 border-t border-gray-100">
                       <div className="text-sm text-gray-700 font-medium">预览效果</div>
                       <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-                        <div className="text-sm text-right italic" style={{ color: offlineUserColorDraft }}>
-                          我轻轻靠近，<span className="font-medium" style={{ color: offlineDialogColorDraft }}>"你在想什么？"</span>
+                        <div
+                          className="text-sm text-right"
+                          style={{
+                            color: offlineUserColorDraft,
+                            fontStyle: offlineNarrationItalicDraft ? 'italic' : 'normal',
+                            fontWeight: offlineNarrationBoldDraft ? 600 : 400,
+                          }}
+                        >
+                          我轻轻靠近，<span
+                            style={{
+                              color: offlineDialogColorDraft,
+                              fontStyle: offlineQuoteItalicDraft ? 'italic' : 'normal',
+                              fontWeight: offlineQuoteBoldDraft ? 600 : 400,
+                            }}
+                          >"你在想什么？"</span>
                         </div>
-                        <div className="text-sm" style={{ color: offlineCharColorDraft }}>
-                          TA抬起头，眼中闪过一丝温柔，<span className="font-medium" style={{ color: offlineDialogColorDraft }}>"在想你呀。"</span>
+                        <div
+                          className="text-sm"
+                          style={{
+                            color: offlineCharColorDraft,
+                            fontStyle: offlineNarrationItalicDraft ? 'italic' : 'normal',
+                            fontWeight: offlineNarrationBoldDraft ? 600 : 400,
+                          }}
+                        >
+                          TA抬起头，眼中闪过一丝温柔，<span
+                            style={{
+                              color: offlineDialogColorDraft,
+                              fontStyle: offlineQuoteItalicDraft ? 'italic' : 'normal',
+                              fontWeight: offlineQuoteBoldDraft ? 600 : 400,
+                            }}
+                          >"在想你呀。"</span>
                         </div>
                       </div>
                       <div className="text-[11px] text-green-600 bg-green-50 rounded-lg px-3 py-2 mt-2">

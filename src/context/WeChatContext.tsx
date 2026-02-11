@@ -72,6 +72,11 @@ export type WeChatCharacter = {
   offlineMaxLength?: number // 最大输出字数
   offlineFontId?: string // 线下模式字体ID（留空则跟随全局）
   offlineTextBgOpacity?: number // 线下模式文字底图透明度 0-100，默认85
+  // 线下模式文字样式：分别控制“旁白部分”和“引号部分”
+  offlineNarrationItalic?: boolean
+  offlineNarrationBold?: boolean
+  offlineQuoteItalic?: boolean
+  offlineQuoteBold?: boolean
   // 记忆功能
   memoryRounds: number // 每次回复附带的历史“回合”数量（按用户发言回合计）
   memorySummary: string // 长期记忆摘要（用户可编辑），每次回复必读
@@ -407,6 +412,8 @@ export type MomentPost = {
   content: string
   contentZh?: string // 中文翻译版本（非中文角色时自动生成）
   images: string[]
+  // 仅谁可见：为空/不填=全部好友可见；填了=仅这些好友（characterId）可见/可互动（点赞/评论）
+  visibleToIds?: string[]
   timestamp: number
   likes: string[]
   comments: MomentComment[]
@@ -1782,6 +1789,10 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   const likeMoment = (momentId: string, userId: string) => {
     setMoments(prev => prev.map(m => {
       if (m.id !== momentId) return m
+      const visibleTo = m.visibleToIds
+      const canInteract =
+        !visibleTo || visibleTo.length === 0 || userId === 'user' || userId === m.authorId || visibleTo.includes(userId)
+      if (!canInteract) return m
       const hasLiked = m.likes.includes(userId)
       return { ...m, likes: hasLiked ? m.likes.filter(id => id !== userId) : [...m.likes, userId] }
     }))
@@ -1793,9 +1804,14 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       id: `comment_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       timestamp: comment.timestamp ?? Date.now(),
     }
-    setMoments(prev => prev.map(m => 
-      m.id === momentId ? { ...m, comments: [...m.comments, newComment] } : m
-    ))
+    setMoments(prev => prev.map(m => {
+      if (m.id !== momentId) return m
+      const visibleTo = m.visibleToIds
+      const canInteract =
+        !visibleTo || visibleTo.length === 0 || newComment.authorId === 'user' || newComment.authorId === m.authorId || visibleTo.includes(newComment.authorId)
+      if (!canInteract) return m
+      return { ...m, comments: [...m.comments, newComment] }
+    }))
     return newComment
   }
 
