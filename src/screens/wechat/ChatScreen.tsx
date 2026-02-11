@@ -6392,9 +6392,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
               {/* 每条消息显示时间（小号字体）和操作按钮 */}
               <div className="mt-2 flex items-center gap-2">
-                <span className="inline-block px-2 py-[2px] rounded-md bg-white/85 md:bg-white/70 md:backdrop-blur border border-white/60 text-[10px] text-gray-600">
-                  {formatTime(msg.timestamp)}
-                </span>
+                {!character?.hideBubbleTimestamps && (
+                  <span className="inline-block px-2 py-[2px] rounded-md bg-white/85 md:bg-white/70 md:backdrop-blur border border-white/60 text-[10px] text-gray-600">
+                    {formatTime(msg.timestamp)}
+                  </span>
+                )}
 
                 {/* 线上模式：由于“点击自己文字气泡=编辑”，给自己消息一个“更多(⋯)”入口打开菜单（含多选删除） */}
                 {!character?.offlineMode &&
@@ -6415,9 +6417,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                     </button>
                   )}
                 
-                {/* 消息操作按钮（非系统消息且非编辑模式） */}
-                {/* 线下模式保持原样；线上模式改为“长按气泡 → 悬浮菜单” */}
-                {character?.offlineMode && (msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'transfer' || msg.type === 'doudizhu_share' || msg.type === 'doudizhu_invite') && !editMode && (
+              {/* 消息操作按钮（非系统消息且非编辑模式） */}
+              {/* 线下模式：只对“线下模式消息”显示（避免开启线下模式后旧线上气泡下面爆出按钮） */}
+              {character?.offlineMode &&
+                msg.isOffline &&
+                (msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'transfer' || msg.type === 'doudizhu_share' || msg.type === 'doudizhu_invite') &&
+                !editMode && (
                   <>
                     {/* 编辑按钮（仅对方消息的文本/语音/转账备注） */}
                     {!msg.isUser && (msg.type === 'text' || msg.type === 'voice' || msg.type === 'transfer') && (
@@ -6721,6 +6726,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             {character.offlineMode ? (
               <button
                 type="button"
+                onPointerDown={(e) => {
+                  // 移动端：点按钮会让 textarea 失焦从而键盘收起；先阻止默认并保持焦点
+                  try { e.preventDefault() } catch {}
+                  try { inputRef.current?.focus() } catch {}
+                }}
                 onClick={() => {
                   const el = inputRef.current
                   const cur = String(inputText || '')

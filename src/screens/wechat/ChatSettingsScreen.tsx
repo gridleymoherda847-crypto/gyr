@@ -1471,6 +1471,21 @@ export default function ChatSettingsScreen() {
               </div>
             </div>
 
+            {/* 隐藏时间戳（仅UI显示，不影响时间感知） */}
+            <div className="flex items-center justify-between px-4 py-4 border-t border-gray-100">
+              <div className="flex flex-col">
+                <span className="text-[#000]">隐藏时间戳</span>
+                <span className="text-xs text-gray-400 mt-0.5">只隐藏气泡下方的小时间，不影响“时间同步/时间感知”</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateCharacter(character.id, { hideBubbleTimestamps: !(character?.hideBubbleTimestamps ?? false) })}
+                className={`w-12 h-7 rounded-full transition-colors relative ${(character?.hideBubbleTimestamps ?? false) ? 'bg-[#07C160]' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${(character?.hideBubbleTimestamps ?? false) ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+
             {/* 拍一拍开关 */}
             <div className="flex items-center justify-between px-4 py-4 border-t border-gray-100">
               <div className="flex flex-col">

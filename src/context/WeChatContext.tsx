@@ -84,6 +84,8 @@ export type WeChatCharacter = {
   // 时间同步
   timeSyncEnabled: boolean // 是否与本机时间同步
   manualTime: string // 手动时间（ISO字符串），timeSyncEnabled=false 时生效
+  // 仅隐藏气泡下方的时间戳（不影响“时间感知/时间同步”）
+  hideBubbleTimestamps?: boolean
   // 正在输入（用于离开聊天仍能显示“正在输入中…”）
   isTyping: boolean
   typingUpdatedAt: number | null

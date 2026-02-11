@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useOS } from '../../context/OSContext'
 import AppHeader from '../../components/AppHeader'
 import PageContainer from '../../components/PageContainer'
+import { compressImageFileToDataUrl } from '../../utils/image'
 
 export default function ProfileScreen() {
   const navigate = useNavigate()
@@ -15,9 +16,21 @@ export default function ProfileScreen() {
   const [saved, setSaved] = useState(false)
 
   const handleAvatarClick = () => fileInputRef.current?.click()
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) setAvatar(URL.createObjectURL(file))
+    if (!file) return
+    try {
+      // 关键：不要保存 blob: URL（跨刷新/跨浏览器会失效，表现为头像“裂开/损坏”）
+      const base64 = await compressImageFileToDataUrl(file, { maxSide: 512, quality: 0.86 })
+      setAvatar(base64)
+    } catch {
+      const reader = new FileReader()
+      reader.onload = () => setAvatar(String(reader.result || ''))
+      reader.readAsDataURL(file)
+    } finally {
+      // 允许重复选择同一张
+      try { e.currentTarget.value = '' } catch {}
+    }
   }
 
   const handleSave = () => {
@@ -40,7 +53,8 @@ export default function ProfileScreen() {
                 <span className="text-white text-xs sm:text-sm">更换</span>
               </div>
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            {/* iOS Safari: display:none 的 file input 可能导致无法触发选择文件 */}
+            <input ref={fileInputRef} type="file" accept="image/*" className="sr-only" onChange={handleAvatarChange} />
             <button onClick={handleAvatarClick} className="mt-2 sm:mt-3 text-xs sm:text-sm opacity-60 hover:opacity-80" style={{ color: fontColor.value }}>点击更换头像</button>
           </div>
 
