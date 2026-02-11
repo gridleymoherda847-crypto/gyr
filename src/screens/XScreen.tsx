@@ -3050,8 +3050,9 @@ ${chatFriendList}
         </div>
 
         <>
-          <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
-          <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleMeBannerChange} />
+          {/* iOS Safari: programmatic click() on display:none file input may fail; keep it in DOM but visually hidden */}
+          <input ref={avatarInputRef} type="file" accept="image/*" className="sr-only" onChange={handleAvatarChange} />
+          <input ref={bannerInputRef} type="file" accept="image/*" className="sr-only" onChange={handleMeBannerChange} />
         </>
 
         {followingOpen && (

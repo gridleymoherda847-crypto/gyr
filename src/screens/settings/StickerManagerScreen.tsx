@@ -69,6 +69,7 @@ const fileToBase64 = async (file: File): Promise<string> => {
 }
 
 const safeName = (name: string) => (name || '').trim().replace(/\s+/g, ' ').slice(0, 30)
+const UNCATEGORIZED_NAME = '未分类'
 
 const filenameToKeyword = (fileName: string) => {
   const base = (fileName || '').replace(/\.[^/.]+$/, '')
@@ -193,15 +194,23 @@ export default function StickerManagerScreen() {
   const [urlImportInput, setUrlImportInput] = useState('')
   const [urlImportLoading, setUrlImportLoading] = useState(false)
 
+  const hasUncategorized = useMemo(() => {
+    return (stickers || []).some((s: any) => !String(s?.category || '').trim())
+  }, [stickers])
+
   const categories = useMemo(() => {
-    return [...stickerCategories].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
-  }, [stickerCategories])
+    const base = [...stickerCategories].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+    // 把“未分类”的表情也作为一个分类显示（即使用户没手动创建过这个分类）
+    if (hasUncategorized && !base.some(c => c.name === UNCATEGORIZED_NAME)) {
+      base.unshift({ id: '__uncategorized__', name: UNCATEGORIZED_NAME } as any)
+    }
+    return base
+  }, [stickerCategories, hasUncategorized])
 
   const stickersByCategory = useMemo(() => {
     const map: Record<string, typeof stickers> = {}
     for (const s of stickers) {
-      const cat = (s.category || '').trim()
-      if (!cat) continue
+      const cat = String((s as any)?.category || '').trim() || UNCATEGORIZED_NAME
       if (!map[cat]) map[cat] = []
       map[cat].push(s)
     }
@@ -678,6 +687,7 @@ export default function StickerManagerScreen() {
               <div className="text-sm text-gray-400 px-1">暂无分类，先新建一个。</div>
             ) : (
               categories.map((cat) => {
+                const isVirtualUncategorized = cat.id === '__uncategorized__' && !stickerCategories.some(c => c.name === UNCATEGORIZED_NAME)
                 const isOpen = !!expanded[cat.id]
                 const list = stickersByCategory[cat.name] || []
                 return (
@@ -791,50 +801,54 @@ export default function StickerManagerScreen() {
                           >
                             复制包
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRenamingCatId(cat.id)
-                              setRenameCatValue(cat.name)
-                            }}
-                            className="px-3 py-1.5 rounded-full bg-white/80 border border-black/10 text-xs text-gray-700"
-                          >
-                            重命名
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDialog({
-                                open: true,
-                                title: '删除分类？',
-                                message: `确定删除「${cat.name}」分类吗？\n（不会删除表情图片，仅清空它们的分类标签）`,
-                                confirmText: '删除',
-                                cancelText: '取消',
-                                danger: true,
-                                onConfirm: () => removeStickerCategory(cat.id),
-                              })
-                            }}
-                            className="px-3 py-1.5 rounded-full bg-white/80 border border-red-200 text-xs text-red-600"
-                          >
-                            删除分类
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDialog({
-                                open: true,
-                                title: '删除分类和表情？',
-                                message: `确定删除「${cat.name}」分类，并删除该分类下所有表情吗？\n（此操作不可恢复）`,
-                                confirmText: '删除全部',
-                                cancelText: '取消',
-                                danger: true,
-                                onConfirm: () => removeStickerCategory(cat.id, { deleteStickers: true }),
-                              })
-                            }}
-                            className="px-3 py-1.5 rounded-full bg-red-500 text-white text-xs font-medium"
-                          >
-                            删除分类+表情
-                          </button>
+                          {!isVirtualUncategorized && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRenamingCatId(cat.id)
+                                  setRenameCatValue(cat.name)
+                                }}
+                                className="px-3 py-1.5 rounded-full bg-white/80 border border-black/10 text-xs text-gray-700"
+                              >
+                                重命名
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDialog({
+                                    open: true,
+                                    title: '删除分类？',
+                                    message: `确定删除「${cat.name}」分类吗？\n（不会删除表情图片，仅清空它们的分类标签）`,
+                                    confirmText: '删除',
+                                    cancelText: '取消',
+                                    danger: true,
+                                    onConfirm: () => removeStickerCategory(cat.id),
+                                  })
+                                }}
+                                className="px-3 py-1.5 rounded-full bg-white/80 border border-red-200 text-xs text-red-600"
+                              >
+                                删除分类
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDialog({
+                                    open: true,
+                                    title: '删除分类和表情？',
+                                    message: `确定删除「${cat.name}」分类，并删除该分类下所有表情吗？\n（此操作不可恢复）`,
+                                    confirmText: '删除全部',
+                                    cancelText: '取消',
+                                    danger: true,
+                                    onConfirm: () => removeStickerCategory(cat.id, { deleteStickers: true }),
+                                  })
+                                }}
+                                className="px-3 py-1.5 rounded-full bg-red-500 text-white text-xs font-medium"
+                              >
+                                删除分类+表情
+                              </button>
+                            </>
+                          )}
                         </div>
 
                         {list.length === 0 ? (
