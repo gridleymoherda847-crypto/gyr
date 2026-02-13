@@ -771,6 +771,14 @@ ${params.recentMessages || '（暂无消息）'}`
         if (m.type === 'location') return '<位置>'
         if (m.type === 'period') return '<经期记录>'
         if (m.type === 'doudizhu_share') return '<斗地主战绩>'
+        if (m.type === 'chat_forward') {
+          const fwd = Array.isArray((m as any).forwardedMessages) ? (m as any).forwardedMessages : []
+          const brief = fwd
+            .slice(0, 8)
+            .map((x: any) => `${String(x?.senderName || '某人')}: ${String(x?.content || '').replace(/\s+/g, ' ').slice(0, 40)}`)
+            .join('；')
+          return brief ? `<转发聊天 ${fwd.length}条：${brief}>` : `<转发聊天 ${fwd.length}条>`
+        }
         const text = String(m.content || '').trim()
         if (/^data:image\//i.test(text)) return '<图片>'
         return text
@@ -2898,7 +2906,13 @@ ${history}`
                         <button key={g.id} type="button" onClick={() => {
                           const selectedMessages = messages.filter(m => forwardSelectedIds.has(m.id)).sort((a, b) => a.timestamp - b.timestamp).map(m => ({
                             senderName: m.isUser ? (selectedPersona?.name || '我') : getNameInGroup(m.groupSenderId || ''),
-                            content: m.content, timestamp: m.timestamp, type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
+                            content:
+                              m.type === 'image' ? '[图片]' :
+                              m.type === 'sticker' ? '[表情包]' :
+                              m.type === 'voice' ? (m.voiceText || '[语音]') :
+                              m.type === 'transfer' ? `转账 ¥${Number(m.transferAmount || 0).toFixed(2)} ${m.transferNote || ''}` :
+                              String(m.content || ''),
+                            timestamp: m.timestamp, type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
                           }))
                           addMessage({ characterId: '', groupId: g.id, content: `[转发了${selectedMessages.length}条消息]`, isUser: true, type: 'chat_forward', forwardedMessages: selectedMessages, forwardedFrom: group.name })
                           setShowForwardTargetPicker(false); setForwardMode(false); setForwardSelectedIds(new Set())
@@ -2927,7 +2941,13 @@ ${history}`
                     <button key={c.id} type="button" onClick={() => {
                       const selectedMessages = messages.filter(m => forwardSelectedIds.has(m.id)).sort((a, b) => a.timestamp - b.timestamp).map(m => ({
                         senderName: m.isUser ? (selectedPersona?.name || '我') : getNameInGroup(m.groupSenderId || ''),
-                        content: m.content, timestamp: m.timestamp, type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
+                        content:
+                          m.type === 'image' ? '[图片]' :
+                          m.type === 'sticker' ? '[表情包]' :
+                          m.type === 'voice' ? (m.voiceText || '[语音]') :
+                          m.type === 'transfer' ? `转账 ¥${Number(m.transferAmount || 0).toFixed(2)} ${m.transferNote || ''}` :
+                          String(m.content || ''),
+                        timestamp: m.timestamp, type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
                       }))
                       addMessage({ characterId: c.id, content: `[转发了${selectedMessages.length}条消息]`, isUser: true, type: 'chat_forward', forwardedMessages: selectedMessages, forwardedFrom: group.name })
                       setShowForwardTargetPicker(false); setForwardMode(false); setForwardSelectedIds(new Set())

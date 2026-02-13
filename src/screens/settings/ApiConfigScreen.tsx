@@ -346,6 +346,11 @@ export default function ApiConfigScreen() {
         model: modelToTry,
       })
       const text = String(reply || '').trim()
+      const looksLikeFailure =
+        /【API 调用失败】|upstreamStatus|error\.response\.data|请求失败[:：]|networkerror|failed to fetch/i.test(text)
+      if (looksLikeFailure) {
+        throw new Error(text || '测试失败：上游返回异常')
+      }
       const ok = /(^|\b)ok\b/i.test(text)
       setLlmTestOk(
         `连接正常：模型「${modelUsed}」回复「${text || 'OK'}」${ok ? '' : '（提示：上游没严格按 OK 返回，但已能正常调用）'}`
@@ -442,6 +447,11 @@ export default function ApiConfigScreen() {
         model: modelToTry,
       })
       const text = String(reply || '').trim()
+      const looksLikeFailure =
+        /【API 调用失败】|upstreamStatus|error\.response\.data|请求失败[:：]|networkerror|failed to fetch/i.test(text)
+      if (looksLikeFailure) {
+        throw new Error(text || '测试失败：上游返回异常')
+      }
       const ok = /(^|\b)ok\b/i.test(text)
       setEditTestOk(
         `连接正常：模型「${modelUsed}」回复「${text || 'OK'}」${ok ? '' : '（提示：上游没严格按 OK 返回，但已能正常调用）'}`

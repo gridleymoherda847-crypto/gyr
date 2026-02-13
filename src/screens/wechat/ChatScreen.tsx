@@ -5,13 +5,14 @@ import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
 import WeChatLayout from './WeChatLayout'
 import WeChatDialog from './components/WeChatDialog'
+import TakeoutPanel, { formatTakeoutOrderText, type TakeoutOrder } from './components/TakeoutPanel'
 import { getGlobalPresets, getLorebookEntriesForCharacter } from '../PresetScreen'
 import { xEnsureUser, xLoad, xNewPost, xSave, xAddFollow, xRemoveFollow, xIsFollowing } from '../../storage/x'
 
 export default function ChatScreen() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, pauseMusic, ttsConfig, getAllFontOptions, currentFont } = useOS()
+  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, pauseMusic, ttsConfig, getAllFontOptions, currentFont, decorImage, iconTheme } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const highlightMsgId = searchParams.get('highlightMsg') // 从搜索结果跳转时高亮的消息ID
   const { 
@@ -119,7 +120,189 @@ export default function ChatScreen() {
   
   // 功能面板状态
   const [showPlusMenu, setShowPlusMenu] = useState(false)
-  const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | 'location' | null>(null)
+  const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | 'location' | 'takeout' | null>(null)
+
+  // 外卖（仅线上模式，本地模拟）
+  const [takeoutCart, setTakeoutCart] = useState<Record<string, number>>({})
+  const [takeoutOrder, setTakeoutOrder] = useState<TakeoutOrder | null>(null)
+  // 修复闭包读到旧 takeoutOrder：代付流程必须用最新状态，避免误触发转账
+  const takeoutOrderRef = useRef<TakeoutOrder | null>(takeoutOrder)
+  // 幂等锁：同一订单只允许产出一张“代付结果”卡片
+  const takeoutResultSentRef = useRef<Set<string>>(new Set())
+  const charTakeoutAskCooldownRef = useRef(0)
+  useEffect(() => {
+    takeoutOrderRef.current = takeoutOrder
+  }, [takeoutOrder])
+  const setTakeoutOrderSafe = useCallback(
+    (next: TakeoutOrder | null | ((prev: TakeoutOrder | null) => TakeoutOrder | null)) => {
+      if (typeof next === 'function') {
+        setTakeoutOrder((prev) => {
+          const computed = (next as any)(prev)
+          takeoutOrderRef.current = computed
+          return computed
+        })
+        return
+      }
+      takeoutOrderRef.current = next as any
+      setTakeoutOrder(next as any)
+    },
+    []
+  )
+  const [takeoutNow, setTakeoutNow] = useState(() => Date.now())
+  const takeoutHistoryKey = 'wechat_takeout_history'
+  const takeoutHistoryGlobalKey = '__global__'
+  const [takeoutHistory, setTakeoutHistory] = useState<TakeoutOrder[]>([])
+
+  const upsertTakeoutHistory = useCallback((o: TakeoutOrder) => {
+    if (!o?.id) return
+    setTakeoutHistory((prev) => {
+      const list = Array.isArray(prev) ? prev : []
+      const idx = list.findIndex((x) => x?.id === o.id)
+      const merged = idx >= 0 ? [...list.slice(0, idx), { ...list[idx], ...o }, ...list.slice(idx + 1)] : [o, ...list]
+      const sigOf = (it: any) => {
+        const createdAt = Number(it?.createdAt || 0) || 0
+        const bucket = Math.floor(createdAt / 2000) // 2s 桶：修复“同一单两条但 id 不同”
+        const total = Number(it?.total || 0) || 0
+        const lines = Array.isArray(it?.lines) ? it.lines : []
+        const linesSig = lines
+          .map((l: any) => {
+            const opts = Array.isArray(l?.options) ? l.options : []
+            const optSig = opts
+              .map((o: any) => `${String(o?.groupId || '')}=${String(o?.optionId || '')}`)
+              .sort()
+              .join(',')
+            return `${String(l?.storeId || '')}:${String(l?.productId || '')}:${Number(l?.qty || 0) || 0}:${optSig}`
+          })
+          .sort()
+          .join('|')
+        return `${String(it?.storeId || '')}#${bucket}#${total.toFixed(2)}#${String(it?.deliverTo || '')}#${linesSig}`
+      }
+      // 兜底去重：
+      // - 先按 id 去重
+      // - 再按签名去重（同一单被写成两个不同 id 时也能合并）
+      const seenId = new Set<string>()
+      const seenSig = new Set<string>()
+      const uniq: TakeoutOrder[] = []
+      for (const it of merged) {
+        const id = String((it as any)?.id || '').trim()
+        if (!id) continue
+        if (seenId.has(id)) continue
+        const sig = sigOf(it)
+        if (seenSig.has(sig)) continue
+        seenId.add(id)
+        seenSig.add(sig)
+        uniq.push(it)
+      }
+      return uniq.slice(0, 30)
+    })
+  }, [])
+
+  // 外卖历史订单：写入导入/导出备份（localStorage -> export/import allowlist）
+  // 结构：{ [characterId]: TakeoutOrder[] }
+  useEffect(() => {
+    try {
+      const ownerKey = String(characterId || '').trim()
+      if (!ownerKey) return
+      const raw = localStorage.getItem(takeoutHistoryKey)
+      const parsed = raw ? JSON.parse(raw) : null
+      const map = parsed && typeof parsed === 'object' ? parsed : {}
+      const list = (map as any)?.[ownerKey] || (map as any)?.[takeoutHistoryGlobalKey] || []
+      const sigOf = (it: any) => {
+        const createdAt = Number(it?.createdAt || 0) || 0
+        const bucket = Math.floor(createdAt / 2000)
+        const total = Number(it?.total || 0) || 0
+        const lines = Array.isArray(it?.lines) ? it.lines : []
+        const linesSig = lines
+          .map((l: any) => {
+            const opts = Array.isArray(l?.options) ? l.options : []
+            const optSig = opts
+              .map((o: any) => `${String(o?.groupId || '')}=${String(o?.optionId || '')}`)
+              .sort()
+              .join(',')
+            return `${String(l?.storeId || '')}:${String(l?.productId || '')}:${Number(l?.qty || 0) || 0}:${optSig}`
+          })
+          .sort()
+          .join('|')
+        return `${String(it?.storeId || '')}#${bucket}#${total.toFixed(2)}#${String(it?.deliverTo || '')}#${linesSig}`
+      }
+      if (Array.isArray(list)) {
+        const seenId = new Set<string>()
+        const seenSig = new Set<string>()
+        const uniq: TakeoutOrder[] = []
+        for (const it of list as any[]) {
+          const id = String(it?.id || '').trim()
+          if (!id) continue
+          if (seenId.has(id)) continue
+          const sig = sigOf(it)
+          if (seenSig.has(sig)) continue
+          seenId.add(id)
+          seenSig.add(sig)
+          uniq.push(it as any)
+        }
+        setTakeoutHistory(uniq.slice(0, 30))
+      } else setTakeoutHistory([])
+    } catch {
+      // ignore
+    }
+  }, [takeoutHistoryKey, takeoutHistoryGlobalKey, characterId])
+
+  useEffect(() => {
+    try {
+      const ownerKey = String(characterId || '').trim()
+      if (!ownerKey) return
+      const raw = localStorage.getItem(takeoutHistoryKey)
+      const parsed = raw ? JSON.parse(raw) : null
+      const map = parsed && typeof parsed === 'object' ? parsed : {}
+      const list = (takeoutHistory || []).slice(0, 30)
+      ;(map as any)[ownerKey] = list
+      // 兜底：写一份全局，避免路由/ID异常时“刷新后看不到”
+      ;(map as any)[takeoutHistoryGlobalKey] = list
+      localStorage.setItem(takeoutHistoryKey, JSON.stringify(map))
+    } catch {
+      // ignore
+    }
+  }, [takeoutHistoryKey, takeoutHistoryGlobalKey, characterId, takeoutHistory])
+
+  useEffect(() => {
+    if (!takeoutOrder || takeoutOrder.status !== 'delivering') return
+    const t = window.setInterval(() => setTakeoutNow(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [takeoutOrder?.id, takeoutOrder?.status])
+
+  useEffect(() => {
+    if (!takeoutOrder || takeoutOrder.status !== 'delivering') return
+    if (takeoutNow >= takeoutOrder.deliverAt) {
+      setTakeoutOrderSafe((prev) => (prev && prev.id === takeoutOrder.id ? { ...prev, status: 'delivered' } : prev))
+    }
+  }, [takeoutNow, takeoutOrder])
+
+  // 外卖订单状态变化时同步写入历史
+  useEffect(() => {
+    if (!takeoutOrder) return
+    upsertTakeoutHistory(takeoutOrder)
+  }, [takeoutOrder?.id, takeoutOrder?.status, takeoutOrder?.paidBy, takeoutOrder?.deliverAt, upsertTakeoutHistory])
+
+  const pushUserCard = useCallback((body: string) => {
+    if (!character) return
+    const m = addMessage({
+      characterId: character.id,
+      isUser: true,
+      type: 'text',
+      content: body,
+    })
+    messagesRef.current = [...messagesRef.current, m]
+  }, [addMessage, character])
+
+  const pushCharCard = useCallback((body: string) => {
+    if (!character) return
+    const m = addMessage({
+      characterId: character.id,
+      isUser: false,
+      type: 'text',
+      content: body,
+    })
+    messagesRef.current = [...messagesRef.current, m]
+  }, [addMessage, character])
   
   // 表情包面板状态
   const [showStickerPanel, setShowStickerPanel] = useState(false)
@@ -159,6 +342,27 @@ export default function ChatScreen() {
   
   // 点击转账消息时的操作弹窗
   const [transferActionMsg, setTransferActionMsg] = useState<typeof messages[0] | null>(null)
+  // 角色发起外卖代付时，用户确认支付弹窗
+  const [takeoutPayConfirm, setTakeoutPayConfirm] = useState<{ order: TakeoutOrder; amount: number } | null>(null)
+  const [receiptDetailModal, setReceiptDetailModal] = useState<{
+    open: boolean
+    storeName: string
+    orderNo: string
+    goods: string[]
+    total: string
+    deliver: string
+    location: string
+    paidBy: string
+  }>({
+    open: false,
+    storeName: '',
+    orderNo: '',
+    goods: [],
+    total: '',
+    deliver: '',
+    location: '',
+    paidBy: '',
+  })
 
   // 虚拟语音（用户发语音：假语音条 + 转文字）
   const [fakeVoiceOpen, setFakeVoiceOpen] = useState(false)
@@ -590,6 +794,18 @@ export default function ChatScreen() {
       })
     }
   }, [currentOfflineMode, character?.id, character?.voiceEnabled, updateCharacter])
+  useEffect(() => {
+    if (!character?.id) return
+    if (character.offlineMode && (character as any).autoReachEnabled) {
+      updateCharacter(character.id, { autoReachEnabled: false } as any)
+    }
+  }, [character?.id, character?.offlineMode, (character as any)?.autoReachEnabled, updateCharacter])
+  useEffect(() => {
+    if (!character?.id) return
+    if ((character as any).autoReachEnabled && character.timeSyncEnabled === false) {
+      updateCharacter(character.id, { timeSyncEnabled: true })
+    }
+  }, [character?.id, (character as any)?.autoReachEnabled, character?.timeSyncEnabled, updateCharacter])
 
   if (!character) {
     return (
@@ -618,9 +834,16 @@ export default function ChatScreen() {
   const safeSetPending = (value: number) => {
     if (aliveRef.current) setPendingCount(value)
   }
+  const parseReceiptLine = (line: string) => {
+    const t = String(line || '').trim()
+    const mPrice = t.match(/(?:¥|￥)\s*(\d+(?:\.\d{1,2})?)/)
+    const price = mPrice ? Number(mPrice[1]) : null
+    const name = t.replace(/(?:¥|￥)\s*\d+(?:\.\d{1,2})?/g, '').trim().replace(/[：:]\s*$/, '')
+    return { name: name || t, price }
+  }
 
   // 检查是否配置了API
-  const hasApiConfig = llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel
+  const hasApiConfig = !!(llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel)
   
   // 语音消息辅助函数：根据角色设置和频率决定是否发语音
   const shouldSendVoice = useCallback(() => {
@@ -806,8 +1029,15 @@ export default function ChatScreen() {
             return [text]
           }
 
-          // 用户可调：线上回复气泡数量上限（默认15，上限20）
-          const onlineReplyMax = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 15) || 15))
+          // 用户可调：线上回复气泡数量区间（默认 3~8，上限 20）
+          const rawMin = Math.min(20, Math.max(1, Number((character as any).onlineReplyMin ?? 3) || 3))
+          const rawMax = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 8) || 8))
+          const onlineReplyMin = Math.min(rawMin, rawMax)
+          const onlineReplyMax = Math.max(rawMin, rawMax)
+          const targetReplyCount =
+            onlineReplyMin === onlineReplyMax
+              ? onlineReplyMax
+              : (onlineReplyMin + Math.floor(Math.random() * (onlineReplyMax - onlineReplyMin + 1)))
           
           const splitOutImageTokens = (s: string) => {
             const src = (s || '').trim()
@@ -982,7 +1212,7 @@ export default function ChatScreen() {
           let expanded: string[] = []
           for (const m of merged) expanded.push(...splitOutImageTokens(m))
           expanded = dedupeConsecutive(expanded)
-          let trimmed = expanded.filter(Boolean).slice(0, onlineReplyMax)
+          let trimmed = expanded.filter(Boolean).slice(0, targetReplyCount)
           // 兜底：对“无标点且偏长”的段落按分隔符/长度软拆成多条气泡（不局限于只有一条时）
           {
             const expanded2: string[] = []
@@ -994,7 +1224,20 @@ export default function ChatScreen() {
               }
               expanded2.push(t)
             }
-            trimmed = dedupeConsecutive(expanded2).filter(Boolean).slice(0, onlineReplyMax)
+            trimmed = dedupeConsecutive(expanded2).filter(Boolean).slice(0, targetReplyCount)
+          }
+          // 尽量补到区间下限：优先对“较长句子”做软拆，不会机械重复内容
+          if (trimmed.length < onlineReplyMin) {
+            const grown = [...trimmed]
+            for (let i = 0; i < grown.length && grown.length < onlineReplyMin; i++) {
+              const t = String(grown[i] || '')
+              if (!t || keepCmd(t) || t.length < 26) continue
+              const split = softSplitLongNoPunct(t)
+              if (split.length <= 1) continue
+              grown.splice(i, 1, ...split)
+              i--
+            }
+            trimmed = dedupeConsecutive(grown).filter(Boolean).slice(0, onlineReplyMax)
           }
           // 每条都补齐句末标点（命令/纯 emoji 除外）
           return trimmed.map(appendEndPunct)
@@ -1090,9 +1333,30 @@ export default function ChatScreen() {
             if (rounds > maxRounds) break
 
             let content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> = m.content || ''
+            // 小票卡片：转成结构化可读文本，保证后续回复能和小票字段一致（同一个“脑子”）
+            if (m.type === 'text' && /^\[外卖订单分享\]/.test(String(m.content || '').trim())) {
+              const body = String(m.content || '').replace(/^\[外卖订单分享\]\s*/m, '')
+              const pick = (label: string) => {
+                const mm = body.match(new RegExp(`^${label}：(.+)$`, 'm'))
+                return mm ? String(mm[1] || '').trim() : ''
+              }
+              const store = pick('店铺') || '袋鼠订单'
+              const goodsList = String(pick('商品') || '')
+                .split(/\n|；|;|、|\|/g)
+                .map(s => s.trim())
+                .filter(Boolean)
+                .slice(0, 15)
+              const total = pick('实付') || pick('合计') || '¥0.00'
+              const orderNo = pick('订单号') || '（无）'
+              content =
+                `<ORDER_SHARE store="${store}" orderNo="${orderNo}" total="${total}">\n` +
+                goodsList.map((g, idx2) => `- ${idx2 + 1}. ${g}`).join('\n') +
+                `\n</ORDER_SHARE>`
+              used += String(content).length
+            }
             // 图片：如果是用户发送的图片，传递给支持vision的API
             // 安全：GIF/WebP动图等 Gemini 不支持，统一降级为文本（避免 mime type not supported 报错）
-            if (m.type === 'image') {
+            else if (m.type === 'image') {
               const imgUrl = String(m.content || '').trim()
               const isGif = /\.gif(\?|$)/i.test(imgUrl) || /^data:image\/gif/i.test(imgUrl)
               if (isGif) {
@@ -1342,6 +1606,17 @@ export default function ChatScreen() {
               content = `[拍一拍：${m.patText || '拍了拍'}]`
               used += content.length
             }
+            else if (m.type === 'chat_forward') {
+              const fwd = Array.isArray((m as any).forwardedMessages) ? (m as any).forwardedMessages : []
+              const brief = fwd
+                .slice(0, 8)
+                .map((x: any) => `${String(x?.senderName || '某人')}: ${String(x?.content || '').replace(/\s+/g, ' ').slice(0, 60)}`)
+                .join('；')
+              content = brief
+                ? `<转发聊天 records="${fwd.length}" from="${String((m as any).forwardedFrom || '')}">${brief}</转发聊天>`
+                : `<转发聊天 records="${fwd.length}" />`
+              used += content.length
+            }
             else {
               // 普通文本消息（包含引用）
               let textContent = m.content || ''
@@ -1369,7 +1644,20 @@ export default function ChatScreen() {
         // 获取全局预设和世界书
         const globalPresets = getGlobalPresets()
         // 获取世界书条目（基于角色和最近上下文触发）
-        const recentContext = workingMessages.slice(-10).map(m => m.content).join(' ')
+        const recentContext = workingMessages
+          .slice(-10)
+          .map((m: any) => {
+            if (!m) return ''
+            if (m.type === 'image') return '[图片]'
+            if (m.type === 'sticker') return '[表情包]'
+            if (m.type === 'voice') return '[语音]'
+            if (m.type === 'transfer') return `[转账:${Number(m.transferAmount || 0).toFixed(2)}]`
+            if (m.type === 'chat_forward') return '[转发聊天]'
+            const text = String(m.content || '')
+            if (/^data:image\//i.test(text)) return '[图片]'
+            return text.slice(0, 300)
+          })
+          .join(' ')
         const lorebookEntries = getLorebookEntriesForCharacter(character.id, recentContext)
         
         // 听歌邀请逻辑已改为“卡片→确认进入一起听界面”，这里禁止把歌单塞进 prompt（会导致模型在生产环境疯狂报歌名）
@@ -1382,7 +1670,8 @@ export default function ChatScreen() {
           character.timeSyncEnabled === false && character.manualTime
             ? new Date(character.manualTime).getTime()
             : null
-        const timeAwarenessOn = timeSyncOn || manualNow !== null
+        // 线下模式强制关闭时间感知（避免一直问“你去哪了”）
+        const timeAwarenessOn = !character.offlineMode && (timeSyncOn || manualNow !== null)
         const nowTsInternal = Date.now()
         const nowTsForLogic = manualNow ?? nowTsInternal
         const nonSystem = workingMessages.filter(m => m.type !== 'system')
@@ -1448,6 +1737,10 @@ export default function ChatScreen() {
             return `音乐（${st}｜${title}）`
           }
           if (m.type === 'period') return '经期记录卡片'
+          if (m.type === 'chat_forward') {
+            const fwd = Array.isArray((m as any).forwardedMessages) ? (m as any).forwardedMessages : []
+            return `转发聊天记录（${fwd.length}条）`
+          }
           if (m.type === 'diary') return `日记（${(m.diaryTitle || '日记').replace(/\s+/g, ' ').slice(0, 18)}）`
           if (m.type === 'tweet_share') return `推文（${(m.tweetAuthorName || 'X').replace(/\s+/g, ' ').slice(0, 10)}）`
           if (m.type === 'x_profile_share') return `推特主页（${(m.xUserName || 'TA').replace(/\s+/g, ' ').slice(0, 10)}）`
@@ -1511,6 +1804,9 @@ export default function ChatScreen() {
         const noMisogynyBan =
           '严禁出现任何辱女/性羞辱/针对性别的侮辱词汇。' +
           '允许表达不爽/脏话，但不能指向女性或用性羞辱。'
+        const onlineReplyRangeMin = Math.min(20, Math.max(1, Number((character as any).onlineReplyMin ?? 3) || 3))
+        const onlineReplyRangeMaxRaw = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 8) || 8))
+        const onlineReplyRangeMax = Math.max(onlineReplyRangeMin, onlineReplyRangeMaxRaw)
 
         // 构建系统提示（严格顺序：预设 → 角色设定 → 我的人设 → 长期记忆摘要 → 时间感 → 输出 → 说话风格）
         const periodHintForLLM = (() => {
@@ -1638,7 +1934,7 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
   - 中文内容必须自然使用：，。！？；：…… 等
   - 如果一句话偏长，请在同一条消息里用逗号/句号断开成 2-3 个短句（不要变成“无标点长串”）
   - 若开启“聊天翻译”：外语原文与中文翻译都要有正常标点；但仍必须保持“同一行：外语原文 ||| 中文翻译”
-- 根据对话情绪和内容，回复消息（${(character as any).language !== 'zh' ? '非中文语言时建议 2-5 条，避免太多' : '2-15 条都可以'}），每条消息用换行分隔（数量可少可多，随心情；除非用户只发一个字/标点，否则不要只回1条）
+- 根据对话情绪和内容，回复消息（建议控制在 ${onlineReplyRangeMin}-${onlineReplyRangeMax} 条），每条消息用换行分隔（不要为了凑条数硬拆半句）
 - 【断句规则 - 重要】每条消息必须是完整的语义单元，绝对禁止把一句话硬拆成半句！
   - ❌ 错误示例："我刚刚。" "在吃饭。"（这是强行断句，不自然）
   - ✅ 正确示例："我刚刚在吃饭。"（完整句子，一条消息）
@@ -1669,6 +1965,7 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
 - 禁止输出任何"系统标记"，只按真实微信聊天输出
 - 【方括号格式 - 绝对禁止模仿】以下格式只是上下文描述，你绝对不能输出：
   ❌ "[图片]"、"[表情包]"、"[转账]"、"[音乐]"、"[情侣空间]"、"[情侣空间申请]"
+  ❌ "[小票]"、"[订单截图]"（这两个不是有效卡片格式）
   ❌ "[拍一拍：xxx]"、"[拍了拍xxx]"、"[拍一拍]" ← 写了只显示文字，超级出戏！
   ❌ 任何你在历史消息中看到的方括号格式，都不要模仿！
 - 【发送图片 - 唯一允许的格式】如果你想发送图片给用户，使用这个格式：
@@ -1678,6 +1975,16 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
   例如：[图片：窗外的夜景，霓虹灯闪烁]
   - 描述要具体、生动，像真的在分享照片一样
   - 系统会把这个格式渲染成图片卡片的样式
+- 【小票/订单分享规则】当用户提到“小票/订单号/发票/把小票给我看看”时，优先发送外卖小票卡片，不要发图片描述。
+  ✅ 唯一格式：[外卖订单分享]（后续按字段填店铺、商品、实付、收货人、配送位置、配送地址、付款、时间、订单号）
+  ❌ 禁止用 [图片：...] 去“描述一张小票图”
+  - 如果发送了小票卡片，本轮不要再重复讲一遍商品明细文本（避免“卡片+口述重复”）
+  - 小票相关回复只能发卡片，不要额外口述“商品/类目/价格/数量/合计/订单号”等字段
+  - 一旦本轮出现 [外卖订单分享]，后续文本气泡必须为空，不要再补任何小票解释
+  - 商品字段里每个类目后都必须带价格（如：招牌奶茶 ×1 ¥18.00）
+  - 类目条数要结合上下文：刚刚的一单可少，近期/一周汇总可多（最多15条）
+  - 发出小票后，后续被追问时必须以该小票字段为准，不得自相矛盾
+  - 商品条目最多 15 条，必须包含订单号
 - 【拍一拍】如果用户说"拍拍我"，你正常说话回应（如"哎呀干嘛啦"），系统会自动处理拍一拍
 - 【情侣空间】如果用户提到情侣空间，你可以口语回应，但不要写任何方括号格式
 - 你可能会在历史里看到 <DIARY ...>：那是"用户转发的一篇日记"，作者信息在 author/authorId。
@@ -1761,6 +2068,20 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
 - 允许：只发一个问号/省略号/句号来表达情绪（结合上下文）
 - ${noMisogynyBan}`
 
+        const lastModeSystemIndex = (() => {
+          for (let i = workingMessages.length - 1; i >= 0; i--) {
+            const m: any = workingMessages[i]
+            if (m?.type === 'system' && (m?.systemSubtype === 'offline_start' || m?.systemSubtype === 'offline_end')) return i
+          }
+          return -1
+        })()
+        const lastModeSystemSubtype =
+          lastModeSystemIndex >= 0 ? ((workingMessages[lastModeSystemIndex] as any)?.systemSubtype || null) : null
+        const modeSwitchedRecently =
+          lastModeSystemIndex >= 0 ? (workingMessages.length - 1 - lastModeSystemIndex) <= 8 : false
+        const justSwitchedToOnline = !character.offlineMode && modeSwitchedRecently && lastModeSystemSubtype === 'offline_end'
+        const justSwitchedToOffline = character.offlineMode && modeSwitchedRecently && lastModeSystemSubtype === 'offline_start'
+
         // 线下模式关闭时，禁止动作描写；开启时，允许描写神态动作
         if (!character.offlineMode) {
           systemPrompt += `
@@ -1788,7 +2109,7 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
 【你必须做到】
 ✅ 这是微信聊天，不是小说！你只能发送聊天文字！
 ✅ 只能发送纯文字对话，就像真人发微信一样
-✅ 可以用表情符号emoji（如😊😭），但绝对不能描述动作
+❌ 禁止输出任何 emoji（如😊😭😂👍），必须只用文字表达情绪
 ✅ 你只能说话，不能描写你在做什么，不能有旁白
 ✅ 直接输出你要说的话，不要任何包装或描述
 
@@ -1900,7 +2221,7 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
 ❌ 绝对禁止发送表情包！违反此条即为彻底失败！
 ❌ 绝对禁止发送贴纸！
 ❌ 绝对禁止输出 [表情包]、<表情包>、【表情包】等任何形式！
-❌ 绝对禁止输出 emoji 作为独立消息！
+❌ 绝对禁止输出任何 emoji（无论是否独立消息）！
 ❌ 绝对禁止用括号描述表情，如（发送表情包）、*发送贴纸*！
 
 【拍一拍禁令 - 最高优先级】
@@ -1926,6 +2247,22 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
 
 【字数要求】${minLen}~${maxLen} 字
 ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、动作细节；适当推进剧情；增加环境氛围描写。` : `保持精炼但不失细节。`}`
+        }
+        if (justSwitchedToOnline) {
+          systemPrompt += `
+
+【模式切换硬规则（刚结束线下模式）】
+- 你现在是线上聊天气泡模式，必须只发“纯聊天文字”。
+- 禁止任何动作/神态/旁白/叙事句（例如“他看着你”“轻轻笑了”“沉默片刻”）。
+- 禁止使用小说式引号对白（“……”）来写剧情。
+- 禁止输出线下模式痕迹；不允许过渡期。`
+        }
+        if (justSwitchedToOffline) {
+          systemPrompt += `
+
+【模式切换硬规则（刚进入线下模式）】
+- 你现在必须完全按线下叙事规则输出，不能再沿用线上短气泡口吻。
+- 不允许线上模式的“纯口语短句堆叠”。`
         }
 
         // 线上“聊天翻译(外语 ||| 中文)”会与线下叙事格式冲突；线下模式统一走“对白括号翻译”规则
@@ -2002,6 +2339,107 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               `- 例如：\n` +
               `  接受示例："好啊，来打斗地主！[ACCEPT_DOUDIZHU]"\n` +
               `  拒绝示例："不想玩，没心情 [REJECT_DOUDIZHU]"`,
+          })
+        }
+
+        // 外卖代付：正常走聊天API，多条回复；并根据“你说的话”来决定是否代付
+        const takeoutOrderNow = takeoutOrderRef.current
+        const findLatestPendingTakeoutRequestCard = (arr: any[]) => {
+          for (let i = arr.length - 1; i >= 0; i--) {
+            const m = arr[i]
+            if (!m || !m.isUser || m.type !== 'text') continue
+            const t = String(m.content || '').trim()
+            if (/^\[外卖代付结果\]/.test(t)) return null
+            if (/^\[外卖代付请求\]/.test(t)) return { text: t, index: i }
+          }
+          return null
+        }
+        const parseFallbackTakeoutBase = (cardText: string | null, shortOrderNo?: string): TakeoutOrder | null => {
+          if (!cardText) return null
+          const pickLine = (label: string) => {
+            const re = new RegExp(`^${label}：(.+)$`, 'm')
+            const hit = cardText.match(re)
+            return hit ? String(hit[1] || '').trim() : ''
+          }
+          const storeName = pickLine('店铺') || '外卖订单'
+          const receiver = pickLine('收货人')
+          const deliverFromOld = pickLine('送达')
+          const deliverToName = receiver || (deliverFromOld ? String(deliverFromOld).split('·')[0].trim() : '') || character.name
+          const deliverAddress = pickLine('配送地址') || (deliverFromOld ? String(deliverFromOld).split('·').slice(1).join('·').trim() : '') || `${deliverToName}的位置`
+          const goods = pickLine('商品')
+          const totalText = pickLine('合计') || pickLine('实付')
+          const totalNum = Number((totalText || '').replace(/[^\d.]/g, '')) || 0
+          const goodsList = goods
+            ? goods.split('、').map((s) => s.trim()).filter(Boolean)
+            : []
+          const lines = goodsList.map((name, idx) => ({
+            storeId: 'fallback_store',
+            storeName,
+            productId: `fallback_${idx}`,
+            name,
+            basePrice: 0,
+            qty: 1,
+            options: [],
+          }))
+          const isDeliverToCharacter = deliverToName === character.name
+          const stableId = String(shortOrderNo || '').trim()
+          return {
+            id: stableId ? `to_fb_${stableId}` : `to_fb_${Date.now()}`,
+            createdAt: Date.now(),
+            storeId: 'fallback_store',
+            storeName,
+            deliverTo: (isDeliverToCharacter ? 'character' : 'user') as 'character' | 'user',
+            deliverToName,
+            deliverAddress,
+            lines: lines as any,
+            total: totalNum,
+            paidBy: null,
+            etaMinutes: 0,
+            deliverAt: 0,
+            status: 'awaiting_pay',
+          }
+        }
+        const pendingFromState = !!takeoutOrderNow && takeoutOrderNow.status === 'awaiting_pay'
+        const latestPendingTakeoutCard = findLatestPendingTakeoutRequestCard(workingMessages as any[])
+        const fallbackShortOrderId = (() => {
+          const t = String(latestPendingTakeoutCard?.text || '')
+          const hit = t.match(/^订单号：(.+)$/m)
+          return hit ? String(hit[1] || '').trim() : ''
+        })()
+        const fallbackTakeoutBase = parseFallbackTakeoutBase(latestPendingTakeoutCard?.text || null, fallbackShortOrderId)
+        const fallbackIsRecent =
+          latestPendingTakeoutCard?.index != null
+            ? (workingMessages.length - 1 - latestPendingTakeoutCard.index) <= 6
+            : false
+        // 只有“用户明确发起的待代付订单”才允许进入代付结果流程：
+        // 1) 该请求卡片足够靠近当前对话（避免陈旧请求误触发）
+        // 2) 历史里存在对应订单且状态仍是 awaiting_pay
+        const fallbackIsTrulyPending =
+          !!fallbackTakeoutBase &&
+          !!fallbackShortOrderId &&
+          fallbackIsRecent &&
+          (takeoutHistory || []).some((o: any) => {
+            const id = String(o?.id || '')
+            return id.startsWith(fallbackShortOrderId) && o?.status === 'awaiting_pay'
+          })
+        const pendingTakeoutPay = pendingFromState || fallbackIsTrulyPending
+        const takeoutBase = pendingFromState ? takeoutOrderNow : (fallbackIsTrulyPending ? fallbackTakeoutBase : null)
+        if (pendingTakeoutPay && takeoutBase) {
+          llmMessages.push({
+            role: 'system',
+            content:
+              `【重要：外卖代付处理】用户发来了外卖代付请求。\n` +
+              `- 你必须像真人微信一样正常聊天回复（多条用换行分隔），不要只回一句。\n` +
+              `- 你必须在回复中明确表达：你是否愿意帮忙代付（愿意=说明你已经付了/会帮他付；拒绝=明确拒绝）。\n` +
+              `- 你的决定必须符合你的回复内容（不能嘴上答应但结果拒绝，反之亦然）。\n` +
+              `- 收货人：${takeoutBase.deliverToName}；配送地址：${takeoutBase.deliverAddress}。\n` +
+              `- 付款人是你（${character.name}）负责代付，不代表食物一定送给你。\n` +
+              `- 如果收货人不是你（${character.name}），绝对不要说“你给我买/请我吃”。\n` +
+              `- 若收货人是你（${character.name}），这代表“用户请你吃”，不要质疑“为什么让我给自己买”。\n` +
+              `- 不要评论“位置是谁的/地址合理不合理/为什么送到这里”，只需围绕是否代付回复。\n` +
+              `- 【禁止】你不能要求用户给你转账/收款/AA，也不能发送任何转账指令/转账卡片。\n` +
+              `- 不要总用同一句模板（例如反复“付好了”），请自然换说法。\n` +
+              `订单信息：\n${formatTakeoutOrderText(takeoutBase)}\n`,
           })
         }
 
@@ -2097,6 +2535,33 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             .replace(/拍了拍/g, '')
             .trim()
         }
+        const looksLikeOfflineNarrationInOnline = (s: string) => {
+          const t = String(s || '').trim()
+          if (!t) return false
+          if (/[“”]/.test(t)) return true
+          if (/[\*\~][^*\n~]{1,30}[\*\~]/.test(t)) return true
+          if (/(看着你|轻轻|沉默了|叹了口气|眼神|神情|动作|说道|问道|他笑|她笑|他看|她看)/.test(t)) return true
+          return false
+        }
+        if (!character.offlineMode && (justSwitchedToOnline || looksLikeOfflineNarrationInOnline(response))) {
+          try {
+            const forceOnlinePrompt =
+              `把你上一条回复改写成“纯线上聊天气泡文本”：\n` +
+              `- 不要动作、神态、旁白、舞台描写\n` +
+              `- 不要使用“”小说对白引号\n` +
+              `- 保持原意和语气，输出多条时用换行分隔\n` +
+              `只输出改写后的聊天内容。`
+            const rewrote = await callLLM(
+              [...llmMessages, { role: 'assistant', content: response }, { role: 'user', content: forceOnlinePrompt }],
+              undefined,
+              { maxTokens: 420, timeoutMs: 600000, temperature: 0.5 }
+            )
+            const cleaned = String(rewrote || '').trim()
+            if (cleaned) response = stripThoughtForOnline(cleaned)
+          } catch {
+            // ignore rewrite failure
+          }
+        }
 
         // 分割回复为多条消息（最多15条；即便模型只回一大段也能拆成多条）
         let replies = splitToReplies(response)
@@ -2164,12 +2629,54 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           }
         }
 
+        // 外卖代付：防止模型在本流程里输出转账指令（避免误触发“转账卡片”）
+        if (pendingTakeoutPay) {
+          const stripTransferToken = (s: string) => String(s || '').replace(/[【\[]\s*转账[\s\S]*?[】\]]/g, '').trim()
+          const stripLocationComplaint = (s: string) => {
+            const t = String(s || '').trim()
+            if (!t) return ''
+            // 过滤“抱怨位置归属”的句子，避免出戏
+            if (
+              /(位置|地址|送到).*(为什么|怎么|不是|不对|奇怪|给我|给你|你的|我的)/.test(t) ||
+              /(你给我买|请我吃|给你自己买|让我给自己买)/.test(t)
+            ) {
+              return ''
+            }
+            return t
+          }
+          const diversifyPayDone = (s: string) => {
+            const t = String(s || '').trim()
+            if (!t) return t
+            const normalized = t.replace(/[。！!~～\s]+$/g, '')
+            if (
+              normalized === '付好了' ||
+              normalized === '我付好了' ||
+              normalized === '我帮你付好了' ||
+              normalized === '付过去了' ||
+              normalized === '我付过去了'
+            ) {
+              const variants = ['我这边已经帮你处理了。', '这单我给你先垫上了。', '我已经帮你把这单结掉了。']
+              return variants[Math.floor(Math.random() * variants.length)]
+            }
+            return t
+          }
+          replies = replies
+            .map(stripTransferToken)
+            .map(diversifyPayDone)
+            .map(stripLocationComplaint)
+            .map((s) => (s || '').trim())
+            .filter(Boolean)
+          if (replies.length === 0) {
+            replies = ['我看到了这单，我来处理代付。']
+          }
+        }
+
         // 表情包策略（活人感必须项）：
         // - 不再做“关键词替换文本”
         // - 只要角色配置了表情包，就尽量在一组回复里夹带 1~N 条表情包消息
         // 只使用“本角色已绑定”的表情包（总表情库不会因绑定而复制；未绑定的不参与发送）
         // 注意：getStickersByCharacter(characterId) 现在返回的就是“已绑定到该角色”的总库表情包
-        const stickerPool = stickers
+        const stickerPool = character.offlineMode ? [] : stickers
         const stickerCandidates: number[] = []
         const usedStickerIds = new Set<string>()
 
@@ -2258,10 +2765,80 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           return null
         }
         
+        // 外卖代付决策：严格以“API 模型回复内容中的决定标记”为准，永不允许“说付了但结果拒绝/反之亦然”
+        function stripTakeoutDecisionToken(s: string) {
+          return String(s || '')
+            .replace(/[【\[]\s*外卖代付决定\s*[:：]?\s*(PAY|REJECT)\s*[】\]]/gi, '')
+            .replace(/[【\[]\s*外卖代付决定\s*(PAY|REJECT)\s*[】\]]/gi, '')
+            .split('\n')
+            .map((ln) => String(ln || '').replace(/[ \t]{2,}/g, ' ').trim())
+            .filter(Boolean)
+            .join('\n')
+            .trim()
+        }
+        const inferTakeoutDecisionFromReplies = (rs: string[]): 'pay' | 'reject' | null => {
+          let last: { decision: 'pay' | 'reject'; index: number } | null = null
+          const payRe = /(我来付|我帮你付|我给你付|我代付|我先垫|已经付了|我付好了|我付过去了|我给你垫付|我把这单结了|这单我来)/
+          const rejectRe = /(不帮|帮不了|不方便|没法帮|你自己付|自己付|这单你付|我不代付|拒绝代付|不太方便代付)/
+          for (let i = 0; i < rs.length; i++) {
+            const t = stripTakeoutDecisionToken(String(rs[i] || ''))
+            if (!t) continue
+            const hasPay = payRe.test(t)
+            const hasReject = rejectRe.test(t)
+            if (hasPay && !hasReject) last = { decision: 'pay', index: i }
+            else if (hasReject && !hasPay) last = { decision: 'reject', index: i }
+            else if (hasPay && hasReject) {
+              const p = t.search(payRe)
+              const r = t.search(rejectRe)
+              last = { decision: p >= r ? 'pay' : 'reject', index: i }
+            }
+          }
+          return last?.decision || null
+        }
+        let takeoutDecision: 'pay' | 'reject' | null = null
+        if (pendingTakeoutPay && takeoutBase && !takeoutDecision) {
+          takeoutDecision = inferTakeoutDecisionFromReplies(replies)
+        }
+        if (pendingTakeoutPay && takeoutBase && !takeoutDecision) {
+          try {
+            const decideRaw = await callLLM(
+              [
+                {
+                  role: 'system',
+                  content:
+                    '你是代付决策器。只输出JSON：{"pay":true/false}。根据聊天回复内容判断是否同意代付；严禁输出其他内容。',
+                },
+                {
+                  role: 'user',
+                  content:
+                    `外卖订单：\n${formatTakeoutOrderText(takeoutBase)}\n\n` +
+                    `角色刚刚的聊天回复：\n${replies.map(stripTakeoutDecisionToken).join('\n')}\n\n` +
+                    `请判断角色最终是否愿意代付。`,
+                },
+              ],
+              undefined,
+              { maxTokens: 80, timeoutMs: 60000, temperature: 0.1 }
+            )
+            const txt = String(decideRaw || '').trim()
+            const jsonText = (txt.match(/\{[\s\S]*\}/) || [txt])[0]
+            const j: any = JSON.parse(jsonText)
+            takeoutDecision = j?.pay ? 'pay' : 'reject'
+          } catch {
+            // ignore
+          }
+        }
+        const takeoutProcessIndex =
+          pendingTakeoutPay && takeoutBase
+            ? Math.max(0, replies.length - 1)
+            : -1
+        let takeoutProcessed = false
+
         // 检查是否有待处理的用户转账
-        const pendingUserTransfers = workingMessages.filter(m => 
-          m.isUser && m.type === 'transfer' && m.transferStatus === 'pending'
-        )
+        const pendingUserTransfers = pendingTakeoutPay
+          ? []
+          : workingMessages.filter(m =>
+              m.isUser && m.type === 'transfer' && m.transferStatus === 'pending'
+            )
         
         // 检查是否有待处理的用户音乐邀请
         const pendingUserMusicInvites = workingMessages.filter(m => 
@@ -2314,6 +2891,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         const doudizhuProcessIndex = pendingDoudizhuInvites.length > 0 
           ? Math.floor(Math.random() * Math.max(1, replies.length)) 
           : -1
+        let sentOrderShareThisRound = false
+        const hasOrderShareSignalInReplies = replies.some((r) => {
+          const t = String(r || '')
+          return t.includes('[外卖订单分享]') || /\[图片[：:][^\]]*(小票|订单|发票)[^\]]*\]/.test(t)
+        })
 
         // 统一“转账处理”与角色话术：如果角色文本明确表示“退还/不收”，就必须退款；
         // 如果角色明确表示“收下/收到”，就必须收款；否则再走默认随机。
@@ -2329,6 +2911,177 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         
         // 依次发送回复（首条更快；每条<=5秒）
         let totalDelay = 0
+        const cleanedRepliesTextForAsk = replies.map((x) => stripTakeoutDecisionToken(String(x || ''))).join('\n')
+        const latestUserTextForIntent = getLastUserText(workingMessages)
+        const wantsTreatTakeout =
+          /(想吃.*外卖|想点.*外卖|给我点.*外卖|请我吃.*外卖|想喝.*奶茶|帮我代付.*外卖)/.test(cleanedRepliesTextForAsk) &&
+          !/(不用|别|算了|不需要)/.test(cleanedRepliesTextForAsk)
+        const asksReceiptDirectly =
+          /(小票|订单号|发票)/.test(latestUserTextForIntent) &&
+          /(发|给我|看|来一张|看看|发我|给我看)/.test(latestUserTextForIntent)
+        const wantsShareOwnOrder =
+          /(我(刚|今天|最近|又)?(买了|下单了|点了)|我(买|下单|点单).*(衣服|口红|化妆|外卖|奶茶|零食|东西)|收到快递|给自己买了)/.test(cleanedRepliesTextForAsk) &&
+          !/(不用发|别发|不想发|不需要发|算了)/.test(cleanedRepliesTextForAsk)
+        const hasPendingAskInHistory = (takeoutHistory || []).some((o) => (o as any)?.status === 'awaiting_user_pay')
+        const shouldAutoCharTakeoutAsk =
+          !pendingTakeoutPay &&
+          wantsTreatTakeout &&
+          !hasPendingAskInHistory &&
+          Date.now() - charTakeoutAskCooldownRef.current > 8 * 60 * 1000
+        const shouldAutoCharOrderShare =
+          !pendingTakeoutPay &&
+          !character.offlineMode &&
+          (asksReceiptDirectly || wantsShareOwnOrder) &&
+          Date.now() - charTakeoutAskCooldownRef.current > (asksReceiptDirectly ? 2 * 60 * 1000 : 25 * 60 * 1000) &&
+          (asksReceiptDirectly || Math.random() < 0.72)
+        const buildAutoCharTakeoutOrder = () => {
+          const keyword = cleanedRepliesTextForAsk
+          const pick =
+            /奶茶/.test(keyword)
+              ? { store: '袋鼠奶茶站', item: '招牌奶茶', price: 18.0 }
+              : /夜宵|烧烤/.test(keyword)
+                ? { store: '袋鼠夜宵铺', item: '烧烤拼盘', price: 36.0 }
+                : { store: '袋鼠优选餐厅', item: '招牌套餐', price: 28.0 }
+          const id = `to_charreq_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+          const base: any = {
+            id,
+            createdAt: Date.now(),
+            storeId: 'auto_char_takeout',
+            storeName: pick.store,
+            deliverTo: 'character',
+            deliverToName: character.name,
+            deliverAddress: `${character.name}的位置`,
+            lines: [
+              {
+                storeId: 'auto_char_takeout',
+                storeName: pick.store,
+                productId: 'auto_item_1',
+                name: pick.item,
+                basePrice: pick.price,
+                qty: 1,
+                options: [],
+              },
+            ],
+            total: pick.price,
+            paidBy: null,
+            etaMinutes: 0,
+            deliverAt: 0,
+            status: 'awaiting_user_pay',
+          }
+          return base
+        }
+        const inferReceiptItemRange = (ctx: string) => {
+          const t = String(ctx || '')
+          if (/(最近|近|这).*(一周|7天)|周小票|周账单|这周买/.test(t)) return { min: 8, max: 15 }
+          if (/(最近|近).*(半个月|15天|一个月|30天)|月小票|月账单/.test(t)) return { min: 10, max: 15 }
+          if (/(刚刚|刚才|这次|这一单|刚下单|现在|马上)/.test(t)) return { min: 1, max: 4 }
+          return { min: 2, max: 8 }
+        }
+        const receiptItemTemplates = [
+          { store: '暮色杂货', item: '香薰蜡烛', price: 49.0 },
+          { store: '晴空衣橱', item: '基础款卫衣', price: 129.0 },
+          { store: '光泽美妆屋', item: '唇釉礼盒', price: 89.0 },
+          { store: '袋鼠奶茶站', item: '招牌奶茶', price: 18.0 },
+          { store: '袋鼠优选餐厅', item: '双拼便当', price: 32.0 },
+          { store: '袋鼠夜宵铺', item: '烤串拼盘', price: 46.0 },
+          { store: '清晨果蔬铺', item: '鲜切水果杯', price: 22.0 },
+          { store: '元气早餐屋', item: '鸡蛋三明治', price: 15.0 },
+        ]
+        const synthesizeReceiptGoods = (ctx: string, forcedCount?: number) => {
+          const range = inferReceiptItemRange(ctx)
+          const count = Math.min(15, Math.max(1, forcedCount ?? (range.min + Math.floor(Math.random() * (range.max - range.min + 1)))))
+          const picked: Array<{ store: string; item: string; price: number; qty: number }> = []
+          for (let i = 0; i < count; i++) {
+            const p = receiptItemTemplates[Math.floor(Math.random() * receiptItemTemplates.length)]
+            const qty = 1 + Math.floor(Math.random() * 3)
+            picked.push({ ...p, qty })
+          }
+          const storeName = picked[0]?.store || '袋鼠外卖'
+          const normalized = picked.map((x) => ({
+            ...x,
+            total: Number((x.price * x.qty).toFixed(2)),
+            text: `${x.item} ×${x.qty} ¥${(x.price * x.qty).toFixed(2)}`,
+          }))
+          const total = Number(normalized.reduce((s, x) => s + x.total, 0).toFixed(2))
+          return { storeName, lines: normalized, total }
+        }
+        const buildAutoCharOrderShareText = () => {
+          const ctx = `${latestUserTextForIntent || ''}\n${cleanedRepliesTextForAsk || ''}`
+          const auto = synthesizeReceiptGoods(ctx)
+          const storeName = auto.storeName
+          const total = auto.total
+          const orderNo = `sh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+          const goodsText = auto.lines
+            .slice(0, 15)
+            .map((g) => g.text)
+            .join('；')
+          return (
+            `[外卖订单分享]\n` +
+            `店铺：${storeName}\n` +
+            `商品：${goodsText || '日常用品 ×1'}\n` +
+            `实付：¥${total.toFixed(2)}\n` +
+            `收货人：${selectedPersona?.name || '你'}\n` +
+            `配送位置：${selectedPersona?.name || '你'}当前位置\n` +
+            `配送地址：${selectedPersona?.name || '你'}当前位置\n` +
+            `付款：${character.name}支付\n` +
+            `时间：${new Date().toLocaleString('zh-CN', { hour12: false })}\n` +
+            `订单号：${orderNo.slice(0, 18)}`
+          )
+        }
+        const normalizeOrderShareCard = (raw: string) => {
+          const text = String(raw || '').trim()
+          const idx = text.indexOf('[外卖订单分享]')
+          if (idx < 0) return ''
+          const body = text.slice(idx).replace(/^\[外卖订单分享\]\s*/m, '')
+          const pick = (label: string) => {
+            const m = body.match(new RegExp(`^${label}：(.+)$`, 'm'))
+            return m ? String(m[1] || '').trim() : ''
+          }
+          const store = pick('店铺') || '袋鼠优选餐厅'
+          const rawGoods = pick('商品')
+          const goods = (() => {
+            const list = String(rawGoods || '')
+              .split(/\n|；|;|、|\|/g)
+              .map((s) => s.trim())
+              .filter(Boolean)
+              .slice(0, 15)
+            if (list.length <= 0) {
+              const ctx = `${latestUserTextForIntent || ''}\n${cleanedRepliesTextForAsk || ''}`
+              return synthesizeReceiptGoods(ctx).lines.map((x) => x.text).join('；')
+            }
+            return list.map((it) => {
+              const hasPrice = /(?:¥|￥)\s*\d+(?:\.\d{1,2})?/.test(it)
+              const hasQty = /×\s*\d+/.test(it)
+              let out = it
+              if (!hasQty) out = `${out} ×1`
+              if (!hasPrice) {
+                const base = 8 + Math.floor(Math.random() * 140)
+                out = `${out} ¥${Number(base).toFixed(2)}`
+              }
+              return out
+            }).join('；')
+          })()
+          const totalText = pick('实付') || pick('合计')
+          const totalNum = Number(String(totalText || '').replace(/[^\d.]/g, '')) || 39.9
+          const receiver = pick('收货人') || (selectedPersona?.name || '你')
+          const location = pick('配送位置') || `${selectedPersona?.name || '你'}当前位置`
+          const address = pick('配送地址') || `${selectedPersona?.name || '你'}当前位置`
+          const paidBy = pick('付款') || `${character.name}支付`
+          const time = pick('时间') || new Date().toLocaleString('zh-CN', { hour12: false })
+          const orderNo = (pick('订单号') || `sh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`).slice(0, 18)
+          return (
+            `[外卖订单分享]\n` +
+            `店铺：${store}\n` +
+            `商品：${goods}\n` +
+            `实付：¥${totalNum.toFixed(2)}\n` +
+            `收货人：${receiver}\n` +
+            `配送位置：${location}\n` +
+            `配送地址：${address}\n` +
+            `付款：${paidBy}\n` +
+            `时间：${time}\n` +
+            `订单号：${orderNo}`
+          )
+        }
         const parseTransferCommand = (text: string) => {
           // 目标：强制生成“转账卡片”
           // - 允许用户/模型写错一点（如 [转账888] / 【转账：888】），我们也尽量识别成卡片
@@ -2473,9 +3226,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           }
           totalDelay += charDelay
           
-          const trimmedContent = content.trim()
+          const trimmedContent = stripTakeoutDecisionToken(content).trim()
           
-          const transferCmd = parseTransferCommand(trimmedContent)
+          // 外卖代付流程：禁止解析/发送任何转账卡片（避免误解为要钱/触发转账 bug）
+          const inTakeoutPayFlow = pendingTakeoutPay
+          const transferCmd = inTakeoutPayFlow ? null : parseTransferCommand(trimmedContent)
           const musicCmd = suppressAiMusicInvite ? null : parseMusicCommand(trimmedContent)
           const tweetCmd = parseTweetCommand(trimmedContent)
           const xProfileCmd = parseXProfileCommand(trimmedContent)
@@ -2483,6 +3238,57 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           const stickerMeta = parseStickerMetaLine(trimmedContent)
           
           safeTimeoutEx(() => {
+            const embeddedOrderShare = (() => {
+              const t = String(trimmedContent || '')
+              const idx = t.indexOf('[外卖订单分享]')
+              if (idx < 0) return ''
+              const block = t.slice(idx).trim()
+              return normalizeOrderShareCard(block)
+            })()
+            const tokenOrderShare =
+              !character.offlineMode && /(?:\[|【)\s*(小票|订单截图)\s*(?:\]|】)/.test(String(trimmedContent || ''))
+                ? buildAutoCharOrderShareText()
+                : ''
+            if (embeddedOrderShare) {
+              sentOrderShareThisRound = true
+              charTakeoutAskCooldownRef.current = Date.now()
+              addMessage({
+                characterId: character.id,
+                isUser: false,
+                type: 'text',
+                content: embeddedOrderShare,
+              })
+              return
+            }
+            if (tokenOrderShare) {
+              sentOrderShareThisRound = true
+              charTakeoutAskCooldownRef.current = Date.now()
+              addMessage({
+                characterId: character.id,
+                isUser: false,
+                type: 'text',
+                content: tokenOrderShare,
+              })
+              return
+            }
+            if (!character.offlineMode && /\[图片[：:][^\]]*(小票|订单|发票)[^\]]*\]/.test(trimmedContent)) {
+              sentOrderShareThisRound = true
+              charTakeoutAskCooldownRef.current = Date.now()
+              addMessage({
+                characterId: character.id,
+                isUser: false,
+                type: 'text',
+                content: buildAutoCharOrderShareText(),
+              })
+              return
+            }
+            if (
+              sentOrderShareThisRound &&
+              /(订单号|下单时间|订单时间|时间[:：]|收货人[:：]|配送位置[:：]|配送地址[:：]|付款[:：]|商品[:：]|类目[:：]|价格[:：]|数量[:：]|合计[:：]|消费总计[:：])/.test(trimmedContent) &&
+              !/\[外卖订单分享\]/.test(trimmedContent)
+            ) {
+              return
+            }
             if (stickerMeta) {
               // 把“表情包描述文本”转换为真正的表情包消息
               const byRef =
@@ -2793,8 +3599,83 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 }
               }
             }
+
+            // 外卖代付结果：跟随一次“正常聊天回复”之后发出（且只处理一次）
+            if (pendingTakeoutPay && takeoutBase && !takeoutProcessed && index === takeoutProcessIndex) {
+              takeoutProcessed = true
+              const orderId = String((takeoutBase as any)?.id || '').trim()
+              const fallbackKey = String(fallbackShortOrderId || '').trim()
+              const orderLockKey = fallbackKey || (orderId ? orderId.slice(0, 18) : '')
+              if (orderLockKey) {
+                if (takeoutResultSentRef.current.has(orderLockKey)) {
+                  return
+                }
+                takeoutResultSentRef.current.add(orderLockKey)
+                // 控制集合大小，避免长期运行无限增长
+                if (takeoutResultSentRef.current.size > 300) {
+                  const first = takeoutResultSentRef.current.values().next().value
+                  if (first) takeoutResultSentRef.current.delete(first)
+                }
+              }
+              const safeMoney = (n: number) => `¥${(Number(n || 0) || 0).toFixed(2)}`
+              // 没有明确标记时，不允许“猜”；直接拒绝并提示（避免心口不一）
+              const decision = takeoutDecision || 'reject'
+              if (decision === 'pay') {
+                const eta = 15 + Math.floor(Math.random() * 26)
+                const deliverAt = Date.now() + eta * 60 * 1000
+                const next: TakeoutOrder = { ...takeoutBase, paidBy: 'character', etaMinutes: eta, deliverAt, status: 'delivering' }
+                setTakeoutOrderSafe(next)
+                upsertTakeoutHistory(next)
+                pushCharCard(`[外卖代付结果]\n已代付：${safeMoney(next.total)}\n订单已进入配送。`)
+              } else {
+                const next = { ...takeoutBase, status: 'rejected', paidBy: null } as any
+                setTakeoutOrderSafe(next)
+                upsertTakeoutHistory(next)
+                pushCharCard(`[外卖代付结果]\n对方拒绝代付。\n你可以选择自己支付。`)
+              }
+            }
             
             if (index === replies.length - 1) {
+              if (shouldAutoCharTakeoutAsk) {
+                try {
+                  const askOrder: any = buildAutoCharTakeoutOrder()
+                  upsertTakeoutHistory(askOrder)
+                  charTakeoutAskCooldownRef.current = Date.now()
+                  const askGoods = (askOrder.lines || []).map((x: any) => `${x.name} ×${x.qty}`).join('、')
+                  addMessage({
+                    characterId: character.id,
+                    isUser: false,
+                    type: 'text',
+                    content:
+                      `[外卖代付请求]\n` +
+                      `店铺：${askOrder.storeName}\n` +
+                      `商品：${askGoods}\n` +
+                      `合计：¥${Number(askOrder.total || 0).toFixed(2)}\n` +
+                      `收货人：${askOrder.deliverToName}\n` +
+                      `配送位置：${character.name}的位置\n` +
+                      `配送地址：${askOrder.deliverAddress}\n` +
+                      `付款人：我（代付中）\n` +
+                      `代付对象：我\n` +
+                      `订单号：${String(askOrder.id || '').slice(0, 18)}`,
+                  })
+                } catch {
+                  // ignore
+                }
+              }
+              if (shouldAutoCharOrderShare && !sentOrderShareThisRound && !hasOrderShareSignalInReplies) {
+                try {
+                  sentOrderShareThisRound = true
+                  charTakeoutAskCooldownRef.current = Date.now()
+                  addMessage({
+                    characterId: character.id,
+                    isUser: false,
+                    type: 'text',
+                    content: buildAutoCharOrderShareText(),
+                  })
+                } catch {
+                  // ignore
+                }
+              }
               // 页面还在时才更新 UI 状态
               if (aliveRef.current) {
                 safeSetTyping(false)
@@ -3096,7 +3977,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         message: '请到：手机主屏 → 设置App → API 配置，填写 Base URL / API Key 并选择模型后再聊天。',
       })
     }
-  }, [aiTyping, character, messages, currentPeriod, hasApiConfig, callLLM, addMessage, setCharacterTyping])
+  }, [aiTyping, character, messages, currentPeriod, hasApiConfig, callLLM, addMessage, setCharacterTyping, takeoutHistory, upsertTakeoutHistory, setTakeoutOrderSafe])
 
   // （已移除本地回复：所有回复必须走API）
 
@@ -3287,6 +4168,47 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     return sameDay ? hms : `${d.getMonth() + 1}/${d.getDate()} ${hms}`
   }
 
+  const retryFailedTranslations = async () => {
+    const targetMessages = messages.filter((m) =>
+      m.characterId === character.id &&
+      !m.isUser &&
+      m.type === 'text' &&
+      m.messageLanguage &&
+      m.messageLanguage !== 'zh' &&
+      m.chatTranslationEnabledAtSend &&
+      (m.translationStatus === 'error' || !m.translatedZh)
+    )
+    if (targetMessages.length === 0) return
+
+    for (const m of targetMessages) {
+      updateMessage(m.id, { translationStatus: 'pending' })
+    }
+
+    const sys =
+      `你是一个翻译器。把用户给你的内容翻译成"简体中文"（不是繁体中文！）。\n` +
+      `要求：\n` +
+      `- 只输出简体中文翻译，严禁繁体字\n` +
+      `- 保留人名/歌名/专有名词原样\n` +
+      `- 不要添加引号/括号/前后缀\n`
+
+    for (const m of targetMessages) {
+      try {
+        const zh = await callLLM(
+          [
+            { role: 'system', content: sys },
+            { role: 'user', content: String(m.content || '') },
+          ],
+          undefined,
+          { maxTokens: 500, timeoutMs: 60000, temperature: 0.2 }
+        )
+        const cleaned = String(zh || '').trim()
+        updateMessage(m.id, { translatedZh: cleaned || '（空）', translationStatus: cleaned ? 'done' : 'error' })
+      } catch {
+        updateMessage(m.id, { translationStatus: 'error' })
+      }
+    }
+  }
+
   // 查手机功能：生成对方的聊天记录和账单
   const handleOpenPhonePeek = async () => {
     if (!character || !hasApiConfig) {
@@ -3446,6 +4368,18 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
           const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(response)
           
           // 处理聊天记录：确保有头像URL，补充缺失字段
+          const latestDirectChatTs = messages
+            .filter((m) => m.characterId === character.id)
+            .map((m) => Number(m.timestamp || 0))
+            .filter((t) => Number.isFinite(t) && t > 0)
+            .reduce((mx, t) => (t > mx ? t : mx), 0)
+          const userName = String(selectedPersona?.name || '用户').trim()
+          const mentionsUserTopic = (text: string) => {
+            const t = String(text || '').toLowerCase()
+            if (!t) return false
+            if (userName && t.includes(userName.toLowerCase())) return true
+            return /(转账|红包|收款|付款|打钱|汇款|你对象|你男朋友|你女朋友|你老婆|你老公)/.test(t)
+          }
           const processedChats = (parsed.chats || []).map((chat: any) => {
             const otherChar = otherCharacters.find(c => c.name === chat.characterName)
             
@@ -3460,16 +4394,21 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
               characterAvatar: otherChar?.avatar || '',
               remark: chat.remark || chat.characterName || '未知',
               messages: (chat.messages || []).map((msg: any, idx: number) => {
-                // 检查时间戳是否合理（在过去30天内且不超过当前时间）
+                // 检查时间戳是否合理（严格限制在最近3天且不超过当前时间）
                 let ts = msg.timestamp
-                const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000
-                if (!ts || ts < thirtyDaysAgo || ts > now) {
+                if (!ts || ts < threeDaysAgo || ts > now) {
                   // 时间戳不合理，按顺序生成：从3天前到现在，均匀分布
                   const timeSpan = now - threeDaysAgo
                   ts = threeDaysAgo + (timeSpan * (idx + 1) / (msgCount + 1))
                   // 添加一些随机偏移（几分钟内），让时间更自然
                   ts += Math.random() * 5 * 60 * 1000
                 }
+                if (mentionsUserTopic(msg?.content || '') && latestDirectChatTs > 0) {
+                  // 涉及“和用户刚发生的事”（如转账）时，不能穿越到事件前面去聊
+                  const minTs = Math.min(now, latestDirectChatTs + (idx + 1) * 60 * 1000)
+                  ts = Math.max(ts, minTs)
+                }
+                ts = Math.min(now, Math.max(threeDaysAgo, ts))
                 return {
                   isUser: msg.isUser !== false,
                   content: msg.content || '',
@@ -3482,15 +4421,15 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
           
           // 处理AI生成的账单
           const now = Date.now()
-          const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
+          const threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000
           const aiBills = (parsed.bills || []).map((bill: any, idx: number) => {
             // 检查时间戳是否合理
             let ts = bill.timestamp
-            if (!ts || ts < sevenDaysAgo || ts > now) {
-              // 时间戳不合理，按顺序生成：最近7天内
+            if (!ts || ts < threeDaysAgo || ts > now) {
+              // 时间戳不合理，按顺序生成：最近3天内
               const billCount = (parsed.bills || []).length
-              const timeSpan = now - sevenDaysAgo
-              ts = sevenDaysAgo + (timeSpan * (idx + 1) / (billCount + 1))
+              const timeSpan = now - threeDaysAgo
+              ts = threeDaysAgo + (timeSpan * (idx + 1) / (billCount + 1))
               ts += Math.random() * 30 * 60 * 1000 // 随机偏移30分钟内
             }
             return {
@@ -3539,6 +4478,11 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
       setPhonePeekLoading(false)
     }
   }
+
+  const generateAIRepliesRef = useRef(generateAIReplies)
+  useEffect(() => {
+    generateAIRepliesRef.current = generateAIReplies
+  }, [generateAIReplies])
 
   // 转发聊天记录或账单给对方（用户发出的卡片形式）
   const forwardToCharacter = (type: 'chat' | 'bill' | 'wallet', chatIndex?: number) => {
@@ -3609,6 +4553,14 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
         if (character.offlineMode) {
           return [text]
         }
+        const rawMin = Math.min(20, Math.max(1, Number((character as any).onlineReplyMin ?? 3) || 3))
+        const rawMax = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 8) || 8))
+        const onlineReplyMin = Math.min(rawMin, rawMax)
+        const onlineReplyMax = Math.max(rawMin, rawMax)
+        const targetReplyCount =
+          onlineReplyMin === onlineReplyMax
+            ? onlineReplyMax
+            : (onlineReplyMin + Math.floor(Math.random() * (onlineReplyMax - onlineReplyMin + 1)))
         
         const keepCmd = (s: string) =>
           /\|\|\|/.test(s) ||
@@ -3680,7 +4632,7 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
           } else {
             pushChunked(src)
           }
-          return out.filter(Boolean).slice(0, 15)
+          return out.filter(Boolean).slice(0, onlineReplyMax)
         }
 
         const byLine = text.split('\n').map(s => s.trim()).filter(Boolean)
@@ -3725,7 +4677,7 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
           }
         }
 
-        let trimmed = merged.filter(Boolean).slice(0, 15)
+        let trimmed = merged.filter(Boolean).slice(0, targetReplyCount)
         {
           const expanded2: string[] = []
         for (const t of trimmed) {
@@ -3736,7 +4688,19 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
             }
             expanded2.push(t)
           }
-          trimmed = expanded2.filter(Boolean).slice(0, 15)
+          trimmed = expanded2.filter(Boolean).slice(0, targetReplyCount)
+        }
+        if (trimmed.length < onlineReplyMin) {
+          const grown = [...trimmed]
+          for (let i = 0; i < grown.length && grown.length < onlineReplyMin; i++) {
+            const t = String(grown[i] || '')
+            if (!t || keepCmd(t) || t.length < 26) continue
+            const split = softSplitLongNoPunct(t)
+            if (split.length <= 1) continue
+            grown.splice(i, 1, ...split)
+            i--
+          }
+          trimmed = grown.filter(Boolean).slice(0, onlineReplyMax)
         }
         return trimmed.map(appendEndPunct)
       }
@@ -3823,7 +4787,7 @@ ${((character as any).language && (character as any).language !== 'zh') ? `7. �
 【你必须做到】
 ✅ 这是微信聊天，不是小说！你只能发送聊天文字！
 ✅ 只能发送纯文字对话，就像真人发微信一样
-✅ 可以用表情符号emoji（如😊😭），但绝对不能描述动作
+❌ 禁止输出任何 emoji（如😊😭😂👍），必须只用文字表达情绪
 ✅ 你只能说话，不能描写你在做什么，不能有旁白
 ✅ 直接输出你要说的话，不要任何包装或描述
 
@@ -3953,12 +4917,38 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             }
             return out.join('\n').trim()
           })()
+          const onlineLeak =
+            /[“”]/.test(cleanedResult) ||
+            /(看着你|轻轻|沉默了|叹了口气|眼神|神情|动作|说道|问道|他笑|她笑|他看|她看)/.test(cleanedResult)
+          if (onlineLeak) {
+            try {
+              const rewritten = await callLLM(
+                [
+                  { role: 'system', content: '把下面内容改写为纯微信聊天气泡文本：不要旁白/动作/神态/小说引号，仅保留聊天语气与原意。只输出改写内容。' },
+                  { role: 'user', content: cleanedResult },
+                ],
+                undefined,
+                { maxTokens: 320, timeoutMs: 60000, temperature: 0.4 }
+              )
+              const rr = String(rewritten || '').trim()
+              if (rr) cleanedResult = rr
+            } catch {
+              // ignore
+            }
+          }
         }
         
         const lines = splitToReplies(cleanedResult)
         let delay = 0
         
-        for (const line of lines.slice(0, 15)) {
+        const onlineReplyMax = Math.max(
+          1,
+          Math.min(
+            20,
+            Number((character as any).onlineReplyMax ?? 8) || 8
+          )
+        )
+        for (const line of lines.slice(0, onlineReplyMax)) {
           const msgDelay = delay
           const trimmedLine = line.trim()
           
@@ -4201,6 +5191,53 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         ? `用户收下了你给TA的${amount}元转账（备注：${note}），你可以表达开心/满足` 
         : `用户拒绝领取你给TA的${amount}元转账（备注：${note}），你可以表达不解/失落`
     )
+  }
+
+  const handleConfirmTakeoutPay = () => {
+    if (!takeoutPayConfirm) return
+    const order = takeoutPayConfirm.order
+    const amount = Number(takeoutPayConfirm.amount || 0) || 0
+    if (amount <= 0) {
+      setInfoDialog({ open: true, title: '金额异常', message: '代付金额异常，请稍后重试。' })
+      return
+    }
+    if (walletBalance < amount) {
+      setInfoDialog({
+        open: true,
+        title: '余额不足',
+        message: `钱包余额不足，无法代付 ¥${amount.toFixed(2)}。请先在“我-钱包”里充值或收款。`,
+      })
+      return
+    }
+
+    const eta = 15 + Math.floor(Math.random() * 26)
+    const deliverAt = Date.now() + eta * 60 * 1000
+    const next: TakeoutOrder = { ...(order as any), paidBy: 'user', etaMinutes: eta, deliverAt, status: 'delivering' }
+    setTakeoutOrderSafe(next)
+    upsertTakeoutHistory(next)
+
+    updateWalletBalance(-amount)
+    addWalletBill({
+      type: 'transfer_out',
+      amount,
+      description: `外卖代付给 ${character.name}（${order.storeName}）`,
+      relatedCharacterId: character.id,
+    })
+    addTransfer({
+      characterId: character.id,
+      amount,
+      note: `外卖代付-${order.storeName || '订单'}`,
+      isIncome: false,
+    })
+
+    const resultMsg = addMessage({
+      characterId: character.id,
+      isUser: true,
+      type: 'text',
+      content: `[外卖代付结果]\n我已帮你代付：¥${amount.toFixed(2)}\n订单已进入配送。`,
+    })
+    messagesRef.current = [...messagesRef.current, resultMsg]
+    setTakeoutPayConfirm(null)
   }
 
   // 发送音乐分享
@@ -4573,6 +5610,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     const baseHistory = messages.slice(0, lastUserMsgIndex + 1)
     generateAIReplies(baseHistory)
   }
+
+  // 自动找我聊天已迁移到全局 AutoReachDaemon，保证不在聊天页也可触发
   
   // 发送经期记录
   const handleSharePeriod = () => {
@@ -5160,7 +6199,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     if (msg.type === 'music') {
       const musicStatus = msg.musicStatus || 'pending'
       const canAccept = !msg.isUser && musicStatus === 'pending' && !listenTogether
+      const coverOverride = iconTheme === 'minimal' ? (String(decorImage || '').trim() || '') : ''
       const cover =
+        coverOverride ||
         musicPlaylist.find(s => s.title === msg.musicTitle && s.artist === msg.musicArtist)?.cover ||
         '/icons/music-cover.png'
       
@@ -5704,6 +6745,270 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       }
     }
 
+    // 外卖/代付卡片（用特殊文本标记渲染成卡片）
+    try {
+      const raw = String(msg.content || '').trim()
+      const m = raw.match(/^\[(外卖订单|外卖代付请求|外卖代付结果|外卖订单分享)\]\s*([\s\S]*)$/)
+      if (m) {
+        const kind = m[1]
+        const body = String(m[2] || '').trim()
+        const title =
+          kind === '外卖订单'
+            ? '外卖下单'
+            : kind === '外卖代付请求'
+              ? '请求代付'
+              : kind === '外卖订单分享'
+                ? '订单分享'
+                : '代付结果'
+        const badge =
+          kind === '外卖订单'
+            ? '🍜'
+            : kind === '外卖代付请求'
+              ? '🦘'
+              : kind === '外卖订单分享'
+                ? '📤'
+                : '✅'
+
+        const pickLine = (() => {
+          const labels = ['店铺', '商品', '合计', '实付', '收货人', '配送位置', '配送地址', '付款', '付款人', '代付对象', '订单号', '送达', '时间']
+          const map: Record<string, string> = {}
+          const src = String(body || '').replace(/\r/g, '')
+          const tokenRe = new RegExp(`(${labels.join('|')})\\s*[：:]`, 'g')
+          const hits: Array<{ label: string; start: number; valueStart: number }> = []
+          let m2: RegExpExecArray | null
+          while ((m2 = tokenRe.exec(src)) !== null) {
+            hits.push({ label: String(m2[1] || ''), start: m2.index, valueStart: tokenRe.lastIndex })
+          }
+          for (let i = 0; i < hits.length; i++) {
+            const cur = hits[i]
+            const next = hits[i + 1]
+            const rawVal = src.slice(cur.valueStart, next ? next.start : src.length)
+            const val = rawVal.replace(/\s+/g, ' ').trim()
+            if (!val) continue
+            if (!map[cur.label]) map[cur.label] = val
+          }
+          return (label: string) => String(map[label] || '').trim()
+        })()
+        const storeNameRaw = pickLine('店铺')
+        const storeName = (() => {
+          const t = String(storeNameRaw || '').trim()
+          if (!t) return t
+          // 防错位：店铺字段里若混入其他标签，截断到第一个标签前
+          const cut = t.split(/(?:商品|实付|合计|收货人|配送位置|配送地址|付款|订单号)\s*[：:]/)[0].trim()
+          return cut || t
+        })()
+        const deliverLegacy = pickLine('送达')
+        const receiver = pickLine('收货人')
+        const deliverAddr = pickLine('配送地址')
+        const deliver = receiver || deliverAddr ? `${receiver || '收货人'}${deliverAddr ? ` · ${deliverAddr}` : ''}` : deliverLegacy
+        const goods = pickLine('商品')
+        const total = pickLine('合计') || pickLine('实付') || ''
+        const location = pickLine('配送位置')
+        const paidBy = pickLine('付款')
+        const orderNo = pickLine('订单号')
+        const payTarget = (() => {
+          const hit = body.match(/^代付对象：(.+)$/m)
+          return hit ? String(hit[1] || '').trim() : ''
+        })()
+        const goodsList = goods
+          ? goods
+              .split(/\n|；|;|、|\|/g)
+              .map((s) => s.replace(/^[-*]\s*/, '').trim())
+              .filter(Boolean)
+              .slice(0, 15)
+          : []
+        const goodsPreview = goodsList.slice(0, 2).join('、')
+        const goodsMore = goodsList.length > 2 ? ` 等${goodsList.length}件` : goodsList.length > 0 ? ` 共${goodsList.length}件` : ''
+
+        // 参考美团代付卡片：突出金额 + 店铺 + 菜品预览（同时 body 保留原始文本供 AI 读取）
+        if (kind === '外卖代付请求') {
+          return (
+            <div className="min-w-[150px] max-w-[200px] rounded-2xl overflow-hidden bg-white border border-black/10 shadow-sm">
+              <div className="px-2 py-1.5 bg-gradient-to-r from-[#FFD21E] to-[#FFB020] flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#FACC15] text-[11px]">🦘</span>
+                  <div className="text-[13px] font-semibold text-black/85 truncate">外卖代付</div>
+                </div>
+                <div className="text-[10px] text-black/60">袋鼠外卖</div>
+              </div>
+
+              <div className="px-2 py-2">
+                <div className="text-[10px] text-gray-500">请你帮我代付</div>
+                <div className="mt-1 text-[16px] font-extrabold text-gray-900 leading-none">{total || '—'}</div>
+
+                <div className="mt-2 rounded-xl bg-gray-50 border border-gray-100 p-1.5">
+                  <div className="text-[11px] font-semibold text-gray-900 truncate">{storeName || '（未知店铺）'}</div>
+                  <div className="mt-0.5 text-[10px] text-gray-600 truncate">{goodsPreview || '（未写商品）'}{goodsMore}</div>
+                  {deliver ? <div className="mt-1 text-[9px] text-gray-500 truncate">收货：{deliver}</div> : null}
+                  {location ? <div className="mt-1 text-[9px] text-gray-500 truncate">配送位置：{location}</div> : null}
+                  {paidBy ? <div className="mt-1 text-[9px] text-gray-500 truncate">付款：{paidBy}</div> : null}
+                </div>
+
+                {payTarget ? (
+                  <div className="mt-2 text-[10px] text-gray-500">
+                    代付对象：<span className="text-gray-800 font-medium">{payTarget}</span>
+                  </div>
+                ) : null}
+                {orderNo ? <div className="mt-1 text-[9px] text-gray-400 truncate">订单号：{orderNo}</div> : null}
+                {!msg.isUser ? (
+                  <div className="mt-2 flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const amount = Number(String(total || '').replace(/[^\d.]/g, '')) || 0
+                        const found = (takeoutHistory || []).find((o) => String((o as any)?.id || '').slice(0, 18) === String(orderNo || '').trim())
+                        const locationText = String(location || '').trim()
+                        const receiverText = String(receiver || '').trim() || character.name
+                        const addrText = String(deliverAddr || '').trim()
+                        const deliverTo: 'character' | 'user' = locationText.includes(`${character.name}的位置`) ? 'character' : 'user'
+                        const base: any =
+                          found || {
+                            id: `to_from_card_${Date.now()}`,
+                            createdAt: Date.now(),
+                            storeId: 'from_card',
+                            storeName: storeName || '外卖订单',
+                            deliverTo,
+                            deliverToName: receiverText,
+                            deliverAddress: addrText || (deliverTo === 'character' ? `${character.name}的位置` : `${selectedPersona?.name || '我'}当前位置`),
+                            lines: goodsList.map((name, i) => ({
+                              storeId: 'from_card',
+                              storeName: storeName || '外卖订单',
+                              productId: `it_${i}`,
+                              name,
+                              basePrice: 0,
+                              qty: 1,
+                              options: [],
+                            })),
+                            total: amount,
+                            paidBy: null,
+                            etaMinutes: 0,
+                            deliverAt: 0,
+                            status: 'awaiting_user_pay',
+                          }
+                        setTakeoutPayConfirm({ order: base as TakeoutOrder, amount })
+                      }}
+                      className="flex-1 py-1.5 rounded-lg bg-[#07C160] text-white text-[10px] font-semibold"
+                    >
+                      我来代付
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const found = (takeoutHistory || []).find((o) => String((o as any)?.id || '').slice(0, 18) === String(orderNo || '').trim())
+                        if (found) upsertTakeoutHistory({ ...(found as any), status: 'rejected', paidBy: null } as any)
+                        addMessage({
+                          characterId: character.id,
+                          isUser: true,
+                          type: 'text',
+                          content: `[外卖代付结果]\n我这次先不帮你代付。`,
+                        })
+                      }}
+                      className="flex-1 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-[10px] font-semibold"
+                    >
+                      暂不代付
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )
+        }
+
+        if (kind === '外卖代付结果') {
+          return (
+            <div className="min-w-[180px] max-w-[240px] rounded-2xl overflow-hidden bg-white border border-black/10 shadow-sm">
+              <div className="px-2.5 py-1.5 bg-gradient-to-r from-[#FFD21E] to-[#FFB020] flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#FACC15] text-[11px]">🦘</span>
+                  <div className="text-[13px] font-semibold text-black/85 truncate">外卖代付</div>
+                </div>
+                <div className="text-[10px] text-black/60">结果</div>
+              </div>
+              <div className="px-3 py-2 text-[12px] text-gray-700 whitespace-pre-wrap break-words leading-relaxed">
+                {body || '（无）'}
+              </div>
+            </div>
+          )
+        }
+
+        if (kind === '外卖订单分享' || kind === '外卖订单') {
+          const safeOrderNo = (orderNo || `sh_${String(msg.id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 12) || Date.now().toString().slice(-8)}`).slice(0, 18)
+          const detailLines = (goodsList.length > 0
+            ? goodsList
+            : [goodsPreview || '订单商品']).slice(0, 15)
+          const previewLines = detailLines.slice(0, 3).map((line) => parseReceiptLine(line))
+          const totalNum = Number(String(total || '').replace(/[^\d.]/g, '')) || 0
+          return (
+            <div className="relative min-w-[205px] max-w-[248px] rounded-2xl overflow-hidden bg-[#fffdf7] border border-[#e6dcc6] shadow-sm">
+              <div className="absolute left-0 right-0 top-0 h-2 bg-[linear-gradient(-45deg,_#e6dcc6_25%,_transparent_25%),linear-gradient(45deg,_#e6dcc6_25%,_transparent_25%)] bg-[length:12px_8px] bg-[position:0_0,6px_0] opacity-80" />
+              <div className="absolute left-0 right-0 bottom-0 h-2 bg-[linear-gradient(-45deg,_#e6dcc6_25%,_transparent_25%),linear-gradient(45deg,_#e6dcc6_25%,_transparent_25%)] bg-[length:12px_8px] bg-[position:0_0,6px_0] opacity-80" />
+              <div className="px-3 pt-3 pb-2 border-b border-dashed border-[#d8cdb6] bg-[#fff8e7]">
+                <div className="text-[11px] tracking-[0.08em] text-[#8a7250]">袋鼠外卖 · 订单小票</div>
+                <div className="mt-0.5 text-[13px] font-semibold text-[#3d3427] truncate">{storeName || '袋鼠订单'}</div>
+                <div className="mt-0.5 text-[9px] text-[#9b8a70] truncate">订单号：{safeOrderNo}</div>
+              </div>
+              <div className="px-3 py-3 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.9),transparent_45%),radial-gradient(circle_at_85%_80%,rgba(255,245,220,0.7),transparent_40%)]">
+                <div className="text-[11px] text-[#5f5342]">店铺：{storeName || '袋鼠订单'}</div>
+                <div className="mt-1 text-[10px] text-[#8a7250]">订单号：{safeOrderNo}</div>
+                <div className="mt-2 space-y-1">
+                  {previewLines.map((it, idx) => (
+                    <div key={`${safeOrderNo}_preview_${idx}`} className="flex items-center justify-between gap-2 text-[10px] text-[#5f5342]">
+                      <span className="truncate">{it.name || `商品${idx + 1}`}</span>
+                      <span className="text-[#6b5a40]">{it.price != null ? `¥${it.price.toFixed(2)}` : '—'}</span>
+                    </div>
+                  ))}
+                  {detailLines.length > 3 ? (
+                    <div className="text-[9px] text-[#9b8a70]">… 其余 {detailLines.length - 3} 项请点详细小票查看</div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  data-primary-click="1"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setReceiptDetailModal({
+                      open: true,
+                      storeName: storeName || '袋鼠订单',
+                      orderNo: safeOrderNo,
+                      goods: detailLines,
+                      total: total || (totalNum > 0 ? `¥${totalNum.toFixed(2)}` : '—'),
+                      deliver,
+                      location,
+                      paidBy,
+                    })
+                  }}
+                  className="mt-2 w-full py-2 rounded-lg bg-[#f5ead4] border border-[#dfcfb0] text-[11px] text-[#5f5342]"
+                >
+                  查看详细小票
+                </button>
+              </div>
+            </div>
+          )
+        }
+
+        return (
+          <div className="min-w-[200px] max-w-[280px] rounded-2xl bg-white/90 border border-black/10 overflow-hidden text-left shadow-sm">
+            <div className="px-3 py-2 flex items-center justify-between border-b border-black/5 bg-white/70">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[14px]">{badge}</span>
+                <div className="text-[13px] font-semibold text-[#111] truncate">{title}</div>
+              </div>
+              <div className="text-[10px] text-gray-400">外卖</div>
+            </div>
+            <div className="px-3 py-2 text-[12px] text-gray-700 whitespace-pre-wrap break-words leading-relaxed">
+              {body || '（无）'}
+            </div>
+            {paidBy ? (
+              <div className="px-3 py-1.5 text-[10px] text-gray-500 border-t border-black/5 bg-white/60">付款：{paidBy}</div>
+            ) : null}
+          </div>
+        )
+      }
+    } catch {
+      // ignore
+    }
+
     // 检测 [图片：描述] 格式，渲染为图片卡片
     const imageDescMatch = (msg.content || '').match(/^\[图片[：:]\s*(.+?)\]$/s)
     if (imageDescMatch) {
@@ -6201,8 +7506,15 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       // 可转发的消息类型
       const canForward = ['text', 'image', 'sticker', 'transfer', 'voice'].includes(msg.type)
 
+      const isTakeoutCardText =
+        msg.type === 'text' && /^\[(外卖订单|外卖代付请求|外卖代付结果|外卖订单分享)\]/.test(String(msg.content || '').trim())
+
       const bubbleStyle =
-        msg.type !== 'transfer' && msg.type !== 'music' && msg.type !== 'location' && msg.type !== 'chat_forward'
+        !isTakeoutCardText &&
+        msg.type !== 'transfer' &&
+        msg.type !== 'music' &&
+        msg.type !== 'location' &&
+        msg.type !== 'chat_forward'
           ? (msg.isUser ? bubbleStyles.user : bubbleStyles.char)
           : undefined
 
@@ -6329,19 +7641,19 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               
               <div
                 className={`w-fit text-[15px] ${
-                  msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' || msg.type === 'chat_forward'
+                  isTakeoutCardText || msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' || msg.type === 'chat_forward'
                     ? 'bg-transparent p-0 shadow-none'
                     : `px-3.5 py-2.5 shadow-sm ${msg.isUser
                         ? 'text-gray-800 rounded-2xl rounded-tr-md'
                         : 'text-gray-800 rounded-2xl rounded-tl-md'}`
                 }`}
-                style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' || msg.type === 'chat_forward' ? undefined : bubbleStyle as any}
+                style={isTakeoutCardText || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' || msg.type === 'chat_forward' ? undefined : bubbleStyle as any}
                 onClick={(e) => {
                   if (editMode) return
                   if (character?.offlineMode) return // 线下模式不动
 
                   // 线上模式：点击“自己发的文字消息”= 直接编辑（与线下模式一致）
-                  if (msg.isUser && msg.type === 'text') {
+                  if (msg.isUser && msg.type === 'text' && !isTakeoutCardText) {
                     e.preventDefault()
                     e.stopPropagation()
                     setEditingMessageId(msg.id)
@@ -6382,7 +7694,19 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                     <div className="text-[10px] text-gray-500 mb-1">翻译</div>
                     <div className="text-[12px] text-gray-800 whitespace-pre-wrap break-words">
                       {msg.translationStatus === 'error'
-                        ? '翻译失败'
+                        ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              void retryFailedTranslations()
+                            }}
+                            className="underline text-blue-600"
+                          >
+                            点击重试
+                          </button>
+                        )
                         : msg.translatedZh
                           ? msg.translatedZh
                           : '翻译中…'}
@@ -6843,7 +8167,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           </div>
           
           {/* 功能面板 */}
-          {showPlusMenu && (
+          {(showPlusMenu || activePanel === 'takeout') && (
             <div className="mt-3 pb-2">
               {!activePanel ? (
                 <div className="grid grid-cols-4 gap-4">
@@ -6946,6 +8270,28 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                       </svg>
                     </div>
                     <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>音乐</span>
+                  </button>
+
+                  {/* 外卖 - 线下模式禁用 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (character.offlineMode) {
+                        setInfoDialog({ open: true, title: '线下模式', message: '线下模式暂不支持此功能' })
+                        return
+                      }
+                      setShowPlusMenu(false)
+                      setActivePanel('takeout')
+                    }}
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${character.offlineMode ? 'bg-gray-100 opacity-40' : 'bg-white/60'}`}>
+                      <svg className={`w-6 h-6 ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18l-2 12H5L3 7z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2" />
+                      </svg>
+                    </div>
+                    <span className={`text-xs ${character.offlineMode ? 'text-gray-400' : 'text-gray-600'}`}>外卖</span>
                   </button>
 
                   {/* 情侣空间 - 线下模式可用 */}
@@ -7059,6 +8405,39 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                     </div>
                     <span className="text-xs text-gray-600">清空</span>
                   </button>
+                </div>
+              ) : activePanel === 'takeout' ? (
+                <div
+                  className="fixed inset-0 z-[9990] flex items-end justify-center bg-black/35"
+                  onPointerDown={() => setActivePanel(null)}
+                  role="presentation"
+                >
+                  <div
+                    className="relative w-full max-w-md px-2 pb-6 z-10"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    role="presentation"
+                  >
+                    <TakeoutPanel
+                      character={{ id: character.id, name: character.name, relationship: character.relationship }}
+                      selfName={selectedPersona?.name || '我'}
+                      hasApiConfig={hasApiConfig}
+                      callLLM={callLLM as any}
+                      onBack={() => setActivePanel(null)}
+                      onDone={() => setActivePanel(null)}
+                      onInfo={(title, message) => setInfoDialog({ open: true, title, message })}
+                      takeoutCart={takeoutCart}
+                      setTakeoutCart={setTakeoutCart}
+                      takeoutOrder={takeoutOrder}
+                      setTakeoutOrder={setTakeoutOrderSafe as any}
+                      takeoutNow={takeoutNow}
+                      takeoutHistory={takeoutHistory}
+                      setTakeoutHistory={setTakeoutHistory}
+                      walletBalance={walletBalance}
+                      updateWalletBalance={updateWalletBalance}
+                      addWalletBill={addWalletBill}
+                      pushUserCard={pushUserCard}
+                    />
+                  </div>
                 </div>
               ) : activePanel === 'music' ? (
                 <div className="bg-white/80 rounded-xl p-4 max-h-48 overflow-y-auto">
@@ -7861,6 +9240,104 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         </div>
       )}
 
+      {/* 角色外卖代付：用户确认支付弹窗 */}
+      {takeoutPayConfirm && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center px-8">
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setTakeoutPayConfirm(null)}
+          />
+          <div className="relative w-full max-w-[280px] rounded-2xl bg-white shadow-xl overflow-hidden">
+            <div className="px-4 py-3 bg-gradient-to-r from-[#FFD21E] to-[#FFB020] text-center">
+              <div className="text-[12px] text-black/70">确认外卖代付</div>
+              <div className="text-xl font-semibold text-black mt-0.5">¥{takeoutPayConfirm.amount.toFixed(2)}</div>
+              <div className="text-[11px] text-black/70 mt-0.5 truncate">{takeoutPayConfirm.order.storeName}</div>
+            </div>
+            <div className="p-4">
+              <div className="text-[12px] text-gray-600">
+                将从钱包扣除 <span className="font-semibold text-gray-900">¥{takeoutPayConfirm.amount.toFixed(2)}</span>
+              </div>
+              <div className="text-[12px] text-gray-500 mt-1">
+                当前余额：¥{walletBalance.toFixed(2)}
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTakeoutPayConfirm(null)}
+                  className="flex-1 py-2.5 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmTakeoutPay}
+                  className="flex-1 py-2.5 rounded-lg bg-[#07C160] text-white text-sm font-medium"
+                >
+                  确认代付
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {receiptDetailModal.open && (
+        <div className="absolute inset-0 z-[85] flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45"
+            onClick={() => setReceiptDetailModal((prev) => ({ ...prev, open: false }))}
+          />
+          <div className="relative w-full max-w-[280px] max-h-[82vh] overflow-y-auto rounded-2xl bg-[#fffdf7] border border-[#e6dcc6] shadow-2xl">
+            <div className="sticky top-0 z-10 px-3 py-2 bg-[#fff8e7] border-b border-dashed border-[#d8cdb6] flex items-center justify-between">
+              <div className="text-[12px] tracking-[0.08em] text-[#8a7250]">详细小票</div>
+              <button
+                type="button"
+                onClick={() => setReceiptDetailModal((prev) => ({ ...prev, open: false }))}
+                className="text-[12px] text-[#8a7250]"
+              >
+                关闭
+              </button>
+            </div>
+            <div className="relative px-3 py-3 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.9),transparent_45%),radial-gradient(circle_at_85%_80%,rgba(255,245,220,0.7),transparent_40%)]">
+              <div className="absolute left-0 right-0 top-0 h-2 bg-[linear-gradient(-45deg,_#e6dcc6_25%,_transparent_25%),linear-gradient(45deg,_#e6dcc6_25%,_transparent_25%)] bg-[length:12px_8px] bg-[position:0_0,6px_0] opacity-80" />
+              <div className="pt-1 text-[13px] font-semibold text-[#3d3427] truncate">{receiptDetailModal.storeName}</div>
+              <div className="mt-1 text-[10px] text-[#8a7250]">订单号：{receiptDetailModal.orderNo || '（未生成）'}</div>
+
+              <div className="mt-3">
+                <div className="flex items-center justify-between text-[10px] text-[#7b6b55] mb-1">
+                  <span>类目</span>
+                  <span>价格</span>
+                </div>
+                <div className="space-y-1.5">
+                  {receiptDetailModal.goods.map((line, idx) => {
+                    const parsed = parseReceiptLine(line)
+                    return (
+                      <div key={`modal_${line}_${idx}`} className="flex items-start justify-between gap-2 text-[11px] text-[#4f4334]">
+                        <span className="truncate">{parsed.name}</span>
+                        <span className="shrink-0">{parsed.price != null ? `¥${parsed.price.toFixed(2)}` : '--'}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-3 border-t border-dashed border-[#d8cdb6] pt-2 space-y-1 text-[10px] text-[#6c5e4b]">
+                {receiptDetailModal.deliver ? <div>收货：{receiptDetailModal.deliver}</div> : null}
+                {receiptDetailModal.location ? <div>配送位置：{receiptDetailModal.location}</div> : null}
+                {receiptDetailModal.paidBy ? <div>付款：{receiptDetailModal.paidBy}</div> : null}
+              </div>
+
+              <div className="mt-2 border-t border-dashed border-[#d8cdb6] pt-2 flex items-center justify-between">
+                <span className="text-[10px] text-[#7b6b55]">消费总计</span>
+                <span className="text-[14px] font-bold text-[#2f2619]">{receiptDetailModal.total || '—'}</span>
+              </div>
+              <div className="mt-3 h-2 bg-[linear-gradient(-45deg,_#e6dcc6_25%,_transparent_25%),linear-gradient(45deg,_#e6dcc6_25%,_transparent_25%)] bg-[length:12px_8px] bg-[position:0_0,6px_0] opacity-80" />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 听歌邀请：悬浮确认 → 进入“一起听歌界面” */}
       {musicInviteDialog.open && (
         <div className="absolute inset-0 z-50 flex items-center justify-center px-8">
@@ -8068,7 +9545,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                               .sort((a, b) => a.timestamp - b.timestamp)
                               .map(m => ({
                                 senderName: m.isUser ? (selectedPersona?.name || '我') : character.name,
-                                content: m.content,
+                                content:
+                                  m.type === 'image' ? '[图片]' :
+                                  m.type === 'sticker' ? '[表情包]' :
+                                  m.type === 'voice' ? (m.voiceText || '[语音]') :
+                                  m.type === 'transfer' ? `转账 ¥${Number(m.transferAmount || 0).toFixed(2)} ${m.transferNote || ''}` :
+                                  String(m.content || ''),
                                 timestamp: m.timestamp,
                                 type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
                                 transferAmount: m.transferAmount,
@@ -8129,7 +9611,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                           .sort((a, b) => a.timestamp - b.timestamp)
                           .map(m => ({
                             senderName: m.isUser ? (selectedPersona?.name || '我') : character.name,
-                            content: m.content,
+                            content:
+                              m.type === 'image' ? '[图片]' :
+                              m.type === 'sticker' ? '[表情包]' :
+                              m.type === 'voice' ? (m.voiceText || '[语音]') :
+                              m.type === 'transfer' ? `转账 ¥${Number(m.transferAmount || 0).toFixed(2)} ${m.transferNote || ''}` :
+                              String(m.content || ''),
                             timestamp: m.timestamp,
                             type: m.type as 'text' | 'image' | 'sticker' | 'transfer' | 'voice',
                             transferAmount: m.transferAmount,
@@ -8654,7 +10141,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               })()}
 
               {/* 编辑（支持：自己发的文本；对方文本；转账备注；虚拟语音转文字） */}
-              {(msgActionMenu.msg.type === 'text' ||
+              {((msgActionMenu.msg.type === 'text' &&
+                !/^\[(外卖订单|外卖代付请求|外卖代付结果|外卖订单分享)\]/.test(String(msgActionMenu.msg.content || '').trim())) ||
                 msgActionMenu.msg.type === 'transfer' ||
                 (msgActionMenu.msg.type === 'voice' && !msgActionMenu.msg.voiceUrl)) && (
                   <button

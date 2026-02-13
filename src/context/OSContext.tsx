@@ -1481,8 +1481,11 @@ export function OSProvider({ children }: PropsWithChildren) {
     setLocationSettingsState(prev => {
       // 移除自动定位：强制保持 manual
       const next = { ...prev, ...settings, mode: 'manual' as const }
+      // 位置改动后立即同步天气城市，避免主页面仍显示旧城市（如“北京”）
+      setWeather(getManualWeather(next))
       if (!!(window as any).__LP_IMPORTING__) return next
       void kvSetJSON(LOCATION_STORAGE_KEY, next)
+      void kvSetJSON(WEATHER_STORAGE_KEY, getManualWeather(next))
       return next
     })
   }
@@ -1669,7 +1672,7 @@ export function OSProvider({ children }: PropsWithChildren) {
             imageUrl?: { url: string }
           }>
     }[],
-    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number; __disableAutoContinue?: boolean }
   ): Promise<string> => {
     const apiInterface = cfg.apiInterface ?? 'openai_compatible'
     const base = normalizeApiBaseUrl(cfg.apiBaseUrl, apiInterface)
@@ -1682,6 +1685,83 @@ export function OSProvider({ children }: PropsWithChildren) {
       try {
       const maxTokens = options?.maxTokens ?? 900
       const temperature = options?.temperature ?? 0.7
+      const disableAutoContinue = !!options?.__disableAutoContinue
+
+      const hasStrongSentenceEnd = (s: string) => {
+        const t = String(s || '').trim()
+        if (!t) return false
+        return /[。！？!?…~～.\])】）”’"'`]\s*$/.test(t)
+      }
+      const endsLikeConnector = (s: string) => {
+        const t = String(s || '').trim()
+        if (!t) return false
+        return (
+          /[，,、；;：:]\s*$/.test(t) ||
+          /(的|了|着|过|在|和|跟|与|并|而|但|或|又|就|也|都|把|被|给|让|向|对|到|从|由|为|中|里|上|下|前|后|吗|呢|嘛|啊|呀|吧|吃的|说的|写的|讲的)\s*$/i.test(t) ||
+          /(and|or|to|of|for|with|in|on|at|is|are|was|were|be|been|being|the|a|an)\s*$/i.test(t)
+        )
+      }
+      const likelyTruncated = (s: string, finishReason?: any) => {
+        const t = String(s || '').trim()
+        if (!t) return false
+        const fr = String(finishReason || '').toLowerCase()
+        if (fr === 'length' || fr === 'max_tokens') return true
+        // 明显是结构化指令/卡片，不做补写，避免误伤
+        if (/^\[(转账|音乐|推文|推特主页|X主页|外卖)/.test(t)) return false
+        if (t.length < 18) return false
+        if (hasStrongSentenceEnd(t)) return false
+        const lastLine = t.split('\n').pop()?.trim() || t
+        if (lastLine.length <= 2) return false
+        return endsLikeConnector(lastLine)
+      }
+      const cutOverlap = (base: string, tail: string) => {
+        const a = String(base || '')
+        const b = String(tail || '')
+        const max = Math.min(80, a.length, b.length)
+        for (let i = max; i >= 12; i--) {
+          const head = b.slice(0, i)
+          if (a.endsWith(head)) return b.slice(i)
+        }
+        return b
+      }
+      const mergeContinuation = (base: string, cont: string) => {
+        const a = String(base || '').trimEnd()
+        const b = cutOverlap(a, String(cont || '').trimStart())
+        if (!b) return a
+        if (!a) return b
+        if (/[\u4e00-\u9fff]$/.test(a)) return `${a}${b}`
+        if (/[A-Za-z0-9]$/.test(a) && /^[A-Za-z0-9]/.test(b)) return `${a} ${b}`
+        return `${a}${b}`
+      }
+      const maybeContinueOnce = async (partial: string, finishReason?: any): Promise<string> => {
+        const text = String(partial || '').trim()
+        if (!text) return text
+        if (disableAutoContinue) return text
+        if (!likelyTruncated(text, finishReason)) return text
+        try {
+          const continueHint =
+            '你上一条回复疑似被截断了。请只从中断处继续补完，不要重复前文，不要改写已输出内容。'
+          const cont = await callLLMWithConfig(
+            cfg,
+            [
+              ...messages,
+              { role: 'assistant', content: text },
+              { role: 'user', content: continueHint },
+            ],
+            {
+              temperature: Math.min(0.7, temperature),
+              maxTokens: Math.max(160, Math.min(600, Math.floor(maxTokens * 0.6))),
+              timeoutMs: options?.timeoutMs ?? 600000,
+              __disableAutoContinue: true,
+            }
+          )
+          const ct = String(cont || '').trim()
+          if (!ct) return text
+          return mergeContinuation(text, ct).trim()
+        } catch {
+          return text
+        }
+      }
       
       // OpenAI 兼容中转“常见坑”：不支持多模态消息格式（content 为数组 / image_url）
       // 这里提供一个自动降级：遇到 400 且包含多模态内容时，重试一次“纯文本版”
@@ -1755,7 +1835,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         const content = data?.message?.content ?? data?.response ?? ''
         const finalText = typeof content === 'string' ? content.trim() : ''
         if (!finalText) throw new Error('模型返回空内容（Ollama）')
-        return finalText
+        return await maybeContinueOnce(finalText)
       }
 
       // ====== 2) Gemini 原生 ======
@@ -1801,7 +1881,7 @@ export function OSProvider({ children }: PropsWithChildren) {
           if (proxyRes.ok && ct.includes('text/event-stream')) {
             const sseText = (await readOpenAISSE(proxyRes)).trim()
             if (!sseText) throw new Error('模型返回空内容（Gemini SSE）')
-            return sseText
+            return await maybeContinueOnce(sseText)
           }
 
           // 兜底：非流式 JSON
@@ -1813,7 +1893,7 @@ export function OSProvider({ children }: PropsWithChildren) {
             data?.content
           const finalText = typeof content === 'string' ? content.trim() : ''
           if (!finalText) throw new Error('模型返回空内容（Gemini via proxy）。')
-          return finalText
+          return await maybeContinueOnce(finalText, data?.choices?.[0]?.finish_reason)
         } catch (e: any) {
           // 本地开发可能没有 /api/llm/chat：回退到直连（旧逻辑）
           try {
@@ -1859,7 +1939,7 @@ export function OSProvider({ children }: PropsWithChildren) {
             if (!finalText) {
               throw new Error('模型返回空内容（Gemini）。请检查：模型名是否正确、API Key 权限是否包含 Generative Language API。')
             }
-            return finalText
+            return await maybeContinueOnce(finalText, data?.candidates?.[0]?.finishReason)
           } catch {
             throw e
           }
@@ -1916,7 +1996,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         const text = parts.map((p: any) => (p?.type === 'text' ? p?.text : '')).filter(Boolean).join('')
         const finalText = typeof text === 'string' ? text.trim() : ''
         if (!finalText) throw new Error('模型返回空内容（Claude/Anthropic）。请检查：接口是否为 /v1/messages、以及模型名是否正确。')
-        return finalText
+        return await maybeContinueOnce(finalText, data?.stop_reason)
       }
 
       // ====== 4) OpenAI 兼容 ======
@@ -2041,12 +2121,12 @@ export function OSProvider({ children }: PropsWithChildren) {
         // 优先走流式：避免 serverless 等完整响应超时；同时更容易把上游错误吐到前端
         const proxyStreamAny: any = await callOpenAICompatViaProxy(payload, { stream: true, signal: controller.signal })
         const streamText = typeof proxyStreamAny?.__streamText === 'string' ? proxyStreamAny.__streamText.trim() : ''
-        if (streamText) return streamText
+        if (streamText) return await maybeContinueOnce(streamText)
 
         const proxyData = await callOpenAICompatViaProxy(payload, { stream: false, signal: controller.signal })
         const proxyContent = extractOpenAIContent(proxyData)
         const proxyText = typeof proxyContent === 'string' ? proxyContent.trim() : ''
-        if (proxyText) return proxyText
+        if (proxyText) return await maybeContinueOnce(proxyText, proxyData?.choices?.[0]?.finish_reason)
         // 如果代理返回了标准 OpenAI JSON：继续走下面的正常解析/报错逻辑
       } catch {
         // ignore and fall back to direct fetch
@@ -2148,51 +2228,11 @@ export function OSProvider({ children }: PropsWithChildren) {
         )
       }
 
-      // 兜底：Gemini 2.5 / 部分中转容易 length 截断（话说一半）
-      // 如果看到 finish_reason=length，自动走一次“继续输出”的补全（同域转发更稳定且无 CORS）
       const finishReason =
         data?.choices?.[0]?.finish_reason ??
         data?.choices?.[0]?.finishReason ??
         data?.finish_reason
-      if (String(finishReason || '').toLowerCase() === 'length') {
-        try {
-          const continueHint =
-            '继续上文，从刚才中断处接着写。\n' +
-            '要求：不要重复已说过的句子；保持同一语言与语气；继续完成这一轮回复。'
-          const contPayload = {
-            ...payload,
-            messages: [
-              ...messages,
-              { role: 'assistant', content: finalText },
-              { role: 'user', content: continueHint },
-            ],
-            max_tokens: Math.max(120, maxTokens),
-          }
-          const proxyRes = await fetch('/api/llm/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              apiBaseUrl: cfg.apiBaseUrl,
-              apiKey: key,
-              payload: contPayload,
-            }),
-          })
-          if (proxyRes.ok) {
-            const contData = await proxyRes.json().catch(() => ({}))
-            const contContent =
-              contData?.choices?.[0]?.message?.content ??
-              contData?.choices?.[0]?.text ??
-              contData?.message?.content ??
-              contData?.content
-            const contText = typeof contContent === 'string' ? contContent.trim() : ''
-            if (contText) return `${finalText}\n${contText}`.trim()
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      return finalText
+      return await maybeContinueOnce(finalText, finishReason)
     } catch (error: any) {
       if (error?.name === 'AbortError') {
         throw new Error('请求超时：模型响应太慢（可尝试换模型/减少上下文/稍后重试）')

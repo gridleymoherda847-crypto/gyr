@@ -162,8 +162,8 @@ export default function HomeScreen() {
                     transition: musicPlaying ? 'none' : 'transform 0.3s ease',
                   }}
                 >
-                  {currentSong?.cover ? (
-                    <img src={currentSong.cover} alt="" className="w-full h-full object-cover" />
+                  {(currentSong?.cover) ? (
+                    <img src={(currentSong?.cover || '')} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-pink-200 to-pink-300 flex items-center justify-center">
                       <span className="text-lg">🎵</span>
@@ -465,7 +465,7 @@ export default function HomeScreen() {
                     transition: musicPlaying ? 'none' : 'transform 0.3s ease',
                   }}
                 >
-                  {decorImage ? (
+                  {iconTheme === 'minimal' && decorImage ? (
                     <img src={decorImage} alt="唱片封面" className="w-full h-full object-cover" />
                   ) : (
                     <svg viewBox="0 0 100 100" className="w-full h-full">

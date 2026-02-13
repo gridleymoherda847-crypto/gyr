@@ -5,6 +5,7 @@ import { WeChatProvider, useWeChat } from './context/WeChatContext'
 import PhoneShell from './components/PhoneShell'
 import ErrorBoundary from './components/ErrorBoundary'
 import ActivationScreen from './components/ActivationScreen'
+import AutoReachDaemon from './components/AutoReachDaemon'
 import { checkDeviceActivationDetailed, getLocalActivationStatus, recoverActivationFromKv } from './services/redemption'
 
 // 路由按需加载（减少首屏体积，避免移动端黑屏）
@@ -212,6 +213,7 @@ function InnerApp() {
   return (
     <ErrorBoundary>
       <PhoneShell>
+        <AutoReachDaemon />
         <Suspense fallback={<PhoneSkeleton />}>
           <Routes>
             <Route path="/" element={<HomeScreen />} />

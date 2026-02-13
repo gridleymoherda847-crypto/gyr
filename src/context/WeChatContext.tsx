@@ -104,9 +104,14 @@ export type WeChatCharacter = {
   patMeText?: string // 对方拍我时显示的内容（如"拍了拍我的小脑袋"）
   patThemText?: string // 我拍对方时显示的内容（如"拍了拍TA的肩膀"）
   // 线上回复条数偏好（仅线上模式；线下模式不使用）
-  // 说明：这是“最大气泡条数”上限，允许用户喜欢“少回/多回”
-  // 默认 15，上限 20
+  // 说明：使用区间而不是固定条数，避免“强行凑条数”导致生硬断句
+  // 默认 3~8，上限 20
+  onlineReplyMin?: number
   onlineReplyMax?: number
+  // 自动找我（仅线上模式）
+  autoReachEnabled?: boolean
+  autoReachMinPerDay?: number
+  autoReachMaxPerDay?: number
 }
 
 // 聊天消息
@@ -485,6 +490,7 @@ type AddCharacterInput = Omit<
   | 'chatTranslationEnabled'
   | 'xHandle'
   | 'xAliases'
+  | 'onlineReplyMin'
   | 'onlineReplyMax'
 >>
 
@@ -550,6 +556,7 @@ type WeChatContextValue = {
   // 日记收藏
   addFavoriteDiary: (diary: Omit<FavoriteDiary, 'id' | 'createdAt'>) => FavoriteDiary
   removeFavoriteDiary: (id: string) => void
+  updateFavoriteDiaryNote: (id: string, note: string) => void
   isDiaryFavorited: (characterId: string, diaryAt: number, content: string) => boolean
 
   // 我的日记
@@ -1312,6 +1319,12 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   // ==================== 角色操作 ====================
   
   const addCharacter = (character: AddCharacterInput): WeChatCharacter => {
+    const onlineReplyMin = Math.min(20, Math.max(1, Number((character as any).onlineReplyMin ?? 3) || 3))
+    const onlineReplyMax = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 8) || 8))
+    const autoReachMinRaw = Math.min(20, Math.max(0, Number((character as any).autoReachMinPerDay ?? 3) || 3))
+    const autoReachMaxRaw = Math.min(20, Math.max(1, Number((character as any).autoReachMaxPerDay ?? 5) || 5))
+    const autoReachMin = Math.min(autoReachMinRaw, autoReachMaxRaw)
+    const autoReachMax = Math.max(autoReachMinRaw, autoReachMaxRaw)
     const newCharacter: WeChatCharacter = {
       ...character,
       id: `char_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -1341,7 +1354,11 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       xAliases: Array.isArray(character.xAliases) ? character.xAliases : [],
       patMeText: character.patMeText ?? '拍了拍我的小脑袋',
       patThemText: character.patThemText ?? '拍了拍TA的肩膀',
-      onlineReplyMax: Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 15) || 15)),
+      onlineReplyMin: Math.min(onlineReplyMin, onlineReplyMax),
+      onlineReplyMax: Math.max(onlineReplyMin, onlineReplyMax),
+      autoReachEnabled: !!(character as any).autoReachEnabled,
+      autoReachMinPerDay: autoReachMin,
+      autoReachMaxPerDay: autoReachMax,
     }
     setCharacters(prev => [...prev, newCharacter])
     return newCharacter
@@ -1735,6 +1752,12 @@ export function WeChatProvider({ children }: PropsWithChildren) {
 
   const removeFavoriteDiary = (id: string) => {
     setFavoriteDiaries(prev => prev.filter(d => d.id !== id))
+  }
+
+  const updateFavoriteDiaryNote = (id: string, note: string) => {
+    setFavoriteDiaries(prev =>
+      prev.map(d => (d.id === id ? { ...d, note } : d))
+    )
   }
 
   const isDiaryFavorited = (characterId: string, diaryAt: number, content: string) => {
@@ -2198,7 +2221,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter, getMessagesByCharacter, getLastMessage, clearMessages, replaceMessagesForCharacter,
     getMessagesPage,
     addSticker, removeSticker, updateSticker, getStickersByCharacter, addStickerToCharacter, addStickerToAll,
-    addFavoriteDiary, removeFavoriteDiary, isDiaryFavorited,
+    addFavoriteDiary, removeFavoriteDiary, updateFavoriteDiaryNote, isDiaryFavorited,
     myDiaries, addMyDiary, updateMyDiary, deleteMyDiary, getMyDiaryByDate,
     addMoment, deleteMoment, likeMoment, addMomentComment, deleteMomentComment,
     updateUserSettings,
@@ -2216,7 +2239,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     funds, fundHoldings, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue,
     // 群聊
     groups, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages,
-  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, funds, fundHoldings, groups, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages])
+  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, funds, fundHoldings, groups, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages, updateFavoriteDiaryNote])
 
   return <WeChatContext.Provider value={value}>{children}</WeChatContext.Provider>
 }

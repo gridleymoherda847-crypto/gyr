@@ -11,11 +11,15 @@ import { saveBlobAsFile } from '../utils/saveFile'
 
 export default function SettingsScreen() {
   const navigate = useNavigate()
-  const { llmConfig, currentFont, fontColor, iconTheme, setIconTheme, decorImage, setDecorImage } = useOS()
+  const { llmConfig, currentFont, fontColor, iconTheme, setIconTheme, decorImage, setDecorImage, currentSong } = useOS()
   const { characters, setCharacterTyping } = useWeChat()
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [showClearedTip, setShowClearedTip] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false)
+  const [updateHasNew, setUpdateHasNew] = useState(false)
+  const [updateMessage, setUpdateMessage] = useState('')
   const [showExportNameDialog, setShowExportNameDialog] = useState(false)
   const [exportFileName, setExportFileName] = useState('')
   const [showExportSuccess, setShowExportSuccess] = useState(false)
@@ -29,6 +33,8 @@ export default function SettingsScreen() {
   const [importSummary, setImportSummary] = useState<{ written: number; skipped: number } | null>(null)
   const [importing, setImporting] = useState(false)
   const [showThemeTip, setShowThemeTip] = useState(false)
+  const [showCoverReplaceConfirm, setShowCoverReplaceConfirm] = useState(false)
+  const [pendingDiscFile, setPendingDiscFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const discImageInputRef = useRef<HTMLInputElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -123,6 +129,29 @@ export default function SettingsScreen() {
 
   const handleClearData = () => {
     setShowClearConfirm(true)
+  }
+  const handleCheckUpdate = async () => {
+    if (checkingUpdate) return
+    setCheckingUpdate(true)
+    try {
+      const checker = (window as any).__LP_CHECK_UPDATE__ as undefined | (() => Promise<boolean>)
+      if (!checker) {
+        setUpdateHasNew(false)
+        setUpdateMessage('当前环境不支持更新检测。')
+        setShowUpdateDialog(true)
+        return
+      }
+      const hasNew = await checker()
+      setUpdateHasNew(!!hasNew)
+      setUpdateMessage(hasNew ? '检测到新版本，是否立即更新？' : '当前已是最新版本。')
+      setShowUpdateDialog(true)
+    } catch (e: any) {
+      setUpdateHasNew(false)
+      setUpdateMessage(`检测失败：${String(e?.message || '网络异常，请稍后重试')}`)
+      setShowUpdateDialog(true)
+    } finally {
+      setCheckingUpdate(false)
+    }
   }
 
   const openExportDialog = () => {
@@ -264,75 +293,62 @@ export default function SettingsScreen() {
                     </div>
                   </button>
 
-                  {/* 第二行：美化图标下只显示“图标管理”占一行；简约图标下显示“唱片封面 + 图标管理”两格 */}
-                  {iconTheme === 'minimal' ? (
-                    <>
-                      {/* 唱片封面 */}
-                      <button
-                        type="button"
-                        onClick={() => discImageInputRef.current?.click()}
-                        className="rounded-xl p-3 border-2 border-gray-800 bg-gray-50 transition-all"
-                        title="唱片封面（简约图标下生效）"
-                      >
-                        <div className="flex flex-col items-center">
-                          <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200 mb-2">
-                            {decorImage ? (
-                              <img src={decorImage} alt="唱片封面" className="w-full h-full object-cover" />
-                            ) : (
-                              <svg viewBox="0 0 100 100" className="w-full h-full">
-                                <circle cx="50" cy="50" r="48" fill="white" stroke="#333" strokeWidth="1.5"/>
-                                <circle cx="50" cy="50" r="38" fill="none" stroke="#333" strokeWidth="0.5" strokeDasharray="3 3"/>
-                                <circle cx="50" cy="50" r="18" fill="none" stroke="#333" strokeWidth="1"/>
-                                <circle cx="50" cy="50" r="8" fill="#333"/>
-                              </svg>
-                            )}
-                          </div>
-                          <div className="text-xs font-medium text-gray-700">唱片封面</div>
-                          <div className="text-[10px] text-gray-400">点击上传/更换</div>
-                          {decorImage && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                setDecorImage('')
-                              }}
-                              className="mt-2 px-2.5 py-1 rounded-lg bg-red-50 text-[10px] text-red-500 hover:bg-red-100 transition-colors"
-                            >
-                              恢复默认
-                            </button>
-                          )}
-                        </div>
-                      </button>
-
-                      {/* 图标管理 */}
-                      <button
-                        type="button"
-                        onClick={() => navigate('/apps/settings/icons')}
-                        className="rounded-xl p-3 border-2 border-gray-200 bg-white/50 hover:bg-white/60 transition-all"
-                      >
-                        <div className="text-center">
-                          <div className="text-2xl mb-1">🧩</div>
-                          <div className="text-xs font-medium text-gray-700">图标管理</div>
-                          <div className="text-[10px] text-gray-400">自定义应用图标</div>
-                        </div>
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => navigate('/apps/settings/icons')}
-                      className="col-span-2 rounded-xl p-3 border-2 border-gray-200 bg-white/50 hover:bg-white/60 transition-all"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="text-left">
-                          <div className="text-xs font-medium text-gray-700">图标管理</div>
-                          <div className="text-[10px] text-gray-400">自定义应用图标</div>
-                        </div>
-                        <div className="text-2xl">🧩</div>
+                  {/* 第二行：两种图标主题都支持在四宫格入口上传唱片封面 */}
+                  <button
+                    type="button"
+                    onClick={() => discImageInputRef.current?.click()}
+                    className="rounded-xl p-3 border-2 border-gray-800 bg-gray-50 transition-all"
+                    title="唱片封面（会统一替换音乐App与聊天音乐卡片）"
+                  >
+                    <div className="flex flex-col items-center">
+                      <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200 mb-2">
+                        {iconTheme === 'minimal' ? (
+                          decorImage ? (
+                            <img src={decorImage} alt="唱片封面" className="w-full h-full object-cover" />
+                          ) : (
+                            <svg viewBox="0 0 100 100" className="w-full h-full">
+                              <circle cx="50" cy="50" r="48" fill="white" stroke="#333" strokeWidth="1.5"/>
+                              <circle cx="50" cy="50" r="38" fill="none" stroke="#333" strokeWidth="0.5" strokeDasharray="3 3"/>
+                              <circle cx="50" cy="50" r="18" fill="none" stroke="#333" strokeWidth="1"/>
+                              <circle cx="50" cy="50" r="8" fill="#333"/>
+                            </svg>
+                          )
+                        ) : (
+                          <img src={currentSong?.cover || '/icons/music-cover.png'} alt="默认唱片封面" className="w-full h-full object-cover" />
+                        )}
                       </div>
-                    </button>
-                  )}
+                      <div className="text-xs font-medium text-gray-700">唱片封面</div>
+                      <div className="text-[10px] text-gray-400">
+                        {iconTheme === 'minimal' ? '点击上传/更换' : '当前为默认封面（仅简约图标可替换）'}
+                      </div>
+                      {iconTheme === 'minimal' && decorImage && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setDecorImage('')
+                          }}
+                          className="mt-2 px-2.5 py-1 rounded-lg bg-red-50 text-[10px] text-red-500 hover:bg-red-100 transition-colors"
+                        >
+                          恢复默认
+                        </button>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* 图标管理 */}
+                  <button
+                    type="button"
+                    onClick={() => navigate('/apps/settings/icons')}
+                    className="rounded-xl p-3 border-2 border-gray-200 bg-white/50 hover:bg-white/60 transition-all"
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-1">🧩</div>
+                      <div className="text-xs font-medium text-gray-700">图标管理</div>
+                      <div className="text-[10px] text-gray-400">自定义应用图标</div>
+                    </div>
+                  </button>
                 </div>
               </div>
               
@@ -344,12 +360,8 @@ export default function SettingsScreen() {
                 onChange={async (e) => {
                   const file = e.target.files?.[0]
                   if (!file) return
-                  const reader = new FileReader()
-                  reader.onload = () => {
-                    const result = reader.result as string
-                    setDecorImage(result)
-                  }
-                  reader.readAsDataURL(file)
+                  setPendingDiscFile(file)
+                  setShowCoverReplaceConfirm(true)
                   if (discImageInputRef.current) discImageInputRef.current.value = ''
                 }}
               />
@@ -430,6 +442,60 @@ export default function SettingsScreen() {
             </div>
           )}
 
+          {showCoverReplaceConfirm && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6">
+              <div className="bg-white rounded-2xl w-full max-w-[340px] overflow-hidden shadow-2xl">
+                <div className="px-5 pt-5">
+                  <div className="text-[16px] font-semibold text-gray-900 text-center">确认替换唱片封面</div>
+                  <div className="mt-3 text-[13px] leading-6 text-gray-600">
+                    上传后会统一替换所有音乐封面：
+                    <br />
+                    - 音乐 App 列表封面
+                    <br />
+                    - 聊天里的音乐卡片封面
+                  </div>
+                </div>
+                <div className="px-5 pb-5 pt-4 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCoverReplaceConfirm(false)
+                      setPendingDiscFile(null)
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const file = pendingDiscFile
+                      if (!file) {
+                        setShowCoverReplaceConfirm(false)
+                        return
+                      }
+                      const reader = new FileReader()
+                      reader.onload = () => {
+                        const result = reader.result as string
+                        setDecorImage(result)
+                        setPendingDiscFile(null)
+                        setShowCoverReplaceConfirm(false)
+                      }
+                      reader.onerror = () => {
+                        setPendingDiscFile(null)
+                        setShowCoverReplaceConfirm(false)
+                      }
+                      reader.readAsDataURL(file)
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-pink-500 text-white text-sm"
+                  >
+                    确认替换
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <SettingsGroup title="数据管理">
             <SettingsItem
               label="导出数据"
@@ -444,6 +510,11 @@ export default function SettingsScreen() {
           </SettingsGroup>
 
           <SettingsGroup title="系统">
+            <SettingsItem
+              label={checkingUpdate ? '检测更新中…' : '检测更新'}
+              onClick={() => void handleCheckUpdate()}
+              showArrow={false}
+            />
             <SettingsItem
               label="重启小手机"
               onClick={() => setShowRestartConfirm(true)}
@@ -466,7 +537,7 @@ export default function SettingsScreen() {
           />
 
           <SettingsGroup title="关于">
-            <SettingsItem label="LittlePhone" value="v1.0.0" showArrow={false} />
+            <SettingsItem label="LittlePhone" value="v1.1.0" showArrow={false} />
           </SettingsGroup>
         </div>
 
@@ -506,6 +577,50 @@ export default function SettingsScreen() {
                 >
                   清空
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 手动更新检测结果 */}
+        {showUpdateDialog && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
+            <div
+              className="absolute inset-0 bg-black/35"
+              onClick={() => setShowUpdateDialog(false)}
+              role="presentation"
+            />
+            <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/85 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
+              <div className="text-center">
+                <div className="text-4xl mb-2">{updateHasNew ? '🚀' : '✅'}</div>
+                <div className="text-[15px] font-semibold text-[#111]">{updateHasNew ? '发现新版本' : '检测完成'}</div>
+                <div className="mt-2 text-[13px] text-[#333]">{updateMessage}</div>
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowUpdateDialog(false)}
+                  className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
+                >
+                  稍后
+                </button>
+                {updateHasNew && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const apply = (window as any).__LP_APPLY_UPDATE__ as undefined | (() => Promise<void>)
+                        if (apply) await apply()
+                      } finally {
+                        setShowUpdateDialog(false)
+                      }
+                    }}
+                    className="flex-1 rounded-full px-4 py-2 text-[13px] font-semibold text-white active:scale-[0.98]"
+                    style={{ background: 'linear-gradient(135deg, #34d399 0%, #07C160 100%)' }}
+                  >
+                    立即更新
+                  </button>
+                )}
               </div>
             </div>
           </div>

@@ -41,6 +41,7 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'wechat_funds', // 基金数据
   'wechat_fund_holdings', // 基金持仓
   'wechat_groups', // 群聊数据
+  'wechat_takeout_history', // 外卖历史订单（袋鼠外卖）
 
   // OS
   'os_llm_config',

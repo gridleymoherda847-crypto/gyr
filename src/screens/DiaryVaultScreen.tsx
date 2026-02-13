@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PageContainer from '../components/PageContainer'
 import AppHeader from '../components/AppHeader'
@@ -18,6 +18,7 @@ export default function DiaryVaultScreen() {
   const {
     favoriteDiaries,
     removeFavoriteDiary,
+    updateFavoriteDiaryNote,
     characters,
     addMessage,
     myDiaries,
@@ -57,8 +58,13 @@ export default function DiaryVaultScreen() {
   
   // 收藏日记翻译显示状态
   const [showFavoriteTranslated, setShowFavoriteTranslated] = useState(false)
+  const [favoriteNoteDraft, setFavoriteNoteDraft] = useState('')
 
   const selected = useMemo(() => favoriteDiaries.find(d => d.id === selectedId) || null, [favoriteDiaries, selectedId])
+  useEffect(() => {
+    setFavoriteNoteDraft(selected?.note || '')
+  }, [selected?.id, selected?.note])
+
   const selectedMyDiary = useMemo(() => myDiaries.find(d => d.id === selectedId) || null, [myDiaries, selectedId])
 
   // 收藏日记列表（按时间排序）
@@ -665,7 +671,29 @@ export default function DiaryVaultScreen() {
                 <div className="px-4 py-3 border-b border-black/5">
                   <div className="text-[13px] font-semibold text-[#111]">{selected.title}</div>
                   <div className="text-[11px] text-gray-500 mt-0.5">{formatTs(selected.diaryAt)}</div>
-                  {!!selected.note && <div className="text-[11px] text-gray-500 mt-1">备注：{selected.note}</div>}
+                  <div className="mt-2">
+                    <div className="text-[11px] text-gray-500 mb-1">备注</div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={favoriteNoteDraft}
+                        onChange={(e) => setFavoriteNoteDraft(e.target.value)}
+                        placeholder="给这篇收藏日记写个备注"
+                        className="flex-1 px-2.5 py-1.5 rounded-lg bg-gray-100 text-[12px] text-gray-800 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateFavoriteDiaryNote(selected.id, favoriteNoteDraft)
+                          setToast('备注已保存')
+                          setTimeout(() => setToast(null), 1600)
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-pink-500 text-white text-[12px]"
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div
                   className="px-4 py-4 text-[13px] leading-relaxed text-[#111] whitespace-pre-wrap"

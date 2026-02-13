@@ -240,6 +240,8 @@ export default function XScreen() {
   const [followingOpen, setFollowingOpen] = useState(false)
   const [avatarEditTargetId, setAvatarEditTargetId] = useState<string | null>(null)
   const [bannerEditTargetId, setBannerEditTargetId] = useState<string | null>(null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [uploadingBanner, setUploadingBanner] = useState(false)
   const [otherProfileTipOpen, setOtherProfileTipOpen] = useState(false)
   const [otherProfileTipDontShow, setOtherProfileTipDontShow] = useState(false)
   const [otherBioEditOpen, setOtherBioEditOpen] = useState(false)
@@ -406,6 +408,37 @@ export default function XScreen() {
       .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
       .slice(-120)
   }, [openPostId, replies])
+
+  const rewriteLeadingMentionToName = (text: string) => {
+    const raw = String(text || '')
+    if (!raw.includes('@')) return raw
+
+    const resolveMentionName = (tokenRaw: string) => {
+      const token = String(tokenRaw || '').trim().replace(/^@+/, '')
+      if (!token) return ''
+      const key = token.toLowerCase()
+
+      if (key === 'user' || key === 'me' || key === 'you') {
+        const mine = String(meName || '').trim()
+        if (mine) return mine
+      }
+      const byHandle = (data?.users || []).find((u) => String(u?.handle || '').replace(/^@+/, '').toLowerCase() === key)
+      if (byHandle?.name) return String(byHandle.name)
+
+      const byName = (data?.users || []).find((u) => String(u?.name || '').trim().toLowerCase() === key)
+      if (byName?.name) return String(byName.name)
+
+      const fromReplies = openPostReplies.find((r) => String(r.authorName || '').trim().toLowerCase() === key)
+      if (fromReplies?.authorName) return String(fromReplies.authorName)
+      return ''
+    }
+
+    return raw.replace(/(^|[\s([{（【"'“‘])@([A-Za-z0-9_@.-]+)/g, (full, prefix, token) => {
+      const name = resolveMentionName(String(token || ''))
+      if (!name) return full
+      return `${prefix}@${name}`
+    })
+  }
 
   const feedPosts = useMemo(() => {
     if (!data) return []
@@ -1718,43 +1751,57 @@ ${chatFriendList}
   const handleAvatarChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const dataUrl = await compressImageFileToDataUrl(file, { maxSide: 720 })
-    setData((prev) => {
-      if (!prev) return prev
-      const targetId = avatarEditTargetId || 'me'
-      if (targetId === 'me') {
-        const next = { ...prev, meAvatarUrl: dataUrl }
+    setUploadingAvatar(true)
+    try {
+      const dataUrl = await compressImageFileToDataUrl(file, { maxSide: 720 })
+      setData((prev) => {
+        if (!prev) return prev
+        const targetId = avatarEditTargetId || 'me'
+        if (targetId === 'me') {
+          const next = { ...prev, meAvatarUrl: dataUrl }
+          void xSave(next)
+          return next
+        }
+        const users = (prev.users || []).map((u) => (u.id === targetId ? { ...u, avatarUrl: dataUrl } : u))
+        const next = { ...prev, users }
         void xSave(next)
         return next
-      }
-      const users = (prev.users || []).map((u) => (u.id === targetId ? { ...u, avatarUrl: dataUrl } : u))
-      const next = { ...prev, users }
-      void xSave(next)
-      return next
-    })
-    setAvatarEditTargetId(null)
-    e.currentTarget.value = ''
+      })
+    } catch (err: any) {
+      setTipDialog({ open: true, title: '头像上传失败', message: err?.message || '图片处理失败，请重试。' })
+    } finally {
+      setUploadingAvatar(false)
+      setAvatarEditTargetId(null)
+      e.currentTarget.value = ''
+    }
   }
 
   const handleMeBannerChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const dataUrl = await compressImageFileToDataUrl(file, { maxSide: 1400 })
-    setData((prev) => {
-      if (!prev) return prev
-      const targetId = bannerEditTargetId || 'me'
-      if (targetId === 'me') {
-        const next = { ...prev, meBannerUrl: dataUrl }
+    setUploadingBanner(true)
+    try {
+      const dataUrl = await compressImageFileToDataUrl(file, { maxSide: 1400 })
+      setData((prev) => {
+        if (!prev) return prev
+        const targetId = bannerEditTargetId || 'me'
+        if (targetId === 'me') {
+          const next = { ...prev, meBannerUrl: dataUrl }
+          void xSave(next)
+          return next
+        }
+        const users = (prev.users || []).map((u) => (u.id === targetId ? { ...u, bannerUrl: dataUrl } : u))
+        const next = { ...prev, users }
         void xSave(next)
         return next
-      }
-      const users = (prev.users || []).map((u) => (u.id === targetId ? { ...u, bannerUrl: dataUrl } : u))
-      const next = { ...prev, users }
-      void xSave(next)
-      return next
-    })
-    setBannerEditTargetId(null)
-    e.currentTarget.value = ''
+      })
+    } catch (err: any) {
+      setTipDialog({ open: true, title: '背景上传失败', message: err?.message || '图片处理失败，请重试。' })
+    } finally {
+      setUploadingBanner(false)
+      setBannerEditTargetId(null)
+      e.currentTarget.value = ''
+    }
   }
 
 
@@ -2715,7 +2762,7 @@ ${chatFriendList}
                           </button>
                         </div>
                       </div>
-                      <div className="mt-1 text-[13px] text-gray-900 whitespace-pre-wrap break-words">{r.text}</div>
+                      <div className="mt-1 text-[13px] text-gray-900 whitespace-pre-wrap break-words">{rewriteLeadingMentionToName(r.text)}</div>
                     </div>
                   </div>
                 </div>
@@ -2857,17 +2904,20 @@ ${chatFriendList}
         {/* Banner */}
         <div className="relative">
           <div
-            className={`h-[190px] w-full bg-gray-100 ${isMe ? 'cursor-pointer' : ''}`}
-            onClick={isMe ? handlePickMeBanner : undefined}
+            className={`h-[190px] w-full bg-gray-100 ${isMe ? 'cursor-pointer' : ''} ${uploadingBanner ? 'opacity-80' : ''}`}
+            onClick={isMe && !uploadingBanner ? handlePickMeBanner : undefined}
             style={{
               backgroundImage: meta.bannerUrl ? `url(${meta.bannerUrl})` : undefined,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
             }}
           />
+          {isMe && uploadingBanner ? (
+            <div className="absolute right-3 top-3 px-2 py-1 rounded-lg bg-black/55 text-white text-[11px]">背景上传中…</div>
+          ) : null}
           <div
-            className={`absolute left-4 -bottom-10 w-24 h-24 rounded-full overflow-hidden border-4 border-white bg-gray-100 ${isMe ? 'cursor-pointer' : ''}`}
-            onClick={isMe ? handlePickMeAvatar : undefined}
+            className={`absolute left-4 -bottom-10 w-24 h-24 rounded-full overflow-hidden border-4 border-white bg-gray-100 ${isMe ? 'cursor-pointer' : ''} ${uploadingAvatar ? 'opacity-80' : ''}`}
+            onClick={isMe && !uploadingAvatar ? handlePickMeAvatar : undefined}
             title={isMe ? '更换头像' : undefined}
           >
             {(meta as any).avatarUrl ? (
@@ -2877,6 +2927,9 @@ ${chatFriendList}
                 {initials(userName)}
               </div>
             )}
+            {isMe && uploadingAvatar ? (
+              <div className="absolute inset-0 bg-black/45 text-white text-[11px] flex items-center justify-center">上传中…</div>
+            ) : null}
           </div>
         </div>
 
@@ -3015,7 +3068,7 @@ ${chatFriendList}
                 return (
                   <div key={r.id} className="px-4 py-3">
                     <div className="text-[12px] text-gray-500">评论 @ {pAuthor} · {fmtRelative(r.createdAt)}</div>
-                    <div className="mt-1 text-[13px] text-gray-900 whitespace-pre-wrap">{r.text}</div>
+                    <div className="mt-1 text-[13px] text-gray-900 whitespace-pre-wrap">{rewriteLeadingMentionToName(r.text)}</div>
                     {p && (
                       <div className="mt-2 text-[11px] text-gray-500 bg-gray-50 rounded-lg px-2 py-1">
                         原帖：{pExcerpt || '（无）'}

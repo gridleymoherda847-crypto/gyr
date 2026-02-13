@@ -661,6 +661,52 @@ export default async function handler(req: any, res: any) {
       })
     } catch (e: any) {
       const info = buildDebugError(e, { stage: 'openai_ai_sdk' })
+      // 低风险兼容兜底：非流式失败时，尝试一次原生 OpenAI 兼容接口
+      if (!wantsStream) {
+        try {
+          const fallbackBody: any = {
+            model: modelId,
+            messages: cleanedMessages,
+          }
+          if (typeof temperature === 'number') fallbackBody.temperature = temperature
+          if (typeof maxOutputTokens === 'number') fallbackBody.max_tokens = maxOutputTokens
+          const rr = await fetch(String(target), {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(fallbackBody),
+            signal: controller.signal,
+          })
+          const raw = await rr.text()
+          if (rr.ok) {
+            let data: any = {}
+            try { data = JSON.parse(raw) } catch { data = {} }
+            const content =
+              String(
+                data?.choices?.[0]?.message?.content ??
+                data?.output_text ??
+                ''
+              )
+            if (content) {
+              return json(res, 200, {
+                id: String(data?.id || `chatcmpl_${Date.now()}`),
+                object: 'chat.completion',
+                created: Math.floor(Date.now() / 1000),
+                model: String(data?.model || modelId),
+                choices: [{
+                  index: 0,
+                  message: { role: 'assistant', content },
+                  finish_reason: 'stop',
+                }],
+              })
+            }
+          }
+        } catch {
+          // ignore fallback error, continue original error path
+        }
+      }
       if (wantsStream) {
         startSSE(res, 200)
         sseData(res, {

@@ -48,9 +48,9 @@ const MANUAL_TEXT = `
 
 【API 消耗详解】
 消耗 API 的操作：
-- 私聊点击播放按钮触发回复
+- 私聊点击播放按钮触发回复（常见 1 次；遇到“半句话截断”托底时可能 2 次）
 - 群聊点击生成按钮
-- 朋友圈点击右上角刷新按钮
+- 朋友圈点击右上角刷新按钮（当前已改成“尽量 1 次批量生成”）
 - 情侣空间每次进入刷新留言
 - 偷看日记
 - 查手机
@@ -58,6 +58,8 @@ const MANUAL_TEXT = `
 - X 推特刷新主页
 - X 推特搜索话题
 - X 推特刷新私信
+- 手动点「重新生成」会再调用一次
+- 自动找我聊天（开启后）：按你设置的“每天最少~最多次数”执行；离线补齐也严格不超过该区间上限
 
 不消耗 API 的操作：
 - 日记本查看/编辑
@@ -72,6 +74,10 @@ const MANUAL_TEXT = `
 - 发送消息本身
 - X 私信发送消息
 - X 私信翻译
+
+【版本更新】
+- 本应用不再自动刷新升级；请到 设置 → 系统 → 检测更新 手动更新
+- 检测到新版本后，点击「立即更新」会清缓存并重载到新版本
 
 【微信功能】
 - 私聊：进入聊天 → 发送消息 → 点击右下角播放按钮让 AI 回复
@@ -105,7 +111,7 @@ const MANUAL_TEXT = `
 
 【API 质量问题】
 以下问题通常与 API 服务商或模型有关，开发者无法解决，请尝试更换模型或联系 API 服务商：
-- AI 回复被截断/不完整：API 服务商可能限制了 max_tokens，联系服务商或换支持长输出的模型
+- AI 回复被截断/不完整：系统会自动补一次“续写托底”，仍被截断通常是服务商限制太严
 - AI 回复很短/敷衍：模型能力弱或中转站篡改参数，换更强模型如 GPT-4/Claude
 - AI 智商低/不理解上下文：模型版本旧或被偷换便宜模型，升级模型或换可信服务商
 - AI 回复很慢/超时：服务商负载高或网络延迟，换响应快的模型或低延迟服务商
@@ -486,21 +492,21 @@ ${MANUAL_TEXT}
             </p>
           </div>
           
-          <h4 className="font-bold text-lg text-red-600">🔴 消耗 LLM API 的操作</h4>
-          <p className="text-sm text-gray-500 mb-2">（每次操作调用 1 次 API）</p>
+          <h4 className="font-bold text-lg text-red-600">🔴 会消耗 LLM API 的操作（大白话）</h4>
+          <p className="text-sm text-gray-500 mb-2">多数是 1 次；如果系统发现“半句话被截断”，会自动再补 1 次（变成 2 次）。</p>
           
           <div className="space-y-2">
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
               <div className="font-medium text-red-700">私聊：点击「▶ 播放按钮」触发回复</div>
-              <div className="text-sm text-red-600">每点一次 = 调用 1 次 API</div>
+              <div className="text-sm text-red-600">通常 1 次；命中“防截断托底”时 2 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
               <div className="font-medium text-red-700">群聊：点击「▶ 生成按钮」</div>
-              <div className="text-sm text-red-600">每点一次 = 调用 1 次 API（一次生成多人回复）</div>
+              <div className="text-sm text-red-600">通常 1 次；命中“防截断托底”时 2 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
               <div className="font-medium text-red-700">朋友圈：点击右上角刷新按钮</div>
-              <div className="text-sm text-red-600">每次刷新 = 调用 1 次 API（生成动态/评论）</div>
+              <div className="text-sm text-red-600">现在尽量 1 次批量生成（动态/评论）</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
               <div className="font-medium text-red-700">情侣空间：每次进入刷新留言</div>
@@ -530,6 +536,26 @@ ${MANUAL_TEXT}
               <div className="font-medium text-red-700">X（推特）私信：点击右上角刷新</div>
               <div className="text-sm text-red-600">每次刷新 = 调用 1 次 API（生成新私信）</div>
             </div>
+            <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+              <div className="font-medium text-red-700">你主动点「重新生成」</div>
+              <div className="text-sm text-red-600">每点一次，都会再扣一次（这是新的请求）</div>
+            </div>
+            <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+              <div className="font-medium text-red-700">自动找我聊天（含离线补齐）</div>
+              <div className="text-sm text-red-600">严格按你在聊天设置里填的区间执行，当日 API 调用不会超过区间上限</div>
+            </div>
+            <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+              <div className="font-medium text-red-700">部分复杂流程（如格式修复）</div>
+              <div className="text-sm text-red-600">偶尔会二次调用，用来“修格式/补内容”，避免你看到错误或半句</div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 mt-4">
+            <h4 className="font-bold text-blue-700 mb-2">🆕 版本更新方式</h4>
+            <p className="text-sm text-blue-600">
+              已改为手动更新，不会在发布新版本时自动刷新页面。
+              <br />路径：设置 → 系统 → 检测更新
+            </p>
           </div>
           
           <h4 className="font-bold text-lg text-amber-600 mt-6">🟡 消耗 TTS（语音）API 的操作</h4>

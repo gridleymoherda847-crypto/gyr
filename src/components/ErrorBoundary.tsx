@@ -24,7 +24,7 @@ const isDynamicImportError = (error: unknown): boolean => {
   )
 }
 
-// 自动刷新的key，防止无限刷新
+// 自动刷新的 key，防止无限刷新
 const AUTO_REFRESH_KEY = 'littlephone_auto_refresh_time'
 
 export default class ErrorBoundary extends Component<Props, State> {
@@ -38,13 +38,13 @@ export default class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: unknown) {
     // eslint-disable-next-line no-console
     console.error('LittlePhone crashed:', error)
-    
+
     // 如果是动态导入失败，自动刷新页面（但防止无限刷新）
     if (isDynamicImportError(error)) {
       const lastRefresh = localStorage.getItem(AUTO_REFRESH_KEY)
       const now = Date.now()
       // 如果距离上次自动刷新超过30秒，才自动刷新
-      if (!lastRefresh || now - parseInt(lastRefresh) > 30000) {
+      if (!lastRefresh || now - parseInt(lastRefresh, 10) > 30000) {
         localStorage.setItem(AUTO_REFRESH_KEY, String(now))
         // 延迟一点刷新，让用户能看到提示
         setTimeout(() => window.location.reload(), 500)

@@ -157,14 +157,59 @@ export default function ChatSettingsScreen() {
   const [patMeTextDraft, setPatMeTextDraft] = useState<string>(character?.patMeText || '拍了拍我的小脑袋')
   const [patThemTextDraft, setPatThemTextDraft] = useState<string>(character?.patThemText || '拍了拍TA的肩膀')
 
-  // 线上回复条数（草稿）
-  const [onlineReplyMaxDraft, setOnlineReplyMaxDraft] = useState<number>(Math.min(20, Math.max(1, Number((character as any)?.onlineReplyMax ?? 15) || 15)))
+  // 线上回复条数区间（草稿，字符串：允许先删空再输入，避免数字“顶着删不掉”）
+  const [onlineReplyMinDraft, setOnlineReplyMinDraft] = useState<string>(String(Math.min(20, Math.max(1, Number((character as any)?.onlineReplyMin ?? 3) || 3))))
+  const [onlineReplyMaxDraft, setOnlineReplyMaxDraft] = useState<string>(String(Math.min(20, Math.max(1, Number((character as any)?.onlineReplyMax ?? 8) || 8))))
+  // 主动发消息（草稿，字符串）
+  const [autoReachMinDraft, setAutoReachMinDraft] = useState<string>(String(Math.min(20, Math.max(0, Number((character as any)?.autoReachMinPerDay ?? 3) || 3))))
+  const [autoReachMaxDraft, setAutoReachMaxDraft] = useState<string>(String(Math.min(20, Math.max(1, Number((character as any)?.autoReachMaxPerDay ?? 5) || 5))))
+
+  const toIntInRange = (raw: string, min: number, max: number, fallback: number) => {
+    const n = Number(raw)
+    if (!Number.isFinite(n)) return fallback
+    return Math.min(max, Math.max(min, Math.round(n)))
+  }
+  const getOnlineRange = (minRaw: string, maxRaw: string) => {
+    const min0 = toIntInRange(minRaw, 1, 20, 3)
+    const max0 = toIntInRange(maxRaw, 1, 20, 8)
+    return { min: Math.min(min0, max0), max: Math.max(min0, max0) }
+  }
+  const getAutoReachRange = (minRaw: string, maxRaw: string) => {
+    const min0 = toIntInRange(minRaw, 0, 20, 3)
+    const max0 = toIntInRange(maxRaw, 1, 20, 5)
+    return { min: Math.min(min0, max0), max: Math.max(min0, max0) }
+  }
+  const onlineRangePreview = useMemo(() => getOnlineRange(onlineReplyMinDraft, onlineReplyMaxDraft), [onlineReplyMinDraft, onlineReplyMaxDraft])
+  const autoReachRangePreview = useMemo(() => getAutoReachRange(autoReachMinDraft, autoReachMaxDraft), [autoReachMinDraft, autoReachMaxDraft])
+  const commitOnlineReplyRange = () => {
+    if (!character) return
+    const normalized = getOnlineRange(onlineReplyMinDraft, onlineReplyMaxDraft)
+    setOnlineReplyMinDraft(String(normalized.min))
+    setOnlineReplyMaxDraft(String(normalized.max))
+    updateCharacter(character.id, { onlineReplyMin: normalized.min, onlineReplyMax: normalized.max } as any)
+  }
+  const commitAutoReachRange = () => {
+    if (!character) return
+    const normalized = getAutoReachRange(autoReachMinDraft, autoReachMaxDraft)
+    setAutoReachMinDraft(String(normalized.min))
+    setAutoReachMaxDraft(String(normalized.max))
+    updateCharacter(character.id, { autoReachMinPerDay: normalized.min, autoReachMaxPerDay: normalized.max } as any)
+  }
 
   useEffect(() => {
     if (!character) return
-    const v = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 15) || 15))
-    setOnlineReplyMaxDraft(v)
-  }, [character?.id, (character as any)?.onlineReplyMax])
+    const minV = Math.min(20, Math.max(1, Number((character as any).onlineReplyMin ?? 3) || 3))
+    const maxV = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 8) || 8))
+    setOnlineReplyMinDraft(String(Math.min(minV, maxV)))
+    setOnlineReplyMaxDraft(String(Math.max(minV, maxV)))
+  }, [character?.id, (character as any)?.onlineReplyMin, (character as any)?.onlineReplyMax])
+  useEffect(() => {
+    if (!character) return
+    const minV = Math.min(20, Math.max(0, Number((character as any).autoReachMinPerDay ?? 3) || 3))
+    const maxV = Math.min(20, Math.max(1, Number((character as any).autoReachMaxPerDay ?? 5) || 5))
+    setAutoReachMinDraft(String(Math.min(minV, maxV)))
+    setAutoReachMaxDraft(String(Math.max(minV, maxV)))
+  }, [character?.id, (character as any)?.autoReachMinPerDay, (character as any)?.autoReachMaxPerDay])
   
   // 线下模式设置（折叠面板）
   const [offlineSettingsExpanded, setOfflineSettingsExpanded] = useState(false)
@@ -1022,24 +1067,130 @@ export default function ChatSettingsScreen() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex flex-col">
                     <span className="text-[#000]">线上回复气泡数量</span>
-                    <span className="text-xs text-gray-400 mt-0.5">喜欢TA回得多/少都可以调（上限20条）</span>
+                    <span className="text-xs text-gray-400 mt-0.5">设置最少~最多条数（1~20，默认3~8）</span>
                   </div>
-                  <span className="text-xs font-medium text-gray-600">{onlineReplyMaxDraft}条</span>
+                  <span className="text-xs font-medium text-gray-600">{onlineRangePreview.min}~{onlineRangePreview.max}条</span>
                 </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={20}
-                  value={onlineReplyMaxDraft}
-                  onChange={(e) => {
-                    const v = Math.min(20, Math.max(1, Number(e.target.value) || 15))
-                    setOnlineReplyMaxDraft(v)
-                    updateCharacter(character.id, { onlineReplyMax: v } as any)
-                  }}
-                  className="w-full accent-green-500"
-                />
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[11px] text-gray-500">
+                    最少
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={onlineReplyMinDraft}
+                      onChange={(e) => {
+                        setOnlineReplyMinDraft(e.target.value)
+                      }}
+                      onBlur={commitOnlineReplyRange}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+                      className="mt-1 w-full px-2 py-1.5 rounded-lg bg-gray-100 text-[12px] outline-none"
+                    />
+                  </label>
+                  <label className="text-[11px] text-gray-500">
+                    最多
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={onlineReplyMaxDraft}
+                      onChange={(e) => {
+                        setOnlineReplyMaxDraft(e.target.value)
+                      }}
+                      onBlur={commitOnlineReplyRange}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+                      className="mt-1 w-full px-2 py-1.5 rounded-lg bg-gray-100 text-[12px] outline-none"
+                    />
+                  </label>
+                </div>
                 <div className="mt-2 text-[11px] text-gray-400">
-                  提示：只是“最多几条”的偏好，不会为了凑数把一句话硬拆开。
+                  线上模式会严格按区间控制，并尽量避免硬拆一句话。
+                </div>
+              </div>
+            )}
+
+            {/* 主动发消息（仅线上模式） */}
+            {!character.offlineMode && (
+              <div className="px-4 py-4 border-b border-gray-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col pr-3">
+                    <span className="text-[#000]">主动发消息</span>
+                    <span className="text-xs text-gray-400 mt-0.5">
+                      开启后会在离线时自动调用 API 发送消息（按次数扣费）
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const enabled = !!(character as any).autoReachEnabled
+                      if (enabled) {
+                        updateCharacter(character.id, { autoReachEnabled: false } as any)
+                        return
+                      }
+                      setDialog({
+                        open: true,
+                        title: '开启主动发消息？',
+                        message:
+                          '开启后将强制启用时间感知，并允许角色在你离线时自动调用 API 给你发消息。\n' +
+                          '按“自动找你一次=一次API调用”计费；不需要时请及时关闭。',
+                        confirmText: '确认开启',
+                        cancelText: '先不开',
+                        onConfirm: () => {
+                          // 互斥：同一时刻只允许一个角色开启“主动发消息”
+                          for (const c of characters) {
+                            if (c.id !== character.id && (c as any).autoReachEnabled) {
+                              updateCharacter(c.id, { autoReachEnabled: false } as any)
+                            }
+                          }
+                          updateCharacter(character.id, {
+                            autoReachEnabled: true,
+                            autoReachMinPerDay: autoReachRangePreview.min,
+                            autoReachMaxPerDay: autoReachRangePreview.max,
+                            timeSyncEnabled: true,
+                          } as any)
+                        },
+                      })
+                    }}
+                    className={`w-12 h-7 rounded-full transition-colors ${(character as any).autoReachEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
+                  >
+                    <div className={`w-6 h-6 bg-white rounded-full shadow mt-0.5 transition-transform ${(character as any).autoReachEnabled ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className="text-[11px] text-gray-500">
+                    最少次数/天
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={autoReachMinDraft}
+                      onChange={(e) => {
+                        setAutoReachMinDraft(e.target.value)
+                      }}
+                      onBlur={commitAutoReachRange}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+                      className="mt-1 w-full px-2 py-1.5 rounded-lg bg-gray-100 text-[12px] outline-none"
+                    />
+                  </label>
+                  <label className="text-[11px] text-gray-500">
+                    最多次数/天
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={autoReachMaxDraft}
+                      onChange={(e) => {
+                        setAutoReachMaxDraft(e.target.value)
+                      }}
+                      onBlur={commitAutoReachRange}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+                      className="mt-1 w-full px-2 py-1.5 rounded-lg bg-gray-100 text-[12px] outline-none"
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 text-[11px] text-gray-400">
+                  默认 3~5 次；线下模式会自动关闭此功能。
                 </div>
               </div>
             )}
@@ -1051,14 +1202,14 @@ export default function ChatSettingsScreen() {
                 const newOfflineMode = !character.offlineMode
                 // 如果开启线下模式且语音功能开启，自动关闭语音并提示
                 if (newOfflineMode && character.voiceEnabled) {
-                  updateCharacter(character.id, { offlineMode: newOfflineMode, voiceEnabled: false })
+                  updateCharacter(character.id, { offlineMode: newOfflineMode, voiceEnabled: false, autoReachEnabled: false } as any)
                   setDialog({
                     open: true,
                     title: '语音功能已自动关闭',
-                    message: '线下模式暂不支持语音功能，已帮你自动关闭。',
+                    message: '线下模式暂不支持语音功能，已帮你自动关闭。主动发消息也已关闭。',
                   })
                 } else {
-                  updateCharacter(character.id, { offlineMode: newOfflineMode })
+                  updateCharacter(character.id, newOfflineMode ? ({ offlineMode: true, autoReachEnabled: false } as any) : { offlineMode: false })
                 }
                 // 插入分割线消息
                 addMessage({
