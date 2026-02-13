@@ -7326,6 +7326,37 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userBubbleStyle, charBubbleStyle])
+  const bubbleSize = ((character as any)?.bubbleSize === 'xs' || (character as any)?.bubbleSize === 'sm' || (character as any)?.bubbleSize === 'lg')
+    ? (character as any).bubbleSize
+    : 'md'
+  const sizeCls = (() => {
+    if (bubbleSize === 'xs') {
+      return {
+        avatarWrap: 'w-8 h-8 rounded-lg',
+        avatarText: 'text-[11px]',
+        bubbleBase: 'text-[12px] px-2 py-1.5',
+      }
+    }
+    if (bubbleSize === 'sm') {
+      return {
+        avatarWrap: 'w-9 h-9 rounded-lg',
+        avatarText: 'text-[13px]',
+        bubbleBase: 'text-[13px] px-2.5 py-2',
+      }
+    }
+    if (bubbleSize === 'lg') {
+      return {
+        avatarWrap: 'w-12 h-12 rounded-xl',
+        avatarText: 'text-[17px]',
+        bubbleBase: 'text-[16px] px-4 py-3',
+      }
+    }
+    return {
+      avatarWrap: 'w-11 h-11 rounded-xl',
+      avatarText: 'text-[15px]',
+      bubbleBase: 'text-[15px] px-3.5 py-2.5',
+    }
+  })()
 
   const renderedMessageItems = useMemo(() => {
     if (!character?.id) return null
@@ -7398,10 +7429,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               (part.startsWith('“') && part.endsWith('”')) ||
               (part.startsWith('「') && part.endsWith('」'))
             if (isQuote) {
-              // 引号内的对话：使用对话颜色 + 单独样式
+              // 引号内的对话：单独成段并上下留白，阅读更舒适
               return (
                 <span
                   key={i}
+                  className="block my-2"
                   style={{
                     color: offlineDialogColor,
                     fontStyle: quoteItalic ? 'italic' : 'normal',
@@ -7413,7 +7445,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               )
             }
             // 普通叙述文字：使用叙述颜色
-            return <span key={i}>{part}</span>
+            return <span key={i} className="whitespace-pre-wrap">{part}</span>
           })
         }
         
@@ -7586,7 +7618,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             )}
 
             <div 
-              className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm cursor-pointer active:opacity-70 transition-opacity"
+              className={`${sizeCls.avatarWrap} overflow-hidden flex-shrink-0 shadow-sm cursor-pointer active:opacity-70 transition-opacity`}
               onClick={() => {
                 if (editMode) return // 编辑模式下不触发拍一拍
                 if (!(character?.patEnabled ?? true)) return // 拍一拍已关闭
@@ -7617,14 +7649,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 selectedPersona?.avatar ? (
                   <img src={selectedPersona.avatar} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-[15px] font-medium">
+                  <div className={`w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white ${sizeCls.avatarText} font-medium`}>
                     {(selectedPersona?.name || '我')[0]}
                   </div>
                 )
               ) : character.avatar ? (
                 <img src={character.avatar} alt="" className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-[15px] font-medium">
+                <div className={`w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white ${sizeCls.avatarText} font-medium`}>
                   {character.name[0]}
                 </div>
               )}
@@ -7640,10 +7672,10 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               )}
               
               <div
-                className={`w-fit text-[15px] ${
+                className={`w-fit ${
                   isTakeoutCardText || msg.type === 'transfer' || msg.type === 'music' || msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'voice' || msg.type === 'chat_forward'
                     ? 'bg-transparent p-0 shadow-none'
-                    : `px-3.5 py-2.5 shadow-sm ${msg.isUser
+                    : `${sizeCls.bubbleBase} shadow-sm ${msg.isUser
                         ? 'text-gray-800 rounded-2xl rounded-tr-md'
                         : 'text-gray-800 rounded-2xl rounded-tl-md'}`
                 }`}
@@ -7817,6 +7849,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     selectedPersona?.avatar,
     selectedPersona?.name,
     bubbleStyles,
+    bubbleSize,
     openMsgActionMenu,
   ])
 

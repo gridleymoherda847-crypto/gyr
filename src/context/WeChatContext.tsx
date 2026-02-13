@@ -63,6 +63,7 @@ export type WeChatCharacter = {
   userBubbleStyle?: BubbleStyle // 用户气泡样式
   charBubbleStyle?: BubbleStyle // 角色气泡样式
   bubbleSyncEnabled?: boolean // 气泡样式双方同步（编辑时便捷开关）
+  bubbleSize?: 'xs' | 'sm' | 'md' | 'lg' // 气泡/头像尺寸档位
   offlineMode: boolean // 线下模式（默认关闭）
   // 线下模式自定义设置
   offlineUserColor?: string // 用户字体颜色
@@ -880,6 +881,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         : (((c as any).language && (c as any).language !== 'zh') ? true : false),
       offlineMode: c.offlineMode ?? false,
       bubbleSyncEnabled: typeof (c as any).bubbleSyncEnabled === 'boolean' ? (c as any).bubbleSyncEnabled : false,
+      bubbleSize: ((c as any).bubbleSize === 'xs' || (c as any).bubbleSize === 'sm' || (c as any).bubbleSize === 'md' || (c as any).bubbleSize === 'lg')
+        ? (c as any).bubbleSize
+        : 'md',
       memoryRounds: typeof (c as any).memoryRounds === 'number' ? (c as any).memoryRounds : 100,
       memorySummary: typeof (c as any).memorySummary === 'string' ? (c as any).memorySummary : '',
       memorySummaryUpdatedAt: typeof (c as any).memorySummaryUpdatedAt === 'number' ? (c as any).memorySummaryUpdatedAt : null,
@@ -1342,6 +1346,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       blockedAt: null, // 拉黑时间戳
       offlineMode: false, // 默认关闭线下模式
       bubbleSyncEnabled: character.bubbleSyncEnabled ?? false,
+      bubbleSize: (character as any).bubbleSize === 'xs' || (character as any).bubbleSize === 'sm' || (character as any).bubbleSize === 'lg'
+        ? (character as any).bubbleSize
+        : 'md',
       memoryRounds: character.memoryRounds ?? 100,
       memorySummary: character.memorySummary ?? '',
       memorySummaryUpdatedAt: character.memorySummaryUpdatedAt ?? null,

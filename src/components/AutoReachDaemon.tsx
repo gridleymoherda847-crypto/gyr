@@ -173,6 +173,11 @@ export default function AutoReachDaemon() {
     }
 
     const sendLiveRound = async (c: WeChatCharacter) => {
+      const minRaw = clamp(Number((c as any).onlineReplyMin ?? 3) || 3, 1, 20)
+      const maxRaw = clamp(Number((c as any).onlineReplyMax ?? 8) || 8, 1, 20)
+      const minN = Math.min(minRaw, maxRaw)
+      const maxN = Math.max(minRaw, maxRaw)
+      const targetN = minN === maxN ? minN : (minN + Math.floor(Math.random() * (maxN - minN + 1)))
       const history = buildShortHistory(c.id, 1200)
       const histText = history.map(h => `${h.role === 'user' ? '我' : c.name}：${h.content}`).join('\n')
       const prompt = await callLLM([
@@ -181,7 +186,7 @@ export default function AutoReachDaemon() {
           content:
             `你是“${c.name}”。你要主动找我聊天（微信短气泡）。\n` +
             `严格要求：\n` +
-            `1) 仅输出 1~3 行，每行一条消息；\n` +
+            `1) 严格输出 ${targetN} 行，每行一条消息；\n` +
             `2) 禁止旁白、动作、神态、引号叙事；\n` +
             `3) 禁止 emoji；\n` +
             `4) 只延续已有话题，避免突然新设定；\n` +
@@ -194,7 +199,21 @@ export default function AutoReachDaemon() {
             `请直接输出消息内容，每行一条，不要解释。`,
         },
       ], undefined, { temperature: 0.85, maxTokens: 260, timeoutMs: 45_000 })
-      const lines = toBubbleLines(prompt, 1, 3).slice(0, 3)
+      let lines = toBubbleLines(prompt, targetN, targetN).slice(0, maxN)
+      if (lines.length < minN) {
+        const extra = String(prompt || '')
+          .split(/[。！？!?；;\n]/g)
+          .map(s => s.trim())
+          .filter(Boolean)
+        for (const s of extra) {
+          if (lines.length >= minN) break
+          if (!lines.includes(s)) lines.push(s)
+        }
+      }
+      if (lines.length > maxN) lines = lines.slice(0, maxN)
+      if (lines.length < minN && lines.length > 0) {
+        while (lines.length < minN) lines.push(lines[lines.length - 1])
+      }
       for (const line of lines) {
         addMessage({ characterId: c.id, content: line, isUser: false, type: 'text' })
       }

@@ -231,6 +231,7 @@ export default function ChatSettingsScreen() {
   const [charBubble, setCharBubble] = useState(character?.charBubbleStyle || { bgColor: '#ffffff', bgOpacity: 90, borderColor: '#e5e7eb', borderOpacity: 0, presetId: '01', textColor: '#111827' })
   const [editingBubble, setEditingBubble] = useState<'user' | 'char'>('user')
   const [bubbleSyncEnabled, setBubbleSyncEnabled] = useState<boolean>(character?.bubbleSyncEnabled ?? false)
+  const [bubbleSizeDraft, setBubbleSizeDraft] = useState<'xs' | 'sm' | 'md' | 'lg'>((character as any)?.bubbleSize || 'md')
   // 预览背景（为了看清透明/磨砂等质感）
   const [previewBgMode, setPreviewBgMode] = useState<'checker' | 'light' | 'dark' | 'custom'>('checker')
   const [previewBgColor, setPreviewBgColor] = useState('#CBD5E1') // slate-300
@@ -1036,6 +1037,7 @@ export default function ChatSettingsScreen() {
                 setBubbleSyncEnabled(character.bubbleSyncEnabled ?? false)
                 setUserBubble(character.userBubbleStyle || { ...defaultBubble, presetId: '01' })
                 setCharBubble(character.charBubbleStyle || { bgColor: '#ffffff', bgOpacity: 90, borderColor: '#e5e7eb', borderOpacity: 0, presetId: '01', textColor: '#111827' })
+                setBubbleSizeDraft(((character as any)?.bubbleSize === 'xs' || (character as any)?.bubbleSize === 'sm' || (character as any)?.bubbleSize === 'lg') ? (character as any).bubbleSize : 'md')
                 setShowBubbleSettings(true)
               }}
             >
@@ -2765,6 +2767,7 @@ ${history}`
                   bubbleSyncEnabled,
                   userBubbleStyle: base ? base : userBubble,
                   charBubbleStyle: base ? base : charBubble,
+                  bubbleSize: bubbleSizeDraft,
                 })
                 setShowBubbleSettings(false)
               }}
@@ -2851,14 +2854,50 @@ ${history}`
                   <div className={`w-6 h-6 bg-white rounded-full shadow mt-0.5 transition-transform ${bubbleSyncEnabled ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`} />
                 </button>
               </div>
+
+              {/* 气泡大小 */}
+              <div className="mb-3 px-3 py-2 rounded-xl bg-white/55">
+                <div className="text-xs font-medium text-gray-700">气泡大小（头像联动）</div>
+                <div className="mt-2 grid grid-cols-4 gap-2">
+                  {[
+                    { id: 'xs', label: '超小号' },
+                    { id: 'sm', label: '小号' },
+                    { id: 'md', label: '中号' },
+                    { id: 'lg', label: '大号' },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setBubbleSizeDraft(s.id as any)}
+                      className={`py-1.5 rounded-lg text-[11px] border ${
+                        bubbleSizeDraft === s.id
+                          ? 'bg-pink-500 text-white border-pink-500'
+                          : 'bg-white/80 text-gray-600 border-white/70'
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               
               {/* 对方消息 */}
               <div className="flex gap-2 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-xs flex-shrink-0">
+                <div className={`${
+                  bubbleSizeDraft === 'xs' ? 'w-6 h-6 text-[10px]' :
+                  bubbleSizeDraft === 'sm' ? 'w-7 h-7 text-[11px]' :
+                  bubbleSizeDraft === 'lg' ? 'w-9 h-9 text-[13px]' :
+                  'w-8 h-8 text-xs'
+                } rounded-lg bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white flex-shrink-0`}>
                   {character.name[0]}
                 </div>
                 <div 
-                  className="px-3 py-2 rounded-2xl rounded-tl-md text-sm max-w-[70%]"
+                  className={`rounded-2xl rounded-tl-md max-w-[70%] ${
+                    bubbleSizeDraft === 'xs' ? 'px-2 py-1.5 text-[11px]' :
+                    bubbleSizeDraft === 'sm' ? 'px-2.5 py-1.5 text-[12px]' :
+                    bubbleSizeDraft === 'lg' ? 'px-4 py-3 text-[16px]' :
+                    'px-3 py-2 text-sm'
+                  }`}
                   style={getPreviewBubbleStyle(charBubble, false)}
                 >
                   你好呀~
@@ -2867,11 +2906,21 @@ ${history}`
               
               {/* 我的消息 */}
               <div className="flex gap-2 flex-row-reverse">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs flex-shrink-0">
+                <div className={`${
+                  bubbleSizeDraft === 'xs' ? 'w-6 h-6 text-[10px]' :
+                  bubbleSizeDraft === 'sm' ? 'w-7 h-7 text-[11px]' :
+                  bubbleSizeDraft === 'lg' ? 'w-9 h-9 text-[13px]' :
+                  'w-8 h-8 text-xs'
+                } rounded-lg bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white flex-shrink-0`}>
                   我
                 </div>
                 <div 
-                  className="px-3 py-2 rounded-2xl rounded-tr-md text-sm max-w-[70%]"
+                  className={`rounded-2xl rounded-tr-md max-w-[70%] ${
+                    bubbleSizeDraft === 'xs' ? 'px-2 py-1.5 text-[11px]' :
+                    bubbleSizeDraft === 'sm' ? 'px-2.5 py-1.5 text-[12px]' :
+                    bubbleSizeDraft === 'lg' ? 'px-4 py-3 text-[16px]' :
+                    'px-3 py-2 text-sm'
+                  }`}
                   style={getPreviewBubbleStyle(userBubble, true)}
                 >
                   嗨~今天心情怎么样？
