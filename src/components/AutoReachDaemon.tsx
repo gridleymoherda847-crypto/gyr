@@ -187,10 +187,10 @@ export default function AutoReachDaemon() {
       const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 50, 0, 0).getTime()
       const left = Math.max(0, Number(plan.target || 0) - Number(plan.sent || 0))
       if (left <= 0) return end + 60 * 1000
-      const remain = Math.max(10 * 60 * 1000, end - now)
-      const avg = Math.max(12 * 60 * 1000, Math.floor(remain / left))
+      const remain = Math.max(30 * 60 * 1000, end - now)
+      const avg = Math.max(30 * 60 * 1000, Math.floor(remain / left))
       const jitter = Math.floor((Math.random() * 0.8 - 0.4) * avg)
-      return now + Math.max(5 * 60 * 1000, avg + jitter)
+      return now + Math.max(30 * 60 * 1000, avg + jitter)
     }
     const buildShortHistory = (characterId: string, maxChars: number) => {
       const list = (getMessagesByCharacter(characterId) || []).filter(m => m.type !== 'system')
@@ -280,6 +280,7 @@ export default function AutoReachDaemon() {
           if (!lines.includes(f)) lines.push(f)
         }
       }
+      // 这里是一轮“主动找我”：只调用一次 LLM，但可下发多条气泡（3~5等）
       for (const line of lines) {
         const normalized = normalizeForCharacter(line, c)
         if (!normalized) continue
@@ -458,6 +459,9 @@ export default function AutoReachDaemon() {
             plan = mkPlan(c)
           }
           plan.apiCalls = Math.max(0, Number(plan.apiCalls || 0))
+          const msgList = getMessagesByCharacter(c.id) || []
+          const latestMsg = msgList.length > 0 ? msgList[msgList.length - 1] : null
+          const latestUserMsg = [...msgList].reverse().find((m) => !!m?.isUser) || null
 
           const manualReq = parseManualReachRequest(c.id)
           if (manualReq && manualReq.msgId && plan.lastManualMsgId !== manualReq.msgId) {
@@ -469,6 +473,12 @@ export default function AutoReachDaemon() {
           const resumed = visibleResumeRef.current
           const backlog = Number(plan.sent || 0) < Number(plan.target || 0)
           const apiBudgetLeft = Number(plan.apiCalls || 0) < Number(plan.target || 0)
+          const userActiveRecently = !!latestUserMsg && (now - Number(latestUserMsg.timestamp || 0) < 30 * 60 * 1000)
+          const chatActiveRecently = !!latestMsg && (now - Number(latestMsg.timestamp || 0) < 30 * 60 * 1000)
+          if (chatActiveRecently) {
+            // 用户正在正常聊天时，刷新活跃时间，避免误判成“需要补齐离线消息”
+            plan.lastSeenAt = now
+          }
           // 严格上限：一旦达到当日目标次数，或 API 调用数达到 target，不再自动调用
           if (!backlog || !apiBudgetLeft) {
             plan.lastSeenAt = now
@@ -480,7 +490,7 @@ export default function AutoReachDaemon() {
           const missedSchedule = now > Number(plan.nextAt || 0) + 2 * 60 * 1000
           const needCatchUp = backlog && (resumed || (staleSeen && missedSchedule))
 
-          if (needCatchUp && !manualDueNow) {
+          if (needCatchUp && !manualDueNow && !userActiveRecently && !chatActiveRecently) {
             const ok = await flushCatchUp(c, plan)
             if (ok) {
               savePlan(c.id, plan)
@@ -501,9 +511,8 @@ export default function AutoReachDaemon() {
             continue
           }
 
-          const recent = (getMessagesByCharacter(c.id) || []).slice(-1)[0]
-          if (!manualDueNow && recent && now - Number(recent.timestamp || 0) < 8 * 60 * 1000) {
-            plan.nextAt = clampToDaytime(now + 5 * 60 * 1000, c)
+          if (!manualDueNow && latestMsg && now - Number(latestMsg.timestamp || 0) < 30 * 60 * 1000) {
+            plan.nextAt = clampToDaytime(now + 30 * 60 * 1000, c)
             savePlan(c.id, plan)
             continue
           }
