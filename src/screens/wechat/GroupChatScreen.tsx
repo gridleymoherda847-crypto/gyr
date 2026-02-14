@@ -1706,7 +1706,7 @@ ${history}`
                         {formatTime(msg.timestamp)}
                       </span>
                       
-                      {(msg.type === 'text' || msg.type === 'voice' || msg.type === 'image') && !forwardMode && !editingMessageId && (
+                      {(msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'sticker') && !forwardMode && !editingMessageId && (
                         <>
                           {!msg.isUser && msg.type === 'text' && (
                             <button type="button" onClick={() => { setEditingMessageId(msg.id); setEditingContent(msg.content) }}

@@ -7376,14 +7376,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               className="px-3 py-1.5 rounded-lg bg-white/90 shadow-sm text-xs text-gray-500 cursor-pointer active:opacity-80"
               onClick={(e) => {
                 if (editMode) return
-                if (character?.offlineMode) return
                 e.preventDefault()
                 e.stopPropagation()
                 openMsgActionMenu(msg as any, e.currentTarget as HTMLElement)
               }}
               onContextMenu={(e) => {
                 if (editMode) return
-                if (character?.offlineMode) return
                 e.preventDefault()
                 openMsgActionMenu(msg as any, e.currentTarget as HTMLElement)
               }}
@@ -10116,7 +10114,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       )}
 
       {/* 线上模式：长按气泡操作菜单（线下模式不动） */}
-      {!character?.offlineMode && msgActionMenu.open && msgActionMenu.msg && createPortal(
+      {((!character?.offlineMode) || msgActionMenu.msg?.type === 'system') && msgActionMenu.open && msgActionMenu.msg && createPortal(
         <div
           className="fixed inset-0 z-[95]"
           onPointerDown={() => closeMsgActionMenu()}

@@ -57,6 +57,28 @@ const extractJsonBlock = (raw: string) => {
   if (i >= 0 && j > i) return s.slice(i, j + 1)
   return s
 }
+const dedupeLines = (lines: string[]) => {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const s0 of lines) {
+    const s = String(s0 || '').trim()
+    if (!s) continue
+    const k = s.replace(/\s+/g, '').toLowerCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(s)
+  }
+  return out
+}
+const parseTranslatedLine = (line: string) => {
+  const raw = String(line || '').trim()
+  if (!raw) return { rawText: '', zh: '' }
+  const sep = raw.split('|||')
+  if (sep.length >= 2) {
+    return { rawText: String(sep[0] || '').trim(), zh: String(sep.slice(1).join('|||') || '').trim() }
+  }
+  return { rawText: raw, zh: '' }
+}
 
 export default function AutoReachDaemon() {
   const { llmConfig, callLLM } = useOS()
@@ -92,6 +114,41 @@ export default function AutoReachDaemon() {
 
   useEffect(() => {
     if (!hasApiConfig) return
+    const allCharacterNames = () => (characters || []).map(c => String(c?.name || '').trim()).filter(Boolean)
+    const isNightOwl = (c: WeChatCharacter) => {
+      const s = `${String((c as any)?.prompt || '')}\n${String(c?.name || '')}`
+      return /(熬夜|夜猫子|夜生活|夜班|凌晨|通宵|晚睡|作息紊乱|失眠|夜里|夜间活跃)/.test(s)
+    }
+    const toLocalDate = (ts: number) => new Date(ts)
+    const clampToDaytime = (ts: number, c: WeChatCharacter) => {
+      if (isNightOwl(c)) return ts
+      const d = toLocalDate(ts)
+      const h = d.getHours()
+      const m = d.getMinutes()
+      const mins = h * 60 + m
+      const start = 8 * 60
+      const end = 23 * 60
+      if (mins >= start && mins <= end) return ts
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8, 0, 0, 0).getTime()
+      const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 0, 0, 0).getTime()
+      if (mins < start) return dayStart + Math.floor(Math.random() * 45) * 60 * 1000
+      return dayEnd - Math.floor(Math.random() * 45) * 60 * 1000
+    }
+    const normalizeForCharacter = (line: string, c: WeChatCharacter) => {
+      let t = String(line || '').trim()
+      if (!t) return ''
+      // 去掉过度机械化开头：只有明确提及旧话题时才用“前段时间/上次聊到”
+      if (/^(前段时间|上次聊到|之前你提过|前阵子你说过)/.test(t) && !/(聊到|提到|你说过|之前那个|上次那个)/.test(t.slice(0, 18))) {
+        t = t.replace(/^(前段时间|上次聊到|之前你提过|前阵子你说过)[，,\s]*/g, '').trim()
+      }
+      // 防串聊：不提其他角色名字
+      for (const n of allCharacterNames()) {
+        if (!n || n === c.name) continue
+        const reg = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+        t = t.replace(reg, '你')
+      }
+      return t
+    }
 
     const loadPlan = (characterId: string): AutoReachPlan | null => {
       try {
@@ -120,7 +177,7 @@ export default function AutoReachDaemon() {
         target,
         sent: 0,
         apiCalls: 0,
-        nextAt: now + (2 + Math.floor(Math.random() * 6)) * 60 * 1000,
+        nextAt: clampToDaytime(now + (2 + Math.floor(Math.random() * 6)) * 60 * 1000, c),
         lastSeenAt: now,
       }
     }
@@ -190,7 +247,11 @@ export default function AutoReachDaemon() {
             `2) 禁止旁白、动作、神态、引号叙事；\n` +
             `3) 禁止 emoji；\n` +
             `4) 只延续已有话题，避免突然新设定；\n` +
-            `5) 口吻自然，像真人。`,
+            `5) 口吻自然，像真人。\n` +
+            `6) 禁止重复同一句话。\n` +
+            `${(c as any)?.language && (c as any).language !== 'zh' && (c as any)?.chatTranslationEnabled
+              ? `7) 每行必须使用格式：外语原文 ||| 简体中文翻译`
+              : ''}`,
         },
         {
           role: 'user',
@@ -199,7 +260,7 @@ export default function AutoReachDaemon() {
             `请直接输出消息内容，每行一条，不要解释。`,
         },
       ], undefined, { temperature: 0.85, maxTokens: 260, timeoutMs: 45_000 })
-      let lines = toBubbleLines(prompt, targetN, targetN).slice(0, maxN)
+      let lines = dedupeLines(toBubbleLines(prompt, targetN, targetN)).slice(0, maxN)
       if (lines.length < minN) {
         const extra = String(prompt || '')
           .split(/[。！？!?；;\n]/g)
@@ -207,15 +268,38 @@ export default function AutoReachDaemon() {
           .filter(Boolean)
         for (const s of extra) {
           if (lines.length >= minN) break
-          if (!lines.includes(s)) lines.push(s)
+          const n = normalizeForCharacter(s, c)
+          if (n && !lines.includes(n)) lines.push(n)
         }
       }
       if (lines.length > maxN) lines = lines.slice(0, maxN)
-      if (lines.length < minN && lines.length > 0) {
-        while (lines.length < minN) lines.push(lines[lines.length - 1])
+      if (lines.length < minN) {
+        const fillers = ['在吗？', '我刚想到你了。', '有空回我一下呀。', '你今天还顺利吗？']
+        for (const f of fillers) {
+          if (lines.length >= minN) break
+          if (!lines.includes(f)) lines.push(f)
+        }
       }
       for (const line of lines) {
-        addMessage({ characterId: c.id, content: line, isUser: false, type: 'text' })
+        const normalized = normalizeForCharacter(line, c)
+        if (!normalized) continue
+        const lang = String((c as any)?.language || 'zh')
+        const transOn = !!(c as any)?.chatTranslationEnabled && lang !== 'zh'
+        if (transOn) {
+          const p = parseTranslatedLine(normalized)
+          addMessage({
+            characterId: c.id,
+            content: p.rawText || p.zh || normalized,
+            isUser: false,
+            type: 'text',
+            messageLanguage: lang as any,
+            chatTranslationEnabledAtSend: true,
+            translatedZh: p.zh || undefined,
+            translationStatus: p.zh ? 'done' : 'pending',
+          } as any)
+        } else {
+          addMessage({ characterId: c.id, content: normalized, isUser: false, type: 'text' })
+        }
       }
       return lines.length > 0
     }
@@ -228,8 +312,8 @@ export default function AutoReachDaemon() {
           topic: i % 2 ? '思念惦记' : '日常分享',
           ratio: (i + 1) / (n + 1),
           messages: i % 2
-            ? ['前段时间聊到你最近挺忙的。', '我有点想你了，等你有空回我就好。']
-            : ['今天又遇到一个挺有意思的小事。', '上次聊到的那个点我后来还在想。'],
+            ? ['我有点想你了。', '等你有空回我就好。']
+            : ['今天遇到个挺有意思的小事。', '想跟你分享一下。'],
         })
       }
       return waves
@@ -251,9 +335,12 @@ export default function AutoReachDaemon() {
               `- 每个 wave 的 messages 为 2~4 条；\n` +
               `- 同一 wave 只聊一个话题，不要跨话题；\n` +
               `- 不同 wave 话题尽量不同，不要把同一话题拆成多波；\n` +
-              `- 用“前段时间/上次聊到/之前你提过”这类模糊回忆词；\n` +
+              `- 只有在提及旧话题时，才可用“前段时间/上次聊到/之前你提过”；日常分享和思念开场不要强行加这类词；\n` +
               `- 禁止“刚刚/现在/5分钟前”这类精确实时词；\n` +
               `- 禁止旁白动作，禁止 emoji；\n` +
+              `${(c as any)?.language && (c as any).language !== 'zh' && (c as any)?.chatTranslationEnabled
+                ? `- 每条消息用“外语原文 ||| 简体中文翻译”格式；\n`
+                : ''}` +
               `- ratio 介于 0~1，且递增。`,
           },
           {
@@ -322,16 +409,30 @@ export default function AutoReachDaemon() {
       for (let i = 0; i < n; i++) {
         const w = waves[i]
         const baseRatio = clamp(Number(w.ratio || (i + 1) / (n + 1)), 0.02, 0.98)
-        const waveTs = Math.floor(from + (to - from) * baseRatio)
-        const list = w.messages.slice(0, 4)
+        const waveTs = clampToDaytime(Math.floor(from + (to - from) * baseRatio), c)
+        const list = dedupeLines((w.messages || []).map(x => normalizeForCharacter(x, c))).slice(0, 4)
         for (let j = 0; j < list.length; j++) {
-          const ts = waveTs + j * (20_000 + Math.floor(Math.random() * 40_000))
-          const msg = addMessage({ characterId: c.id, content: list[j], isUser: false, type: 'text' })
+          const ts = clampToDaytime(waveTs + j * (20_000 + Math.floor(Math.random() * 40_000)), c)
+          const lang = String((c as any)?.language || 'zh')
+          const transOn = !!(c as any)?.chatTranslationEnabled && lang !== 'zh'
+          const p = parseTranslatedLine(list[j])
+          const msg = addMessage(transOn
+            ? {
+                characterId: c.id,
+                content: p.rawText || p.zh || list[j],
+                isUser: false,
+                type: 'text',
+                messageLanguage: lang as any,
+                chatTranslationEnabledAtSend: true,
+                translatedZh: p.zh || undefined,
+                translationStatus: p.zh ? 'done' : 'pending',
+              } as any
+            : { characterId: c.id, content: list[j], isUser: false, type: 'text' })
           updateMessage(msg.id, { timestamp: ts })
         }
       }
       plan.sent = Number(plan.sent || 0) + n
-      plan.nextAt = pickNextAt(plan)
+      plan.nextAt = clampToDaytime(pickNextAt(plan), c)
       plan.lastSeenAt = now
       return true
     }
@@ -343,7 +444,15 @@ export default function AutoReachDaemon() {
       try {
         const now = Date.now()
         const enabledChars = (characters || []).filter(c => !!(c as any).autoReachEnabled && !c.offlineMode)
-        for (const c of enabledChars) {
+        // 兜底：只取一个角色执行，避免历史脏数据导致多角色同时开造成“串聊”
+        const sortedEnabled = enabledChars
+          .slice()
+          .sort((a, b) => {
+            const ta = Number((getMessagesByCharacter(a.id) || []).slice(-1)[0]?.timestamp || 0)
+            const tb = Number((getMessagesByCharacter(b.id) || []).slice(-1)[0]?.timestamp || 0)
+            return tb - ta
+          })
+        for (const c of sortedEnabled.slice(0, 1)) {
           let plan = loadPlan(c.id)
           if (!plan || plan.day !== dayKey()) {
             plan = mkPlan(c)
@@ -394,7 +503,7 @@ export default function AutoReachDaemon() {
 
           const recent = (getMessagesByCharacter(c.id) || []).slice(-1)[0]
           if (!manualDueNow && recent && now - Number(recent.timestamp || 0) < 8 * 60 * 1000) {
-            plan.nextAt = now + 5 * 60 * 1000
+            plan.nextAt = clampToDaytime(now + 5 * 60 * 1000, c)
             savePlan(c.id, plan)
             continue
           }
@@ -403,7 +512,7 @@ export default function AutoReachDaemon() {
           const ok = await sendLiveRound(c)
           if (ok) {
             plan.sent = Number(plan.sent || 0) + 1
-            plan.nextAt = pickNextAt(plan)
+            plan.nextAt = clampToDaytime(pickNextAt(plan), c)
             plan.lastSeenAt = now
             lastTriggerMapRef.current[c.id] = now
           }
