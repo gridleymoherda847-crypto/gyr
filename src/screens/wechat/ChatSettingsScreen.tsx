@@ -2320,8 +2320,8 @@ export default function ChatSettingsScreen() {
         message={
           '你选择了中文以外的语言。\n' +
           '- 该角色会用此语言输出（聊天/日记/朋友圈/情侣空间等）。\n' +
-          '- 【已自动开启】聊天对话框会自带中文翻译（无需再手动开启）。\n' +
-          '- 其他界面不保证内置翻译：需要的话可用浏览器翻译。\n'
+          '- 翻译开关默认开启，可在本页随时关闭。\n' +
+          '- 关闭后：聊天（线上/线下）/日记/朋友圈/X/朋友圈等都不再显示该角色翻译。\n'
         }
         hideDefaultActions
         footer={
@@ -3340,7 +3340,7 @@ ${history}`
                 </svg>
               </button>
               <div className="mt-1 text-[11px] text-gray-400">
-                语言会影响聊天/日记/朋友圈等。切换为非中文后，聊天气泡会自动显示中文翻译（无需手动开启）。
+                语言会影响聊天/日记/朋友圈/X等。非中文角色可单独控制翻译开关。
               </div>
             </div>
 
@@ -3348,7 +3348,7 @@ ${history}`
               <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-100">
                 <div className="flex flex-col">
                   <div className="text-sm text-gray-700">聊天翻译</div>
-                  <div className="text-[11px] text-gray-400 mt-0.5">已默认开启：聊天气泡下方显示中文翻译</div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">默认开启；关闭后该角色全域不显示翻译</div>
                 </div>
                 <button
                   type="button"

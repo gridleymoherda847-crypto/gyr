@@ -73,6 +73,7 @@ export default function ChatScreen() {
 
   const characterLanguage = (character as any)?.language || 'zh'
   const chatTranslationEnabled = !!(character as any)?.chatTranslationEnabled
+  const translationEnabled = characterLanguage !== 'zh' && chatTranslationEnabled
   const languageName = (lang: string) => {
     if (lang === 'zh') return '中文'
     if (lang === 'en') return '英语'
@@ -2119,7 +2120,7 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
           const minLen = character.offlineMinLength || 50
           const maxLen = character.offlineMaxLength || 300
           const isLongForm = maxLen >= 500
-          const isNonChinese = characterLanguage !== 'zh'
+          const isNonChinese = characterLanguage !== 'zh' && chatTranslationEnabled
           
           // 线下模式：把格式规则放在 system prompt 最前面，作为最高优先级
           const offlineModePrefix = isNonChinese ? `
@@ -2534,6 +2535,22 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             .replace(/拍一拍/g, '')
             .replace(/拍了拍/g, '')
             .trim()
+          if (translationEnabled && !/[\u4e00-\u9fff]/.test(response)) {
+            try {
+              const zh = await callLLM(
+                [
+                  { role: 'system', content: '你是翻译器。把用户给你的整段文本翻译成简体中文，只输出翻译结果。' },
+                  { role: 'user', content: response },
+                ],
+                undefined,
+                { maxTokens: 700, timeoutMs: 60000, temperature: 0.2 }
+              )
+              const zhText = String(zh || '').trim()
+              if (zhText) response = `${response}\n\n（中文翻译）${zhText}`
+            } catch {
+              // ignore
+            }
+          }
         }
         const looksLikeOfflineNarrationInOnline = (s: string) => {
           const t = String(s || '').trim()
@@ -3005,9 +3022,30 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           const total = Number(normalized.reduce((s, x) => s + x.total, 0).toFixed(2))
           return { storeName, lines: normalized, total }
         }
+        const inferOrderShareTarget = (ctx: string) => {
+          const t = String(ctx || '')
+          const charSelfSignals = /(你(最近|近期|这周|这段时间|自己|本人|生活|买了|下单)|你的小票|发你的小票|你最近买的|你近期生活)/.test(t)
+          const userSignals = /(给我|发我|给我看|请我|买给我|帮我点|我想看我的|我的小票|送到我这|给我点)/.test(t)
+          if (userSignals && !charSelfSignals) {
+            const userName = selectedPersona?.name || '你'
+            return {
+              receiver: userName,
+              location: `${userName}当前位置`,
+              address: `${userName}当前位置`,
+              paidBy: `${character.name}支付`,
+            }
+          }
+          return {
+            receiver: character.name || 'TA',
+            location: `${character.name || 'TA'}当前位置`,
+            address: `${character.name || 'TA'}当前位置`,
+            paidBy: `${character.name}支付`,
+          }
+        }
         const buildAutoCharOrderShareText = () => {
           const ctx = `${latestUserTextForIntent || ''}\n${cleanedRepliesTextForAsk || ''}`
           const auto = synthesizeReceiptGoods(ctx)
+          const target = inferOrderShareTarget(ctx)
           const storeName = auto.storeName
           const total = auto.total
           const orderNo = `sh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -3020,10 +3058,10 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             `店铺：${storeName}\n` +
             `商品：${goodsText || '日常用品 ×1'}\n` +
             `实付：¥${total.toFixed(2)}\n` +
-            `收货人：${selectedPersona?.name || '你'}\n` +
-            `配送位置：${selectedPersona?.name || '你'}当前位置\n` +
-            `配送地址：${selectedPersona?.name || '你'}当前位置\n` +
-            `付款：${character.name}支付\n` +
+            `收货人：${target.receiver}\n` +
+            `配送位置：${target.location}\n` +
+            `配送地址：${target.address}\n` +
+            `付款：${target.paidBy}\n` +
             `时间：${new Date().toLocaleString('zh-CN', { hour12: false })}\n` +
             `订单号：${orderNo.slice(0, 18)}`
           )
@@ -3063,10 +3101,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           })()
           const totalText = pick('实付') || pick('合计')
           const totalNum = Number(String(totalText || '').replace(/[^\d.]/g, '')) || 39.9
-          const receiver = pick('收货人') || (selectedPersona?.name || '你')
-          const location = pick('配送位置') || `${selectedPersona?.name || '你'}当前位置`
-          const address = pick('配送地址') || `${selectedPersona?.name || '你'}当前位置`
-          const paidBy = pick('付款') || `${character.name}支付`
+          const target = inferOrderShareTarget(`${latestUserTextForIntent || ''}\n${cleanedRepliesTextForAsk || ''}`)
+          const receiver = pick('收货人') || target.receiver
+          const location = pick('配送位置') || target.location
+          const address = pick('配送地址') || target.address
+          const paidBy = pick('付款') || target.paidBy
           const time = pick('时间') || new Date().toLocaleString('zh-CN', { hour12: false })
           const orderNo = (pick('订单号') || `sh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`).slice(0, 18)
           return (
@@ -3271,6 +3310,17 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               })
               return
             }
+            if (!character.offlineMode && asksReceiptDirectly && !sentOrderShareThisRound) {
+              sentOrderShareThisRound = true
+              charTakeoutAskCooldownRef.current = Date.now()
+              addMessage({
+                characterId: character.id,
+                isUser: false,
+                type: 'text',
+                content: buildAutoCharOrderShareText(),
+              })
+              return
+            }
             if (!character.offlineMode && /\[图片[：:][^\]]*(小票|订单|发票)[^\]]*\]/.test(trimmedContent)) {
               sentOrderShareThisRound = true
               charTakeoutAskCooldownRef.current = Date.now()
@@ -3284,7 +3334,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             }
             if (
               sentOrderShareThisRound &&
-              /(订单号|下单时间|订单时间|时间[:：]|收货人[:：]|配送位置[:：]|配送地址[:：]|付款[:：]|商品[:：]|类目[:：]|价格[:：]|数量[:：]|合计[:：]|消费总计[:：])/.test(trimmedContent) &&
+              /(订单号|下单时间|订单时间|时间[:：]|收货人[:：]|配送位置[:：]|配送地址[:：]|付款[:：]|商品[:：]|类目[:：]|价格[:：]|数量[:：]|合计[:：]|消费总计[:：]|菜|奶茶|便当|米饭|套餐|¥|￥|\d+元)/.test(trimmedContent) &&
               !/\[外卖订单分享\]/.test(trimmedContent)
             ) {
               return
@@ -4251,7 +4301,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       // 构建prompt：要求生成对方的聊天记录
       const charLang = (character as any).language || 'zh'
       const charLangName = languageName(charLang)
-      const isNonChinese = charLang !== 'zh'
+      const isNonChinese = charLang !== 'zh' && chatTranslationEnabled
       
       const languageRule = isNonChinese 
         ? `
@@ -4412,7 +4462,7 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
                 return {
                   isUser: msg.isUser !== false,
                   content: msg.content || '',
-                  contentZh: msg.contentZh || undefined,  // 中文翻译（非中文角色）
+                  contentZh: isNonChinese ? (msg.contentZh || undefined) : undefined,  // 中文翻译（按翻译开关）
                   timestamp: ts,
                 }
               }),
@@ -4455,7 +4505,7 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
             bills: allBills,
             walletBalance: typeof parsed.walletBalance === 'number' ? parsed.walletBalance : parseFloat(parsed.walletBalance) || 0,
             memo: parsed.memo || '',
-            memoZh: parsed.memoZh || undefined,  // 备忘录中文翻译（非中文角色）
+            memoZh: isNonChinese ? (parsed.memoZh || undefined) : undefined,  // 备忘录中文翻译（按翻译开关）
             recentPhotos: parsed.recentPhotos || [],
           })
         } catch (e) {
@@ -4751,7 +4801,7 @@ ${periodCalendarForLLM ? `\n${periodCalendarForLLM}\n` : ''}
 6. 【线上模式安全要求】禁止输出任何思维链/推理过程/分析过程/系统提示复述。只输出最终要发给用户的聊天内容。
 7. 【必读要求】在输出前必须阅读并遵守（严格按照顺序）：叙事设置（第一）/世界书（第二）/角色人设（第三）/用户人设/对话上下文（第四）。若冲突：先满足格式规则，其次满足这些设定，最后才是自由发挥。
 8. 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复；禁止夹杂中文（除非是专有名词/人名/歌名必须保留原文）。
-${((character as any).language && (character as any).language !== 'zh') ? `7. 【翻译规则 - 必须遵守】你是非中文角色，每一条消息都必须带翻译！格式：外语原文 ||| 中文翻译。例如：Hello, how are you? ||| 你好，你怎么样？` : ''}`
+${((character as any).language && (character as any).language !== 'zh' && chatTranslationEnabled) ? `7. 【翻译规则 - 必须遵守】你是非中文角色，每一条消息都必须带翻译！格式：外语原文 ||| 中文翻译。例如：Hello, how are you? ||| 你好，你怎么样？` : ''}`
 
       // 如果可能发转账，添加提示
       if (options?.includeTransfer) {
@@ -4797,7 +4847,7 @@ ${((character as any).language && (character as any).language !== 'zh') ? `7. �
         const minLen = character.offlineMinLength || 50
         const maxLen = character.offlineMaxLength || 300
         const isLongForm = maxLen >= 500
-        const isNonChinese = characterLanguage !== 'zh'
+        const isNonChinese = characterLanguage !== 'zh' && chatTranslationEnabled
         
         // 线下模式：把格式规则放在最前面作为最高优先级
         const offlineModePrefix = isNonChinese ? `
@@ -4884,6 +4934,22 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             .replace(/拍一拍/g, '')
             .replace(/拍了拍/g, '')
             .trim()
+          if (translationEnabled && !/[\u4e00-\u9fff]/.test(cleanedResult)) {
+            try {
+              const zh = await callLLM(
+                [
+                  { role: 'system', content: '你是翻译器。把用户给你的整段文本翻译成简体中文，只输出翻译结果。' },
+                  { role: 'user', content: cleanedResult },
+                ],
+                undefined,
+                { maxTokens: 700, timeoutMs: 60000, temperature: 0.2 }
+              )
+              const zhText = String(zh || '').trim()
+              if (zhText) cleanedResult = `${cleanedResult}\n\n（中文翻译）${zhText}`
+            } catch {
+              // ignore
+            }
+          }
         } else {
           // 线上模式：强制剥离思维链（+号功能同样适用）
           cleanedResult = (() => {
@@ -5818,7 +5884,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         `如果你平时在聊天里表现得阳光/礼貌，但内心不一样，也允许在日记里写出真实一面。\n\n` +
         `另外：日记不必只围绕聊天。你也可以写你自己的生活：工作/学习/朋友/家庭/路上见闻/刷到的东西/身体状态等。\n` +
         `至少写 2 个“具体的生活细节”（可以虚构但要像真的发生过）。\n\n` +
-        (((character as any).language && (character as any).language !== 'zh')
+        (((character as any).language && (character as any).language !== 'zh' && chatTranslationEnabled)
           ? `【语言与翻译规则】\n` +
             `由于角色是${languageName((character as any).language)}使用者，请按以下格式输出双语版本：\n` +
             `1. 先输出"Original:"标记（单独一行），然后是完整的${languageName((character as any).language)}版本日记\n` +
@@ -5849,7 +5915,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       setDiaryStage('已获取')
 
       // 解析双语版本（非中文角色）
-      const isNonChinese = (character as any).language && (character as any).language !== 'zh'
+      const isNonChinese = !!((character as any).language && (character as any).language !== 'zh' && chatTranslationEnabled)
       if (isNonChinese && text.includes('Original:') && text.includes('Chinese:')) {
         const originalMatch = text.match(/Original:\s*([\s\S]*?)(?=Chinese:|$)/i)
         const chineseMatch = text.match(/Chinese:\s*([\s\S]*?)$/i)

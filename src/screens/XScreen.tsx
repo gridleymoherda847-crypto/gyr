@@ -1144,7 +1144,9 @@ ${chatFriendList}
         const friendList = picked
           .map((c) => {
             const isMentioned = mentionedFriends.some(m => m.id === c.id)
-            return `- id:${c.id}\n  名字:${c.name}\n  人设:${(c.prompt || '').replace(/\s+/g, ' ').slice(0, 140) || '（未设置）'}${isMentioned ? '\n  【被艾特】用户在帖子里艾特了TA，必须回应！' : ''}`
+            const lang = String((c as any).language || 'zh')
+            const transOn = lang !== 'zh' && !!(c as any).chatTranslationEnabled
+            return `- id:${c.id}\n  名字:${c.name}\n  人设:${(c.prompt || '').replace(/\s+/g, ' ').slice(0, 140) || '（未设置）'}\n  语言:${lang}\n  翻译开关:${transOn ? '开' : '关'}${isMentioned ? '\n  【被艾特】用户在帖子里艾特了TA，必须回应！' : ''}`
           })
           .join('\n')
         
@@ -1177,7 +1179,7 @@ ${chatFriendList}
           `2. 【禁止乱说脏话】人设里没有"毒舌/嘴臭/说脏话"描述的角色，绝对禁止脏话！\n` +
           `3. 人设里是温柔的 → 温柔评论；傲娇的 → 傲娇评论；高冷的 → 高冷评论\n` +
           `4. 人设里的口癖/说话风格必须体现出来\n` +
-          `5. 外国人角色必须用该语言评论（带中文翻译）\n` +
+          `5. 外国人角色必须用该语言评论；仅当“翻译开关=开”时才带中文翻译，开关=关则禁止带中文翻译\n` +
           `6. 每个好友的评论风格必须有明显差异！\n` +
           `\n` +
           `##############################################\n` +
@@ -1188,7 +1190,8 @@ ${chatFriendList}
           `- 不要动作描写/旁白\n` +
           `- 不要说“我们一起玩/我们聊天”这种强绑定微信的句子，像 X 评论区即可\n` +
           `- 允许一点情绪/吐槽，但禁止辱女/性羞辱\n` +
-          `- 【翻译强制】如果某条评论 text 不是中文（或主要为外语），必须写成：外语原文（简体中文翻译）\n` +
+          `- 【翻译强制】仅对“翻译开关=开”的非中文角色：评论必须写成：外语原文（简体中文翻译）\n` +
+          `- 对“翻译开关=关”的角色：禁止附带中文翻译，必须只输出原语言\n` +
           `- 只输出 JSON，不要解释\n` +
           `JSON：{ "comments": [ { "characterId": "...", "text": "..." } ]${fanCount > 0 ? ', "fanReplies": [ { "authorName": "粉丝名字", "text": "评论" } ]' : ''} }\n`
 
@@ -1202,7 +1205,15 @@ ${chatFriendList}
           ...raw.slice(0, picked.length).map((it: any, i: number) => ({ i, t: String(it?.text || '').trim(), kind: 'friend' as const })),
           ...fanRaw.slice(0, fanCount).map((it: any, i: number) => ({ i, t: String(it?.text || '').trim(), kind: 'fan' as const })),
         ]
-        const need: Array<{ i: number; t: string; kind: 'friend' | 'fan' }> = allToTranslate.filter((x) => needsInlineZh(x.t))
+        const need: Array<{ i: number; t: string; kind: 'friend' | 'fan' }> = allToTranslate.filter((x) => {
+          if (!needsInlineZh(x.t)) return false
+          if (x.kind === 'fan') return true
+          const cid = String(raw[x.i]?.characterId || '').trim()
+          const c = picked.find((it) => it.id === cid) || characters.find((it) => it.id === cid)
+          const lang = String((c as any)?.language || 'zh')
+          const transOn = lang !== 'zh' && !!(c as any)?.chatTranslationEnabled
+          return transOn
+        })
         if (need.length > 0) {
           const zhs = await translateBatchToZh(need.map((x) => x.t))
           if (zhs.length === need.length) {
@@ -1445,6 +1456,8 @@ ${chatFriendList}
     lang: 'zh' | 'en' | 'ja' | 'ko',
     items: Array<{ id: string; text: string; at: number; _dual?: ReturnType<typeof parseDualLine> | null }>
   ) => {
+    const peerCharacter = characters.find((c) => c.id === peerId)
+    const translationOn = lang !== 'zh' && (peerCharacter ? !!(peerCharacter as any).chatTranslationEnabled : true)
     let totalDelay = 0
     items.forEach((item, index) => {
       totalDelay += calcDmDelay(index, item.text)
@@ -1462,7 +1475,7 @@ ${chatFriendList}
             at: now,
             lang,
             translatedZh: undefined,
-            translationStatus: lang !== 'zh' ? ('pending' as const) : undefined,
+            translationStatus: translationOn ? ('pending' as const) : undefined,
           }
           if (idx >= 0) {
             const t = threads[idx]
@@ -1491,7 +1504,7 @@ ${chatFriendList}
           return next
         })
 
-        if (lang !== 'zh') {
+        if (translationOn) {
           const dual = item._dual || null
           if (dual) {
             window.setTimeout(() => {
@@ -1542,6 +1555,7 @@ ${chatFriendList}
       const recent = (thread.messages || []).slice(-16).map((m) => ({ role: m.from === 'me' ? 'user' : 'assistant', content: m.text }))
       const peerCharacter = characters.find((c) => c.id === thread.peerId)
       const peerLang = peerCharacter ? mapWeChatLang((peerCharacter as any).language) : normalizeLang((meta as any).lang)
+      const peerTranslationOn = peerLang !== 'zh' && (peerCharacter ? !!(peerCharacter as any).chatTranslationEnabled : true)
       const peerLore = peerCharacter
         ? String(getLorebookEntriesForCharacter(peerCharacter.id, 'X 私信')).trim().slice(0, 1200)
         : ''
@@ -1590,9 +1604,9 @@ ${chatFriendList}
         `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
         `- 你是对方账号本人，不要代替用户说话，不要自称“用户/我”（除非在对话中指代自己）\n` +
         `- 【必读】输出前必须阅读：叙事设置/世界书/角色人设/长期记忆/微信最近聊天/用户最近推文与评论；不得忽略世界书导致串戏。\n` +
-        (peerLang === 'zh'
-          ? `- 只输出对方消息正文，不要解释\n`
-          : `- 必须使用对方主要语言输出\n- 每条都必须按这个格式输出：外语原文 ||| 中文翻译\n- 中文翻译必须是简体中文，只允许用 "|||" 作为分隔符\n`)
+        (peerTranslationOn
+          ? `- 必须使用对方主要语言输出\n- 每条都必须按这个格式输出：外语原文 ||| 中文翻译\n- 中文翻译必须是简体中文，只允许用 "|||" 作为分隔符\n`
+          : `- 只输出对方消息正文，不要解释，不要附带中文翻译\n`)
       const res = await callLLM([{ role: 'system', content: sys }, ...recent], undefined, {
         maxTokens: 420,
         timeoutMs: 600000,
@@ -1603,7 +1617,7 @@ ${chatFriendList}
       const base = Date.now()
       const newMsgs = lines.map((line, i) => {
         const trimmed = line.trim()
-        const dual = peerLang !== 'zh' ? parseDualLine(trimmed) : null
+        const dual = peerTranslationOn ? parseDualLine(trimmed) : null
         const text = dual ? dual.orig : trimmed
         return {
           id: `xdm_${base + i}_${Math.random().toString(16).slice(2)}`,
@@ -1612,7 +1626,7 @@ ${chatFriendList}
           at: base + i * 320,
           lang: peerLang,
           translatedZh: undefined,
-          translationStatus: peerLang !== 'zh' ? 'pending' : undefined,
+          translationStatus: peerTranslationOn ? 'pending' : undefined,
           _dual: dual,
         }
       })
