@@ -439,9 +439,42 @@ export default function AutoReachDaemon() {
       const remain = Math.max(0, Number(plan.target || 0) - Number(plan.sent || 0))
       if (remain <= 0) return false
       const now = Date.now()
-      const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).getTime()
-      const from = Math.max(startOfToday, Number(plan.lastSeenAt || (now - 8 * 60 * 60 * 1000)))
-      const to = Math.max(from + 2 * 60 * 1000, now - 20 * 1000)
+      // 关键规则：补齐消息的时间戳绝不能“穿越到未来”，必须 <= 用户本次看到消息的时间（now）
+      // 同时：避免跨度过大（比如上次上线是很多天前），最多回填近 36 小时窗口
+      const maxWindowMs = 36 * 60 * 60 * 1000
+      const fromRaw = Math.max(now - maxWindowMs, Number(plan.lastSeenAt || (now - 8 * 60 * 60 * 1000)))
+      const toRaw = Math.max(fromRaw + 2 * 60 * 1000, now - 20 * 1000)
+      const to = Math.min(toRaw, now - 5 * 1000)
+      const from = Math.min(fromRaw, to - 60 * 1000)
+
+      // 在 [from, to] 内随机生成每一波“主动找我”的时间点：既有几分钟也有几小时的间隔
+      const pickWaveTimes = (count: number) => {
+        const n = clamp(count, 1, 12)
+        const span = Math.max(2 * 60 * 1000, to - from)
+        const minGap = 2 * 60 * 1000
+        const samples: number[] = []
+        for (let i = 0; i < n; i++) {
+          // U-shape 分布：更容易出现“很短”和“很长”的间隔，整体更像真人碎片化联系
+          const pow = 2.2 + Math.random() * 1.2
+          const u = Math.random() < 0.5
+            ? Math.pow(Math.random(), pow)
+            : 1 - Math.pow(Math.random(), pow)
+          const t = from + Math.floor(span * clamp(u, 0.01, 0.99))
+          samples.push(t)
+        }
+        samples.sort((a, b) => a - b)
+        // 轻度“排斥”：避免同一波挤在同一分钟里（但允许几分钟的短间隔）
+        const out: number[] = []
+        for (let i = 0; i < samples.length; i++) {
+          const prev = out.length ? out[out.length - 1] : from
+          const maxHere = to - (samples.length - 1 - i) * minGap
+          const next = clamp(samples[i], prev + minGap, maxHere)
+          out.push(next)
+        }
+        return out.slice(0, n)
+      }
+
+      const clampCatchUpTs = (ts: number) => clamp(ts, from, to)
       const currentCalls = Math.max(0, Number(plan.apiCalls || 0))
       const targetCalls = Math.max(0, Number(plan.target || 0))
       const useApi = currentCalls < targetCalls
@@ -450,14 +483,15 @@ export default function AutoReachDaemon() {
       }
       const waves = await generateCatchUpWaves(c, remain, useApi)
       const n = Math.min(remain, Math.max(1, waves.length))
+      const waveTimes = pickWaveTimes(n)
       for (let i = 0; i < n; i++) {
         const w = waves[i]
-        const baseRatio = clamp(Number(w.ratio || (i + 1) / (n + 1)), 0.02, 0.98)
-        const waveTs = clampToDaytime(Math.floor(from + (to - from) * baseRatio), c)
+        const waveTs = clampCatchUpTs(waveTimes[i] ?? (from + i * 2 * 60 * 1000))
         const list = dedupeLines((w.messages || []).map(x => normalizeForCharacter(x, c))).slice(0, 4)
         const sentKeys = new Set<string>()
         for (let j = 0; j < list.length; j++) {
-          const ts = clampToDaytime(waveTs + j * (20_000 + Math.floor(Math.random() * 40_000)), c)
+          // 同一波内：间隔几十秒~1分钟；绝不超过 to（用户看到消息的时刻）
+          const ts = clampCatchUpTs(waveTs + j * (25_000 + Math.floor(Math.random() * 55_000)))
           const lang = String((c as any)?.language || 'zh')
           const transOn = !!(c as any)?.chatTranslationEnabled && lang !== 'zh'
           const p = parseTranslatedLine(list[j])
@@ -502,8 +536,17 @@ export default function AutoReachDaemon() {
           })
         for (const c of sortedEnabled.slice(0, 1)) {
           let plan = loadPlan(c.id)
-          if (!plan || plan.day !== dayKey()) {
+          if (!plan) {
             plan = mkPlan(c)
+          } else if (plan.day !== dayKey()) {
+            // 跨天：保留“上次看到消息的时间”，让补齐窗口能覆盖跨午夜的离线时段
+            const prevLastSeenAt = Number(plan.lastSeenAt || 0)
+            plan = mkPlan(c)
+            if (prevLastSeenAt > 0 && prevLastSeenAt < now) {
+              plan.lastSeenAt = prevLastSeenAt
+            }
+            // 手动触发只在当天有效，跨天清空（避免奇怪的“第二天还在倒计时”）
+            plan.lastManualMsgId = undefined
           }
           plan.apiCalls = Math.max(0, Number(plan.apiCalls || 0))
           const msgList = getMessagesByCharacter(c.id) || []

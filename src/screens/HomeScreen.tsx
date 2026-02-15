@@ -53,8 +53,16 @@ export default function HomeScreen() {
     musicPlaying, currentSong, musicProgress, toggleMusic, nextSong, prevSong,
     anniversaries, memo, iconTheme, customAppIcons, decorImage,
     homeAvatar, setHomeAvatar, signature, setSignature, waterCount, addWater,
-    weather, locationSettings
+    weather, locationSettings,
+    glassOpacity,
   } = useOS()
+
+  const glassMul = Math.min(1.7, Math.max(0.3, Number(glassOpacity || 100) / 100))
+  const glass = (base: number) => Math.max(0, Math.min(1, base * glassMul))
+  const glassStyle = (bgBase: number, borderBase: number) => ({
+    backgroundColor: `rgba(255,255,255,${glass(bgBase)})`,
+    borderColor: `rgba(255,255,255,${glass(borderBase)})`,
+  } as const)
   
   const [rotation, setRotation] = useState(0)
   const [showSignatureEdit, setShowSignatureEdit] = useState(false)
@@ -144,7 +152,10 @@ export default function HomeScreen() {
     return (
       <div className="relative flex h-full flex-col px-5 pt-4 pb-2 animate-fade-in">
         {/* 时间小部件 */}
-        <div className="mb-4 rounded-3xl bg-white/30 backdrop-blur-md border border-white/40 px-5 py-4 shadow-lg">
+        <div
+          className="mb-4 rounded-3xl bg-white/30 backdrop-blur-md border border-white/40 px-5 py-4 shadow-lg"
+          style={glassStyle(0.30, 0.40)}
+        >
           <div className="flex items-center justify-between">
             <div>
               <div 
@@ -268,7 +279,10 @@ export default function HomeScreen() {
 
         {/* 底部 Dock 栏 */}
         <div className="mt-3 pb-1">
-          <div className="mx-2 rounded-[20px] bg-white/20 backdrop-blur-xl border border-white/25 px-4 py-2 shadow-lg">
+          <div
+            className="mx-2 rounded-[20px] bg-white/20 backdrop-blur-xl border border-white/25 px-4 py-2 shadow-lg"
+            style={glassStyle(0.20, 0.25)}
+          >
             <div className="flex items-center justify-around">
               {DOCK_APPS.map((app, index) => (
                 <Link
@@ -387,7 +401,10 @@ export default function HomeScreen() {
           onClick={() => avatarInputRef.current?.click()}
           className="flex-shrink-0"
         >
-          <div className="w-20 h-20 rounded-2xl overflow-hidden bg-white/50 border-2 border-white/60 shadow-lg flex items-center justify-center">
+          <div
+            className="w-20 h-20 rounded-2xl overflow-hidden bg-white/50 border-2 border-white/60 shadow-lg flex items-center justify-center"
+            style={glassStyle(0.50, 0.60)}
+          >
             {homeAvatar ? (
               <img src={homeAvatar} alt="装饰" className="w-full h-full object-cover" />
             ) : (
@@ -406,7 +423,10 @@ export default function HomeScreen() {
         />
         
         {/* 时间悬浮窗 - 独立 */}
-        <div className="flex-1 rounded-2xl bg-white/40 backdrop-blur-md border border-white/50 shadow-lg px-4 py-3">
+        <div
+          className="flex-1 rounded-2xl bg-white/40 backdrop-blur-md border border-white/50 shadow-lg px-4 py-3"
+          style={glassStyle(0.40, 0.50)}
+        >
           <div className="flex items-center justify-between">
             {/* 签名和日期 */}
             <div className="flex-1 min-w-0">
@@ -454,6 +474,7 @@ export default function HomeScreen() {
             <Link 
               to="/apps/wechat/wallet"
               className="h-9 bg-white/30 backdrop-blur-sm rounded-xl px-3 border border-white/40 shadow-sm flex items-center gap-2"
+              style={glassStyle(0.30, 0.40)}
             >
               <svg className="w-4 h-4" fill="none" stroke="#333" strokeWidth="1.5" viewBox="0 0 24 24">
                 <rect x="2" y="6" width="20" height="14" rx="2"/>
@@ -463,7 +484,10 @@ export default function HomeScreen() {
             </Link>
             
             {/* 音乐播放器 */}
-            <div className="bg-white/20 backdrop-blur-sm rounded-xl p-1.5 border border-white/30 shadow-sm flex flex-col">
+            <div
+              className="bg-white/20 backdrop-blur-sm rounded-xl p-1.5 border border-white/30 shadow-sm flex flex-col"
+              style={glassStyle(0.20, 0.30)}
+            >
               <Link to="/apps/music" className="flex items-center justify-center">
                 <div 
                   className="relative w-[60px] h-[60px] rounded-full overflow-hidden shadow-lg"
@@ -541,7 +565,10 @@ export default function HomeScreen() {
             </div>
             
             {/* 爱心装饰 */}
-            <div className="h-7 bg-white/20 backdrop-blur-sm rounded-xl border border-white/30">
+            <div
+              className="h-7 bg-white/20 backdrop-blur-sm rounded-xl border border-white/30"
+              style={glassStyle(0.20, 0.30)}
+            >
               <BouncingHearts />
             </div>
           </div>
@@ -549,7 +576,10 @@ export default function HomeScreen() {
           {/* 右侧：4个App + 喝水 */}
           <div className="flex flex-col gap-1.5">
             {/* 4个App */}
-            <div className="flex-1 bg-white/15 backdrop-blur-sm rounded-xl p-2 border border-white/35 shadow-sm">
+            <div
+              className="flex-1 bg-white/15 backdrop-blur-sm rounded-xl p-2 border border-white/35 shadow-sm"
+              style={glassStyle(0.15, 0.35)}
+            >
               <div className="grid grid-cols-2 gap-1 h-full">
                 {MAIN_APPS.map(app => (
                   app.id === 'gameCenter' ? (
@@ -595,7 +625,10 @@ export default function HomeScreen() {
             </div>
             
             {/* 喝水计数 */}
-            <div className="h-9 bg-white/30 backdrop-blur-sm rounded-xl px-3 border border-white/40 shadow-sm flex items-center justify-between">
+            <div
+              className="h-9 bg-white/30 backdrop-blur-sm rounded-xl px-3 border border-white/40 shadow-sm flex items-center justify-between"
+              style={glassStyle(0.30, 0.40)}
+            >
               <div className="flex items-center gap-1.5">
                 <svg className="w-4 h-4" fill="none" stroke="#333" strokeWidth="1.5" viewBox="0 0 24 24">
                   <path d="M12 2C12 2 5 9 5 14a7 7 0 0014 0c0-5-7-12-7-12z"/>
@@ -625,6 +658,7 @@ export default function HomeScreen() {
           <Link 
             to="/apps/anniversary"
             className="h-48 bg-white/20 backdrop-blur-sm rounded-xl p-2 border border-white/30 shadow-sm flex flex-col overflow-hidden"
+            style={glassStyle(0.20, 0.30)}
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-[10px] font-medium" style={{ color: fontColor.value }}>纪念日</span>
@@ -660,6 +694,7 @@ export default function HomeScreen() {
           <Link 
             to="/apps/memo"
             className="h-48 bg-white/20 backdrop-blur-sm rounded-xl p-2 border border-white/30 shadow-sm flex flex-col overflow-hidden"
+            style={glassStyle(0.20, 0.30)}
           >
             {/* 装饰图片区域 - 占1/2高度 */}
             {memo.image && (
@@ -706,7 +741,10 @@ export default function HomeScreen() {
 
       {/* 底部 Dock 栏 */}
       <div className="mt-2 pb-1">
-        <div className="mx-1 rounded-[18px] bg-white/15 backdrop-blur-xl border border-white/20 px-3 py-1 shadow-[0_4px_20px_rgba(0,0,0,0.15)]">
+        <div
+          className="mx-1 rounded-[18px] bg-white/15 backdrop-blur-xl border border-white/20 px-3 py-1 shadow-[0_4px_20px_rgba(0,0,0,0.15)]"
+          style={glassStyle(0.15, 0.20)}
+        >
           <div className="flex items-center justify-around">
             {DOCK_APPS.map((app, index) => (
               <Link

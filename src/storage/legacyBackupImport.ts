@@ -52,6 +52,7 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'os_current_font_id',
   'os_font_color_id',
   'os_font_size_tier', // 字体大小档位（全局）
+  'os_glass_opacity', // 桌面玻璃底图透明度
   'os_wallpaper', // 壁纸
   'os_custom_app_icons', // 自定义app图标
   'os_custom_app_icons_layout1', // 自定义app图标（桌面排版1）

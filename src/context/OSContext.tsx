@@ -224,6 +224,9 @@ type OSContextValue = {
   currentFont: FontOption; fontColor: ColorOption; userProfile: UserProfile
   fontSizeTier: FontSizeTier
   setFontSizeTier: (tier: FontSizeTier) => void
+  // 桌面“玻璃底图”透明度（影响主页各个半透明面板）
+  glassOpacity: number
+  setGlassOpacity: (opacity: number) => void
   llmConfig: LLMConfig; ttsConfig: TTSConfig; miCoinBalance: number; notifications: Notification[]
   characters: VirtualCharacter[]; chatLog: ChatMessage[]
   // 当前桌面排版（排版1=custom，排版2=minimal）下的自定义图标（仅作用于当前排版）
@@ -350,6 +353,7 @@ const STORAGE_KEYS = {
   currentFontId: 'os_current_font_id',
   fontColorId: 'os_font_color_id',
   fontSizeTier: 'os_font_size_tier',
+  glassOpacity: 'os_glass_opacity',
   wallpaper: 'os_wallpaper',
   // 兼容旧版本：曾经是单一 map（会在 hydration 时迁移到两份）
   customAppIcons: 'os_custom_app_icons',
@@ -623,6 +627,8 @@ export function OSProvider({ children }: PropsWithChildren) {
     return COLOR_OPTIONS[3]
   })
   const [fontSizeTier, setFontSizeTierState] = useState<FontSizeTier>('medium')
+  // 桌面玻璃底图透明度：倍率百分比（100=当前默认样式）
+  const [glassOpacity, setGlassOpacityState] = useState<number>(100)
   const [userProfile, setUserProfileState] = useState<UserProfile>(defaultUserProfile)
   const [llmConfig, setLLMConfigState] = useState<LLMConfig>(defaultLLMConfig)
   const [ttsConfig, setTTSConfigState] = useState<TTSConfig>(defaultTTSConfig)
@@ -735,6 +741,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         nextFontId,
         nextColorId,
         nextFontSizeTier,
+        nextGlassOpacity,
         nextLocation,
         nextWeather,
         _savedVersion, // 不再用于强制重置，但保留读取以备将来使用
@@ -765,6 +772,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         ),
         kvGetJSONDeep<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id),
         kvGetJSONDeep<FontSizeTier>(STORAGE_KEYS.fontSizeTier, 'medium'),
+        kvGetJSONDeep<number>(STORAGE_KEYS.glassOpacity, 100),
         kvGetJSONDeep<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings),
         kvGetJSONDeep<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather),
         kvGetJSONDeep<string>(MUSIC_VERSION_KEY, ''),
@@ -913,6 +921,14 @@ export function OSProvider({ children }: PropsWithChildren) {
       setCurrentFontState(FONT_OPTIONS.find(f => f.id === nextFontId) || currentFont)
       setFontColorState(COLOR_OPTIONS.find(c => c.id === nextColorId) || fontColor)
       setFontSizeTierState((nextFontSizeTier === 'small' || nextFontSizeTier === 'medium' || nextFontSizeTier === 'large' || nextFontSizeTier === 'xlarge') ? nextFontSizeTier : 'medium')
+      // 玻璃底图透明度倍率：30~170（防止过亮/全白）
+      try {
+        const n = Number(nextGlassOpacity)
+        const safe = Number.isFinite(n) ? Math.min(170, Math.max(30, Math.round(n))) : 100
+        setGlassOpacityState(safe)
+      } catch {
+        setGlassOpacityState(100)
+      }
       const fixedLocation = { ...(nextLocation as any), mode: 'manual' } as LocationSettings
       setLocationSettingsState(fixedLocation)
       // weather：如果已保存过手动天气（weather.updatedAt>0），优先尊重；否则用手动配置生成一个
@@ -1030,6 +1046,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontSizeTier, fontSizeTier) }, [fontSizeTier, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.glassOpacity, glassOpacity) }, [glassOpacity, isHydrated])
   // 壁纸、自定义图标等持久化
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.wallpaper, wallpaper) }, [wallpaper, isHydrated])
   // 新版：按排版分别存两份（旧 key 仅用于兼容读取，不再写回）
@@ -1059,6 +1076,11 @@ export function OSProvider({ children }: PropsWithChildren) {
 
   const setCurrentFont = (font: FontOption) => setCurrentFontState(font)
   const setFontSizeTier = (tier: FontSizeTier) => setFontSizeTierState(tier)
+  const setGlassOpacity = (opacity: number) => {
+    const n = Number(opacity)
+    const safe = Number.isFinite(n) ? Math.min(170, Math.max(30, Math.round(n))) : 100
+    setGlassOpacityState(safe)
+  }
   const setIconTheme = (theme: IconTheme) => setIconThemeState(theme)
   
   // 自定义字体管理
@@ -2545,6 +2567,7 @@ export function OSProvider({ children }: PropsWithChildren) {
     isHydrated,
     time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance,
     fontSizeTier, setFontSizeTier,
+    glassOpacity, setGlassOpacity,
     notifications,
     characters,
     chatLog,
@@ -2578,6 +2601,7 @@ export function OSProvider({ children }: PropsWithChildren) {
     customFonts, addCustomFont, removeCustomFont, getAllFontOptions,
     fetchAvailableModels, testLLMConfig, callLLM,
   }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, fontSizeTier,
+      glassOpacity,
       notifications, characters, chatLog, customAppIcons, customAppIconsLayout1, customAppIconsLayout2, decorImage, decorImageLayout1, decorImageLayout2, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo, customFonts,
       locationSettings, weather,
       musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, musicPlayMode, isHydrated, fetchAvailableModels])

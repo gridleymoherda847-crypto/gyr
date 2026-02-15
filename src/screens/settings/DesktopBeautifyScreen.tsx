@@ -27,6 +27,7 @@ type DesktopBeautifyPresetV1 = {
     homeAvatar?: string
     signature?: string
     memoDecorImage?: string
+    glassOpacity?: number
   }
 }
 
@@ -45,6 +46,8 @@ export default function DesktopBeautifyScreen() {
     setFontColor,
     fontSizeTier,
     setFontSizeTier,
+    glassOpacity,
+    setGlassOpacity,
     customFonts,
     addCustomFont,
     getAllFontOptions,
@@ -184,6 +187,7 @@ export default function DesktopBeautifyScreen() {
         homeAvatar: String(homeAvatar || ''),
         signature: String(signature || ''),
         memoDecorImage: String((memo as any)?.image || ''),
+        glassOpacity: Number.isFinite(Number(glassOpacity)) ? Number(glassOpacity) : 100,
       },
     }
   }
@@ -251,6 +255,10 @@ export default function DesktopBeautifyScreen() {
     } catch { /* ignore */ }
     try {
       if (typeof (p as any).memoDecorImage === 'string') setMemo({ image: String((p as any).memoDecorImage || '') })
+    } catch { /* ignore */ }
+    try {
+      const n = Number((p as any).glassOpacity)
+      if (Number.isFinite(n)) setGlassOpacity(n)
     } catch { /* ignore */ }
 
     // 8) mark last used
@@ -422,6 +430,26 @@ export default function DesktopBeautifyScreen() {
           {/* 快捷跳转：壁纸/字体（按需求放到桌面排版上方） */}
           <div className="rounded-2xl border border-white/30 bg-white/10 backdrop-blur-md overflow-hidden">
             <SettingsItem label="壁纸设置" to="/apps/settings/wallpaper" />
+            <div className="px-3 py-3 bg-white/5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[12px] font-semibold text-gray-800">玻璃底图透明度</div>
+                  <div className="text-[10px] text-gray-500 mt-0.5">影响主页各个半透明面板（时间/音乐/钱包/纪念日/待办等）</div>
+                </div>
+                <div className="text-[11px] px-2 py-0.5 rounded-full bg-black/5 text-gray-600 flex-shrink-0">
+                  {Math.round(Number(glassOpacity || 100))}%
+                </div>
+              </div>
+              <input
+                type="range"
+                min={30}
+                max={170}
+                step={1}
+                value={Number(glassOpacity || 100)}
+                onChange={(e) => setGlassOpacity(Number(e.target.value))}
+                className="mt-2 w-full"
+              />
+            </div>
             <div className="h-px bg-white/25" />
             <SettingsItem
               label="字体设置"
