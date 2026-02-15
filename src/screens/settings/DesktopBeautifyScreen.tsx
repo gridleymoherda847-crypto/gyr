@@ -177,6 +177,8 @@ export default function DesktopBeautifyScreen() {
     }
     // 主存储：IndexedDB(kv)，避免 Safari localStorage 导致“历史不显示/刷新丢失”
     void kvSetJSON(BEAUTY_PRESETS_KEY, cut)
+    // 立即同步 ref，避免后续逻辑读到旧 state 覆盖新导入记录
+    beautyPresetsRef.current = cut
     setBeautyPresets(cut)
   }
 
@@ -286,7 +288,8 @@ export default function DesktopBeautifyScreen() {
     // 8) mark last used
     try {
       const now = Date.now()
-      const next = (beautyPresets || []).map((x) => x.id === preset.id ? ({ ...x, lastUsedAt: now }) : x)
+      const base = beautyPresetsRef.current || beautyPresets || []
+      const next = base.map((x) => x.id === preset.id ? ({ ...x, lastUsedAt: now }) : x)
       saveBeautyPresets(next)
     } catch { /* ignore */ }
   }
