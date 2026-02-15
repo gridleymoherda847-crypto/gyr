@@ -57,11 +57,10 @@ export default function HomeScreen() {
     glassOpacity,
   } = useOS()
 
-  const glassMul = Math.min(1.7, Math.max(0.3, Number(glassOpacity || 100) / 100))
-  const glass = (base: number) => Math.max(0, Math.min(1, base * glassMul))
-  const glassStyle = (bgBase: number, borderBase: number) => ({
-    backgroundColor: `rgba(255,255,255,${glass(bgBase)})`,
-    borderColor: `rgba(255,255,255,${glass(borderBase)})`,
+  const glassA = Math.max(0, Math.min(1, Number(glassOpacity || 0) / 100))
+  const glassStyle = () => ({
+    backgroundColor: `rgba(255,255,255,${glassA})`,
+    borderColor: `rgba(255,255,255,${Math.min(1, glassA + 0.18)})`,
   } as const)
   
   const [rotation, setRotation] = useState(0)
@@ -154,7 +153,7 @@ export default function HomeScreen() {
         {/* 时间小部件 */}
         <div
           className="mb-4 rounded-3xl bg-white/30 backdrop-blur-md border border-white/40 px-5 py-4 shadow-lg"
-          style={glassStyle(0.30, 0.40)}
+          style={glassStyle()}
         >
           <div className="flex items-center justify-between">
             <div>
@@ -165,8 +164,9 @@ export default function HomeScreen() {
                 {time}
               </div>
               <div className="text-[11px] opacity-70 mt-1 leading-tight" style={{ color: fontColor.value }}>
-                <Link to="/apps/settings/location" className="hover:opacity-80 transition-opacity">
-                  {dateStr} {weekDay} · 📍 {weather.city || locationSettings.manualCity}
+                <div>{dateStr} {weekDay}</div>
+                <Link to="/apps/settings/location" className="hover:opacity-80 transition-opacity block">
+                  📍 {weather.city || locationSettings.manualCity}
                 </Link>
               </div>
             </div>
@@ -281,7 +281,7 @@ export default function HomeScreen() {
         <div className="mt-3 pb-1">
           <div
             className="mx-2 rounded-[20px] bg-white/20 backdrop-blur-xl border border-white/25 px-4 py-2 shadow-lg"
-            style={glassStyle(0.20, 0.25)}
+            style={glassStyle()}
           >
             <div className="flex items-center justify-around">
               {DOCK_APPS.map((app, index) => (
@@ -403,7 +403,7 @@ export default function HomeScreen() {
         >
           <div
             className="w-20 h-20 rounded-2xl overflow-hidden bg-white/50 border-2 border-white/60 shadow-lg flex items-center justify-center"
-            style={glassStyle(0.50, 0.60)}
+            style={glassStyle()}
           >
             {homeAvatar ? (
               <img src={homeAvatar} alt="装饰" className="w-full h-full object-cover" />
@@ -425,7 +425,7 @@ export default function HomeScreen() {
         {/* 时间悬浮窗 - 独立 */}
         <div
           className="flex-1 rounded-2xl bg-white/40 backdrop-blur-md border border-white/50 shadow-lg px-4 py-3"
-          style={glassStyle(0.40, 0.50)}
+          style={glassStyle()}
         >
           <div className="flex items-center justify-between">
             {/* 签名和日期 */}
@@ -438,13 +438,17 @@ export default function HomeScreen() {
               >
                 {signature || '点击编辑签名'}
               </button>
-              <div 
-                className="text-[11px] opacity-70 leading-tight"
-                style={{ color: fontColor.value }}
-              >
-                <Link to="/apps/settings/location" className="hover:opacity-80 transition-opacity">
-                  {dateStr} · {weekDay} · 📍 {weather.city || locationSettings.manualCity}
-                </Link>
+              <div className="text-[11px] opacity-70 leading-tight" style={{ color: fontColor.value }}>
+                <div>
+                  <Link to="/apps/settings/location" className="hover:opacity-80 transition-opacity">
+                    {dateStr} · {weekDay}
+                  </Link>
+                </div>
+                <div>
+                  <Link to="/apps/settings/location" className="hover:opacity-80 transition-opacity">
+                    📍 {weather.city || locationSettings.manualCity}
+                  </Link>
+                </div>
               </div>
             </div>
             
@@ -474,7 +478,7 @@ export default function HomeScreen() {
             <Link 
               to="/apps/wechat/wallet"
               className="h-9 bg-white/30 backdrop-blur-sm rounded-xl px-3 border border-white/40 shadow-sm flex items-center gap-2"
-              style={glassStyle(0.30, 0.40)}
+              style={glassStyle()}
             >
               <svg className="w-4 h-4" fill="none" stroke="#333" strokeWidth="1.5" viewBox="0 0 24 24">
                 <rect x="2" y="6" width="20" height="14" rx="2"/>
@@ -486,7 +490,7 @@ export default function HomeScreen() {
             {/* 音乐播放器 */}
             <div
               className="bg-white/20 backdrop-blur-sm rounded-xl p-1.5 border border-white/30 shadow-sm flex flex-col"
-              style={glassStyle(0.20, 0.30)}
+              style={glassStyle()}
             >
               <Link to="/apps/music" className="flex items-center justify-center">
                 <div 
@@ -567,7 +571,7 @@ export default function HomeScreen() {
             {/* 爱心装饰 */}
             <div
               className="h-7 bg-white/20 backdrop-blur-sm rounded-xl border border-white/30"
-              style={glassStyle(0.20, 0.30)}
+              style={glassStyle()}
             >
               <BouncingHearts />
             </div>
@@ -578,7 +582,7 @@ export default function HomeScreen() {
             {/* 4个App */}
             <div
               className="flex-1 bg-white/15 backdrop-blur-sm rounded-xl p-2 border border-white/35 shadow-sm"
-              style={glassStyle(0.15, 0.35)}
+              style={glassStyle()}
             >
               <div className="grid grid-cols-2 gap-1 h-full">
                 {MAIN_APPS.map(app => (
@@ -627,7 +631,7 @@ export default function HomeScreen() {
             {/* 喝水计数 */}
             <div
               className="h-9 bg-white/30 backdrop-blur-sm rounded-xl px-3 border border-white/40 shadow-sm flex items-center justify-between"
-              style={glassStyle(0.30, 0.40)}
+              style={glassStyle()}
             >
               <div className="flex items-center gap-1.5">
                 <svg className="w-4 h-4" fill="none" stroke="#333" strokeWidth="1.5" viewBox="0 0 24 24">
@@ -658,7 +662,7 @@ export default function HomeScreen() {
           <Link 
             to="/apps/anniversary"
             className="h-48 bg-white/20 backdrop-blur-sm rounded-xl p-2 border border-white/30 shadow-sm flex flex-col overflow-hidden"
-            style={glassStyle(0.20, 0.30)}
+            style={glassStyle()}
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-[10px] font-medium" style={{ color: fontColor.value }}>纪念日</span>
@@ -694,7 +698,7 @@ export default function HomeScreen() {
           <Link 
             to="/apps/memo"
             className="h-48 bg-white/20 backdrop-blur-sm rounded-xl p-2 border border-white/30 shadow-sm flex flex-col overflow-hidden"
-            style={glassStyle(0.20, 0.30)}
+            style={glassStyle()}
           >
             {/* 装饰图片区域 - 占1/2高度 */}
             {memo.image && (
@@ -743,7 +747,7 @@ export default function HomeScreen() {
       <div className="mt-2 pb-1">
         <div
           className="mx-1 rounded-[18px] bg-white/15 backdrop-blur-xl border border-white/20 px-3 py-1 shadow-[0_4px_20px_rgba(0,0,0,0.15)]"
-          style={glassStyle(0.15, 0.20)}
+          style={glassStyle()}
         >
           <div className="flex items-center justify-around">
             {DOCK_APPS.map((app, index) => (

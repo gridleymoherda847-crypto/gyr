@@ -627,8 +627,8 @@ export function OSProvider({ children }: PropsWithChildren) {
     return COLOR_OPTIONS[3]
   })
   const [fontSizeTier, setFontSizeTierState] = useState<FontSizeTier>('medium')
-  // 桌面玻璃底图透明度：倍率百分比（100=当前默认样式）
-  const [glassOpacity, setGlassOpacityState] = useState<number>(100)
+  // 桌面玻璃底图透明度：0~100（0=完全透明，100=纯白不透明）
+  const [glassOpacity, setGlassOpacityState] = useState<number>(25)
   const [userProfile, setUserProfileState] = useState<UserProfile>(defaultUserProfile)
   const [llmConfig, setLLMConfigState] = useState<LLMConfig>(defaultLLMConfig)
   const [ttsConfig, setTTSConfigState] = useState<TTSConfig>(defaultTTSConfig)
@@ -772,7 +772,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         ),
         kvGetJSONDeep<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id),
         kvGetJSONDeep<FontSizeTier>(STORAGE_KEYS.fontSizeTier, 'medium'),
-        kvGetJSONDeep<number>(STORAGE_KEYS.glassOpacity, 100),
+        kvGetJSONDeep<number>(STORAGE_KEYS.glassOpacity, 25),
         kvGetJSONDeep<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings),
         kvGetJSONDeep<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather),
         kvGetJSONDeep<string>(MUSIC_VERSION_KEY, ''),
@@ -921,13 +921,22 @@ export function OSProvider({ children }: PropsWithChildren) {
       setCurrentFontState(FONT_OPTIONS.find(f => f.id === nextFontId) || currentFont)
       setFontColorState(COLOR_OPTIONS.find(c => c.id === nextColorId) || fontColor)
       setFontSizeTierState((nextFontSizeTier === 'small' || nextFontSizeTier === 'medium' || nextFontSizeTier === 'large' || nextFontSizeTier === 'xlarge') ? nextFontSizeTier : 'medium')
-      // 玻璃底图透明度倍率：30~170（防止过亮/全白）
+      // 玻璃底图透明度：0~100（0=完全透明，100=纯白不透明）
+      // 兼容旧版：以前存的是 30~170 的“倍率”，这里线性映射到 0~100
       try {
         const n = Number(nextGlassOpacity)
-        const safe = Number.isFinite(n) ? Math.min(170, Math.max(30, Math.round(n))) : 100
-        setGlassOpacityState(safe)
+        if (Number.isFinite(n)) {
+          const raw = Math.round(n)
+          const mapped =
+            raw > 100
+              ? Math.round(((Math.min(170, Math.max(30, raw)) - 30) / 140) * 100)
+              : raw
+          setGlassOpacityState(Math.min(100, Math.max(0, mapped)))
+        } else {
+          setGlassOpacityState(25)
+        }
       } catch {
-        setGlassOpacityState(100)
+        setGlassOpacityState(25)
       }
       const fixedLocation = { ...(nextLocation as any), mode: 'manual' } as LocationSettings
       setLocationSettingsState(fixedLocation)
@@ -1078,7 +1087,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   const setFontSizeTier = (tier: FontSizeTier) => setFontSizeTierState(tier)
   const setGlassOpacity = (opacity: number) => {
     const n = Number(opacity)
-    const safe = Number.isFinite(n) ? Math.min(170, Math.max(30, Math.round(n))) : 100
+    const safe = Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : 25
     setGlassOpacityState(safe)
   }
   const setIconTheme = (theme: IconTheme) => setIconThemeState(theme)

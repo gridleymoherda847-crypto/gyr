@@ -187,7 +187,7 @@ export default function DesktopBeautifyScreen() {
         homeAvatar: String(homeAvatar || ''),
         signature: String(signature || ''),
         memoDecorImage: String((memo as any)?.image || ''),
-        glassOpacity: Number.isFinite(Number(glassOpacity)) ? Number(glassOpacity) : 100,
+        glassOpacity: Number.isFinite(Number(glassOpacity)) ? Number(glassOpacity) : 25,
       },
     }
   }
@@ -442,8 +442,8 @@ export default function DesktopBeautifyScreen() {
               </div>
               <input
                 type="range"
-                min={30}
-                max={170}
+                min={0}
+                max={100}
                 step={1}
                 value={Number(glassOpacity || 100)}
                 onChange={(e) => setGlassOpacity(Number(e.target.value))}
