@@ -190,6 +190,13 @@ export default function GroupChatScreen() {
       const next = Math.min(textarea.scrollHeight, maxHeight)
       textarea.style.height = `${next}px`
     } catch { /* ignore */ }
+    // iOS Safari：输入框高度变化时容易导致消息区滚动“漂移”，若用户在底部附近则保持底部锚定
+    try {
+      const c = messagesContainerRef.current
+      if (!c) return
+      const dist = c.scrollHeight - c.scrollTop - c.clientHeight
+      if (dist < 80) c.scrollTop = c.scrollHeight
+    } catch { /* ignore */ }
   }, [])
   const [aiTyping, setAiTyping] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -436,7 +443,11 @@ export default function GroupChatScreen() {
     if (group && !hasInitialScrolledRef.current) {
       // 使用 setTimeout 确保 DOM 已渲染
       setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+        try {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' })
+        } catch {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+        }
         hasInitialScrolledRef.current = true
       }, 50)
     }
@@ -445,7 +456,11 @@ export default function GroupChatScreen() {
   // 只在需要时滚动到底部（发消息/收到回复时）
   useEffect(() => {
     if (shouldScrollRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      try {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' })
+      } catch {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }
       shouldScrollRef.current = false
     }
   }, [messages])
@@ -1855,7 +1870,19 @@ ${history}`
                 e.preventDefault()
                 handleSend()
               }}
-              onFocus={() => { setShowPlusMenu(false); setShowStickerPanel(false); setShowGenerateSelector(false) }}
+              onFocus={() => {
+                setShowPlusMenu(false)
+                setShowStickerPanel(false)
+                setShowGenerateSelector(false)
+                // iOS Safari：聚焦输入框时保持最新消息可见
+                setTimeout(() => {
+                  try {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' })
+                  } catch {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+                  }
+                }, 60)
+              }}
               placeholder="输入消息..."
               className="lp-chat-input flex-1 min-w-0 px-3 py-2 rounded-2xl bg-white/90 outline-none text-gray-800 text-sm resize-none leading-relaxed max-h-[128px] overflow-y-auto"
               disabled={aiTyping}

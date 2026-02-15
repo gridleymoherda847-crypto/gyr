@@ -90,6 +90,28 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composingRef = useRef(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const nearBottomRef = useRef(true)
+  const forceScrollRef = useRef(false)
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const container = messagesContainerRef.current
+    // 优先用 scrollTop 兜底（Safari/部分壳浏览器对 scrollIntoView 对齐策略不稳定）
+    if (container) {
+      try {
+        container.scrollTop = container.scrollHeight
+      } catch { /* ignore */ }
+    }
+    const end = messagesEndRef.current
+    if (!end) return
+    try {
+      end.scrollIntoView({ behavior, block: 'end', inline: 'nearest' })
+    } catch {
+      try { end.scrollIntoView() } catch { /* ignore */ }
+    }
+  }, [])
+
   const autosizeInput = useCallback((el?: HTMLTextAreaElement | null) => {
     const textarea = el || inputRef.current
     if (!textarea) return
@@ -100,11 +122,11 @@ export default function ChatScreen() {
       const next = Math.min(textarea.scrollHeight, maxHeight)
       textarea.style.height = `${next}px`
     } catch { /* ignore */ }
+    // iOS Safari：输入框高度变化时容易把消息区“顶”到中间，若用户本来在底部则强制保持底部锚定
+    if (nearBottomRef.current) {
+      requestAnimationFrame(() => scrollToBottom('auto'))
+    }
   }, [])
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const nearBottomRef = useRef(true)
-  const forceScrollRef = useRef(false)
   // 分页渲染窗口：只渲染最近 N 条，上拉再加载更早的
   const PAGE_SIZE = 15
   // 关键优化：首次进入聊天时不要先渲染“全量消息”，否则超长聊天会直接卡死
@@ -668,17 +690,17 @@ export default function ChatScreen() {
   useEffect(() => {
     if (isFirstRender.current) {
       // 首次渲染：直接跳到底部，不要动画
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+      scrollToBottom('auto')
       isFirstRender.current = false
     } else {
       // 用户发送消息/主动触发：强制立刻跳到底部（解决“发完不知道有没有发出去”）
       if (forceScrollRef.current) {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+        scrollToBottom('auto')
         forceScrollRef.current = false
       } else {
         // 后续新消息：仅在用户在底部附近时滚动，避免手机端卡顿
         if (nearBottomRef.current) {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+          scrollToBottom('smooth')
         }
       }
     }
@@ -4268,8 +4290,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     // 触发回复时也自动滚到底部，确保看得到“正在输入…”
     forceScrollRef.current = true
     nearBottomRef.current = true
-    messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
-    safeTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'instant' }), 50)
+    scrollToBottom('auto')
+    safeTimeout(() => scrollToBottom('auto'), 50)
     // 不在这里“秒收款/秒退还”。转账处理必须跟随一次API回复流程，由 generateAIReplies 统一处理。
     // 重置待回复计数
     setPendingCount(0)
@@ -8285,6 +8307,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               ref={inputRef}
               placeholder="输入消息..."
               value={inputText}
+              onFocus={() => {
+                // iOS Safari：弹出键盘/输入时常把滚动定位到中间，强制保持最新消息可见
+                nearBottomRef.current = true
+                forceScrollRef.current = true
+                safeTimeout(() => scrollToBottom('auto'), 50)
+              }}
               onChange={(e) => {
                 setInputText(e.target.value)
                 // 下一帧再读 scrollHeight，避免 setState 前后抖动

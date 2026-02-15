@@ -23,6 +23,9 @@ type DesktopBeautifyPresetV1 = {
     fontColorId: string
     fontSizeTier: 'small' | 'medium' | 'large' | 'xlarge'
     customFonts: Array<{ name: string; fontFamily: string; dataUrl: string }>
+    homeAvatar?: string
+    signature?: string
+    memoDecorImage?: string
   }
 }
 
@@ -54,6 +57,12 @@ export default function DesktopBeautifyScreen() {
     decorImageLayout2,
     setDecorImageForLayout,
     currentSong,
+    homeAvatar,
+    setHomeAvatar,
+    signature,
+    setSignature,
+    memo,
+    setMemo,
   } = useOS()
 
   const [beautyImportError, setBeautyImportError] = useState<string | null>(null)
@@ -137,6 +146,9 @@ export default function DesktopBeautifyScreen() {
             dataUrl: String(f?.dataUrl || ''),
           })).filter((f: any) => !!f.name && !!f.fontFamily && !!f.dataUrl).slice(0, 50)
           : [],
+        homeAvatar: String(homeAvatar || ''),
+        signature: String(signature || ''),
+        memoDecorImage: String((memo as any)?.image || ''),
       },
     }
   }
@@ -195,7 +207,18 @@ export default function DesktopBeautifyScreen() {
       if (hit) setCurrentFont(hit as any)
     } catch { /* ignore */ }
 
-    // 7) mark last used
+    // 7) home avatar / signature / memo decor image
+    try {
+      if (typeof (p as any).homeAvatar === 'string') setHomeAvatar(String((p as any).homeAvatar || ''))
+    } catch { /* ignore */ }
+    try {
+      if (typeof (p as any).signature === 'string') setSignature(String((p as any).signature || ''))
+    } catch { /* ignore */ }
+    try {
+      if (typeof (p as any).memoDecorImage === 'string') setMemo({ image: String((p as any).memoDecorImage || '') })
+    } catch { /* ignore */ }
+
+    // 8) mark last used
     try {
       const now = Date.now()
       const next = (beautyPresets || []).map((x) => x.id === preset.id ? ({ ...x, lastUsedAt: now }) : x)
