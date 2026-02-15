@@ -125,6 +125,27 @@ export default function DesktopBeautifyScreen() {
   // Safari 上 localStorage 容量/权限更苛刻：历史可能写不进去或刷新就丢。
   // 这里改为 IndexedDB(kv) 为主、localStorage 为兜底，并在首次进入时做一次迁移。
   const [beautyPresets, setBeautyPresets] = useState<DesktopBeautifyPresetV1[]>(() => readPresetsFromLocalStorage())
+  const beautyPresetsRef = useRef<DesktopBeautifyPresetV1[]>(beautyPresets)
+  useEffect(() => { beautyPresetsRef.current = beautyPresets }, [beautyPresets])
+
+  const mergePresets = (a: DesktopBeautifyPresetV1[], b: DesktopBeautifyPresetV1[]) => {
+    const map = new Map<string, DesktopBeautifyPresetV1>()
+    const put = (x: DesktopBeautifyPresetV1) => {
+      const id = String((x as any)?.id || '').trim()
+      if (!id) return
+      const prev = map.get(id)
+      if (!prev) { map.set(id, x); return }
+      const ta = Number((prev as any)?.lastUsedAt || (prev as any)?.createdAt || 0) || 0
+      const tb = Number((x as any)?.lastUsedAt || (x as any)?.createdAt || 0) || 0
+      map.set(id, tb >= ta ? x : prev)
+    }
+    for (const x of (a || [])) put(x)
+    for (const x of (b || [])) put(x)
+    return Array.from(map.values())
+      .sort((x, y) => (Number((y as any)?.lastUsedAt || (y as any)?.createdAt || 0) - Number((x as any)?.lastUsedAt || (x as any)?.createdAt || 0)))
+      .slice(0, 30)
+  }
+
   useEffect(() => {
     let cancelled = false
     const run = async () => {
@@ -132,14 +153,15 @@ export default function DesktopBeautifyScreen() {
       const kvList = normalizePresets(fromKv)
       if (cancelled) return
       if (kvList.length > 0) {
-        setBeautyPresets(kvList)
+        // 只合并不覆盖：避免用户刚导入/刚储存就被异步加载结果“覆盖掉”，导致历史不显示
+        setBeautyPresets((prev) => mergePresets(prev, kvList))
         return
       }
       const localList = readPresetsFromLocalStorage()
       if (localList.length > 0) {
-        setBeautyPresets(localList)
+        setBeautyPresets((prev) => mergePresets(prev, localList))
         // 迁移到 kv（后续读写都以 kv 为准）
-        void kvSetJSON(BEAUTY_PRESETS_KEY, localList.slice(-30))
+        void kvSetJSON(BEAUTY_PRESETS_KEY, mergePresets(beautyPresetsRef.current, localList).slice(-30))
       }
     }
     void run()
@@ -411,8 +433,10 @@ export default function DesktopBeautifyScreen() {
                       lastUsedAt: now,
                       source: 'import',
                     }
-                    const next = (beautyPresets || []).filter((x) => x.id !== normalized.id)
-                    next.push(normalized)
+                    const next = mergePresets(
+                      (beautyPresetsRef.current || []).filter((x) => x.id !== normalized.id),
+                      [normalized]
+                    )
                     saveBeautyPresets(next)
                     applyBeautyPreset(normalized) // 内部会自动切换排版
                     setBeautyImportError(null)
