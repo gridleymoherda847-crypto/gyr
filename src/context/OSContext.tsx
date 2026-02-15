@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { kvGet, kvGetJSONDeep, kvSet, kvSetJSON } from '../storage/kv'
 import { readOpenAISSEToText } from '../utils/sse'
+import { compressDataUrlToDataUrl } from '../utils/image'
 
 export type UserProfile = { avatar: string; nickname: string; persona: string }
 export type LLMApiInterface = 'openai_compatible' | 'anthropic_native' | 'gemini_native' | 'ollama'
@@ -225,7 +226,16 @@ type OSContextValue = {
   setFontSizeTier: (tier: FontSizeTier) => void
   llmConfig: LLMConfig; ttsConfig: TTSConfig; miCoinBalance: number; notifications: Notification[]
   characters: VirtualCharacter[]; chatLog: ChatMessage[]
-  customAppIcons: Record<string, string>; decorImage: string; homeAvatar: string
+  // 当前桌面排版（排版1=custom，排版2=minimal）下的自定义图标（仅作用于当前排版）
+  customAppIcons: Record<string, string>
+  // 分排版存储：用于图标管理页切换编辑
+  customAppIconsLayout1: Record<string, string>
+  customAppIconsLayout2: Record<string, string>
+  // 当前排版下的唱片封面（排版1/2分离）
+  decorImage: string
+  decorImageLayout1: string
+  decorImageLayout2: string
+  homeAvatar: string
   // 位置和天气
   locationSettings: LocationSettings
   weather: WeatherData
@@ -253,7 +263,9 @@ type OSContextValue = {
   addChatMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'> & { timestamp?: number }) => void
   updateIntimacy: (characterId: string, delta: number) => void
   setCustomAppIcon: (appId: string, iconUrl: string) => void
+  setCustomAppIconForLayout: (layout: 'layout1' | 'layout2', appId: string, iconUrl: string) => void
   setDecorImage: (url: string) => void
+  setDecorImageForLayout: (layout: 'layout1' | 'layout2', url: string) => void
   setHomeAvatar: (url: string) => void
   // 签名
   signature: string
@@ -339,8 +351,16 @@ const STORAGE_KEYS = {
   fontColorId: 'os_font_color_id',
   fontSizeTier: 'os_font_size_tier',
   wallpaper: 'os_wallpaper',
+  // 兼容旧版本：曾经是单一 map（会在 hydration 时迁移到两份）
   customAppIcons: 'os_custom_app_icons',
+  // 新版：按桌面排版分别存两份
+  customAppIconsLayout1: 'os_custom_app_icons_layout1',
+  customAppIconsLayout2: 'os_custom_app_icons_layout2',
+  // 兼容旧版本：单一唱片封面
   decorImage: 'os_decor_image',
+  // 新版：按桌面排版分别存两份唱片封面
+  decorImageLayout1: 'os_decor_image_layout1',
+  decorImageLayout2: 'os_decor_image_layout2',
   userProfile: 'os_user_profile',
   iconTheme: 'os_icon_theme',
   anniversaries: 'os_anniversaries',
@@ -610,8 +630,11 @@ export function OSProvider({ children }: PropsWithChildren) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [characters, setCharacters] = useState<VirtualCharacter[]>(seedCharacters)
   const [chatLog, setChatLog] = useState<ChatMessage[]>(seedChat)
-  const [customAppIcons, setCustomAppIcons] = useState<Record<string, string>>({})
-  const [decorImage, setDecorImage] = useState('')
+  // 自定义图标：按“桌面排版1/2”分别存储（排版1=custom，排版2=minimal）
+  const [customAppIconsLayout1, setCustomAppIconsLayout1] = useState<Record<string, string>>({})
+  const [customAppIconsLayout2, setCustomAppIconsLayout2] = useState<Record<string, string>>({})
+  const [decorImageLayout1, setDecorImageLayout1] = useState('')
+  const [decorImageLayout2, setDecorImageLayout2] = useState('')
   const [homeAvatar, setHomeAvatar] = useState('')
   const [signature, setSignature] = useState('今天也要开心鸭~')
   
@@ -637,6 +660,14 @@ export function OSProvider({ children }: PropsWithChildren) {
   
   // 图标主题
   const [iconTheme, setIconThemeState] = useState<IconTheme>('custom')
+  const iconThemeRef = useRef<IconTheme>('custom')
+  useEffect(() => { iconThemeRef.current = iconTheme }, [iconTheme])
+
+  // 当前排版下的自定义图标（对外继续叫 customAppIcons，兼容旧代码）
+  const customAppIcons =
+    (iconTheme === 'custom' ? customAppIconsLayout1 : customAppIconsLayout2)
+  const decorImage =
+    (iconTheme === 'custom' ? decorImageLayout1 : decorImageLayout2)
   
   // 纪念日
   const [anniversaries, setAnniversaries] = useState<Anniversary[]>([])
@@ -708,8 +739,12 @@ export function OSProvider({ children }: PropsWithChildren) {
         nextWeather,
         _savedVersion, // 不再用于强制重置，但保留读取以备将来使用
         nextWallpaper,
-        nextCustomAppIcons,
-        nextDecorImage,
+        nextCustomAppIconsLegacy,
+        nextCustomAppIconsLayout1,
+        nextCustomAppIconsLayout2,
+        nextDecorImageLegacy,
+        nextDecorImageLayout1,
+        nextDecorImageLayout2,
         nextHomeAvatar,
         nextSignature,
         nextWaterCount,
@@ -735,7 +770,11 @@ export function OSProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<string>(MUSIC_VERSION_KEY, ''),
         kvGetJSONDeep<string>(STORAGE_KEYS.wallpaper, DEFAULT_WALLPAPER),
         kvGetJSONDeep<Record<string, string>>(STORAGE_KEYS.customAppIcons, {}),
+        kvGetJSONDeep<Record<string, string>>(STORAGE_KEYS.customAppIconsLayout1, {}),
+        kvGetJSONDeep<Record<string, string>>(STORAGE_KEYS.customAppIconsLayout2, {}),
         kvGetJSONDeep<string>(STORAGE_KEYS.decorImage, ''),
+        kvGetJSONDeep<string>(STORAGE_KEYS.decorImageLayout1, ''),
+        kvGetJSONDeep<string>(STORAGE_KEYS.decorImageLayout2, ''),
         kvGetJSONDeep<string>(STORAGE_KEYS.homeAvatar, ''),
         kvGetJSONDeep<string>(STORAGE_KEYS.signature, '今天也要开心鸭~'),
         kvGetJSONDeep<number>(STORAGE_KEYS.waterCount, 0),
@@ -747,6 +786,29 @@ export function OSProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<CustomFont[]>(STORAGE_KEYS.customFonts, []),
         kvGetJSONDeep<MusicPlayMode>(MUSIC_PLAY_MODE_KEY, 'order'),
       ])
+
+      // 自定义图标迁移：旧版本只有一个 map；新版本按排版存两份
+      const sanitizeIconMap = (m: any) => {
+        if (!m || typeof m !== 'object') return {}
+        const out: Record<string, string> = {}
+        try {
+          Object.entries(m).forEach(([k, v]) => {
+            const key = String(k || '').trim()
+            if (!key) return
+            const val = String(v || '').trim()
+            if (!val) return
+            out[key] = val
+          })
+        } catch {
+          return {}
+        }
+        return out
+      }
+      const legacyMap = sanitizeIconMap(nextCustomAppIconsLegacy)
+      const layout1Map = sanitizeIconMap(nextCustomAppIconsLayout1)
+      const layout2Map = sanitizeIconMap(nextCustomAppIconsLayout2)
+      const finalLayout1 = Object.keys(layout1Map).length ? layout1Map : legacyMap
+      const finalLayout2 = Object.keys(layout2Map).length ? layout2Map : legacyMap
 
       // 兜底：如果 IndexedDB 的 userProfile 丢失（回到默认），尝试从 localStorage 备份恢复
       let finalUserProfile = nextUserProfile
@@ -889,8 +951,34 @@ export function OSProvider({ children }: PropsWithChildren) {
       )
       // 加载自定义壁纸、图标等
       if (nextWallpaper) setWallpaper(nextWallpaper)
-      if (nextCustomAppIcons) setCustomAppIcons(nextCustomAppIcons)
-      if (nextDecorImage) setDecorImage(nextDecorImage)
+      setCustomAppIconsLayout1(finalLayout1)
+      setCustomAppIconsLayout2(finalLayout2)
+      // 唱片封面迁移：旧版是单图，新版是排版1/2分离。
+      // 规则：若 layout1/2 为空且 legacy 有值，则两边都用 legacy 初始化，避免丢图。
+      const sanitizeDecor = async (raw: any) => {
+        let out = String(raw || '')
+        if (!out) return ''
+        try {
+          // 老图过大时自动压缩，避免音乐页首开卡顿
+          if (out.startsWith('data:image/') && out.length > 180_000) {
+            out = await compressDataUrlToDataUrl(out, {
+              maxSide: 320,
+              mimeType: 'image/webp',
+              quality: 0.5,
+            })
+          }
+        } catch {
+          // ignore and keep original
+        }
+        return out
+      }
+      const legacyDecor = await sanitizeDecor(nextDecorImageLegacy)
+      const d1Raw = String(nextDecorImageLayout1 || '').trim() || legacyDecor
+      const d2Raw = String(nextDecorImageLayout2 || '').trim() || legacyDecor
+      const d1 = await sanitizeDecor(d1Raw)
+      const d2 = await sanitizeDecor(d2Raw)
+      setDecorImageLayout1(d1)
+      setDecorImageLayout2(d2)
       if (nextHomeAvatar) setHomeAvatar(nextHomeAvatar)
       if (nextSignature) setSignature(nextSignature)
       // 喝水计数 - 检查是否新的一天
@@ -944,8 +1032,12 @@ export function OSProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontSizeTier, fontSizeTier) }, [fontSizeTier, isHydrated])
   // 壁纸、自定义图标等持久化
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.wallpaper, wallpaper) }, [wallpaper, isHydrated])
-  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.customAppIcons, customAppIcons) }, [customAppIcons, isHydrated])
-  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.decorImage, decorImage) }, [decorImage, isHydrated])
+  // 新版：按排版分别存两份（旧 key 仅用于兼容读取，不再写回）
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.customAppIconsLayout1, customAppIconsLayout1) }, [customAppIconsLayout1, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.customAppIconsLayout2, customAppIconsLayout2) }, [customAppIconsLayout2, isHydrated])
+  // 新版按排版持久化；旧 key 仅做兼容读取，不再写回
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.decorImageLayout1, decorImageLayout1) }, [decorImageLayout1, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.decorImageLayout2, decorImageLayout2) }, [decorImageLayout2, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.homeAvatar, homeAvatar) }, [homeAvatar, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.signature, signature) }, [signature, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.waterCount, waterCount) }, [waterCount, isHydrated])
@@ -1268,7 +1360,27 @@ export function OSProvider({ children }: PropsWithChildren) {
   const updateIntimacy = (characterId: string, delta: number) => {
     setCharacters((prev) => prev.map((char) => char.id === characterId ? { ...char, intimacy: Math.min(100, Math.max(0, char.intimacy + delta)) } : char))
   }
-  const setCustomAppIcon = (appId: string, iconUrl: string) => setCustomAppIcons((prev) => ({ ...prev, [appId]: iconUrl }))
+  const setCustomAppIconForLayout = (layout: 'layout1' | 'layout2', appId: string, iconUrl: string) => {
+    if (layout === 'layout2') {
+      setCustomAppIconsLayout2((prev) => ({ ...prev, [appId]: iconUrl }))
+    } else {
+      setCustomAppIconsLayout1((prev) => ({ ...prev, [appId]: iconUrl }))
+    }
+  }
+  // 兼容旧调用：默认修改“当前排版”的那一份
+  const setCustomAppIcon = (appId: string, iconUrl: string) => {
+    const theme = iconThemeRef.current || iconTheme
+    setCustomAppIconForLayout(theme === 'minimal' ? 'layout2' : 'layout1', appId, iconUrl)
+  }
+  const setDecorImageForLayout = (layout: 'layout1' | 'layout2', url: string) => {
+    if (layout === 'layout2') setDecorImageLayout2(String(url || ''))
+    else setDecorImageLayout1(String(url || ''))
+  }
+  // 兼容旧调用：默认修改“当前排版”的那一份
+  const setDecorImage = (url: string) => {
+    const theme = iconThemeRef.current || iconTheme
+    setDecorImageForLayout(theme === 'minimal' ? 'layout2' : 'layout1', url)
+  }
 
   // 音乐控制函数
   const playSong = (song: Song) => {
@@ -2433,12 +2545,31 @@ export function OSProvider({ children }: PropsWithChildren) {
     isHydrated,
     time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance,
     fontSizeTier, setFontSizeTier,
-    notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, wallpaperError,
+    notifications,
+    characters,
+    chatLog,
+    customAppIcons,
+    customAppIconsLayout1,
+    customAppIconsLayout2,
+    decorImage,
+    decorImageLayout1,
+    decorImageLayout2,
+    homeAvatar,
+    signature,
+    wallpaperError,
     locationSettings, weather, setLocationSettings, refreshWeather,
     musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, musicPlayMode, audioRef,
     setWallpaper, setCurrentFont, setFontColor, setUserProfile, setLLMConfig, setTTSConfig, textToSpeech,
     setMiCoinBalance, addMiCoins, addNotification, markNotificationRead, addChatMessage, updateIntimacy,
-    setCustomAppIcon, setDecorImage, setHomeAvatar, setSignature, waterCount, addWater, setWallpaperError,
+    setCustomAppIcon,
+    setCustomAppIconForLayout,
+    setDecorImage,
+    setDecorImageForLayout,
+    setHomeAvatar,
+    setSignature,
+    waterCount,
+    addWater,
+    setWallpaperError,
     playSong, pauseMusic, resumeMusic, toggleMusic, nextSong, prevSong, cycleMusicPlayMode, seekMusic, toggleFavorite, isFavorite, addSong, removeSong,
     setMusicPlaying, setCurrentSong,
     iconTheme, setIconTheme,
@@ -2447,7 +2578,7 @@ export function OSProvider({ children }: PropsWithChildren) {
     customFonts, addCustomFont, removeCustomFont, getAllFontOptions,
     fetchAvailableModels, testLLMConfig, callLLM,
   }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, fontSizeTier,
-      notifications, characters, chatLog, customAppIcons, decorImage, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo, customFonts,
+      notifications, characters, chatLog, customAppIcons, customAppIconsLayout1, customAppIconsLayout2, decorImage, decorImageLayout1, decorImageLayout2, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo, customFonts,
       locationSettings, weather,
       musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, musicPlayMode, isHydrated, fetchAvailableModels])
 

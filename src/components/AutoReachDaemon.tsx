@@ -77,6 +77,15 @@ const parseTranslatedLine = (line: string) => {
   if (sep.length >= 2) {
     return { rawText: String(sep[0] || '').trim(), zh: String(sep.slice(1).join('|||') || '').trim() }
   }
+  const m = raw.match(/^(.+?)[（(]\s*([\u4e00-\u9fff][^）)]*)[）)]\s*$/)
+  if (m) {
+    return { rawText: String(m[1] || '').trim(), zh: String(m[2] || '').trim() }
+  }
+  const hasZh = /[\u4e00-\u9fff]/.test(raw)
+  if (hasZh) {
+    // 模型没按 "|||" 返回时，至少把翻译状态置为 done，避免一直显示“翻译中”
+    return { rawText: raw, zh: raw }
+  }
   return { rawText: raw, zh: '' }
 }
 
@@ -237,6 +246,31 @@ export default function AutoReachDaemon() {
       const targetN = minN === maxN ? minN : (minN + Math.floor(Math.random() * (maxN - minN + 1)))
       const history = buildShortHistory(c.id, 1200)
       const histText = history.map(h => `${h.role === 'user' ? '我' : c.name}：${h.content}`).join('\n')
+      const holidayHint = (() => {
+        const now = new Date()
+        const y = now.getFullYear()
+        const m = now.getMonth() + 1
+        const d = now.getDate()
+        const key = `${m}-${d}`
+        const fixed: Record<string, string> = {
+          '1-1': '元旦',
+          '2-14': '情人节',
+          '5-1': '劳动节',
+          '10-1': '国庆节',
+        }
+        const cny: Record<number, string> = {
+          2024: '2-10',
+          2025: '1-29',
+          2026: '2-17',
+          2027: '2-6',
+          2028: '1-26',
+          2029: '2-13',
+          2030: '2-3',
+        }
+        if (cny[y] === key) return '春节（今天）'
+        if (fixed[key]) return `${fixed[key]}（今天）`
+        return '普通日期'
+      })()
       const prompt = await callLLM([
         {
           role: 'system',
@@ -249,6 +283,7 @@ export default function AutoReachDaemon() {
             `4) 只延续已有话题，避免突然新设定；\n` +
             `5) 口吻自然，像真人。\n` +
             `6) 禁止重复同一句话。\n` +
+            `6.1) 结合中国节日/饭点时间感自然聊天；当前节日提示：${holidayHint}。\n` +
             `${(c as any)?.language && (c as any).language !== 'zh' && (c as any)?.chatTranslationEnabled
               ? `7) 每行必须使用格式：外语原文 ||| 简体中文翻译`
               : ''}`,
@@ -281,6 +316,7 @@ export default function AutoReachDaemon() {
         }
       }
       // 这里是一轮“主动找我”：只调用一次 LLM，但可下发多条气泡（3~5等）
+      const sentKeys = new Set<string>()
       for (const line of lines) {
         const normalized = normalizeForCharacter(line, c)
         if (!normalized) continue
@@ -288,6 +324,9 @@ export default function AutoReachDaemon() {
         const transOn = !!(c as any)?.chatTranslationEnabled && lang !== 'zh'
         if (transOn) {
           const p = parseTranslatedLine(normalized)
+          const key = (p.rawText || p.zh || normalized).replace(/\s+/g, '').toLowerCase()
+          if (key && sentKeys.has(key)) continue
+          if (key) sentKeys.add(key)
           addMessage({
             characterId: c.id,
             content: p.rawText || p.zh || normalized,
@@ -299,6 +338,9 @@ export default function AutoReachDaemon() {
             translationStatus: p.zh ? 'done' : 'pending',
           } as any)
         } else {
+          const key = normalized.replace(/\s+/g, '').toLowerCase()
+          if (key && sentKeys.has(key)) continue
+          if (key) sentKeys.add(key)
           addMessage({ characterId: c.id, content: normalized, isUser: false, type: 'text' })
         }
       }
@@ -337,6 +379,7 @@ export default function AutoReachDaemon() {
               `- 同一 wave 只聊一个话题，不要跨话题；\n` +
               `- 不同 wave 话题尽量不同，不要把同一话题拆成多波；\n` +
               `- 只有在提及旧话题时，才可用“前段时间/上次聊到/之前你提过”；日常分享和思念开场不要强行加这类词；\n` +
+              `- 可结合中国节日、三餐饭点、作息时段自然提一嘴，但不要条条都提节日；\n` +
               `- 禁止“刚刚/现在/5分钟前”这类精确实时词；\n` +
               `- 禁止旁白动作，禁止 emoji；\n` +
               `${(c as any)?.language && (c as any).language !== 'zh' && (c as any)?.chatTranslationEnabled
@@ -412,11 +455,15 @@ export default function AutoReachDaemon() {
         const baseRatio = clamp(Number(w.ratio || (i + 1) / (n + 1)), 0.02, 0.98)
         const waveTs = clampToDaytime(Math.floor(from + (to - from) * baseRatio), c)
         const list = dedupeLines((w.messages || []).map(x => normalizeForCharacter(x, c))).slice(0, 4)
+        const sentKeys = new Set<string>()
         for (let j = 0; j < list.length; j++) {
           const ts = clampToDaytime(waveTs + j * (20_000 + Math.floor(Math.random() * 40_000)), c)
           const lang = String((c as any)?.language || 'zh')
           const transOn = !!(c as any)?.chatTranslationEnabled && lang !== 'zh'
           const p = parseTranslatedLine(list[j])
+          const key = (p.rawText || p.zh || list[j]).replace(/\s+/g, '').toLowerCase()
+          if (key && sentKeys.has(key)) continue
+          if (key) sentKeys.add(key)
           const msg = addMessage(transOn
             ? {
                 characterId: c.id,

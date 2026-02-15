@@ -24,9 +24,6 @@ const isDynamicImportError = (error: unknown): boolean => {
   )
 }
 
-// 自动刷新的 key，防止无限刷新
-const AUTO_REFRESH_KEY = 'littlephone_auto_refresh_time'
-
 export default class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, message: '' }
 
@@ -38,18 +35,6 @@ export default class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: unknown) {
     // eslint-disable-next-line no-console
     console.error('LittlePhone crashed:', error)
-
-    // 如果是动态导入失败，自动刷新页面（但防止无限刷新）
-    if (isDynamicImportError(error)) {
-      const lastRefresh = localStorage.getItem(AUTO_REFRESH_KEY)
-      const now = Date.now()
-      // 如果距离上次自动刷新超过30秒，才自动刷新
-      if (!lastRefresh || now - parseInt(lastRefresh, 10) > 30000) {
-        localStorage.setItem(AUTO_REFRESH_KEY, String(now))
-        // 延迟一点刷新，让用户能看到提示
-        setTimeout(() => window.location.reload(), 500)
-      }
-    }
   }
 
   render() {
@@ -67,16 +52,27 @@ export default class ErrorBoundary extends Component<Props, State> {
                 <div className="text-4xl mb-3">🚀</div>
                 <div className="text-[16px] font-semibold text-[#111]">程序员递交了最新版本</div>
                 <div className="mt-2 text-[13px] text-gray-500">
-                  请点击下方按钮刷新页面，即可更新到最新版本
+                  你可以在「设置 → 系统 → 检测更新」手动更新，或点击下方按钮立即更新。
                 </div>
               </div>
               <div className="mt-4">
                 <button
                   type="button"
                   className="w-full rounded-full bg-[#07C160] px-4 py-3 text-[14px] font-semibold text-white"
-                  onClick={() => window.location.reload()}
+                  onClick={async () => {
+                    try {
+                      const apply = (window as any).__LP_APPLY_UPDATE__ as undefined | (() => Promise<void>)
+                      if (apply) {
+                        await apply()
+                        return
+                      }
+                    } catch {
+                      // ignore
+                    }
+                    window.location.reload()
+                  }}
                 >
-                  刷新更新
+                  立即更新
                 </button>
               </div>
             </>

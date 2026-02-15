@@ -32,6 +32,74 @@ export default function MomentsTab({ onBack }: Props) {
 
   const hasApiConfig = llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel
 
+  const pickOne = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)]
+
+  const extractTopic = (text: string, textZh?: string) => {
+    const src = `${String(text || '').trim()} ${String(textZh || '').trim()}`.trim()
+    if (!src) return ''
+    const tokens = src
+      .split(/[，。！？、；：,.!?()[\]【】\s]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .filter(s => s.length >= 2 && s.length <= 8)
+      .filter(s => !/^(今天|真的|就是|这个|那个|感觉|有点|然后|我们|你们|他们|一下|哈哈|嗯嗯)$/.test(s))
+    if (tokens.length > 0) return pickOne(tokens.slice(0, 8))
+    if (/(图|照片|截图|配图|自拍|风景)/.test(src)) return '这图'
+    return src.slice(0, 6)
+  }
+
+  const buildLitePeerComment = (peer: { name: string; relationship?: string }, authorName: string, momentText: string, momentZh?: string) => {
+    const rel = String(peer.relationship || '')
+    const topic = extractTopic(momentText, momentZh)
+    const close = /(恋人|情侣|对象|老公|老婆|宝贝|暧昧|crush)/i.test(rel)
+    const friend = /(朋友|闺蜜|兄弟|同学|搭子|好友)/i.test(rel)
+
+    const moodPrefix = close
+      ? pickOne(['我懂你', '你这个我秒懂', '这条太你了', '你又戳我了'])
+      : friend
+        ? pickOne(['笑死', '有点东西', '你这波可以', '我狠狠共鸣'])
+        : pickOne(['这条不错', '有点意思', '这个表达可以', '懂你的点'])
+
+    const action = pickOne(['拿捏', '说到点上', '很有画面', '太真实', '很会写', '有共鸣'])
+    const connector = pickOne(['，', '，', '。', '——'])
+    const suffix = topic
+      ? pickOne([
+          `${topic}${pickOne(['这块', '这个点', '这个角度'])}${pickOne(['真的', '确实', '挺'])}${action}`,
+          `${pickOne(['尤其是', '特别是'])}${topic}，${pickOne(['我同意', '我也一样', '我懂'])}`,
+          `${topic}${pickOne(['我也会这样', '我也是这个感觉', '说得太准'])}`,
+        ])
+      : pickOne([
+          `这个节奏${pickOne(['很你', '很对', '很自然'])}`,
+          `看完${pickOne(['就懂了', '有点上头', '有被击中'])}`,
+          `${pickOne(['今天状态在线', '这条质量很高', '继续发'])}`,
+        ])
+
+    const toneTail = pickOne(['。', '！', '～', '', '', ''])
+    const slangTail = Math.random() < 0.35 ? pickOne([' 哈哈', ' 真实', ' 狠狠懂了', ' +1']) : ''
+    const maybeAt = Math.random() < 0.22 ? `@${authorName} ` : ''
+    return `${maybeAt}${moodPrefix}${connector}${suffix}${slangTail}${toneTail}`.replace(/\s+/g, ' ').trim().slice(0, 34)
+  }
+
+  const buildLitePeerReply = (toName: string, momentText: string, momentZh?: string) => {
+    const topic = extractTopic(momentText, momentZh)
+    const cores = topic
+      ? [
+          `你说的${topic}确实`,
+          `${topic}这块我同意`,
+          `${topic}这个点挺准`,
+          `${topic}我也有同感`,
+        ]
+      : [
+          '你这句说到点上了',
+          '这波我同意',
+          '我也这么觉得',
+          '这个回复可以',
+        ]
+    const tail = pickOne(['哈哈', '确实', '真的', '离谱但对', '没毛病', ''])
+    const body = `${pickOne(cores)}${tail ? `，${tail}` : ''}`.slice(0, 26)
+    return `回复 ${toName}：${body}`.slice(0, 34)
+  }
+
   const displayNameById = useMemo(() => {
     const map: Record<string, string> = {}
     map['user'] = currentPersona?.name || '我'
@@ -250,7 +318,7 @@ ${recentChat || '（暂无）'}
           }
         }
         
-        addMoment({
+        const newMoment = addMoment({
           authorId: friend.id,
           authorName: friend.name,
           authorAvatar: friend.avatar || '',
@@ -259,6 +327,37 @@ ${recentChat || '（暂无）'}
           images: [],
           timestamp: postTime,
         })
+        // 保持“刷新一次只调用一次 API”不变：
+        // 这里用本地轻量互评补齐可见角色互动，避免看起来“不能互相评论”。
+        const peers = characters.filter((c) => c.id !== friend.id).sort(() => Math.random() - 0.5)
+        const picked = peers.slice(0, Math.min(peers.length, 1 + Math.floor(Math.random() * 3))) // 1~3
+        const pickedNames = new Map<string, string>()
+        for (let i = 0; i < picked.length; i++) {
+          const p = picked[i]
+          const txt = buildLitePeerComment(
+            { name: p.name, relationship: p.relationship },
+            friend.name,
+            content,
+            contentZh
+          ).slice(0, 34)
+          addMomentComment(newMoment.id, {
+            authorId: p.id,
+            authorName: p.name,
+            content: txt,
+            timestamp: Date.now() - Math.random() * 4 * 60 * 1000,
+          })
+          pickedNames.set(p.id, p.name)
+        }
+        if (picked.length >= 2 && Math.random() < 0.8) {
+          const from = picked[0]
+          const to = picked[1]
+          addMomentComment(newMoment.id, {
+            authorId: from.id,
+            authorName: from.name,
+            content: buildLitePeerReply(pickedNames.get(to.id) || to.name, content, contentZh),
+            timestamp: Date.now() - Math.random() * 2 * 60 * 1000,
+          })
+        }
       }
     } catch (e: any) {
       setDialog({ open: true, title: '刷新失败', message: e?.message || '模型调用失败，请稍后重试' })

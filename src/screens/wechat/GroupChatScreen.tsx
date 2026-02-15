@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useWeChat } from '../../context/WeChatContext'
 import { useOS } from '../../context/OSContext'
@@ -254,6 +254,7 @@ export default function GroupChatScreen() {
   // 生成选择器
   const [showGenerateSelector, setShowGenerateSelector] = useState(false)
   const [generateSelectedMembers, setGenerateSelectedMembers] = useState<string[]>([])
+  const [activeActionMsgId, setActiveActionMsgId] = useState<string | null>(null)
   
   const [memorySummaryDraft, setMemorySummaryDraft] = useState('')
   const [memoryGenerating, setMemoryGenerating] = useState(false)
@@ -502,6 +503,17 @@ export default function GroupChatScreen() {
       d.getDate() === now.getDate()
     const hms = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
     return sameDay ? hms : `${d.getMonth() + 1}/${d.getDate()} ${hms}`
+  }
+  const formatTimelineDividerTime = (timestamp: number) => {
+    const d = new Date(timestamp)
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const startOfMsgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    const oneDay = 24 * 60 * 60 * 1000
+    const hhmm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    if (startOfMsgDay === startOfToday) return hhmm
+    if (startOfMsgDay === startOfToday - oneDay) return `昨天 ${hhmm}`
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${hhmm}`
   }
 
   const languageName = (lang: any) => {
@@ -850,9 +862,19 @@ ${uniqueNames.join('、')}
       // 逐条发送，根据字数间隔1-5秒
       // 记录每个成员最近发送的消息ID，用于引用
       const recentMessageIdBySender: Record<string, string> = {}
+      const normalizeNameKey = (s: string) => String(s || '').replace(/\s+/g, '').trim().toLowerCase()
       const nameKeyOfMember = (memberId: string, fallback?: string) => {
         const k = getNameInGroup(memberId)
         return (k && String(k).trim()) ? String(k).trim() : (fallback || '')
+      }
+      const memberNameAliases = (m: any) => {
+        const arr = [String(getNameInGroup(m.id) || '').trim(), String(m.name || '').trim()].filter(Boolean)
+        return Array.from(new Set(arr))
+      }
+      const isSameMemberByName = (m: any, name: string) => {
+        const key = normalizeNameKey(name)
+        if (!key) return false
+        return memberNameAliases(m).some((n) => normalizeNameKey(n) === key)
       }
       
       // 先记录现有消息中每个人最近的消息
@@ -862,22 +884,39 @@ ${uniqueNames.join('、')}
           : getNameInGroup(msg.groupSenderId || '')
         if (senderName) {
           recentMessageIdBySender[senderName] = msg.id
+          recentMessageIdBySender[normalizeNameKey(senderName)] = msg.id
+        }
+        if (!msg.isUser && msg.groupSenderId) {
+          const m = members.find((x) => x.id === msg.groupSenderId)
+          if (m) {
+            for (const alias of memberNameAliases(m)) {
+              recentMessageIdBySender[alias] = msg.id
+              recentMessageIdBySender[normalizeNameKey(alias)] = msg.id
+            }
+          }
         }
       }
 
       const resolveReplyToMessageId = (replyToName: string) => {
         const key = String(replyToName || '').trim()
+        const norm = normalizeNameKey(key)
         if (!key) return undefined
         if (recentMessageIdBySender[key]) return recentMessageIdBySender[key]
+        if (norm && recentMessageIdBySender[norm]) return recentMessageIdBySender[norm]
         // 兼容：模型可能输出“原名/群备注”中的任意一种
-        const target = members.find(m => nameKeyOfMember(m.id, m.name) === key || m.name === key)
+        const target = members.find(m => isSameMemberByName(m, key))
         if (!target) return undefined
-        const k1 = nameKeyOfMember(target.id, target.name)
-        return recentMessageIdBySender[k1] || recentMessageIdBySender[target.name]
+        const aliases = memberNameAliases(target)
+        for (const alias of aliases) {
+          if (recentMessageIdBySender[alias]) return recentMessageIdBySender[alias]
+          const aliasNorm = normalizeNameKey(alias)
+          if (aliasNorm && recentMessageIdBySender[aliasNorm]) return recentMessageIdBySender[aliasNorm]
+        }
+        return undefined
       }
       
       for (const reply of parsedReplies) {
-        const member = members.find(m => getNameInGroup(m.id) === reply.name || m.name === reply.name)
+        const member = members.find(m => isSameMemberByName(m, reply.name))
         if (!member) continue
         
         const charCount = reply.content.length
@@ -921,6 +960,8 @@ ${uniqueNames.join('、')}
               replyToMessageId,
             })
             recentMessageIdBySender[nameKeyOfMember(member.id, member.name)] = stMsg.id
+            recentMessageIdBySender[normalizeNameKey(nameKeyOfMember(member.id, member.name))] = stMsg.id
+            recentMessageIdBySender[String(member.name || '').trim()] = stMsg.id
           }
         } else if (sendAsVoice) {
           const voiceDuration = Math.max(2, Math.min(60, Math.ceil(textContent.length / 5)))
@@ -948,6 +989,8 @@ ${uniqueNames.join('、')}
             else updateMessage(voiceMsg.id, { voiceStatus: 'error', voiceError: '语音生成失败，点击可重试。' })
           })()
           recentMessageIdBySender[nameKeyOfMember(member.id, member.name)] = voiceMsg.id
+          recentMessageIdBySender[normalizeNameKey(nameKeyOfMember(member.id, member.name))] = voiceMsg.id
+          recentMessageIdBySender[String(member.name || '').trim()] = voiceMsg.id
         } else {
           const newMsg = addMessage({
             characterId: '',
@@ -963,6 +1006,8 @@ ${uniqueNames.join('、')}
             translatedZh: dual ? dual.zh : undefined,
           })
           recentMessageIdBySender[nameKeyOfMember(member.id, member.name)] = newMsg.id
+          recentMessageIdBySender[normalizeNameKey(nameKeyOfMember(member.id, member.name))] = newMsg.id
+          recentMessageIdBySender[String(member.name || '').trim()] = newMsg.id
         }
         
         updateGroup(group.id, { lastMessageAt: Date.now() })
@@ -1581,7 +1626,11 @@ ${history}`
         </div>
         
         {/* 消息列表 */}
-        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-4">
+        <div
+          ref={messagesContainerRef}
+          className="flex-1 overflow-y-auto px-3 py-4"
+          onClick={() => setActiveActionMsgId(null)}
+        >
           {messages.length === 0 ? (
             <div className="text-center text-gray-400 text-sm py-8 bg-white/50 rounded-xl">暂无消息，开始聊天吧</div>
           ) : (
@@ -1591,17 +1640,33 @@ ${history}`
               const isLastBubble = idx === messages.length - 1
               const isForwardSelected = forwardSelectedIds.has(msg.id)
               const bubbleStyle = getBubbleStyle(msg.isUser, msg.groupSenderId)
+              const prev = idx > 0 ? messages[idx - 1] : null
+              const showTimelineDivider =
+                !group.offlineMode &&
+                !msg.isOffline &&
+                !group.hideBubbleTimestamps &&
+                (idx === 0 || !prev || Math.abs(Number(msg.timestamp || 0) - Number(prev.timestamp || 0)) > 10 * 60 * 1000)
+              const wrapWithTimeline = (node: ReactNode) => (
+                <div key={msg.id}>
+                  {showTimelineDivider && (
+                    <div className="w-full flex justify-center mb-2">
+                      <span className="text-xs text-gray-400">{formatTimelineDividerTime(Number(msg.timestamp || Date.now()))}</span>
+                    </div>
+                  )}
+                  {node}
+                </div>
+              )
               
               if (msg.type === 'pat') {
-                return (
-                  <div key={msg.id} className="text-center py-2">
+                return wrapWithTimeline(
+                  <div className="text-center py-2">
                     <span className="text-xs text-gray-400 bg-black/5 px-3 py-1 rounded-full">{msg.content}</span>
                   </div>
                 )
               }
               
-              return (
-                <div key={msg.id} className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
+              return wrapWithTimeline(
+                <div className={`flex gap-2 mb-3 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
                   {forwardMode && canForward(msg) && (
                     <button type="button" onClick={() => {
                       setForwardSelectedIds(prev => {
@@ -1657,6 +1722,8 @@ ${history}`
                     } ${isLastBubble && !forwardMode && !editingMessageId ? 'cursor-pointer' : ''}`}
                       style={msg.type === 'image' || msg.type === 'sticker' || msg.type === 'location' || msg.type === 'period' || msg.type === 'doudizhu_share' || msg.type === 'voice' ? undefined : bubbleStyle}
                       onClick={(e) => {
+                        e.stopPropagation()
+                        setActiveActionMsgId((prev) => (prev === msg.id ? null : msg.id))
                         // 快捷：点击“最后一条气泡”进入引用回复
                         if (forwardMode) return
                         if (editingMessageId) return
@@ -1701,23 +1768,28 @@ ${history}`
                     )}
                     
                     {/* 时间戳和操作按钮 */}
-                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                      <span className="inline-block px-2 py-[2px] rounded-md bg-white/85 border border-white/60 text-[10px] text-gray-600">
+                    <div className={`mt-1.5 flex items-center gap-2 flex-wrap ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
+                      {!group.hideBubbleTimestamps && (
+                        <span className="inline-block text-[10px] text-gray-400/75">
                         {formatTime(msg.timestamp)}
-                      </span>
+                        </span>
+                      )}
                       
-                      {(msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'sticker') && !forwardMode && !editingMessageId && (
+                      {(msg.type === 'text' || msg.type === 'voice' || msg.type === 'image' || msg.type === 'sticker') &&
+                        !forwardMode &&
+                        !editingMessageId &&
+                        activeActionMsgId === msg.id && (
                         <>
                           {!msg.isUser && msg.type === 'text' && (
                             <button type="button" onClick={() => { setEditingMessageId(msg.id); setEditingContent(msg.content) }}
-                              className="px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:bg-gray-100 active:opacity-70">编辑</button>
+                              className="px-2 py-[3px] rounded-full text-[10px] text-gray-500 bg-white/70 border border-white/60 hover:bg-white/90 active:opacity-70">编辑</button>
                           )}
                           {!msg.isUser && msg.type === 'text' && (
                             <button type="button" onClick={() => setReplyingToMessageId(msg.id)}
-                              className="px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:bg-gray-100 active:opacity-70">引用</button>
+                              className="px-2 py-[3px] rounded-full text-[10px] text-gray-500 bg-white/70 border border-white/60 hover:bg-white/90 active:opacity-70">引用</button>
                           )}
                           <button type="button" onClick={() => { if (confirm('确定删除这条消息吗？')) deleteMessage(msg.id) }}
-                            className="px-1.5 py-0.5 rounded text-[10px] text-red-400 hover:bg-red-50 active:opacity-70">删除</button>
+                            className="px-2 py-[3px] rounded-full text-[10px] text-red-400 bg-white/70 border border-white/60 hover:bg-white/90 active:opacity-70">删除</button>
                         </>
                       )}
                     </div>
@@ -2225,6 +2297,25 @@ ${history}`
                     </div>
                     <input ref={bgInputRef} type="file" accept="image/*" className="hidden" onChange={handleChangeBg} />
                     {group.chatBackground && <button type="button" onClick={() => updateGroup(group.id, { chatBackground: undefined })} className="text-sm text-red-500">清除背景</button>}
+                  </div>
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between py-2">
+                      <div>
+                        <span className="text-sm text-gray-800">隐藏消息时间戳</span>
+                        <div className="text-[11px] text-gray-400 mt-0.5">仅隐藏显示，不影响时间感知逻辑</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => updateGroup(group.id, { hideBubbleTimestamps: !group.hideBubbleTimestamps })}
+                        className={`relative w-11 h-6 rounded-full transition-colors ${group.hideBubbleTimestamps ? 'bg-green-500' : 'bg-gray-300'}`}
+                        aria-label="隐藏消息时间戳"
+                        aria-pressed={!!group.hideBubbleTimestamps}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${group.hideBubbleTimestamps ? 'translate-x-5' : ''}`}
+                        />
+                      </button>
+                    </div>
                   </div>
 
                   {/* 绑定世界书 */}

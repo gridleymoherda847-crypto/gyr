@@ -42,6 +42,8 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'wechat_fund_holdings', // 基金持仓
   'wechat_groups', // 群聊数据
   'wechat_takeout_history', // 外卖历史订单（袋鼠外卖）
+  'wechat_takeout_custom_stores_v1', // 自定义外卖店铺
+  'wechat_takeout_pinned_store_ids_v1', // 外卖置顶店铺
 
   // OS
   'os_llm_config',
@@ -49,9 +51,14 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'os_micoin_balance',
   'os_current_font_id',
   'os_font_color_id',
+  'os_font_size_tier', // 字体大小档位（全局）
   'os_wallpaper', // 壁纸
   'os_custom_app_icons', // 自定义app图标
+  'os_custom_app_icons_layout1', // 自定义app图标（桌面排版1）
+  'os_custom_app_icons_layout2', // 自定义app图标（桌面排版2）
   'os_decor_image', // 装饰图片
+  'os_decor_image_layout1', // 唱片封面（桌面排版1）
+  'os_decor_image_layout2', // 唱片封面（桌面排版2）
   'os_user_profile', // 用户资料
   'os_icon_theme', // 图标主题
   'os_anniversaries', // 纪念日
@@ -97,11 +104,17 @@ const ALLOW_KEYS_EXACT = new Set<string>([
 
   // X (推特)
   'littlephone_x_v1', // X全部数据（用户、推文、私信、关注等）
+
+  // 桌面美化预设历史
+  'mina_desktop_beautify_presets_v1',
 ])
 
 const ALLOW_PREFIXES = [
   // 情侣空间：每个角色一个 key
   'littlephone_couple_space_',
+  // 外卖面板：每个角色的配送位置与地址偏好
+  'lp_takeout_deliver_to_',
+  'lp_takeout_character_addr_',
 ]
 
 function shouldIgnoreKey(key: string): boolean {

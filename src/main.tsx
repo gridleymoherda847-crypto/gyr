@@ -3,40 +3,63 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
 
-// ========= Vite 分包加载失败兜底 =========
+// ========= Vite 分包加载失败兜底（改为“手动更新”） =========
 // 典型场景：用户手机缓存了旧的 index.html（引用旧 hash chunk），而站点已更新到新版本，导致动态 import 404。
-// 处理策略：检测到 chunk 加载失败时，自动刷新一次（带 cache-busting），避免用户卡在白屏。
-const LP_CHUNK_RELOAD_KEY = '__lp_chunk_reload_once__'
-function reloadOnceForChunkError() {
+// 用户要求：不要自动刷新；仅提示用户去“设置 -> 系统 -> 检测更新”或手动点按钮更新。
+let lpUpdateOverlayShown = false
+function showManualUpdateOverlay() {
+  if (lpUpdateOverlayShown) return
+  lpUpdateOverlayShown = true
   try {
-    if (sessionStorage.getItem(LP_CHUNK_RELOAD_KEY) === '1') return
-    sessionStorage.setItem(LP_CHUNK_RELOAD_KEY, '1')
+    const existing = document.getElementById('lp-manual-update-overlay')
+    if (existing) return
+    const root = document.createElement('div')
+    root.id = 'lp-manual-update-overlay'
+    root.style.cssText =
+      'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px;'
+    root.innerHTML = `
+      <div style="width:100%;max-width:520px;border-radius:18px;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);padding:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;">
+        <div style="text-align:center;">
+          <div style="font-size:34px;margin-bottom:8px;">🚀</div>
+          <div style="font-size:16px;font-weight:700;color:#111;">检测到站点已更新</div>
+          <div style="margin-top:8px;font-size:13px;color:#666;line-height:1.5;">
+            你的浏览器缓存了旧资源，导致加载失败。<br/>
+            推荐去 <b>设置 → 系统 → 检测更新</b> 手动更新版本。
+          </div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:10px;">
+          <button id="lp-update-close" style="flex:1;border-radius:999px;border:1px solid rgba(0,0,0,.1);background:rgba(255,255,255,.7);padding:10px 12px;font-size:13px;font-weight:600;color:#333;cursor:pointer;">我知道了</button>
+          <button id="lp-update-now" style="flex:1;border-radius:999px;border:0;background:#07C160;padding:10px 12px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;">立即更新</button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(root)
+    const closeBtn = root.querySelector('#lp-update-close') as HTMLButtonElement | null
+    const nowBtn = root.querySelector('#lp-update-now') as HTMLButtonElement | null
+    closeBtn?.addEventListener('click', () => {
+      try { root.remove() } catch { /* ignore */ }
+    })
+    nowBtn?.addEventListener('click', async () => {
+      try {
+        const apply = (window as any).__LP_APPLY_UPDATE__ as undefined | (() => Promise<void>)
+        if (apply) {
+          await apply()
+          return
+        }
+      } catch {
+        // ignore
+      }
+      window.location.reload()
+    })
   } catch {
     // ignore
   }
-
-  // 若存在 Service Worker（PWA 场景），先尝试注销，减少旧缓存命中概率
-  try {
-    if ('serviceWorker' in navigator) {
-      void navigator.serviceWorker.getRegistrations().then((regs) => {
-        regs.forEach((r) => {
-          try { void r.unregister() } catch { /* ignore */ }
-        })
-      })
-    }
-  } catch {
-    // ignore
-  }
-
-  const url = new URL(window.location.href)
-  url.searchParams.set('__lp_reload', String(Date.now()))
-  window.location.replace(url.toString())
 }
 
 // Vite 预加载失败事件（官方推荐）
 window.addEventListener('vite:preloadError', (e: any) => {
   try { e?.preventDefault?.() } catch { /* ignore */ }
-  reloadOnceForChunkError()
+  showManualUpdateOverlay()
 })
 
 // 某些机型/浏览器不会触发 vite:preloadError，而是走 unhandledrejection
@@ -44,7 +67,7 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
   const reason: any = event?.reason
   const msg = String(reason?.message || reason || '')
   if (msg.includes('Failed to fetch dynamically imported module') || msg.includes('Importing a module script failed')) {
-    reloadOnceForChunkError()
+    showManualUpdateOverlay()
   }
 })
 

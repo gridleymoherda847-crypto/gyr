@@ -19,6 +19,7 @@ import {
   xSave,
   type XDataV1,
   type XDMMessage,
+  type XNotification,
   type XPost,
   type XReply,
 } from '../storage/x'
@@ -973,6 +974,7 @@ ${chatFriendList}
         `你要生成一些评论，像推特评论区那样。\n` +
         `主贴作者：${openPost.authorName}${isMyPost ? '（这是用户自己的帖子）' : ''}\n` +
         `主贴内容：${openPost.text}\n` +
+        `主贴图片描述：${String(openPost.imageDesc || '').trim() || '（无）'}\n` +
         existingContext +
         `用户（我）的最近评论：\n${myRecent || '（无）'}\n` +
         replyToSection +
@@ -985,6 +987,7 @@ ${chatFriendList}
         `- 长度分布：至少 2 条超短（比如“？”“笑死”“懂了”）\n` +
         `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
         `- 内容需合规、避免不适宜主题与极端表达\n` +
+        `- 若主贴带“图片描述”，评论里要有一部分围绕图片内容本身做反应，不要只回复正文\n` +
         `- 每条 <= 120 字\n` +
         `- 【翻译强制】如果某条评论 text 不是中文（或主要为外语），必须写成：外语原文（简体中文翻译）\n` +
         `- 只输出 JSON，不要解释\n` +
@@ -1075,8 +1078,68 @@ ${chatFriendList}
         newReplies.push(xNewReply(openPost.id, ensured.id, ensured.name, text))
       }
 
-      // 轻量更新 replyCount
-      const updatedPosts = next.posts.map((p) => (p.id === openPost.id ? { ...p, replyCount: Math.max(0, (p.replyCount || 0) + newReplies.length) } : p))
+      const meHandleRaw = String(next.meHandle || '').trim().replace(/^@/, '')
+      const meNameEsc = escapeRegExp(String(meName || '').trim())
+      const meHandleEsc = escapeRegExp(meHandleRaw)
+      const mentionMe = (text: string) => {
+        const t = String(text || '').trim()
+        if (!t) return false
+        if (meNameEsc && new RegExp(`@${meNameEsc}(?:\\b|\\s|$)`, 'i').test(t)) return true
+        if (meHandleEsc && new RegExp(`@${meHandleEsc}(?:\\b|\\s|$)`, 'i').test(t)) return true
+        return false
+      }
+      const interactionNotifs: XNotification[] = []
+      const nowTs = Date.now()
+      if (openPost.authorId === 'me') {
+        for (const r of newReplies) {
+          if (r.authorId === 'me') continue
+          interactionNotifs.push({
+            id: `xn_${nowTs}_${Math.random().toString(16).slice(2)}`,
+            kind: 'reply',
+            at: nowTs,
+            fromUserId: r.authorId,
+            fromUserName: r.authorName,
+            postId: openPost.id,
+            snippet: String(r.text || '').trim().slice(0, 80) || undefined,
+            read: false,
+          })
+        }
+      } else {
+        for (const r of newReplies) {
+          if (r.authorId === 'me') continue
+          if (!mentionMe(r.text)) continue
+          interactionNotifs.push({
+            id: `xn_${nowTs}_${Math.random().toString(16).slice(2)}`,
+            kind: 'reply',
+            at: nowTs,
+            fromUserId: r.authorId,
+            fromUserName: r.authorName,
+            postId: openPost.id,
+            snippet: String(r.text || '').trim().slice(0, 80) || undefined,
+            read: false,
+          })
+        }
+      }
+
+      // 轻量更新 replyCount，并把“点赞”合并成一条汇总通知（不逐条列人名）
+      const likeDelta = openPost.authorId === 'me' && newReplies.length > 0 ? (1 + Math.floor(Math.random() * Math.min(12, newReplies.length * 3 + 2))) : 0
+      if (likeDelta > 0) {
+        interactionNotifs.unshift({
+          id: `xn_${nowTs}_${Math.random().toString(16).slice(2)}`,
+          kind: 'like',
+          at: nowTs,
+          fromUserId: 'bulk_like',
+          fromUserName: '多人',
+          postId: openPost.id,
+          snippet: `${likeDelta} 人赞了你的帖子`,
+          read: false,
+        })
+      }
+      const updatedPosts = next.posts.map((p) =>
+        p.id === openPost.id
+          ? { ...p, replyCount: Math.max(0, (p.replyCount || 0) + newReplies.length), likeCount: Math.max(0, (p.likeCount || 0) + likeDelta) }
+          : p
+      )
       // 留存：每个帖子的评论最多 50（按最早删）
       const combined = [...next.replies, ...newReplies]
       const grouped: Record<string, XReply[]> = {}
@@ -1090,7 +1153,8 @@ ${chatFriendList}
         pruned.push(...keep)
       }
       pruned.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
-      next = { ...next, posts: updatedPosts, replies: pruned }
+      const mergedNotifs = [...interactionNotifs, ...(next.notifications || [])]
+      next = { ...next, posts: updatedPosts, replies: pruned, notifications: mergedNotifs.slice(0, 200) }
       setData(next)
       await xSave(next)
     })
@@ -2644,17 +2708,32 @@ ${chatFriendList}
         <div className="flex-1 overflow-y-auto bg-white">
           <div className="sticky top-0 z-10 bg-white/95 border-b border-black/10 px-3 py-2 flex items-center justify-between">
             <div className="text-[15px] font-extrabold text-gray-900">通知</div>
-            <button
-              type="button"
-              onClick={() => void refreshCurrentPage()}
-              className="w-9 h-9 rounded-full bg-gray-100 text-gray-800 flex items-center justify-center active:scale-[0.98]"
-              title="刷新"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20 8a8 8 0 0 0-14.7-3M4 16a8 8 0 0 0 14.7 3" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!data) return
+                  const next: XDataV1 = { ...data, notifications: [] }
+                  setData(next)
+                  void xSave(next)
+                }}
+                className="px-2.5 h-9 rounded-full bg-gray-100 text-gray-700 text-[12px] font-semibold active:scale-[0.98]"
+                title="清空通知"
+              >
+                清空
+              </button>
+              <button
+                type="button"
+                onClick={() => void refreshCurrentPage()}
+                className="w-9 h-9 rounded-full bg-gray-100 text-gray-800 flex items-center justify-center active:scale-[0.98]"
+                title="刷新"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 8a8 8 0 0 0-14.7-3M4 16a8 8 0 0 0 14.7 3" />
+                </svg>
+              </button>
+            </div>
           </div>
           {list.length === 0 ? (
             <div className="py-14 text-center text-[13px] text-gray-500">点右上角刷新，生成一些通知。</div>
@@ -2662,14 +2741,33 @@ ${chatFriendList}
             <div>
               {list.map((n) => (
                 <div key={n.id} className="px-3 py-3 border-b border-black/5">
-                  <div className="text-[13px] text-gray-900">
-                    <span className="font-bold">{n.fromUserName}</span>
-                    <span className="text-gray-600">
-                      {n.kind === 'like' ? ' 赞了你' : n.kind === 'reply' ? ' 回复了你' : n.kind === 'repost' ? ' 转发了你' : ' 关注了你'}
-                    </span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] text-gray-900">
+                        <span className="font-bold">{n.fromUserName}</span>
+                        <span className="text-gray-600">
+                          {n.kind === 'like' ? ' 赞了你' : n.kind === 'reply' ? ' 回复了你' : n.kind === 'repost' ? ' 转发了你' : ' 关注了你'}
+                        </span>
+                      </div>
+                      {!!n.snippet && <div className="mt-1 text-[12px] text-gray-600 line-clamp-2">{n.snippet}</div>}
+                      <div className="mt-1 text-[11px] text-gray-400">{fmtRelative(n.at)}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!data) return
+                        const next: XDataV1 = { ...data, notifications: (data.notifications || []).filter((x) => x.id !== n.id) }
+                        setData(next)
+                        void xSave(next)
+                      }}
+                      className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center active:scale-[0.98]"
+                      title="删除通知"
+                    >
+                      <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5h6v2m-7 3v9m8-9v9M7 7l1 14h8l1-14" />
+                      </svg>
+                    </button>
                   </div>
-                  {!!n.snippet && <div className="mt-1 text-[12px] text-gray-600 line-clamp-2">{n.snippet}</div>}
-                  <div className="mt-1 text-[11px] text-gray-400">{fmtRelative(n.at)}</div>
                 </div>
               ))}
             </div>

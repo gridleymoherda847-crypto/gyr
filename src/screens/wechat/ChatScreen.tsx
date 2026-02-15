@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWeChat } from '../../context/WeChatContext'
@@ -12,7 +12,7 @@ import { xEnsureUser, xLoad, xNewPost, xSave, xAddFollow, xRemoveFollow, xIsFoll
 export default function ChatScreen() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, pauseMusic, ttsConfig, getAllFontOptions, currentFont, decorImage, iconTheme } = useOS()
+  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, pauseMusic, ttsConfig, getAllFontOptions, currentFont, decorImage } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const highlightMsgId = searchParams.get('highlightMsg') // 从搜索结果跳转时高亮的消息ID
   const { 
@@ -1686,6 +1686,26 @@ export default function ChatScreen() {
         const silenceSinceUserMs = lastUserInHistory ? Math.max(0, nowTsForLogic - lastUserInHistory.timestamp) : 0
                 // 重要：用户“没发新消息，只是点箭头”时也要算作无新发言（否则会把昨天那条当成“新消息”，错过“消失很久”的追问）
         const hasNewUserMessage = !!(lastMsg && lastMsg.isUser) && !opts?.forceNudge
+
+        // 时间同步场景：给模型一个“口语化时间差标签”，避免跨天还说“刚刚”
+        const naturalGapLabel = (ms: number) => {
+          const x = Math.max(0, Number(ms || 0))
+          const m5 = 5 * 60 * 1000
+          const m30 = 30 * 60 * 1000
+          const h2 = 2 * 60 * 60 * 1000
+          const h6 = 6 * 60 * 60 * 1000
+          const d1 = 24 * 60 * 60 * 1000
+          const d2 = 48 * 60 * 60 * 1000
+          if (x < m5) return '刚刚'
+          if (x < m30) return '前一会儿'
+          if (x < h2) return '有一阵子'
+          if (x < h6) return '今天早些时候'
+          if (x < d1) return '昨天'
+          if (x < d2) return '前天'
+          return '前几天'
+        }
+        const lastUserGapLabel = naturalGapLabel(silenceSinceUserMs)
+        const lastTurnGapLabel = naturalGapLabel(gapMs)
         
 
         // 最近消息时间线：仅在“开启时间感知”时给模型具体时间戳
@@ -1902,6 +1922,11 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
 - 这条消息时间：${lastMsg ? new Date(lastMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 用户上一条发言时间：${lastUserInHistory ? new Date(lastUserInHistory.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 这次是否"用户刚发了新消息"：${hasNewUserMessage ? '是' : '否（用户没有新发言，只是触发你主动回复）'}
+- 【时间同步校验（强制执行，防止“前天当刚刚”）】
+  - 用户上一条发言距今（口语标签）：${lastUserGapLabel}
+  - 本轮与上一条消息的间隔（口语标签）：${lastTurnGapLabel}
+  - 你只能使用与上述标签一致的相对时间词：例如标签为“昨天/前天/前几天”时，绝对禁止说“刚刚/刚才/刚聊完”。
+  - 如果看到时间线里日期不是今天，就必须用“昨天/前天/前几天”这类说法，不能装作“刚刚发生”。
 - 【严禁】绝对不能在回复中说出任何精确时间数字！如"间隔：3小时20分15秒"、"过了2小时"、"（间隔：xx）"等，这样非常出戏！
 - 【正确做法】用自然口语表达时间感，例如："好久没理我了"、"你去哪了"、"怎么这么久才回"、"刚刚在忙？"、"终于回了"
 - 时间感应规则（偶尔提一下就好，不要每次都问）：
@@ -1916,6 +1941,52 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
   - 问问用户那边天气怎么样
   - 随便聊点什么话题、发个表情
   - 不要总是问"你去哪了"，要像真人一样自然` : '【时间同步已关闭】\\n- 你无法得知当前时间，也无法读取气泡下方的时间戳；禁止主动提及“几点/几号/过了多久/多久没回”。'}
+
+${timeAwarenessOn ? `【中国节日感知（按中国日历/节气氛围）】
+- 你需要感知中国节日，并在临近或当天自然提起，不要生硬播报。
+- 可识别示例：元旦、情人节、春节、元宵、清明、劳动节、端午、七夕、中秋、国庆、圣诞。
+- 当前节日提示：${(() => {
+  const now = manualNow !== null ? new Date(manualNow) : new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth() + 1
+  const d = now.getDate()
+  const key = `${m}-${d}`
+  const fixed: Record<string, string> = {
+    '1-1': '元旦',
+    '2-14': '情人节',
+    '3-8': '妇女节',
+    '4-5': '清明节前后',
+    '5-1': '劳动节',
+    '6-1': '儿童节',
+    '8-22': '七夕前后',
+    '10-1': '国庆节',
+    '12-24': '平安夜',
+    '12-25': '圣诞节',
+  }
+  const cny: Record<number, string> = {
+    2024: '2-10',
+    2025: '1-29',
+    2026: '2-17',
+    2027: '2-6',
+    2028: '1-26',
+    2029: '2-13',
+    2030: '2-3',
+  }
+  const cnyKey = cny[y]
+  if (cnyKey === key) return '春节（今天）'
+  const named = fixed[key]
+  if (named) return `${named}（今天）`
+  if (cnyKey) {
+    const [cm, cd] = cnyKey.split('-').map(Number)
+    const cnyDate = new Date(y, cm - 1, cd).getTime()
+    const today = new Date(y, m - 1, d).getTime()
+    const diffDays = Math.round((cnyDate - today) / (24 * 60 * 60 * 1000))
+    if (diffDays >= 1 && diffDays <= 7) return `春节将近（约${diffDays}天后）`
+    if (diffDays >= -3 && diffDays <= -1) return '春节刚过'
+  }
+  return '今天无明显节日，可按普通日常聊天'
+})()}
+- 若关系和人设允许，可在节日语境下自然出现“送礼物/发红包/转账/约会/问候”，但必须贴合上下文，不要强行触发。` : ''}
 
 【回复要求】
 - 【语言强规则】无论对方用什么语言输入，你都必须只用「${languageName((character as any).language || 'zh')}」回复。
@@ -4218,6 +4289,19 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     return sameDay ? hms : `${d.getMonth() + 1}/${d.getDate()} ${hms}`
   }
 
+  // 聊天时间分割线：与“时间感知开关”无关，仅用于给用户可视化时间线
+  const formatTimelineDividerTime = (timestamp: number) => {
+    const d = new Date(timestamp)
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const startOfMsgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    const oneDay = 24 * 60 * 60 * 1000
+    const hhmm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    if (startOfMsgDay === startOfToday) return hhmm
+    if (startOfMsgDay === startOfToday - oneDay) return `昨天 ${hhmm}`
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${hhmm}`
+  }
+
   const retryFailedTranslations = async () => {
     const targetMessages = messages.filter((m) =>
       m.characterId === character.id &&
@@ -5532,8 +5616,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     })
 
     // 让 UI 有“对方正在处理”的感觉
-    setAiTyping(true)
-    setCharacterTyping(character.id, true)
+    // 注意：这里不能触发“正在输入/播放键禁用”的全局状态，否则用户会误以为自动触发了播放键
 
     const tryParseJson = (text: string) => {
       const raw = (text || '').trim()
@@ -5551,7 +5634,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
       // 强制同意（100%）
       let cardHint = '我同意啦～以后这里就是我们的小窝。'
-      let chatReply = '好呀，开通啦～以后我们在这里也要甜甜的。'
+      let followUpText = '那要不要去我们的小窝看看？'
 
       // 有 API 时：生成更贴合人设的提示语（但仍然 100% 同意）
       if (llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel) {
@@ -5572,7 +5655,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           `【只输出 JSON】\n` +
           `{\n` +
           `  "cardHint": "会显示在卡片上的一句话（短一些）",\n` +
-          `  "chatReply": "你接下来发给对方的一条微信回复（自然口吻，可甜可别扭）"\n` +
+          `  "followUpText": "开通成功后，你接着发给用户的一句短消息（不要长，不要多段）"\n` +
           `}\n`
 
         const llmMessages = [
@@ -5584,7 +5667,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         const res = await callLLM(llmMessages, undefined, { maxTokens: 260, timeoutMs: 600000, temperature: 0.85 })
         const parsed = tryParseJson(res) || {}
         cardHint = String(parsed.cardHint || '').trim().slice(0, 80) || cardHint
-        chatReply = String(parsed.chatReply || '').trim().slice(0, 180) || chatReply
+        followUpText = String(parsed.followUpText || '').trim().slice(0, 120) || followUpText
       }
 
       // 更新申请卡片状态
@@ -5607,16 +5690,14 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       // 开通并记录“在一起”起始时间（如果之前没记录）
       updateCharacter(character.id, { coupleSpaceEnabled: true, coupleStartedAt: character.coupleStartedAt || Date.now() })
 
-      // 再补一条正常聊天回复（更像真人）
-      if (chatReply) {
-        safeTimeout(() => {
-          addMessage({
-            characterId: character.id,
-            content: chatReply,
-            isUser: false,
-            type: 'text',
-          })
-        }, 300 + Math.floor(Math.random() * 450))
+      // 补一条“很短的后续”，避免用户觉得“卡片之后没下文”，但不触发播放键/不触发长回复
+      if (followUpText) {
+        addMessage({
+          characterId: character.id,
+          content: followUpText,
+          isUser: false,
+          type: 'text',
+        })
       }
     } catch (e: any) {
       // 失败时：把申请卡片标记为“待处理”，并提示用户
@@ -5626,8 +5707,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         message: e?.message || '对方没收到你的申请，稍后再试试～',
       })
     } finally {
-      setAiTyping(false)
-      setCharacterTyping(character.id, false)
       setCoupleInviteBusy(false)
     }
   }
@@ -6181,19 +6260,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         (msg.coupleTitle || '').trim() ||
         (msg.coupleAction === 'response' ? '情侣空间申请结果' : '情侣空间申请')
       const hint = (msg.coupleHint || '').trim()
-      const footer = isAccepted ? '已开通 · 点击进入' : isRejected ? '已拒绝' : '等待对方确认'
-
-      const canEnter = isAccepted && character.coupleSpaceEnabled
-      const canClick = canEnter && msg.coupleAction === 'response'
+      const footer = isAccepted ? '已开通' : isRejected ? '已拒绝' : '等待对方确认'
 
       return (
-        <button
-          type="button"
-          disabled={!canClick}
-          onClick={() => canClick && navigate(`/apps/wechat/couple-space/${character.id}`)}
-          className={`min-w-[180px] max-w-[240px] rounded-xl overflow-hidden text-left border shadow-sm transition ${
-            canClick ? 'active:scale-[0.98]' : ''
-          }`}
+        <div
+          className="min-w-[180px] max-w-[240px] rounded-xl overflow-hidden text-left border shadow-sm"
           style={{
             background: isRejected ? '#f5f5f5' : 'linear-gradient(135deg, #ffb6d4 0%, #ff86b6 100%)',
             borderColor: isRejected ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.55)',
@@ -6227,7 +6298,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           >
             {footer}
           </div>
-        </button>
+        </div>
       )
     }
     
@@ -6265,7 +6336,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     if (msg.type === 'music') {
       const musicStatus = msg.musicStatus || 'pending'
       const canAccept = !msg.isUser && musicStatus === 'pending' && !listenTogether
-      const coverOverride = iconTheme === 'minimal' ? (String(decorImage || '').trim() || '') : ''
+      const coverOverride = String(decorImage || '').trim() || ''
       const cover =
         coverOverride ||
         musicPlaylist.find(s => s.title === msg.musicTitle && s.artist === msg.musicArtist)?.cover ||
@@ -6277,7 +6348,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           onClick={() => canAccept && handleClickMusicInvite(msg)}
         >
           <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
-            <img src={cover} alt="" className="w-full h-full object-cover" />
+            <img src={cover} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
           </div>
           <div className="min-w-0">
             <div className="font-medium text-sm text-gray-800 truncate">{msg.musicTitle}</div>
@@ -7426,12 +7497,31 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
   const renderedMessageItems = useMemo(() => {
     if (!character?.id) return null
-    return visibleMessages.map((msg) => {
+    return visibleMessages.map((msg, idx) => {
+      const prev = idx > 0 ? visibleMessages[idx - 1] : null
+      const showTimelineDivider =
+        idx === 0 ||
+        !prev ||
+        Math.abs(Number(msg.timestamp || 0) - Number(prev.timestamp || 0)) > 10 * 60 * 1000
+      const shouldShowTimelineDivider =
+        !character?.offlineMode &&
+        !msg.isOffline &&
+        !character?.hideBubbleTimestamps &&
+        showTimelineDivider
+      const wrapWithTimeline = (node: ReactNode) => (
+        <div key={msg.id}>
+          {shouldShowTimelineDivider && (
+            <div className="w-full flex justify-center mb-2">
+              <span className="text-xs text-gray-400">{formatTimelineDividerTime(Number(msg.timestamp || Date.now()))}</span>
+            </div>
+          )}
+          {node}
+        </div>
+      )
       // 系统消息和拍一拍消息特殊渲染
       if (msg.type === 'system' || msg.type === 'pat') {
-        return (
+        return wrapWithTimeline(
           <div
-            key={msg.id}
             className="flex justify-center mb-3"
             // 性能优化：让浏览器跳过离屏渲染（不改变功能/滚动行为）
             style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 64px' }}
@@ -7515,9 +7605,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         
         // 线下模式图片特殊渲染
         if (msg.type === 'image') {
-          return (
+          return wrapWithTimeline(
             <div
-              key={msg.id}
               className="mb-2 px-4 group"
               style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 200px' }}
             >
@@ -7544,9 +7633,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           )
         }
         
-        return (
+        return wrapWithTimeline(
           <div
-            key={msg.id}
             className="mb-2 px-4 group"
             style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 60px' }}
           >
@@ -7614,9 +7702,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           ? (msg.isUser ? bubbleStyles.user : bubbleStyles.char)
           : undefined
 
-      return (
+      return wrapWithTimeline(
         <div
-          key={msg.id}
           data-msg-id={msg.id}
           // 性能优化：聊天长列表在移动端非常吃力；content-visibility 可显著减少重绘/布局开销
           style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 140px' }}
@@ -7810,14 +7897,13 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                   </div>
                 )}
 
-              {/* 每条消息显示时间（小号字体）和操作按钮 */}
-              <div className="mt-2 flex items-center gap-2">
+              {/* 操作按钮 + 时间戳（仅用于用户感知，不影响时间感知逻辑） */}
+              <div className={`mt-2 flex items-center gap-2 ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
                 {!character?.hideBubbleTimestamps && (
-                  <span className="inline-block px-2 py-[2px] rounded-md bg-white/85 md:bg-white/70 md:backdrop-blur border border-white/60 text-[10px] text-gray-600">
+                  <span className="inline-block text-[10px] text-gray-400/75">
                     {formatTime(msg.timestamp)}
                   </span>
                 )}
-
                 {/* 线上模式：由于“点击自己文字气泡=编辑”，给自己消息一个“更多(⋯)”入口打开菜单（含多选删除） */}
                 {!character?.offlineMode &&
                   msg.isUser &&

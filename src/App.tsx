@@ -22,6 +22,7 @@ const ColorScreen = lazy(() => import('./screens/settings/ColorScreen'))
 const StickerManagerScreen = lazy(() => import('./screens/settings/StickerManagerScreen'))
 const LocationScreen = lazy(() => import('./screens/settings/LocationScreen'))
 const IconManagerScreen = lazy(() => import('./screens/settings/IconManagerScreen'))
+const DesktopBeautifyScreen = lazy(() => import('./screens/settings/DesktopBeautifyScreen'))
 
 // Other apps
 const DiaryVaultScreen = lazy(() => import('./screens/DiaryVaultScreen'))
@@ -220,6 +221,7 @@ function InnerApp() {
             <Route path="/apps/settings" element={<SettingsScreen />} />
             <Route path="/apps/settings/profile" element={<ProfileScreen />} />
             <Route path="/apps/settings/api" element={<ApiConfigScreen />} />
+            <Route path="/apps/settings/desktop-beautify" element={<DesktopBeautifyScreen />} />
             <Route path="/apps/settings/wallpaper" element={<WallpaperScreen />} />
             <Route path="/apps/settings/font" element={<FontScreen />} />
             <Route path="/apps/settings/color" element={<ColorScreen />} />

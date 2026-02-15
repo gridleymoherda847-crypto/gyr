@@ -10,7 +10,7 @@ export default function MusicScreen() {
     playSong, toggleMusic, nextSong, prevSong, seekMusic, toggleFavorite, isFavorite,
     addSong, removeSong,
     musicPlayMode, cycleMusicPlayMode,
-    decorImage, iconTheme
+    decorImage
   } = useOS()
   const [activeTab, setActiveTab] = useState<'recommend' | 'playlist' | 'favorites'>('recommend')
   const [searchQuery, setSearchQuery] = useState('')
@@ -47,7 +47,7 @@ export default function MusicScreen() {
 
   const currentTime = currentSong ? (musicProgress / 100) * currentSong.duration : 0
   const getSongCover = (song: Song | null | undefined) => {
-    const custom = iconTheme === 'minimal' ? String(decorImage || '').trim() : ''
+    const custom = String(decorImage || '').trim()
     if (custom) return custom
     return song?.cover || '/icons/music-cover.png'
   }
@@ -331,7 +331,7 @@ export default function MusicScreen() {
                       className="cursor-pointer"
                     >
                       <div className="aspect-square rounded-lg overflow-hidden mb-1 relative">
-                        <img src={getSongCover(song)} alt="" className="w-full h-full object-cover" />
+                        <img src={getSongCover(song)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                         <div className="absolute bottom-1 right-1 text-white text-[10px] bg-black/40 px-1 rounded">
                           {idx === 0 ? '🔥热门' : idx === 1 ? '💖精选' : '✨新歌'}
@@ -368,7 +368,7 @@ export default function MusicScreen() {
                   <SongItem 
                     key={song.id} 
                     song={song}
-                    coverOverride={iconTheme === 'minimal' ? (String(decorImage || '').trim() || undefined) : undefined}
+                    coverOverride={(String(decorImage || '').trim() || undefined)}
                     index={index + 1}
                     isPlaying={currentSong?.id === song.id && musicPlaying}
                     isCurrent={currentSong?.id === song.id}
@@ -396,7 +396,7 @@ export default function MusicScreen() {
                 onClick={() => setShowPlayer(true)}
                 style={{ animation: musicPlaying ? 'spin 8s linear infinite' : 'none' }}
               >
-                <img src={getSongCover(currentSong)} alt="" className="w-full h-full object-cover" />
+                <img src={getSongCover(currentSong)} alt="" className="w-full h-full object-cover" decoding="async" />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-3 h-3 rounded-full bg-[#1a1a2e]" />
                 </div>
@@ -503,7 +503,7 @@ export default function MusicScreen() {
                     boxShadow: '0 0 60px rgba(49, 194, 124, 0.3)'
                   }}
                 >
-                  <img src={getSongCover(currentSong)} alt="" className="w-full h-full object-cover" />
+                  <img src={getSongCover(currentSong)} alt="" className="w-full h-full object-cover" decoding="async" />
                   {/* 唱片中心孔 */}
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-16 h-16 rounded-full bg-[#1a1a2e] border-4 border-white/20" />
@@ -829,7 +829,7 @@ function SongItem({
         className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer"
         onClick={onPlay}
       >
-        <img src={coverOverride || song.cover} alt="" className="w-full h-full object-cover" />
+        <img src={coverOverride || song.cover} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
       </div>
       
       {/* 信息 */}

@@ -252,6 +252,7 @@ export type GroupChat = {
   chatBackground?: string // 聊天背景
   lorebookId?: string // 绑定的世界书ID（来自创作工坊）
   offlineMode?: boolean // 离线模式（手动模式）
+  hideBubbleTimestamps?: boolean // 仅隐藏群聊消息时间戳（不影响时间感知）
   memoryEnabled?: boolean // 记忆功能
   memorySummary?: string // 长期记忆摘要
   timeSyncEnabled?: boolean // 时间同步

@@ -1,12 +1,12 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useOS, FONT_OPTIONS, type FontOption } from '../../context/OSContext'
+import { useOS, FONT_OPTIONS, COLOR_OPTIONS, type FontOption, type ColorOption } from '../../context/OSContext'
 import AppHeader from '../../components/AppHeader'
 import PageContainer from '../../components/PageContainer'
 
 export default function FontScreen() {
   const navigate = useNavigate()
-  const { currentFont, setCurrentFont, fontColor, customFonts, addCustomFont, removeCustomFont, fontSizeTier, setFontSizeTier } = useOS()
+  const { currentFont, setCurrentFont, fontColor, setFontColor, customFonts, addCustomFont, removeCustomFont, fontSizeTier, setFontSizeTier } = useOS()
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const [showUploadDialog, setShowUploadDialog] = useState(false)
@@ -19,6 +19,7 @@ export default function FontScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
 
   const handleFontSelect = (font: FontOption) => setCurrentFont(font)
+  const handleColorSelect = (color: ColorOption) => setFontColor(color)
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -189,6 +190,39 @@ export default function FontScreen() {
               说明：字体大小会影响绝大多数 App 内页面。
               <br />
               不影响：主屏幕（桌面）与桌面内的游戏大厅悬浮窗（避免布局被挤满变丑）。
+            </div>
+          </div>
+
+          {/* 字体颜色（已合并到字体设置） */}
+          <div className="bg-white/60 backdrop-blur rounded-2xl p-3 sm:p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-gray-700">字体颜色</div>
+              <div className="text-[11px] text-gray-400">全局文字颜色</div>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              {COLOR_OPTIONS.map((color) => {
+                const isSelected = fontColor.id === color.id
+                return (
+                  <button
+                    key={color.id}
+                    type="button"
+                    onClick={() => handleColorSelect(color)}
+                    className={`flex flex-col items-center gap-2 p-2 rounded-2xl transition-all press-effect ${
+                      isSelected ? 'bg-white/70 ring-2 ring-pink-300' : 'bg-white/50 hover:bg-white/60'
+                    }`}
+                  >
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-white/50 shadow-md" style={{ backgroundColor: color.value }} />
+                    <span className="text-[11px] sm:text-xs opacity-70" style={{ color: fontColor.value }}>
+                      {color.name}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="mt-2 text-[11px] text-gray-500 leading-relaxed">
+              说明：这里是全局字体颜色（用于设置页/桌面等大部分页面）。
+              <br />
+              微信线下模式的三段颜色（我的叙述/TA的叙述/引号对白）请在聊天设置里调整。
             </div>
           </div>
           

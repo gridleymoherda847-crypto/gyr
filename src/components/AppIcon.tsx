@@ -20,7 +20,7 @@ export default function AppIcon({ appId, label, icon, gradient, size = 'normal' 
   }
   const iconSrc = getIconSrc()
   
-  // 简洁主题使用白色背景（但自定义图标不需要底色，避免出现“粉边/彩边”）
+  // 桌面排版2（minimal）使用白色背景（但自定义图标不需要底色，避免出现“粉边/彩边”）
   const isMinimal = iconTheme === 'minimal' && !customAppIcons[appId]
   const hasCustom = !!customAppIcons[appId]
   

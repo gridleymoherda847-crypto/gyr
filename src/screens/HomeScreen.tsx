@@ -162,8 +162,8 @@ export default function HomeScreen() {
                     transition: musicPlaying ? 'none' : 'transform 0.3s ease',
                   }}
                 >
-                  {(currentSong?.cover) ? (
-                    <img src={(currentSong?.cover || '')} alt="" className="w-full h-full object-cover" />
+                  {(decorImage || currentSong?.cover) ? (
+                    <img src={(decorImage || currentSong?.cover || '')} alt="" className="w-full h-full object-cover" decoding="async" />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-pink-200 to-pink-300 flex items-center justify-center">
                       <span className="text-lg">🎵</span>
@@ -465,7 +465,7 @@ export default function HomeScreen() {
                     transition: musicPlaying ? 'none' : 'transform 0.3s ease',
                   }}
                 >
-                  {iconTheme === 'minimal' && decorImage ? (
+                  {decorImage ? (
                     <img src={decorImage} alt="唱片封面" className="w-full h-full object-cover" />
                   ) : (
                     <svg viewBox="0 0 100 100" className="w-full h-full">
@@ -542,7 +542,7 @@ export default function HomeScreen() {
           {/* 右侧：4个App + 喝水 */}
           <div className="flex flex-col gap-1.5">
             {/* 4个App */}
-            <div className="flex-1 bg-white/40 backdrop-blur-sm rounded-xl p-1.5 border border-white/50 shadow-sm">
+            <div className="flex-1 bg-white/15 backdrop-blur-sm rounded-xl p-2 border border-white/35 shadow-sm">
               <div className="grid grid-cols-2 gap-1 h-full">
                 {MAIN_APPS.map(app => (
                   app.id === 'gameCenter' ? (
@@ -550,27 +550,27 @@ export default function HomeScreen() {
                       key={app.id}
                       type="button"
                       onClick={() => setShowGameCenter(true)}
-                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-white/60 p-1 active:scale-95 transition-transform"
+                      className="flex flex-col items-center justify-center gap-1 rounded-xl bg-transparent p-2 hover:bg-white/15 active:scale-95 transition-all"
                     >
                       <img 
                         src={getAppIcon(app.id, app.icon)} 
                         alt={app.name} 
-                        className="w-6 h-6 object-contain"
+                        className="w-10 h-10 object-contain"
                       />
-                      <span className="text-[8px] text-gray-600 truncate">{app.name}</span>
+                      <span className="text-[11px] text-gray-700 truncate">{app.name}</span>
                     </button>
                   ) : (
                     <Link
                       key={app.id}
                       to={app.route}
-                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-white/60 p-1 active:scale-95 transition-transform"
+                      className="flex flex-col items-center justify-center gap-1 rounded-xl bg-transparent p-2 hover:bg-white/15 active:scale-95 transition-all"
                     >
                       <img 
                         src={getAppIcon(app.id, app.icon)} 
                         alt={app.name} 
-                        className="w-6 h-6 object-contain"
+                        className="w-10 h-10 object-contain"
                       />
-                      <span className="text-[8px] text-gray-600 truncate">{app.name}</span>
+                      <span className="text-[11px] text-gray-700 truncate">{app.name}</span>
                     </Link>
                   )
                 ))}

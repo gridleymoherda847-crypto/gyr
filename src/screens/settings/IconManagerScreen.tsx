@@ -1,13 +1,18 @@
-import { useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useOS } from '../../context/OSContext'
+import { MINIMAL_ICONS, useOS } from '../../context/OSContext'
 import { ALL_APPS } from '../../data/apps'
 
 export default function IconManagerScreen() {
   const navigate = useNavigate()
-  const { customAppIcons, setCustomAppIcon, iconTheme } = useOS()
+  const { customAppIconsLayout1, customAppIconsLayout2, setCustomAppIconForLayout, iconTheme } = useOS()
+  const [editingLayout, setEditingLayout] = useState<'layout1' | 'layout2'>(() => (iconTheme === 'minimal' ? 'layout2' : 'layout1'))
   const fileInputRef = useRef<HTMLInputElement>(null)
   const currentAppRef = useRef<string | null>(null)
+
+  const currentMap = useMemo(() => {
+    return editingLayout === 'layout2' ? customAppIconsLayout2 : customAppIconsLayout1
+  }, [editingLayout, customAppIconsLayout1, customAppIconsLayout2])
 
   // 压缩图片
   const compressImage = (file: File, maxSize: number = 128): Promise<string> => {
@@ -60,7 +65,7 @@ export default function IconManagerScreen() {
     
     try {
       const compressed = await compressImage(file)
-      setCustomAppIcon(currentAppRef.current, compressed)
+      setCustomAppIconForLayout(editingLayout, currentAppRef.current, compressed)
     } catch (err) {
       console.error('图标压缩失败:', err)
     }
@@ -76,16 +81,17 @@ export default function IconManagerScreen() {
   }
 
   const handleResetIcon = (appId: string) => {
-    setCustomAppIcon(appId, '')
+    setCustomAppIconForLayout(editingLayout, appId, '')
   }
 
   const handleResetAll = () => {
-    ALL_APPS.forEach(app => setCustomAppIcon(app.id, ''))
+    ALL_APPS.forEach(app => setCustomAppIconForLayout(editingLayout, app.id, ''))
   }
 
   // 获取当前显示的图标
   const getDisplayIcon = (appId: string, defaultIcon: string) => {
-    if (customAppIcons[appId]) return customAppIcons[appId]
+    if (currentMap[appId]) return currentMap[appId]
+    if (editingLayout === 'layout2' && MINIMAL_ICONS[appId]) return MINIMAL_ICONS[appId]
     return defaultIcon
   }
 
@@ -102,7 +108,7 @@ export default function IconManagerScreen() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <span className="font-semibold text-gray-800">图标管理</span>
+        <span className="font-semibold text-gray-800">App图标美化</span>
         <button
           type="button"
           onClick={handleResetAll}
@@ -110,6 +116,30 @@ export default function IconManagerScreen() {
         >
           重置全部
         </button>
+      </div>
+
+      {/* 排版选择 */}
+      <div className="px-4 pt-3">
+        <div className="rounded-full bg-black/5 p-1 flex gap-1">
+          <button
+            type="button"
+            onClick={() => setEditingLayout('layout1')}
+            className={`flex-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-all ${
+              editingLayout === 'layout1' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+            }`}
+          >
+            桌面排版1
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditingLayout('layout2')}
+            className={`flex-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-all ${
+              editingLayout === 'layout2' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+            }`}
+          >
+            桌面排版2
+          </button>
+        </div>
       </div>
 
       {/* 隐藏的文件输入 */}
@@ -125,15 +155,15 @@ export default function IconManagerScreen() {
       <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-100">
         <div className="text-xs text-yellow-700 flex items-start gap-2">
           <span>💡</span>
-          <span>点击图标可更换，建议使用正方形图片。图片会自动压缩，不会造成卡顿。</span>
+          <span>当前在编辑：{editingLayout === 'layout2' ? '桌面排版2' : '桌面排版1'}。点击图标可更换，建议使用正方形图片。图片会自动压缩。</span>
         </div>
       </div>
 
-      {/* 当前主题提示 */}
+      {/* 当前桌面排版提示 */}
       {iconTheme === 'minimal' && (
         <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
           <div className="text-xs text-blue-700">
-            当前使用简洁图标主题，自定义图标会覆盖主题图标
+            当前正在使用桌面排版2；此处可分别为排版1/2设置不同的自定义图标
           </div>
         </div>
       )}
@@ -142,7 +172,7 @@ export default function IconManagerScreen() {
       <div className="flex-1 overflow-y-auto p-4">
         <div className="grid grid-cols-4 gap-4">
           {ALL_APPS.map(app => {
-            const isCustom = !!customAppIcons[app.id]
+            const isCustom = !!currentMap[app.id]
             const iconSrc = getDisplayIcon(app.id, app.icon)
             
             return (
