@@ -557,7 +557,9 @@ export default function HomeScreen() {
                         alt={app.name} 
                         className="w-10 h-10 object-contain"
                       />
-                      <span className="text-[11px] text-gray-700 truncate">{app.name}</span>
+                      <span className="px-2 py-[1px] rounded-md bg-white/65 backdrop-blur-sm text-[11px] text-gray-800 truncate shadow-sm">
+                        {app.name}
+                      </span>
                     </button>
                   ) : (
                     <Link
@@ -570,7 +572,9 @@ export default function HomeScreen() {
                         alt={app.name} 
                         className="w-10 h-10 object-contain"
                       />
-                      <span className="text-[11px] text-gray-700 truncate">{app.name}</span>
+                      <span className="px-2 py-[1px] rounded-md bg-white/65 backdrop-blur-sm text-[11px] text-gray-800 truncate shadow-sm">
+                        {app.name}
+                      </span>
                     </Link>
                   )
                 ))}
