@@ -552,11 +552,15 @@ export default function HomeScreen() {
                       onClick={() => setShowGameCenter(true)}
                       className="flex flex-col items-center justify-center gap-1 rounded-xl bg-transparent p-2 hover:bg-white/15 active:scale-95 transition-all"
                     >
-                      <img 
-                        src={getAppIcon(app.id, app.icon)} 
-                        alt={app.name} 
-                        className="w-10 h-10 object-contain"
-                      />
+                      <div className="w-11 h-11 rounded-full bg-white/35 border border-white/55 backdrop-blur-sm shadow-sm flex items-center justify-center">
+                        <img
+                          src={getAppIcon(app.id, app.icon)}
+                          alt={app.name}
+                          className="w-8 h-8 object-contain"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </div>
                       <span className="px-2 py-[1px] rounded-md bg-white/65 backdrop-blur-sm text-[11px] text-gray-800 truncate shadow-sm">
                         {app.name}
                       </span>
@@ -567,11 +571,15 @@ export default function HomeScreen() {
                       to={app.route}
                       className="flex flex-col items-center justify-center gap-1 rounded-xl bg-transparent p-2 hover:bg-white/15 active:scale-95 transition-all"
                     >
-                      <img 
-                        src={getAppIcon(app.id, app.icon)} 
-                        alt={app.name} 
-                        className="w-10 h-10 object-contain"
-                      />
+                      <div className="w-11 h-11 rounded-full bg-white/35 border border-white/55 backdrop-blur-sm shadow-sm flex items-center justify-center">
+                        <img
+                          src={getAppIcon(app.id, app.icon)}
+                          alt={app.name}
+                          className="w-8 h-8 object-contain"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </div>
                       <span className="px-2 py-[1px] rounded-md bg-white/65 backdrop-blur-sm text-[11px] text-gray-800 truncate shadow-sm">
                         {app.name}
                       </span>

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOS, COLOR_OPTIONS } from '../../context/OSContext'
 import AppHeader from '../../components/AppHeader'
@@ -6,6 +6,7 @@ import PageContainer from '../../components/PageContainer'
 import { SettingsItem } from '../../components/SettingsGroup'
 import { saveBlobAsFile } from '../../utils/saveFile'
 import { compressImageFileToDataUrl } from '../../utils/image'
+import { kvGetJSONDeep, kvSetJSON } from '../../storage/kv'
 
 type DesktopBeautifyPresetV1 = {
   version: 'desktop_beautify_v1'
@@ -86,29 +87,61 @@ export default function DesktopBeautifyScreen() {
 
   const nowText = () => new Date().toLocaleString('zh-CN', { hour12: false }).replace(/[/:]/g, '-').replace(/\s+/g, '_')
 
-  const [beautyPresets, setBeautyPresets] = useState<DesktopBeautifyPresetV1[]>(() => {
+  const normalizePresets = (raw: any): DesktopBeautifyPresetV1[] => {
     try {
-      const raw = localStorage.getItem(BEAUTY_PRESETS_KEY)
-      const parsed = raw ? JSON.parse(raw) : []
-      if (!Array.isArray(parsed)) return []
+      if (!Array.isArray(raw)) return []
       const now = Date.now()
-      return parsed
-        .filter((x) => x && x.version === 'desktop_beautify_v1' && typeof x.id === 'string')
-        .map((x) => {
-          const name = String((x as any)?.name || '')
+      return raw
+        .filter((x) => x && (x as any).version === 'desktop_beautify_v1' && typeof (x as any).id === 'string')
+        .map((x: any) => {
+          const name = String(x?.name || '')
           const source: 'import' | 'export' | 'save' =
-            ((x as any)?.source === 'import' || (x as any)?.source === 'export' || (x as any)?.source === 'save')
-              ? (x as any).source
+            (x?.source === 'import' || x?.source === 'export' || x?.source === 'save')
+              ? x.source
               : (/导入/.test(name) ? 'import' : (/储存|保存/.test(name) ? 'save' : 'export'))
-          const createdAt = (typeof (x as any)?.createdAt === 'number') ? (x as any).createdAt : now
-          const lastUsedAt = (typeof (x as any)?.lastUsedAt === 'number') ? (x as any).lastUsedAt : createdAt
-          return { ...(x as any), source, createdAt, lastUsedAt } as DesktopBeautifyPresetV1
+          const createdAt = (typeof x?.createdAt === 'number') ? x.createdAt : now
+          const lastUsedAt = (typeof x?.lastUsedAt === 'number') ? x.lastUsedAt : createdAt
+          return { ...x, source, createdAt, lastUsedAt } as DesktopBeautifyPresetV1
         })
         .slice(-30)
     } catch {
       return []
     }
-  })
+  }
+
+  const readPresetsFromLocalStorage = (): DesktopBeautifyPresetV1[] => {
+    try {
+      const raw = localStorage.getItem(BEAUTY_PRESETS_KEY)
+      const parsed = raw ? JSON.parse(raw) : []
+      return normalizePresets(parsed)
+    } catch {
+      return []
+    }
+  }
+
+  // Safari 上 localStorage 容量/权限更苛刻：历史可能写不进去或刷新就丢。
+  // 这里改为 IndexedDB(kv) 为主、localStorage 为兜底，并在首次进入时做一次迁移。
+  const [beautyPresets, setBeautyPresets] = useState<DesktopBeautifyPresetV1[]>(() => readPresetsFromLocalStorage())
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      const fromKv = await kvGetJSONDeep<any>(BEAUTY_PRESETS_KEY, null as any)
+      const kvList = normalizePresets(fromKv)
+      if (cancelled) return
+      if (kvList.length > 0) {
+        setBeautyPresets(kvList)
+        return
+      }
+      const localList = readPresetsFromLocalStorage()
+      if (localList.length > 0) {
+        setBeautyPresets(localList)
+        // 迁移到 kv（后续读写都以 kv 为准）
+        void kvSetJSON(BEAUTY_PRESETS_KEY, localList.slice(-30))
+      }
+    }
+    void run()
+    return () => { cancelled = true }
+  }, [])
 
   const saveBeautyPresets = (next: DesktopBeautifyPresetV1[]) => {
     const cut = next.slice(-30)
@@ -117,6 +150,8 @@ export default function DesktopBeautifyScreen() {
     } catch {
       // ignore
     }
+    // 主存储：IndexedDB(kv)，避免 Safari localStorage 导致“历史不显示/刷新丢失”
+    void kvSetJSON(BEAUTY_PRESETS_KEY, cut)
     setBeautyPresets(cut)
   }
 
