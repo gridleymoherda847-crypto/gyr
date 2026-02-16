@@ -132,20 +132,43 @@ if (isIOS) {
   let lastH = 0
   let lastKb = -1
   let rafId = 0
+  let focusInputActive = false
   const vv = window.visualViewport
+  const nonTextInputTypes = new Set(['button', 'checkbox', 'radio', 'range', 'file', 'color', 'submit', 'reset', 'image'])
+
+  const isTextInputTarget = (target: EventTarget | null) => {
+    const el = target as HTMLElement | null
+    if (!el) return false
+    const tag = el.tagName
+    if (tag === 'TEXTAREA') return true
+    if (tag === 'INPUT') {
+      const type = ((el as HTMLInputElement).type || 'text').toLowerCase()
+      return !nonTextInputTypes.has(type)
+    }
+    return !!el.isContentEditable
+  }
 
   const apply = () => {
     rafId = 0
     try {
-      const height = Math.round((vv?.height ?? window.innerHeight) || 0)
-      if (height && Math.abs(height - lastH) >= 2) {
-        lastH = height
-        document.documentElement.style.setProperty('--app-height', `${height}px`)
+      const layoutHeight = Math.round(window.innerHeight || 0)
+      // iOS Safari 键盘场景下，visualViewport 可能带 offsetTop。
+      // 只读 vv.height 会算短，导致输入栏和键盘之间出现“空带”。
+      const viewportBottomRaw = vv ? (vv.height + vv.offsetTop) : layoutHeight
+      const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
+      const keyboardHeight = Math.max(0, layoutHeight - viewportBottom)
+      const keyboardLikelyOpen = keyboardHeight > 80 || focusInputActive
+      // 键盘动画期间适当放宽阈值，降低 1~3px 抖动导致的“跳动感”
+      const hThreshold = keyboardLikelyOpen ? 6 : 2
+      const kbThreshold = keyboardLikelyOpen ? 6 : 2
+
+      if (viewportBottom && Math.abs(viewportBottom - lastH) >= hThreshold) {
+        lastH = viewportBottom
+        document.documentElement.style.setProperty('--app-height', `${viewportBottom}px`)
       }
-      const kb = Math.max(0, Math.round((window.innerHeight || 0) - (vv?.height ?? window.innerHeight)))
-      if (Math.abs(kb - lastKb) >= 2) {
-        lastKb = kb
-        document.documentElement.style.setProperty('--keyboard-height', `${kb}px`)
+      if (Math.abs(keyboardHeight - lastKb) >= kbThreshold) {
+        lastKb = keyboardHeight
+        document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight}px`)
       }
     } catch {
       // ignore
@@ -170,22 +193,28 @@ if (isIOS) {
   // visual viewport resize/scroll（iOS 键盘最可靠信号）
   try {
     vv?.addEventListener?.('resize', schedule, { passive: true } as any)
-    vv?.addEventListener?.('scroll', schedule, { passive: true } as any)
+    // Android 上 vv.scroll 噪声更大，容易造成输入栏轻微抖动；仅 iOS 保留。
+    if (isIOS) vv?.addEventListener?.('scroll', schedule, { passive: true } as any)
   } catch {
     // ignore
   }
 
-  // 兜底：部分安卓 Edge/国产壳在键盘弹起时不触发 visualViewport.resize
-  // 用 focusin/focusout 触发几次延迟测量，确保输入栏不会掉到键盘下面。
+  // 兜底：部分浏览器在键盘开合时不会稳定触发 resize，用焦点事件补几次测量。
   try {
-    const onFocusIn = () => {
+    const onFocusIn = (e: FocusEvent) => {
+      focusInputActive = isTextInputTarget(e.target)
       schedule()
       window.setTimeout(schedule, 60)
-      window.setTimeout(schedule, 220)
+      window.setTimeout(schedule, 180)
+      window.setTimeout(schedule, 320)
     }
     const onFocusOut = () => {
+      window.setTimeout(() => {
+        focusInputActive = isTextInputTarget(document.activeElement)
+      }, 0)
       window.setTimeout(schedule, 60)
-      window.setTimeout(schedule, 220)
+      window.setTimeout(schedule, 180)
+      window.setTimeout(schedule, 320)
     }
     document.addEventListener('focusin', onFocusIn as any, true)
     document.addEventListener('focusout', onFocusOut as any, true)
