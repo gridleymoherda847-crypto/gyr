@@ -658,6 +658,8 @@ export default function ChatScreen() {
   }, [stickerTab, libraryStickers, recentStickers])
   
   const imageInputRef = useRef<HTMLInputElement>(null)
+  // 最近一次“用户发送的图片”（用于：用户说“把这个换成头像/看看我头像”之类的场景）
+  const lastUserImageRef = useRef<{ url: string; at: number } | null>(null)
   const aliveRef = useRef(true)
   const timeoutsRef = useRef<number[]>([])
 
@@ -2371,6 +2373,31 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           ...chatHistory
         ]
 
+        // 让角色“看得到”用户头像（如果模型/中转不支持多模态，OSContext 会自动退化为文本占位）
+        // 目标：用户想让对方评价自己的头像/吐槽头像内容时，模型能基于真实图片作答
+        try {
+          const avatar = String(selectedPersona?.avatar || '').trim()
+          const avatarOk = /^data:image\//i.test(avatar) || /^https?:\/\//i.test(avatar)
+          // 基本尺寸保护：避免某些用户上传超大 base64 导致请求过大
+          const avatarSmallEnough = avatar.length > 0 && avatar.length < 220_000
+          if (avatarOk && avatarSmallEnough) {
+            llmMessages.splice(1, 0, {
+              role: 'system',
+              content: [
+                { type: 'text', text: `【用户头像】用户（${selectedPersona?.name || '我'}）当前头像如下（图片）。如用户问你“头像怎么样/像什么/好不好看”，请基于图片内容评价，不要凭空编造看不到的细节。` },
+                { type: 'image_url', image_url: { url: avatar } },
+              ],
+            } as any)
+          } else if (avatarOk && !avatarSmallEnough) {
+            llmMessages.splice(1, 0, {
+              role: 'system',
+              content: `【用户头像】用户（${selectedPersona?.name || '我'}）设置了头像图片，但图片过大未随请求传入；若用户要你评价头像，请让用户把头像图片发到聊天里（发图片消息）再评价。`,
+            })
+          }
+        } catch {
+          // ignore
+        }
+
         // 允许“连续点箭头生成”：区分两种情况
         // - 如果用户刚发了新消息：正常回复即可（历史末尾应为 user）
         // - 如果用户没有新发言：根据“距离用户上次发言”的时长，决定是“继续补几句”还是“主动追问”
@@ -2697,44 +2724,82 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           }
         }
 
-        // 兜底：如果模型输出条数不足（且用户输入不敷衍），再补一些短消息（不拆半句、不重复）
+        // 兜底：强制满足“线上回复气泡数量区间”（用户设置的 min/max），即使模型不听话也要补足/裁剪
         {
           const lastUserText = getLastUserText(workingMessages)
-          if (!character.offlineMode && replies.length < 3 && !isTrivialUserInput(lastUserText)) {
-            try {
-              const need = Math.max(1, Math.min(4, 3 - replies.length))
-              const supplementPrompt =
-                `你刚才只输出了${replies.length}条微信消息。现在请再补充 ${need} 条“短消息”，要求：\n` +
-                `- 不要重复刚才的内容\n` +
-                `- 每条必须是完整句/完整语义，禁止拆半句\n` +
-                `- 每条尽量以“。/！/？/…/～”结尾（像真人微信）\n` +
-                `- 不能输出任何系统说明/格式说明/思维链\n` +
-                `- 不要输出转账/图片/音乐/位置等指令\n` +
-                `只输出补充消息，多条用换行分隔。`
-              let extra = await callLLM(
-                [...llmMessages, { role: 'assistant', content: response }, { role: 'user', content: supplementPrompt }],
-                undefined,
-                { maxTokens: 220, timeoutMs: 600000, temperature: 0.9 }
-              )
-              if (extra && !character.offlineMode) extra = stripThoughtForOnline(extra)
-              let extras = splitToReplies(extra || '')
-              if (!character.offlineMode) extras = extras.map(stripThoughtForOnline).map((s) => (s || '').trim()).filter(Boolean)
+          const rawMin = Math.min(20, Math.max(1, Number((character as any).onlineReplyMin ?? 3) || 3))
+          const rawMax = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 8) || 8))
+          const onlineMin = Math.min(rawMin, rawMax)
+          const onlineMax = Math.max(rawMin, rawMax)
+          const requiredMin = isTrivialUserInput(lastUserText) ? 1 : onlineMin
+
+          if (!character.offlineMode) {
+            // 先裁剪到上限
+            if (replies.length > onlineMax) replies = replies.slice(0, onlineMax)
+            // 不足下限：补写（不拆半句、不重复）
+            if (replies.length < requiredMin) {
+              const need = Math.min(8, Math.max(1, requiredMin - replies.length))
+              const translationMode = characterLanguage !== 'zh' && translationEnabled && !character.offlineMode
               const normalize = (s: string) => (s || '').trim().replace(/\s+/g, ' ')
               const seen = new Set(replies.map(normalize))
-              const picked: string[] = []
-              for (const e of extras) {
-                const n = normalize(e)
-                if (!n) continue
-                if (seen.has(n)) continue
-                picked.push(e)
-                seen.add(n)
-                if (picked.length >= need) break
+              let picked: string[] = []
+
+              // 优先尝试让模型补写；但无论补写是否失败，都必须在本地兜底补到 requiredMin（否则用户设置区间会“失效”）
+              try {
+                const supplementPrompt =
+                  `你刚才只输出了${replies.length}条微信消息。现在请再补充 ${need} 条“短消息”，要求：\n` +
+                  `- 不要重复刚才的内容\n` +
+                  `- 每条必须是完整句/完整语义，禁止拆半句\n` +
+                  `- 每条尽量像微信聊天气泡\n` +
+                  `- 不能输出任何系统说明/格式说明/思维链\n` +
+                  `- 不要输出转账/图片/音乐/位置等指令\n` +
+                  (translationMode ? `- 每条必须使用格式：外语原文 ||| 简体中文翻译\n` : '') +
+                  `只输出补充消息，多条用换行分隔。`
+
+                let extra = await callLLM(
+                  [...llmMessages, { role: 'assistant', content: response }, { role: 'user', content: supplementPrompt }],
+                  undefined,
+                  { maxTokens: Math.max(220, 80 * need), timeoutMs: 600000, temperature: 0.9 }
+                )
+                if (extra) extra = stripThoughtForOnline(extra)
+                let extras = splitToReplies(extra || '')
+                extras = extras.map(stripThoughtForOnline).map((s) => (s || '').trim()).filter(Boolean)
+
+                for (const e of extras) {
+                  const n = normalize(e)
+                  if (!n) continue
+                  if (seen.has(n)) continue
+                  picked.push(e)
+                  seen.add(n)
+                  if (picked.length >= need) break
+                }
+              } catch {
+                // ignore supplement failure
               }
-              if (picked.length > 0) {
-                replies = [...replies, ...picked]
+
+              // 兜底：补写失败或仍不足，必须本地填充到位（尽量不复读）
+              if (picked.length < need) {
+                const fillers = [
+                  '嗯嗯。',
+                  '我懂了。',
+                  '那你呢？',
+                  '你现在感觉怎么样？',
+                  '我在呢。',
+                  '继续说呀。',
+                  '我听着。',
+                  '慢慢说就行。',
+                ]
+                for (const f of fillers) {
+                  if (picked.length >= need) break
+                  const n = normalize(f)
+                  if (seen.has(n)) continue
+                  picked.push(f)
+                  seen.add(n)
+                }
               }
-            } catch {
-              // ignore
+
+              if (picked.length > 0) replies = [...replies, ...picked]
+              if (replies.length > onlineMax) replies = replies.slice(0, onlineMax)
             }
           }
         }
@@ -4130,6 +4195,25 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     const raw = (inputRef.current?.value ?? inputText) || ''
     if (!raw.trim()) return
 
+    // ====== 用户指令：把“最近发的图片”设为对方头像 ======
+    // 目标：用户发一张图 -> 说“把这个换成头像/用这个当头像” -> 角色头像真实更新
+    try {
+      const text = String(raw || '').trim()
+      const wantsSetAvatar =
+        /(换|改|设置|设为|用|把).{0,6}(头像)/.test(text) &&
+        /(你|你的|这个|这张|刚刚|刚才|上面|上一张|那张)/.test(text)
+      if (wantsSetAvatar) {
+        const last = lastUserImageRef.current
+        const fresh = last && (Date.now() - last.at) < 10 * 60 * 1000 // 10分钟内的“最近图片”
+        if (fresh && last?.url && character?.id) {
+          // 直接更新角色头像（无需模型“同意”才能生效）
+          updateCharacter(character.id, { avatar: last.url } as any)
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     // 用户主动发送：强制滚到底部
     forceScrollRef.current = true
     nearBottomRef.current = true
@@ -5192,6 +5276,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       const reader = new FileReader()
       reader.onload = () => {
         const base64 = reader.result as string
+        // 记录最近图片：用于“把这个设为头像/评价头像”等对话能力
+        lastUserImageRef.current = { url: base64, at: Date.now() }
         // 用户主动发送：强制滚到底部
         forceScrollRef.current = true
         nearBottomRef.current = true

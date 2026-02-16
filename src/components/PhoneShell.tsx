@@ -95,8 +95,10 @@ export default function PhoneShell({ children }: PropsWithChildren) {
       {/* 移动端：全屏沉浸式 */}
       {/* 外层：背景容器，填满整个屏幕（包括安全区域外），让壁纸/背景色延伸到边缘 */}
       <div
-        className="md:hidden fixed inset-0 select-none overflow-hidden"
+        className="md:hidden fixed top-0 left-0 w-full select-none overflow-hidden"
         style={{
+          // 关键：用 visualViewport 驱动的 --app-height 作为高度（解决部分 Edge/安卓键盘弹起时输入栏掉到键盘下）
+          height: 'var(--app-height, 100dvh)',
           fontFamily: currentFont.fontFamily,
           fontSize: `${appliedFontPx}px`,
           color: fontColor.value,

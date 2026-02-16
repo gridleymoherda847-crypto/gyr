@@ -175,6 +175,24 @@ if (isIOS) {
     // ignore
   }
 
+  // 兜底：部分安卓 Edge/国产壳在键盘弹起时不触发 visualViewport.resize
+  // 用 focusin/focusout 触发几次延迟测量，确保输入栏不会掉到键盘下面。
+  try {
+    const onFocusIn = () => {
+      schedule()
+      window.setTimeout(schedule, 60)
+      window.setTimeout(schedule, 220)
+    }
+    const onFocusOut = () => {
+      window.setTimeout(schedule, 60)
+      window.setTimeout(schedule, 220)
+    }
+    document.addEventListener('focusin', onFocusIn as any, true)
+    document.addEventListener('focusout', onFocusOut as any, true)
+  } catch {
+    // ignore
+  }
+
   // iOS：禁用双指缩放/页面手势（避免"像电脑模式一样能拖动/缩放导致点击错位"）
   if (isIOS) {
     const preventGesture = (e: Event) => {

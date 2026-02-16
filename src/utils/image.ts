@@ -92,7 +92,6 @@ export async function compressDataUrlToDataUrl(
   const w = img.naturalWidth || img.width || 0
   const h = img.naturalHeight || img.height || 0
   if (!w || !h) return src
-
   const scale = Math.min(1, maxSide / Math.max(w, h))
   const tw = Math.max(1, Math.round(w * scale))
   const th = Math.max(1, Math.round(h * scale))

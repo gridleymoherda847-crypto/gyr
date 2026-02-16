@@ -159,6 +159,29 @@ export default function AutoReachDaemon() {
       return t
     }
 
+    // 防复读（跨波次/跨时间点）：同一角色在短时间内不要主动发出几乎相同的内容
+    // 目的：阻止“同样4句话，隔一会儿又发一遍”的客户反馈。
+    const recentAutoReachKeySet = (characterId: string, windowMs = 48 * 60 * 60 * 1000) => {
+      const now = Date.now()
+      const list = (getMessagesByCharacter(characterId) || [])
+        .filter(m => !m?.isUser && m?.type === 'text')
+        .slice(-80)
+      const norm = (s: string) =>
+        String(s || '')
+          .trim()
+          .replace(/\s+/g, '')
+          .replace(/[，。！？、；：…~`!@#$%^&*()_\-+=\[\]{}\\|;:'",.<>/?]/g, '')
+          .toLowerCase()
+      const set = new Set<string>()
+      for (const m of list) {
+        const ts = Number((m as any)?.timestamp || 0) || 0
+        if (ts && now - ts > windowMs) continue
+        const k = norm(String((m as any)?.content || ''))
+        if (k) set.add(k)
+      }
+      return { set, norm }
+    }
+
     const loadPlan = (characterId: string): AutoReachPlan | null => {
       try {
         const raw = localStorage.getItem(`lp_auto_reach_plan_${characterId}`)
@@ -317,6 +340,7 @@ export default function AutoReachDaemon() {
       }
       // 这里是一轮“主动找我”：只调用一次 LLM，但可下发多条气泡（3~5等）
       const sentKeys = new Set<string>()
+      const { set: recentKeys, norm: normKey } = recentAutoReachKeySet(c.id)
       for (const line of lines) {
         const normalized = normalizeForCharacter(line, c)
         if (!normalized) continue
@@ -327,6 +351,10 @@ export default function AutoReachDaemon() {
           const key = (p.rawText || p.zh || normalized).replace(/\s+/g, '').toLowerCase()
           if (key && sentKeys.has(key)) continue
           if (key) sentKeys.add(key)
+          // 跨时间去重：近期已经发过同样内容就跳过
+          const rk = normKey(p.rawText || p.zh || normalized)
+          if (rk && recentKeys.has(rk)) continue
+          if (rk) recentKeys.add(rk)
           addMessage({
             characterId: c.id,
             content: p.rawText || p.zh || normalized,
@@ -341,6 +369,9 @@ export default function AutoReachDaemon() {
           const key = normalized.replace(/\s+/g, '').toLowerCase()
           if (key && sentKeys.has(key)) continue
           if (key) sentKeys.add(key)
+          const rk = normKey(normalized)
+          if (rk && recentKeys.has(rk)) continue
+          if (rk) recentKeys.add(rk)
           addMessage({ characterId: c.id, content: normalized, isUser: false, type: 'text' })
         }
       }
@@ -484,6 +515,7 @@ export default function AutoReachDaemon() {
       const waves = await generateCatchUpWaves(c, remain, useApi)
       const n = Math.min(remain, Math.max(1, waves.length))
       const waveTimes = pickWaveTimes(n)
+      const { set: recentKeys, norm: normKey } = recentAutoReachKeySet(c.id)
       for (let i = 0; i < n; i++) {
         const w = waves[i]
         const waveTs = clampCatchUpTs(waveTimes[i] ?? (from + i * 2 * 60 * 1000))
@@ -498,6 +530,9 @@ export default function AutoReachDaemon() {
           const key = (p.rawText || p.zh || list[j]).replace(/\s+/g, '').toLowerCase()
           if (key && sentKeys.has(key)) continue
           if (key) sentKeys.add(key)
+          const rk = normKey(p.rawText || p.zh || list[j])
+          if (rk && recentKeys.has(rk)) continue
+          if (rk) recentKeys.add(rk)
           const msg = addMessage(transOn
             ? {
                 characterId: c.id,
