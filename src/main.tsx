@@ -160,7 +160,8 @@ if (isIOS) {
       const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
       // 保守回退：iOS 非 PWA 浏览器使用 innerHeight 作为主高度，优先稳态，避免键盘上方露壁纸。
       const useStableIOSHeight = isIOS && !isIOSStandalone
-      const useFocusLock = useStableIOSHeight && focusInputActive && focusLockedHeight > 0
+      // iOS（含主屏幕模式）在输入期启用锁高，防止键盘动画结束后“二次重算”导致再跳一次。
+      const useFocusLock = isIOS && focusInputActive && focusLockedHeight > 0
       const nextHeight = useFocusLock ? focusLockedHeight : (useStableIOSHeight ? layoutHeight : viewportBottom)
       const keyboardHeight = useStableIOSHeight
         ? Math.max(0, Math.round(layoutHeight - (vv ? (vv.height + vv.offsetTop) : layoutHeight)))
@@ -214,9 +215,13 @@ if (isIOS) {
         window.clearTimeout(focusUnlockTimer)
         focusUnlockTimer = 0
       }
-      if (isIOS && !isIOSStandalone && focusInputActive) {
-        // iOS Safari 在输入后 0.5~1s 可能出现二次 resize，这里锁定高度直到失焦。
-        focusLockedHeight = Math.round(window.innerHeight || 0)
+      if (isIOS && focusInputActive) {
+        // iOS（含主屏幕模式）在输入后 0.5~1s 可能出现二次 resize，这里锁定高度直到失焦。
+        const inner = Math.round(window.innerHeight || 0)
+        const vvHeight = Math.round((window.visualViewport?.height ?? inner) || 0)
+        const vvTop = Math.round((window.visualViewport?.offsetTop ?? 0) || 0)
+        const vvBottom = Math.round(Math.min(inner || (vvHeight + vvTop), Math.max(0, vvHeight + vvTop)))
+        focusLockedHeight = isIOSStandalone ? (vvBottom || inner) : inner
       }
       schedule()
       window.setTimeout(schedule, 60)
@@ -226,10 +231,14 @@ if (isIOS) {
     const onFocusOut = () => {
       window.setTimeout(() => {
         focusInputActive = isTextInputTarget(document.activeElement)
-        if (isIOS && !isIOSStandalone) {
+        if (isIOS) {
           if (focusInputActive) {
             // 输入框之间切换时保持锁定，避免瞬间抖动。
-            focusLockedHeight = Math.round(window.innerHeight || 0)
+            const inner = Math.round(window.innerHeight || 0)
+            const vvHeight = Math.round((window.visualViewport?.height ?? inner) || 0)
+            const vvTop = Math.round((window.visualViewport?.offsetTop ?? 0) || 0)
+            const vvBottom = Math.round(Math.min(inner || (vvHeight + vvTop), Math.max(0, vvHeight + vvTop)))
+            focusLockedHeight = isIOSStandalone ? (vvBottom || inner) : inner
             return
           }
           if (focusUnlockTimer) window.clearTimeout(focusUnlockTimer)
