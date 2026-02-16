@@ -156,15 +156,20 @@ if (isIOS) {
       // 只读 vv.height 会算短，导致输入栏和键盘之间出现“空带”。
       const viewportBottomRaw = vv ? (vv.height + vv.offsetTop) : layoutHeight
       const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
-      const keyboardHeight = Math.max(0, layoutHeight - viewportBottom)
+      // 保守回退：iOS 非 PWA 浏览器使用 innerHeight 作为主高度，优先稳态，避免键盘上方露壁纸。
+      const useStableIOSHeight = isIOS && !isIOSStandalone
+      const nextHeight = useStableIOSHeight ? layoutHeight : viewportBottom
+      const keyboardHeight = useStableIOSHeight
+        ? Math.max(0, Math.round(layoutHeight - (vv ? (vv.height + vv.offsetTop) : layoutHeight)))
+        : Math.max(0, layoutHeight - viewportBottom)
       const keyboardLikelyOpen = keyboardHeight > 80 || focusInputActive
       // 键盘动画期间适当放宽阈值，降低 1~3px 抖动导致的“跳动感”
-      const hThreshold = keyboardLikelyOpen ? 6 : 2
+      const hThreshold = keyboardLikelyOpen ? 8 : 2
       const kbThreshold = keyboardLikelyOpen ? 6 : 2
 
-      if (viewportBottom && Math.abs(viewportBottom - lastH) >= hThreshold) {
-        lastH = viewportBottom
-        document.documentElement.style.setProperty('--app-height', `${viewportBottom}px`)
+      if (nextHeight && Math.abs(nextHeight - lastH) >= hThreshold) {
+        lastH = nextHeight
+        document.documentElement.style.setProperty('--app-height', `${nextHeight}px`)
       }
       if (Math.abs(keyboardHeight - lastKb) >= kbThreshold) {
         lastKb = keyboardHeight
@@ -193,8 +198,7 @@ if (isIOS) {
   // visual viewport resize/scroll（iOS 键盘最可靠信号）
   try {
     vv?.addEventListener?.('resize', schedule, { passive: true } as any)
-    // Android 上 vv.scroll 噪声更大，容易造成输入栏轻微抖动；仅 iOS 保留。
-    if (isIOS) vv?.addEventListener?.('scroll', schedule, { passive: true } as any)
+    // vv.scroll 在多端壳浏览器上噪声较大，容易触发底部输入栏“跳动”，这里不再监听。
   } catch {
     // ignore
   }
