@@ -1877,6 +1877,15 @@ ${history}`
             
             <textarea
               value={inputText}
+              onPointerDown={() => {
+                // 兜底：确保“点输入=收起面板”，避免 + 面板停留在键盘上方占屏
+                if (showPlusMenu || showStickerPanel || activePanel || showGenerateSelector) {
+                  setShowPlusMenu(false)
+                  setShowStickerPanel(false)
+                  setActivePanel(null)
+                  setShowGenerateSelector(false)
+                }
+              }}
               onChange={(e) => {
                 setInputText(e.target.value)
                 requestAnimationFrame(() => autosizeInput(e.currentTarget))

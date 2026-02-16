@@ -8312,6 +8312,15 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               ref={inputRef}
               placeholder="输入消息..."
               value={inputText}
+              onPointerDown={() => {
+                // 兜底：某些机型“点输入框”不会再次触发 focus（或 focus 已在），导致 + 面板不收起。
+                // 这里用 pointerdown 确保“点输入=收起面板”，符合微信/QQ 交互。
+                if (showPlusMenu || showStickerPanel || activePanel) {
+                  setShowPlusMenu(false)
+                  setShowStickerPanel(false)
+                  setActivePanel(null)
+                }
+              }}
               onFocus={() => {
                 // 聚焦输入时：关闭“+号菜单/功能面板/表情面板”，避免它们挤占聊天区（用户反馈：打字时聊天界面看不见）
                 setShowPlusMenu(false)

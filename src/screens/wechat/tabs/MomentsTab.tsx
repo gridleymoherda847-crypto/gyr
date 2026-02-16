@@ -28,6 +28,8 @@ export default function MomentsTab({ onBack }: Props) {
   const [replyTarget, setReplyTarget] = useState<{ momentId: string; commentId: string; authorId: string; authorName: string } | null>(null)
   const [replyInputText, setReplyInputText] = useState('')
   const [coverShrink, setCoverShrink] = useState(0)
+  const coverShrinkRafRef = useRef<number>(0)
+  const coverShrinkPendingRef = useRef<number>(0)
   const [translatedMoments, setTranslatedMoments] = useState<Set<string>>(new Set()) // 已切换到中文的朋友圈
 
   const hasApiConfig = llmConfig.apiBaseUrl && llmConfig.apiKey && llmConfig.selectedModel
@@ -548,8 +550,15 @@ ${params.userText}
     <div className="flex flex-col h-full bg-transparent">
       {/* 封面区域 */}
       <div 
-        className="relative bg-cover bg-center transition-[height] duration-100 ease-out"
-        style={{ height: `${Math.max(140, 256 - coverShrink)}px`, backgroundImage: userSettings.momentsBackground ? `url(${userSettings.momentsBackground})` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+        className="relative bg-cover bg-center"
+        style={{
+          // 重要：滚动时用“即时高度”而不是 transition 动画，避免高度变化反过来干扰滚动，出现“弹簧抖动”
+          height: `${Math.max(140, 256 - coverShrink)}px`,
+          willChange: 'height',
+          backgroundImage: userSettings.momentsBackground
+            ? `url(${userSettings.momentsBackground})`
+            : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        }}
         onClick={() => coverInputRef.current?.click()}
       >
         <input
@@ -635,7 +644,15 @@ ${params.userText}
         onScroll={(e) => {
           const top = (e.currentTarget as HTMLDivElement).scrollTop
           // 增大收缩力度：滚动距离乘以2.5倍，最大收缩到116px（从256到140）
-          setCoverShrink(Math.min(116, Math.max(0, top * 2.5)))
+          const next = Math.min(116, Math.max(0, top * 2.5))
+          coverShrinkPendingRef.current = next
+          if (coverShrinkRafRef.current) return
+          coverShrinkRafRef.current = window.requestAnimationFrame(() => {
+            coverShrinkRafRef.current = 0
+            const v = coverShrinkPendingRef.current
+            // 去抖：小于 1px 的变化不要触发 re-render（避免某些机型 scrollTop 抖动导致背景“弹弹弹”）
+            setCoverShrink((prev) => (Math.abs(v - prev) < 1 ? prev : v))
+          })
         }}
       >
         {moments.length === 0 ? (
