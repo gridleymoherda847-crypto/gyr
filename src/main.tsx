@@ -133,6 +133,8 @@ if (isIOS) {
   let lastKb = -1
   let rafId = 0
   let focusInputActive = false
+  let focusLockedHeight = 0
+  let focusUnlockTimer = 0
   const vv = window.visualViewport
   const nonTextInputTypes = new Set(['button', 'checkbox', 'radio', 'range', 'file', 'color', 'submit', 'reset', 'image'])
 
@@ -158,7 +160,8 @@ if (isIOS) {
       const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
       // 保守回退：iOS 非 PWA 浏览器使用 innerHeight 作为主高度，优先稳态，避免键盘上方露壁纸。
       const useStableIOSHeight = isIOS && !isIOSStandalone
-      const nextHeight = useStableIOSHeight ? layoutHeight : viewportBottom
+      const useFocusLock = useStableIOSHeight && focusInputActive && focusLockedHeight > 0
+      const nextHeight = useFocusLock ? focusLockedHeight : (useStableIOSHeight ? layoutHeight : viewportBottom)
       const keyboardHeight = useStableIOSHeight
         ? Math.max(0, Math.round(layoutHeight - (vv ? (vv.height + vv.offsetTop) : layoutHeight)))
         : Math.max(0, layoutHeight - viewportBottom)
@@ -207,6 +210,14 @@ if (isIOS) {
   try {
     const onFocusIn = (e: FocusEvent) => {
       focusInputActive = isTextInputTarget(e.target)
+      if (focusUnlockTimer) {
+        window.clearTimeout(focusUnlockTimer)
+        focusUnlockTimer = 0
+      }
+      if (isIOS && !isIOSStandalone && focusInputActive) {
+        // iOS Safari 在输入后 0.5~1s 可能出现二次 resize，这里锁定高度直到失焦。
+        focusLockedHeight = Math.round(window.innerHeight || 0)
+      }
       schedule()
       window.setTimeout(schedule, 60)
       window.setTimeout(schedule, 180)
@@ -215,6 +226,19 @@ if (isIOS) {
     const onFocusOut = () => {
       window.setTimeout(() => {
         focusInputActive = isTextInputTarget(document.activeElement)
+        if (isIOS && !isIOSStandalone) {
+          if (focusInputActive) {
+            // 输入框之间切换时保持锁定，避免瞬间抖动。
+            focusLockedHeight = Math.round(window.innerHeight || 0)
+            return
+          }
+          if (focusUnlockTimer) window.clearTimeout(focusUnlockTimer)
+          focusUnlockTimer = window.setTimeout(() => {
+            focusLockedHeight = 0
+            focusUnlockTimer = 0
+            schedule()
+          }, 420)
+        }
       }, 0)
       window.setTimeout(schedule, 60)
       window.setTimeout(schedule, 180)
