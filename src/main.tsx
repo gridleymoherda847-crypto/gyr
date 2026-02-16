@@ -126,27 +126,67 @@ if (isIOS) {
 }
 
 // iOS 视口高度修复：用 innerHeight 兜底（解决部分机型 PWA 底部露黑）
-if (isIOS) {
-  const setAppHeight = () => {
-    document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`)
+// 同时修复：键盘弹起时部分机型会“抖动/输入栏跑到键盘下面”。
+// 关键点：优先使用 visualViewport.height（代表可视区域高度），并节流 + 去抖动（避免 1px 反复 resize）。
+{
+  let lastH = 0
+  let lastKb = -1
+  let rafId = 0
+  const vv = window.visualViewport
+
+  const apply = () => {
+    rafId = 0
+    try {
+      const height = Math.round((vv?.height ?? window.innerHeight) || 0)
+      if (height && Math.abs(height - lastH) >= 2) {
+        lastH = height
+        document.documentElement.style.setProperty('--app-height', `${height}px`)
+      }
+      const kb = Math.max(0, Math.round((window.innerHeight || 0) - (vv?.height ?? window.innerHeight)))
+      if (Math.abs(kb - lastKb) >= 2) {
+        lastKb = kb
+        document.documentElement.style.setProperty('--keyboard-height', `${kb}px`)
+      }
+    } catch {
+      // ignore
+    }
   }
-  setAppHeight()
-  window.addEventListener('resize', setAppHeight)
-  window.addEventListener('orientationchange', () => window.setTimeout(setAppHeight, 80))
+
+  const schedule = () => {
+    if (rafId) return
+    rafId = window.requestAnimationFrame(apply)
+  }
+
+  // 首次设置（避免首次渲染白边/高度不对）
+  schedule()
+
+  // layout viewport resize（旋转、地址栏变化、部分键盘触发）
+  window.addEventListener('resize', schedule, { passive: true } as any)
+  window.addEventListener('orientationchange', () => window.setTimeout(schedule, 60), { passive: true } as any)
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) window.setTimeout(setAppHeight, 80)
-  })
+    if (!document.hidden) window.setTimeout(schedule, 60)
+  }, { passive: true } as any)
+
+  // visual viewport resize/scroll（iOS 键盘最可靠信号）
+  try {
+    vv?.addEventListener?.('resize', schedule, { passive: true } as any)
+    vv?.addEventListener?.('scroll', schedule, { passive: true } as any)
+  } catch {
+    // ignore
+  }
 
   // iOS：禁用双指缩放/页面手势（避免"像电脑模式一样能拖动/缩放导致点击错位"）
-  const preventGesture = (e: Event) => {
-    // Safari 的 gesture 事件是可 cancel 的
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ev: any = e as any
-    if (typeof ev?.preventDefault === 'function') ev.preventDefault()
+  if (isIOS) {
+    const preventGesture = (e: Event) => {
+      // Safari 的 gesture 事件是可 cancel 的
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ev: any = e as any
+      if (typeof ev?.preventDefault === 'function') ev.preventDefault()
+    }
+    document.addEventListener('gesturestart', preventGesture as any, { passive: false } as any)
+    document.addEventListener('gesturechange', preventGesture as any, { passive: false } as any)
+    document.addEventListener('gestureend', preventGesture as any, { passive: false } as any)
   }
-  document.addEventListener('gesturestart', preventGesture as any, { passive: false } as any)
-  document.addEventListener('gesturechange', preventGesture as any, { passive: false } as any)
-  document.addEventListener('gestureend', preventGesture as any, { passive: false } as any)
 }
 
 // ========= 手动版本检测（设置页按钮触发） =========

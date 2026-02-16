@@ -83,7 +83,6 @@ export async function compressDataUrlToDataUrl(
   const maxSide = Math.max(160, Math.min(2048, options?.maxSide ?? 320))
   const mimeType = options?.mimeType ?? 'image/webp'
   const quality = Math.max(0.35, Math.min(0.92, options?.quality ?? 0.55))
-
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image()
     el.onload = () => resolve(el)
@@ -103,7 +102,6 @@ export async function compressDataUrlToDataUrl(
   const ctx = canvas.getContext('2d')
   if (!ctx) return src
   ctx.drawImage(img, 0, 0, tw, th)
-
   try {
     return canvas.toDataURL(mimeType, quality)
   } catch {

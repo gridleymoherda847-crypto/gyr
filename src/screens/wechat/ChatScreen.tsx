@@ -8290,7 +8290,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               <button
                 type="button"
                 onClick={() => {
-                  setShowStickerPanel(!showStickerPanel)
+                  const next = !showStickerPanel
+                  // 打开表情面板时：收起键盘（否则会出现“表情面板 + 键盘”双占位）
+                  if (next) {
+                    try { inputRef.current?.blur() } catch { /* ignore */ }
+                  }
+                  setShowStickerPanel(next)
                   setShowPlusMenu(false)
                   setActivePanel(null)
                 }}
@@ -8308,6 +8313,10 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               placeholder="输入消息..."
               value={inputText}
               onFocus={() => {
+                // 聚焦输入时：关闭“+号菜单/功能面板/表情面板”，避免它们挤占聊天区（用户反馈：打字时聊天界面看不见）
+                setShowPlusMenu(false)
+                setShowStickerPanel(false)
+                setActivePanel(null)
                 // iOS Safari：弹出键盘/输入时常把滚动定位到中间，强制保持最新消息可见
                 nearBottomRef.current = true
                 forceScrollRef.current = true
@@ -8356,7 +8365,12 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                   handleSend()
                   return
                 }
-                setShowPlusMenu(!showPlusMenu)
+                const next = !showPlusMenu
+                // 打开“+号菜单”时：收起键盘（微信同款交互），避免菜单内容被键盘顶上去导致聊天区完全看不见
+                if (next) {
+                  try { inputRef.current?.blur() } catch { /* ignore */ }
+                }
+                setShowPlusMenu(next)
                 setShowStickerPanel(false)
                 setActivePanel(null)
               }}
