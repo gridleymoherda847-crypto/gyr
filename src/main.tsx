@@ -184,6 +184,11 @@ if (isIOS) {
         lastKb = keyboardHeight
         document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight}px`)
       }
+      // iOS 键盘打开时，不再叠加底部 safe-area（否则会在键盘上方出现一截“壁纸空带”）。
+      document.documentElement.style.setProperty(
+        '--runtime-safe-bottom',
+        keyboardLikelyOpen ? '0px' : 'env(safe-area-inset-bottom, 0px)',
+      )
     } catch {
       // ignore
     }

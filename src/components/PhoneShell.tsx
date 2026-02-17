@@ -126,7 +126,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           style={{
             // iOS 安全区域 + 用户自定义边距
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + var(--screen-padding-top, 0px))',
-            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + var(--screen-padding-bottom, 0px))',
+            paddingBottom: 'calc(var(--runtime-safe-bottom, env(safe-area-inset-bottom, 0px)) + var(--screen-padding-bottom, 0px))',
             paddingLeft: 'calc(env(safe-area-inset-left, 0px) + var(--screen-padding-left, 0px))',
             paddingRight: 'calc(env(safe-area-inset-right, 0px) + var(--screen-padding-right, 0px))',
           }}
