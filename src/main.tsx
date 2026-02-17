@@ -160,13 +160,27 @@ if (isIOS) {
       const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
       // 保守回退：iOS 非 PWA 浏览器在非输入态使用 innerHeight 作为主高度，优先稳态。
       const useStableIOSHeight = isIOS && !isIOSStandalone
-      const keyboardHeight = Math.max(0, Math.round(layoutHeight - viewportBottom))
+      const rawKeyboardHeight = Math.max(0, Math.round(layoutHeight - viewportBottom))
+      // iOS 某些帧会短暂上报异常大的键盘高度（会把输入栏顶到很高，出现“键盘与输入框中间大空带”）。
+      // 这里做上限钳制，避免异常值污染布局。
+      const maxReasonableKeyboard = Math.max(260, Math.round(layoutHeight * 0.62))
+      const keyboardHeight = isIOS ? Math.min(rawKeyboardHeight, maxReasonableKeyboard) : rawKeyboardHeight
       // iOS（含主屏幕模式）在输入期启用锁高，防止键盘动画结束后的“二次重算”把输入框压回键盘下方。
       // 关键：只在“键盘已打开”时才开始锁，避免 focusin 初期把键盘前高度锁进去。
       if (isIOS && focusInputActive && keyboardHeight > 80) {
-        const candidate = Math.max(0, viewportBottom || layoutHeight)
-        if (!focusLockedHeight) focusLockedHeight = candidate
-        else focusLockedHeight = Math.min(focusLockedHeight, candidate)
+        const candidate = Math.max(0, layoutHeight - keyboardHeight)
+        if (!focusLockedHeight) {
+          focusLockedHeight = candidate
+        } else {
+          // 仅接受“接近当前锁值”的变化，过滤掉瞬时异常跳变（防止高度越锁越小）。
+          const delta = candidate - focusLockedHeight
+          if (Math.abs(delta) <= 44) {
+            focusLockedHeight = candidate
+          } else if (delta > 0) {
+            // 键盘轻微回落（候选变大）可放宽跟进，避免输入框被卡住。
+            focusLockedHeight = candidate
+          }
+        }
       }
       const useFocusLock = isIOS && focusInputActive && keyboardHeight > 80 && focusLockedHeight > 0
       const focusedIOSHeight = focusInputActive ? viewportBottom : layoutHeight
