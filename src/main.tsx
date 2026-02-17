@@ -156,6 +156,12 @@ if (isIOS) {
         '--runtime-safe-bottom',
         keyboardLikelyOpen ? '0px' : 'env(safe-area-inset-bottom, 0px)',
       )
+      // 键盘打开时：临时禁用用户自定义“屏幕下边距”，否则会把输入栏整体往上顶，表现为“飘起来”
+      if (keyboardLikelyOpen) {
+        document.documentElement.style.setProperty('--runtime-screen-padding-bottom', '0px')
+      } else {
+        document.documentElement.style.removeProperty('--runtime-screen-padding-bottom')
+      }
     } catch {
       // ignore
     }
@@ -179,6 +185,9 @@ if (isIOS) {
   // visualViewport resize 是 iOS 键盘最可靠的信号
   try {
     vv?.addEventListener?.('resize', schedule, { passive: true } as any)
+    // iOS 键盘动画/系统滚动期间，offsetTop 往往通过 visualViewport.scroll 变化。
+    // 若不监听 scroll，会出现“输入框先飘着，用户轻轻滑一下才恢复正常”的现象。
+    vv?.addEventListener?.('scroll', schedule, { passive: true } as any)
   } catch {
     // ignore
   }
