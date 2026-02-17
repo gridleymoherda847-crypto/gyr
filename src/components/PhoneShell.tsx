@@ -95,12 +95,15 @@ export default function PhoneShell({ children }: PropsWithChildren) {
       {/* 移动端：全屏沉浸式 */}
       {/* 外层：背景容器，填满整个屏幕（包括安全区域外），让壁纸/背景色延伸到边缘 */}
       <div
-        className="md:hidden fixed inset-0 w-full select-none overflow-hidden"
+        className="md:hidden fixed top-0 left-0 right-0 w-full select-none overflow-hidden"
         style={{
           fontFamily: currentFont.fontFamily,
           fontSize: `${appliedFontPx}px`,
           color: fontColor.value,
-          // iOS Safari fix: 强制 GPU 合成层，防止键盘弹出时 fixed 元素被 iOS 偷偷位移
+          // 关键：外层容器高度 = --app-height，而不是 inset-0（全屏）。
+          // 这样壁纸和内容都被限制在同一高度内，从根本上杜绝"壁纸从底部露出来"。
+          height: 'var(--app-height, 100dvh)',
+          // GPU 合成层隔离 iOS 渲染 bug
           transform: 'translate3d(0,0,0)',
         }}
       >
@@ -115,13 +118,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           backgroundColor: '#fef7f0',
         }}
         />
-        <div
-          className="absolute top-0 left-0 w-full"
-          style={{
-            // 关键：交互层继续使用 visualViewport 驱动高度，保证输入区跟键盘走。
-            height: 'var(--app-height, 100dvh)',
-          }}
-        >
+        <div className="absolute inset-0">
         {/* 内层：内容容器，用 padding 避开安全区域 */}
         <div 
           className="relative z-10 flex h-full flex-col"

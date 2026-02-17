@@ -131,15 +131,22 @@ if (isIOS) {
 {
   let lastH = 0
   let rafId = 0
+  let textInputFocused = false
   const vv = window.visualViewport
+  const nonTextTypes = new Set(['button', 'checkbox', 'radio', 'range', 'file', 'color', 'submit', 'reset', 'image'])
+
+  const checkTextInputFocused = () => {
+    const el = document.activeElement as HTMLElement | null
+    if (!el) return false
+    if (el.tagName === 'TEXTAREA') return true
+    if (el.tagName === 'INPUT') return !nonTextTypes.has(((el as HTMLInputElement).type || 'text').toLowerCase())
+    return !!el.isContentEditable
+  }
 
   const apply = () => {
     rafId = 0
     try {
       const layoutHeight = Math.round(window.innerHeight || 0)
-      // iOS 键盘弹出时会滚动页面（offsetTop > 0）。
-      // 不跟 iOS 抢滚动（scrollTo 会导致输入框上下弹跳），而是把 offsetTop 也算进高度，
-      // 让内容区恰好填满"可视区域+被滚走的部分"，这样底部不会露壁纸。
       const vvBottom = vv ? Math.round(vv.height + vv.offsetTop) : layoutHeight
       const nextHeight = Math.max(0, Math.min(layoutHeight, vvBottom)) || layoutHeight
 
@@ -148,9 +155,11 @@ if (isIOS) {
         document.documentElement.style.setProperty('--app-height', `${nextHeight}px`)
       }
 
-      // 键盘是否打开（用于动态 safe-area 控制）
+      // 键盘检测：高度差 > 80 OR 文字输入框正在聚焦。
+      // 关键：iOS PWA 弹键盘时 innerHeight 可能跟着缩，导致高度差为 0，
+      // 但键盘确实是开着的。用 textInputFocused 兜底，保证 safe-area padding 被清零。
       const keyboardHeight = Math.max(0, layoutHeight - vvBottom)
-      const keyboardLikelyOpen = keyboardHeight > 80
+      const keyboardLikelyOpen = keyboardHeight > 80 || textInputFocused
       document.documentElement.style.setProperty(
         '--runtime-safe-bottom',
         keyboardLikelyOpen ? '0px' : 'env(safe-area-inset-bottom, 0px)',
@@ -191,16 +200,27 @@ if (isIOS) {
     // ignore
   }
 
-  // focus 事件兆底：部分机型 resize 不够及时
+  // focus 事件：追踪输入框聚焦状态 + 触发高度更新
   try {
-    const onFocus = () => {
+    const onFocusIn = () => {
+      textInputFocused = checkTextInputFocused()
       schedule()
       window.setTimeout(schedule, 100)
       window.setTimeout(schedule, 300)
       window.setTimeout(schedule, 600)
     }
-    document.addEventListener('focusin', onFocus, true)
-    document.addEventListener('focusout', onFocus, true)
+    const onFocusOut = () => {
+      // 延迟检查：iOS 输入法切换会短暂失焦
+      window.setTimeout(() => {
+        textInputFocused = checkTextInputFocused()
+        schedule()
+      }, 80)
+      schedule()
+      window.setTimeout(schedule, 300)
+      window.setTimeout(schedule, 600)
+    }
+    document.addEventListener('focusin', onFocusIn, true)
+    document.addEventListener('focusout', onFocusOut, true)
   } catch {
     // ignore
   }
