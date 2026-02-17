@@ -105,8 +105,6 @@ export type XDataV1 = {
 const KEY = 'littlephone_x_v1'
 const genId = (p: string) => `${p}_${Date.now()}_${Math.random().toString(16).slice(2)}`
 
-const normalizeHandle = (h: string) => String(h || '').trim().replace(/^@+/, '').toLowerCase()
-
 const palette = [
   '#EF4444', '#F97316', '#F59E0B', '#84CC16', '#22C55E',
   '#14B8A6', '#06B6D4', '#3B82F6', '#6366F1', '#8B5CF6',
@@ -249,7 +247,7 @@ export async function xLoad(meName: string): Promise<XDataV1> {
   const safe = loaded && typeof loaded === 'object' ? loaded : base
   const meHandle = safe.meHandle && typeof safe.meHandle === 'string' ? safe.meHandle : xMakeHandle(meName)
   const usersRaw = Array.isArray(safe.users) ? safe.users : []
-  const users0: XUser[] = usersRaw.map((u: any) => {
+  const users: XUser[] = usersRaw.map((u: any) => {
     const name = String(u?.name || '').trim() || 'User'
     const handle = typeof u?.handle === 'string' && u.handle ? u.handle : xMakeHandle(name)
     const color = typeof u?.color === 'string' && u.color ? u.color : xMakeColor(handle || name)
@@ -275,52 +273,6 @@ export async function xLoad(meName: string): Promise<XDataV1> {
       createdAt: typeof u?.createdAt === 'number' ? u.createdAt : Date.now(),
     }
   })
-
-  // 去重：同一个虚拟人物只保留一个推特账号（handle 或 name 任一命中都视为同人），并迁移所有引用
-  const normName = (s: string) => String(s || '').trim().toLowerCase()
-  const scoreUser = (u: XUser) => {
-    const stable = u.id && !String(u.id).startsWith('xu_') ? 20 : 0
-    const realAvatar = u.avatarUrl && !String(u.avatarUrl).startsWith('data:image/svg+xml') ? 5 : 0
-    return stable + realAvatar + (Number(u.createdAt || 0) || 0) / 1e15
-  }
-  const canonicalUsers: XUser[] = []
-  const idMap = new Map<string, string>() // oldId -> canonicalId
-  for (const u of users0) {
-    const uh = normalizeHandle(u.handle || '')
-    const un = normName(u.name || '')
-    const idx = canonicalUsers.findIndex((c) => {
-      const ch = normalizeHandle(c.handle || '')
-      const cn = normName(c.name || '')
-      const sameHandle = !!uh && !!ch && uh === ch
-      const sameName = !!un && !!cn && un === cn
-      return sameHandle || sameName
-    })
-    if (idx < 0) {
-      canonicalUsers.push(u)
-      continue
-    }
-    const prev = canonicalUsers[idx]
-    const keepNew = scoreUser(u) > scoreUser(prev)
-    const winner = keepNew ? u : prev
-    const loser = keepNew ? prev : u
-    canonicalUsers[idx] = winner
-    if (loser.id && winner.id && loser.id !== winner.id) idMap.set(loser.id, winner.id)
-  }
-  const resolveMappedId = (id: string) => {
-    let cur = id
-    const seen = new Set<string>()
-    while (idMap.has(cur) && !seen.has(cur)) {
-      seen.add(cur)
-      cur = idMap.get(cur) || cur
-    }
-    return cur
-  }
-  const mapId = (id: any) => {
-    const s = String(id || '').trim()
-    if (!s) return s
-    return resolveMappedId(s)
-  }
-  const users: XUser[] = canonicalUsers.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
   const dms: XDMThread[] = Array.isArray(safe.dms)
     ? safe.dms.map((t: any) => {
         const messages: XDMMessage[] = Array.isArray(t?.messages)
@@ -342,7 +294,7 @@ export async function xLoad(meName: string): Promise<XDataV1> {
           : []
         return {
           id: String(t?.id || genId('xdmt')),
-          peerId: mapId(String(t?.peerId || genId('peer'))),
+          peerId: String(t?.peerId || genId('peer')),
           peerName: String(t?.peerName || '陌生人'),
           updatedAt: typeof t?.updatedAt === 'number' ? t.updatedAt : Date.now(),
           unreadCount: typeof t?.unreadCount === 'number' ? t.unreadCount : 0,
@@ -362,13 +314,13 @@ export async function xLoad(meName: string): Promise<XDataV1> {
     meBio: typeof safe.meBio === 'string' ? safe.meBio : '',
     meFollowerCount: typeof safe.meFollowerCount === 'number' ? safe.meFollowerCount : 0,
     suppressOtherProfileEditTip: typeof safe.suppressOtherProfileEditTip === 'boolean' ? safe.suppressOtherProfileEditTip : false,
-    follows: Array.from(new Set(Array.isArray(safe.follows) ? safe.follows.map(mapId).filter(Boolean) : [])),
-    muted: Array.from(new Set(Array.isArray((safe as any).muted) ? ((safe as any).muted as any[]).map(mapId).filter(Boolean) : [])),
-    blocked: Array.from(new Set(Array.isArray((safe as any).blocked) ? ((safe as any).blocked as any[]).map(mapId).filter(Boolean) : [])),
+    follows: Array.isArray(safe.follows) ? safe.follows : [],
+    muted: Array.isArray((safe as any).muted) ? ((safe as any).muted as any[]) : [],
+    blocked: Array.isArray((safe as any).blocked) ? ((safe as any).blocked as any[]) : [],
     users,
-    posts: Array.isArray(safe.posts) ? safe.posts.map((p: any) => ({ ...p, authorId: mapId(p?.authorId) })) : [],
-    replies: Array.isArray(safe.replies) ? safe.replies.map((r: any) => ({ ...r, authorId: mapId(r?.authorId) })) : [],
-    notifications: Array.isArray(safe.notifications) ? safe.notifications.map((n: any) => ({ ...n, fromUserId: mapId(n?.fromUserId) })) : [],
+    posts: Array.isArray(safe.posts) ? safe.posts : [],
+    replies: Array.isArray(safe.replies) ? safe.replies : [],
+    notifications: Array.isArray(safe.notifications) ? safe.notifications : [],
     dms,
     searchCache: safe.searchCache && typeof safe.searchCache === 'object' ? safe.searchCache : {},
     searchHistory: Array.isArray((safe as any).searchHistory) ? (safe as any).searchHistory.filter((x: any) => typeof x === 'string').slice(0, 10) : [],
@@ -404,48 +356,7 @@ export function xEnsureUser(
           bio: user.bio || u.bio || xMakeBio(u.handle + '::bio'),
         }
       })
-      // 同 id 更新后，再顺手清理“同 handle/同名但不同 id”的重复账号（避免列表出现两个同人）
-      const normH = normalizeHandle(handle || byId.handle || '')
-      const normN = String(name || '').trim().toLowerCase()
-      const cleaned = nextUsers.filter((u) => {
-        if (u.id === byId.id) return true
-        const uh = normalizeHandle(u.handle || '')
-        if (normH && uh && uh === normH) return false
-        // 即使 handle 不同，只要“同名”也视为重复（同一个虚拟人物只允许一个账号）
-        if (normN && String(u.name || '').trim().toLowerCase() === normN) return false
-        return true
-      })
-      return { data: { ...data, users: cleaned }, userId: byId.id }
-    }
-
-    // 强绑定：传了 id 但没找到，必须创建新用户（并清理同 handle/同名的旧账号）
-    {
-      const id = user.id
-      const finalHandle = handle || xMakeHandle(name)
-      const color = xMakeColor(finalHandle)
-      const avatarUrl = user.avatarUrl || xMakeAvatarSvgDataUrl(finalHandle + '::' + name, name)
-      const bannerUrl = user.bannerUrl || xMakeBannerSvgDataUrl(finalHandle + '::banner')
-      const normH = normalizeHandle(finalHandle)
-      const normN = String(name || '').trim().toLowerCase()
-      const filtered = (data.users || []).filter((u) => {
-        if (!u) return false
-        const uh = normalizeHandle((u as any).handle || '')
-        if (normH && uh && uh === normH) return false
-        // 即使 handle 不同，只要“同名”也视为重复（同一个虚拟人物只允许一个账号）
-        if (normN && String((u as any).name || '').trim().toLowerCase() === normN) return false
-        return true
-      })
-      const next: XUser = {
-        id,
-        name,
-        handle: finalHandle,
-        color,
-        avatarUrl,
-        bannerUrl,
-        bio: user.bio || xMakeBio(finalHandle + '::bio'),
-        createdAt: Date.now(),
-      }
-      return { data: { ...data, users: [next, ...filtered].slice(0, 400) }, userId: id }
+      return { data: { ...data, users: nextUsers }, userId: byId.id }
     }
   }
 

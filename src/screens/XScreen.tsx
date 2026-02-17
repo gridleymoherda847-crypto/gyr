@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type ChangeEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PageContainer from '../components/PageContainer'
 import AppHeader from '../components/AppHeader'
@@ -255,38 +255,6 @@ export default function XScreen() {
   const [profileDraftFollower, setProfileDraftFollower] = useState('')
   const [profileTab, setProfileTab] = useState<'posts' | 'replies'>('posts')
   const [tipDialog, setTipDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
-  const [expandedBioByUser, setExpandedBioByUser] = useState<Record<string, boolean>>({})
-
-  const normalizeBio = (raw: string) => {
-    const lines = String(raw || '')
-      .split(/\r?\n/g)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 3)
-    return lines.join('\n').slice(0, 120).trim()
-  }
-
-  const makePasserbyBio = (seedName: string) => {
-    const seed = normalizeHandle(xMakeHandle(seedName || 'user')) || String(seedName || 'user')
-    let h = 0
-    for (let i = 0; i < seed.length; i++) h = (h * 131 + seed.charCodeAt(i)) >>> 0
-    const pick = (arr: string[], offset: number) => arr[(h + offset) % arr.length]
-    const rolePool = ['路过吃瓜', '深夜冲浪', '摸鱼选手', '社媒搬运', '电子流浪', '碎碎念人格', '偶尔上线']
-    const stylePool = ['话多但真诚', '脾气一般', '看心情发言', '偏理性', '情绪化选手', '轻微社恐', '喜欢抖机灵']
-    const interestPool = ['咖啡续命', '二次元补番', '拍照党', '电影夜猫', '游戏杂食', '音乐随机播放', '城市漫游']
-    const lineCount = 2 + (h % 2) // 2~3 行
-    const lines = [`${pick(rolePool, 3)}｜${pick(stylePool, 7)}`, `${pick(interestPool, 11)}`]
-    if (lineCount >= 3) lines.push('慢回但会回')
-    return normalizeBio(lines.join('\n'))
-  }
-
-  const ensurePasserbyUser = (next: XDataV1, name: string) => {
-    const finalName = String(name || '').trim() || 'User'
-    const exists = (next.users || []).find((u) => String(u.name || '').trim() === finalName)
-    const bio = exists?.bio ? undefined : makePasserbyBio(finalName)
-    const { data: d2, userId } = xEnsureUser(next, { name: finalName, bio })
-    return { data: d2, userId }
-  }
 
   const getCharacterIdentity = (c: (typeof characters)[number], persist: boolean) => {
     const rawHandle = String(c.xHandle || '').trim()
@@ -382,8 +350,6 @@ export default function XScreen() {
       try {
         const loaded = await xLoad(meNameBase)
         setData(loaded)
-        // 把 xLoad 的去重结果回写，确保历史“重复账号”被真正清理掉
-        void xSave(loaded)
         setLoadingProgress(100)
         window.setTimeout(() => setLoadingOpen(false), 220)
       } catch {
@@ -443,41 +409,6 @@ export default function XScreen() {
       .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
       .slice(-120)
   }, [openPostId, replies])
-  const [visibleReplyLimitByPost, setVisibleReplyLimitByPost] = useState<Record<string, number>>({})
-  const visibleReplyLimit = openPostId ? (visibleReplyLimitByPost[openPostId] || 6) : 6
-  const openPostVisibleReplies = useMemo(() => {
-    if (!openPostId) return []
-    return openPostReplies.slice(0, Math.max(1, visibleReplyLimit))
-  }, [openPostId, openPostReplies, visibleReplyLimit])
-  useEffect(() => {
-    if (!openPostId) return
-    setVisibleReplyLimitByPost((prev) => (prev[openPostId] ? prev : { ...prev, [openPostId]: 6 }))
-  }, [openPostId])
-
-  const getFollowerCountByUser = useCallback((snapshot: XDataV1, userId: string, fallbackName?: string) => {
-    if (userId === 'me') return Math.max(0, Number(snapshot.meFollowerCount || 0))
-    const user = (snapshot.users || []).find((u) => u.id === userId)
-    const manual = Number(user?.followerCount)
-    if (Number.isFinite(manual) && manual > 0) return manual
-    // 无手动配置时给一个稳定估计值，避免互动量过于随机。
-    const seed = String(user?.handle || fallbackName || userId || '')
-    let h = 0
-    for (let i = 0; i < seed.length; i++) h = (h * 131 + seed.charCodeAt(i)) >>> 0
-    return 120 + (h % 3800)
-  }, [])
-
-  const calcEngagementByFollowers = useCallback((followers: number, mode: 'feed' | 'latest' | 'hot' | 'profile' = 'feed') => {
-    const f = Math.max(0, Number(followers || 0))
-    const baseLike = Math.max(5, Math.round(Math.pow(f + 20, 0.62) * 2.6))
-    const baseRepost = Math.max(0, Math.round(baseLike * 0.16))
-    const baseReply = Math.max(0, Math.round(baseLike * 0.08))
-    const mul = mode === 'hot' ? 1.7 : mode === 'latest' ? 0.55 : mode === 'profile' ? 1.1 : 1
-    const jitter = 0.75 + Math.random() * 0.6
-    const like = Math.max(0, Math.round(baseLike * mul * jitter))
-    const repost = Math.max(0, Math.round(baseRepost * mul * (0.75 + Math.random() * 0.55)))
-    const reply = Math.max(0, Math.round(baseReply * mul * (0.8 + Math.random() * 0.6)))
-    return { like, repost, reply }
-  }, [])
 
   const rewriteLeadingMentionToName = (text: string) => {
     const raw = String(text || '')
@@ -660,75 +591,6 @@ export default function XScreen() {
     )
   }
 
-  const generateSeedRepliesByPosts = useCallback(async (postsForSeed: XPost[], snapshot: XDataV1) => {
-    const targets = (postsForSeed || []).slice(0, 8)
-    if (targets.length === 0) return { data: snapshot, replies: [] as XReply[] }
-    const postHint = targets
-      .map((p, i) => {
-        const followers = getFollowerCountByUser(snapshot, p.authorId, p.authorName)
-        return `[${i}] 作者:${p.authorName} | 粉丝:${followers} | 内容:${String(p.text || '').replace(/\s+/g, ' ').slice(0, 180)} | 配图:${String(p.imageDesc || '').replace(/\s+/g, ' ').slice(0, 120) || '无'}`
-      })
-      .join('\n')
-
-    const sys =
-      sysPrefix() +
-      `【X（推特风格）/批量帖子首屏评论生成】\n` +
-      `你要为多条帖子同步生成“首屏评论”，每条帖子必须给 6 条。\n` +
-      `要求：\n` +
-      `- 评论必须和对应帖子内容强相关，禁止泛泛而谈\n` +
-      `- 允许少量分歧/抬杠，但整体像真实评论区\n` +
-      `- 至少 2 条评论要具体引用帖子中的某个细节（词语/观点/配图描述）\n` +
-      `- 每条 <= 90 字\n` +
-      `- 名字自然，不要重复\n` +
-      `- 内容需合规、避免不适宜主题与极端表达\n` +
-      `- 【翻译强制】若评论主体为外语，必须写成：外语原文（简体中文翻译）\n` +
-      `- 只输出 JSON\n\n` +
-      `待生成帖子：\n${postHint}\n\n` +
-      `JSON 格式：\n` +
-      `{\n` +
-      `  "postReplies": [\n` +
-      `    { "postIndex": 0, "replies": [ { "authorName": "名字", "text": "评论" } ] }\n` +
-      `  ]\n` +
-      `}\n`
-
-    const parsed = await callJson(sys, '现在生成 postReplies。', 1600)
-    const blocks = Array.isArray((parsed as any)?.postReplies) ? (parsed as any).postReplies : []
-
-    let next = snapshot
-    const out: XReply[] = []
-    const toTranslate: Array<{ idx: number; text: string }> = []
-    for (const b of blocks) {
-      const postIndex = Number(b?.postIndex)
-      if (!Number.isInteger(postIndex) || postIndex < 0 || postIndex >= targets.length) continue
-      const targetPost = targets[postIndex]
-      const rows = Array.isArray(b?.replies) ? b.replies : []
-      for (const r of rows.slice(0, 6)) {
-        const authorName = String(r?.authorName || '').trim() || '路人'
-        const text = String(r?.text || '').trim()
-        if (!text) continue
-        const { data: d2, userId } = ensurePasserbyUser(next, authorName)
-        next = d2
-        const created = xNewReply(targetPost.id, userId, authorName, text)
-        if (needsInlineZh(text)) toTranslate.push({ idx: out.length, text })
-        out.push(created)
-      }
-    }
-
-    if (toTranslate.length > 0) {
-      const zhs = await translateBatchToZh(toTranslate.map((x) => x.text))
-      if (zhs.length === toTranslate.length) {
-        toTranslate.forEach((x, i) => {
-          const zh = String(zhs[i] || '').trim()
-          if (!zh) return
-          const cur = String(out[x.idx]?.text || '').trim()
-          if (!cur || hasInlineZhParen(cur)) return
-          out[x.idx] = { ...out[x.idx], text: `${cur}（${zh}）` }
-        })
-      }
-    }
-    return { data: next, replies: out }
-  }, [callJson, ensurePasserbyUser, getFollowerCountByUser, hasInlineZhParen, needsInlineZh, sysPrefix, translateBatchToZh])
-
   const refreshHome = async () => {
     if (!data) return
     const mode = homeMode
@@ -740,7 +602,7 @@ export default function XScreen() {
 
     const authorHint = authorPool.length ? authorPool.join('、') : '随机构造一些网名（2~4字/英文混合都可以）'
 
-    const want = 5 + Math.floor(Math.random() * 4) // 5~8
+    const want = 5 + Math.floor(Math.random() * 11) // 5~15
     await withLoading(mode === 'following' ? '正在刷新正在关注…' : '正在刷新为你推荐…', async () => {
       const sys =
         sysPrefix() +
@@ -797,7 +659,7 @@ export default function XScreen() {
       for (const p of picked) {
         const authorName = String(p.authorName || '').trim()
         const text = String(p.text || '').trim()
-        const { data: d2, userId } = ensurePasserbyUser(next, authorName || 'User')
+        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
         next = d2
         const u = next.users.find((x) => x.id === userId)
         const ensured = {
@@ -811,23 +673,17 @@ export default function XScreen() {
         post.authorColor = ensured.color
         post.hashtags = p.hashtags
         post.imageDesc = p.imageDesc
-        const followers = getFollowerCountByUser(next, ensured.id, ensured.name)
-        const eg = calcEngagementByFollowers(followers, mode === 'following' ? 'latest' : 'feed')
-        post.likeCount = eg.like
-        post.repostCount = eg.repost
-        post.replyCount = Math.max(6, eg.reply)
+        // 随机一点互动数（不追求真实算法）
+        post.likeCount = Math.floor(Math.random() * 800)
+        post.repostCount = Math.floor(Math.random() * 180)
+        post.replyCount = Math.floor(Math.random() * 90)
         newPosts.push(post)
       }
-
-      // 刷新主页时：每条新帖首屏 6 条评论，改为 API 按帖内容生成（非固定模板）
-      const seeded = await generateSeedRepliesByPosts(newPosts, next)
-      next = seeded.data
-      const seededReplies = seeded.replies
 
       // 留存：非我的帖子最多 50；我的帖子永久保留
       const mine = (next.posts || []).filter((p) => p.authorId === 'me')
       const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 50)
-      next = { ...next, posts: [...mine, ...others].slice(0, 600), replies: [...(next.replies || []), ...seededReplies].slice(-3000) }
+      next = { ...next, posts: [...mine, ...others].slice(0, 600) }
       setData(next)
       await xSave(next)
     })
@@ -955,20 +811,16 @@ export default function XScreen() {
       for (const p of hotRaw) {
         const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
         if (!text) continue
-        const { data: d2, userId } = ensurePasserbyUser(next, authorName || 'User')
+        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
         next = d2
         const u = next.users.find((x) => x.id === userId)
         const post = xNewPost(userId, authorName || 'User', text)
         post.authorHandle = u?.handle || xMakeHandle(authorName || 'User')
         post.authorColor = u?.color || xMakeColor(post.authorHandle)
         post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
-        {
-          const followers = getFollowerCountByUser(next, userId, authorName || 'User')
-          const eg = calcEngagementByFollowers(followers, 'hot')
-          post.likeCount = Math.max(post.likeCount, eg.like)
-          post.repostCount = Math.max(post.repostCount, eg.repost)
-          post.replyCount = Math.max(post.replyCount, eg.reply)
-        }
+        post.likeCount = 500 + Math.floor(Math.random() * 2500)
+        post.repostCount = 100 + Math.floor(Math.random() * 500)
+        post.replyCount = 50 + Math.floor(Math.random() * 300)
         hotIds.push(post.id); newPosts.push(post)
       }
 
@@ -976,20 +828,16 @@ export default function XScreen() {
       for (const p of latestRaw) {
         const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
         if (!text) continue
-        const { data: d2, userId } = ensurePasserbyUser(next, authorName || 'User')
+        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
         next = d2
         const u = next.users.find((x) => x.id === userId)
         const post = xNewPost(userId, authorName || 'User', text)
         post.authorHandle = u?.handle || xMakeHandle(authorName || 'User')
         post.authorColor = u?.color || xMakeColor(post.authorHandle)
         post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
-        {
-          const followers = getFollowerCountByUser(next, userId, authorName || 'User')
-          const eg = calcEngagementByFollowers(followers, 'latest')
-          post.likeCount = eg.like
-          post.repostCount = eg.repost
-          post.replyCount = eg.reply
-        }
+        post.likeCount = Math.floor(Math.random() * 150)
+        post.repostCount = Math.floor(Math.random() * 30)
+        post.replyCount = Math.floor(Math.random() * 20)
         latestIds.push(post.id); newPosts.push(post)
       }
 
@@ -1006,13 +854,9 @@ export default function XScreen() {
           post.authorHandle = u?.handle || identity.handle
           post.authorColor = u?.color || xMakeColor(post.authorHandle)
           post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
-          {
-            const followers = getFollowerCountByUser(next, userId, matchedCharacter.name)
-            const eg = calcEngagementByFollowers(followers, 'profile')
-            post.likeCount = Math.max(post.likeCount, eg.like)
-            post.repostCount = Math.max(post.repostCount, eg.repost)
-            post.replyCount = Math.max(post.replyCount, eg.reply)
-          }
+          post.likeCount = 200 + Math.floor(Math.random() * 1000)
+          post.repostCount = 50 + Math.floor(Math.random() * 200)
+          post.replyCount = 30 + Math.floor(Math.random() * 150)
           userIds.push(post.id); newPosts.push(post)
         }
       }
@@ -1066,12 +910,14 @@ export default function XScreen() {
       
       // 判断是否是用户自己的帖子（好友会来护驾）
       const isMyPost = openPost.authorId === 'me'
-      const authorFollowerCount = getFollowerCountByUser(data, openPost.authorId, openPost.authorName)
+      const myFollowerCount = Math.max(0, data.meFollowerCount || 0)
       const fanCount = (() => {
-        if (authorFollowerCount >= 100000) return 8
-        if (authorFollowerCount >= 10000) return 5
-        if (authorFollowerCount >= 1000) return 3
-        return 1
+        if (!isMyPost) return 0
+        if (myFollowerCount >= 100000) return 8
+        if (myFollowerCount >= 10000) return 5
+        if (myFollowerCount >= 1000) return 3
+        if (myFollowerCount >= 100) return 1
+        return 0
       })()
       
       // 如果是用户的帖子，让 chat 好友参与互动
@@ -1106,16 +952,15 @@ ${chatFriendList}
         }
       }
       
-      const baseWant = authorFollowerCount >= 100000 ? 20 : authorFollowerCount >= 10000 ? 14 : authorFollowerCount >= 1000 ? 10 : 8
-      const want = baseWant + Math.floor(Math.random() * 7)
+      const want = 8 + Math.floor(Math.random() * 13) // 8~20
       const passerbyWant = Math.max(2, want - fanCount)
       const fanHint = fanCount > 0
         ? `\n【粉丝评论（重要）】\n` +
-          `发帖人当前粉丝数量：${authorFollowerCount}\n` +
-          `请额外生成 ${fanCount} 条“发帖人的粉丝”评论，放在 fanReplies 数组中。\n` +
+          `用户当前粉丝数量：${myFollowerCount}\n` +
+          `请额外生成 ${fanCount} 条“用户的粉丝”评论，放在 fanReplies 数组中。\n` +
           `粉丝评论特点：\n` +
-          `- 100% 认识发帖人，是刷到偶像动态的感觉（支持/玩梗/安利/护短都行）\n` +
-          `- authorName 要像真实粉丝名字，且必须在名字里体现“粉丝”身份（比如“粉丝小雨”“${openPost.authorName}的粉丝-阿米”）\n` +
+          `- 100% 认识用户，是刷到偶像动态的感觉（支持/玩梗/安利/护短都行）\n` +
+          `- authorName 要像真实粉丝名字，且必须在名字里体现“粉丝”身份（比如“粉丝小雨”“${meName}的粉丝-阿米”）\n` +
           `- 允许少量阴阳黑粉，但整体更像“粉丝圈”\n`
         : ''
       const replyToSection = uniqueRepliedTo.length > 0 
@@ -1188,7 +1033,7 @@ ${chatFriendList}
         const text = String(r?.text || '').trim()
         if (!text) continue
         const ensured = (() => {
-          const { data: d2, userId } = ensurePasserbyUser(next, authorName || 'User')
+          const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
           next = d2
           return { id: userId, name: (authorName || 'User').trim() || 'User' }
         })()
@@ -1197,11 +1042,11 @@ ${chatFriendList}
 
       // 处理粉丝评论（会同步到 followers 列表，便于后续互动）
       for (const r of fanRaw.slice(0, fanCount)) {
-        const authorName = String(r?.authorName || '').trim() || `${openPost.authorName}的粉丝`
+        const authorName = String(r?.authorName || '').trim() || `${meName}的粉丝`
         const text = String(r?.text || '').trim()
         if (!text) continue
         const ensured = (() => {
-          const { data: d2, userId } = ensurePasserbyUser(next, authorName)
+          const { data: d2, userId } = xEnsureUser(next, { name: authorName })
           next = d2
           return { id: userId, name: authorName }
         })()
@@ -1277,16 +1122,8 @@ ${chatFriendList}
       }
 
       // 轻量更新 replyCount，并把“点赞”合并成一条汇总通知（不逐条列人名）
-      const likeDelta = newReplies.length > 0
-        ? Math.max(
-            1,
-            Math.floor(
-              (newReplies.length * (authorFollowerCount >= 100000 ? 9 : authorFollowerCount >= 10000 ? 6 : 3)) *
-                (0.65 + Math.random() * 0.8),
-            ),
-          )
-        : 0
-      if (likeDelta > 0 && openPost.authorId === 'me') {
+      const likeDelta = openPost.authorId === 'me' && newReplies.length > 0 ? (1 + Math.floor(Math.random() * Math.min(12, newReplies.length * 3 + 2))) : 0
+      if (likeDelta > 0) {
         interactionNotifs.unshift({
           id: `xn_${nowTs}_${Math.random().toString(16).slice(2)}`,
           kind: 'like',
@@ -1329,10 +1166,6 @@ ${chatFriendList}
     if (!text) return
     const mePost = xNewPost('me', meName, text)
     const follower = bumpFollowers(data.meFollowerCount || 0)
-    const meEg = calcEngagementByFollowers(Math.max(0, follower.nextVal || 0), 'profile')
-    mePost.likeCount = meEg.like
-    mePost.repostCount = meEg.repost
-    mePost.replyCount = meEg.reply
     let next: XDataV1 = { ...data, posts: [mePost, ...data.posts], meFollowerCount: follower.nextVal }
     setData(next)
     await xSave(next)
@@ -2123,30 +1956,22 @@ ${chatFriendList}
             .map((p) => `- ${p.text.replace(/\s+/g, ' ').slice(0, 80)}`)
             .join('\n')
           const want = 1 + Math.floor(Math.random() * 5)
-          const linkedCharacter = characters.find((c) => c.id === openProfileUserId)
-          const shouldRefreshBio = !!linkedCharacter && Math.random() < 0.2
           const sys =
             sysPrefix() +
             `【X（推特风格）/角色主页日常生成】\n` +
             `角色：${meta.name}\n` +
             `账号：${meta.handle}\n` +
             `人物设定：${meta.bio || '（无）'}\n` +
-            `原始人设：${(linkedCharacter?.prompt || '').replace(/\s+/g, ' ').slice(0, 140) || '（无）'}\n` +
             `最近已发：\n${myRecentPosts || '（无）'}\n` +
             `要求：\n` +
             `- 生成 ${want} 条“日常/碎碎念”推文\n` +
             `- 更像真实推特，不要过长\n` +
             `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
-            (shouldRefreshBio
-              ? `- 本次请同步生成一个新的签名 bio（最多3行，总长<=120字，需符合人设与最近发帖语气）\n`
-              : '') +
             `- 只输出 JSON\n` +
             `\n` +
             `JSON 格式：\n` +
             `{\n` +
-            `  "posts": [ { "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]` +
-            (shouldRefreshBio ? `,\n  "bio": "可选，最多3行"` : '') +
-            `\n` +
+            `  "posts": [ { "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]\n` +
             `}\n`
           const parsed = await callJson(sys, '现在生成 posts。', 700)
           const raw = Array.isArray((parsed as any).posts) ? (parsed as any).posts : []
@@ -2159,26 +1984,14 @@ ${chatFriendList}
             post.authorColor = meta.color
             post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 6).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
             post.imageDesc = typeof p?.imageDesc === 'string' ? p.imageDesc.trim().slice(0, 260) : ''
-            const followers = getFollowerCountByUser(next, openProfileUserId, meta.name)
-            const eg = calcEngagementByFollowers(followers, 'profile')
-            post.likeCount = eg.like
-            post.repostCount = eg.repost
-            post.replyCount = Math.max(6, eg.reply)
+            post.likeCount = Math.floor(Math.random() * 800)
+            post.repostCount = Math.floor(Math.random() * 180)
+            post.replyCount = Math.floor(Math.random() * 90)
             newPosts.push(post)
           }
-          const refreshedBio = shouldRefreshBio ? normalizeBio(String((parsed as any)?.bio || '')) : ''
-          if (refreshedBio) {
-            next = {
-              ...next,
-              users: (next.users || []).map((u) => (u.id === openProfileUserId ? { ...u, bio: refreshedBio } : u)),
-            }
-          }
-          const seeded = await generateSeedRepliesByPosts(newPosts, next)
-          next = seeded.data
-          const seededReplies = seeded.replies
           const mine = (next.posts || []).filter((p) => p.authorId === 'me')
           const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 80)
-          next = { ...next, posts: [...mine, ...others].slice(0, 650), replies: [...(next.replies || []), ...seededReplies].slice(-3000) }
+          next = { ...next, posts: [...mine, ...others].slice(0, 650) }
           setData(next)
           await xSave(next)
         })
@@ -2211,7 +2024,7 @@ ${chatFriendList}
           const kind = String(e?.kind || 'like')
           const fromName = String(e?.fromName || '').trim() || 'User'
           const ensured = (() => {
-            const { data: d2, userId } = ensurePasserbyUser(next, fromName)
+            const { data: d2, userId } = xEnsureUser(next, { name: fromName })
             next = d2
             return { id: userId, name: fromName }
           })()
@@ -2301,7 +2114,7 @@ ${chatFriendList}
           if (textList.length === 0) continue
 
           const ensured = (() => {
-            const { data: d2, userId } = ensurePasserbyUser(next, peerName)
+            const { data: d2, userId } = xEnsureUser(next, { name: peerName })
             next = d2
             return { userId }
           })()
@@ -2405,7 +2218,7 @@ ${chatFriendList}
           const kind = String(e?.kind || 'like')
           const fromName = String(e?.fromName || '').trim() || 'User'
           const ensured = (() => {
-            const { data: d2, userId } = ensurePasserbyUser(next, fromName)
+            const { data: d2, userId } = xEnsureUser(next, { name: fromName })
             next = d2
             return { id: userId, name: fromName }
           })()
@@ -2987,7 +2800,17 @@ ${chatFriendList}
             </svg>
           </button>
           <div className="text-[14px] font-extrabold text-gray-900">帖子</div>
-          <div className="w-9 h-9" />
+          <button
+            type="button"
+            onClick={() => void refreshCurrentPage()}
+            className="w-9 h-9 rounded-full bg-gray-100 text-gray-800 flex items-center justify-center active:scale-[0.98]"
+            title="刷新评论"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20 8a8 8 0 0 0-14.7-3M4 16a8 8 0 0 0 14.7 3" />
+            </svg>
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -3011,10 +2834,10 @@ ${chatFriendList}
 
           <div className="px-3 py-2 text-[12px] text-gray-500">评论</div>
           {openPostReplies.length === 0 ? (
-            <div className="px-3 pb-8 text-[13px] text-gray-500">还没有评论，先评一句或点“查看更多”加载更多。</div>
+            <div className="px-3 pb-8 text-[13px] text-gray-500">还没有评论，点刷新生成，或者你先评一句。</div>
           ) : (
             <div>
-              {openPostVisibleReplies.map((r) => (
+              {openPostReplies.map((r) => (
                 <div key={r.id} className="px-3 py-3 border-b border-black/5">
                   <div className="flex items-start gap-3">
                     <button
@@ -3056,31 +2879,6 @@ ${chatFriendList}
                   </div>
                 </div>
               ))}
-              {openPostVisibleReplies.length < openPostReplies.length && (
-                <div className="px-3 py-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVisibleReplyLimitByPost((prev) => ({
-                        ...prev,
-                        [openPost.id]: Math.min(openPostReplies.length, (prev[openPost.id] || 6) + 12),
-                      }))
-                    }}
-                    className="w-full rounded-2xl border border-black/10 bg-gray-50 py-2.5 text-[12px] font-semibold text-gray-700"
-                  >
-                    查看更多
-                  </button>
-                </div>
-              )}
-              <div className="px-3 pb-3">
-                <button
-                  type="button"
-                  onClick={() => void refreshReplies()}
-                  className="w-full rounded-2xl bg-black text-white py-2.5 text-[12px] font-semibold"
-                >
-                  加载更多评论（调用AI）
-                </button>
-              </div>
             </div>
           )}
         </div>
@@ -3272,33 +3070,11 @@ ${chatFriendList}
                 </button>
               </div>
               <div className="mt-2 text-[12px] text-gray-700 leading-relaxed">
-                {meta.bio ? (
-                  <div>
-                    <div
-                      className="whitespace-pre-wrap"
-                      style={
-                        expandedBioByUser[uid]
-                          ? undefined
-                          : ({ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as any)
-                      }
-                    >
-                      {`签名：${meta.bio}`}
-                    </div>
-                    {(String(meta.bio || '').length > 54 || String(meta.bio || '').includes('\n')) && (
-                      <button
-                        type="button"
-                        className="mt-1 text-[11px] text-blue-500"
-                        onClick={() => setExpandedBioByUser((prev) => ({ ...prev, [uid]: !prev[uid] }))}
-                      >
-                        {expandedBioByUser[uid] ? '收起' : '更多'}
-                      </button>
-                    )}
-                  </div>
-                ) : isMe && !data?.meAvatarUrl && !data?.meBannerUrl && !data?.meBio ? (
-                  '点击更换头像、背景或简介'
-                ) : (
-                  ''
-                )}
+                {meta.bio
+                  ? `签名：${meta.bio}`
+                  : isMe && !data?.meAvatarUrl && !data?.meBannerUrl && !data?.meBio
+                    ? '点击更换头像、背景或简介'
+                    : ''}
               </div>
               <div className="mt-2 flex items-center gap-4 text-[12px] text-gray-600">
                 <button

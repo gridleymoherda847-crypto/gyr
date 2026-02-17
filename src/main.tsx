@@ -264,10 +264,18 @@ if (isIOS) {
           }
           if (focusUnlockTimer) window.clearTimeout(focusUnlockTimer)
           focusUnlockTimer = window.setTimeout(() => {
+            // iOS 某些输入法会产生瞬时失焦；若键盘仍开着，不要马上解锁高度，避免“恢复1秒后又塌回去”。
+            const stillFocused = isTextInputTarget(document.activeElement)
+            if (stillFocused || lastKb > 80) {
+              focusInputActive = stillFocused || focusInputActive
+              focusUnlockTimer = 0
+              schedule()
+              return
+            }
             focusLockedHeight = 0
             focusUnlockTimer = 0
             schedule()
-          }, 420)
+          }, 520)
         }
       }, 0)
       window.setTimeout(schedule, 60)

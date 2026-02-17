@@ -90,28 +90,6 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composingRef = useRef(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const nearBottomRef = useRef(true)
-  const forceScrollRef = useRef(false)
-
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
-    const container = messagesContainerRef.current
-    // 优先用 scrollTop 兜底（Safari/部分壳浏览器对 scrollIntoView 对齐策略不稳定）
-    if (container) {
-      try {
-        container.scrollTop = container.scrollHeight
-      } catch { /* ignore */ }
-    }
-    const end = messagesEndRef.current
-    if (!end) return
-    try {
-      end.scrollIntoView({ behavior, block: 'end', inline: 'nearest' })
-    } catch {
-      try { end.scrollIntoView() } catch { /* ignore */ }
-    }
-  }, [])
-
   const autosizeInput = useCallback((el?: HTMLTextAreaElement | null) => {
     const textarea = el || inputRef.current
     if (!textarea) return
@@ -122,11 +100,11 @@ export default function ChatScreen() {
       const next = Math.min(textarea.scrollHeight, maxHeight)
       textarea.style.height = `${next}px`
     } catch { /* ignore */ }
-    // iOS Safari：输入框高度变化时容易把消息区“顶”到中间，若用户本来在底部则强制保持底部锚定
-    if (nearBottomRef.current) {
-      requestAnimationFrame(() => scrollToBottom('auto'))
-    }
   }, [])
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const nearBottomRef = useRef(true)
+  const forceScrollRef = useRef(false)
   // 分页渲染窗口：只渲染最近 N 条，上拉再加载更早的
   const PAGE_SIZE = 15
   // 关键优化：首次进入聊天时不要先渲染“全量消息”，否则超长聊天会直接卡死
@@ -690,17 +668,17 @@ export default function ChatScreen() {
   useEffect(() => {
     if (isFirstRender.current) {
       // 首次渲染：直接跳到底部，不要动画
-      scrollToBottom('auto')
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
       isFirstRender.current = false
     } else {
       // 用户发送消息/主动触发：强制立刻跳到底部（解决“发完不知道有没有发出去”）
       if (forceScrollRef.current) {
-        scrollToBottom('auto')
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
         forceScrollRef.current = false
       } else {
         // 后续新消息：仅在用户在底部附近时滚动，避免手机端卡顿
         if (nearBottomRef.current) {
-          scrollToBottom('smooth')
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
         }
       }
     }
@@ -2371,32 +2349,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           ...chatHistory
         ]
 
-        // 让角色“看得到”用户头像（如果模型/中转不支持多模态，OSContext 会自动退化为文本占位）
-        // 目标：用户想让对方评价自己的头像/吐槽头像内容时，模型能基于真实图片作答
-        try {
-          const avatar = String(selectedPersona?.avatar || '').trim()
-          const avatarOk = /^data:image\//i.test(avatar) || /^https?:\/\//i.test(avatar)
-          // 基本尺寸保护：避免某些用户上传超大 base64 导致请求过大
-          const avatarSmallEnough = avatar.length > 0 && avatar.length < 220_000
-          if (avatarOk && avatarSmallEnough) {
-            llmMessages.splice(1, 0, {
-              role: 'system',
-              content: [
-                { type: 'text', text: `【用户头像】用户（${selectedPersona?.name || '我'}）当前头像如下（图片）。如用户问你“头像怎么样/像什么/好不好看”，请基于图片内容评价，不要凭空编造看不到的细节。` },
-                { type: 'image_url', image_url: { url: avatar } },
-              ],
-            } as any)
-          } else if (avatarOk && !avatarSmallEnough) {
-            llmMessages.splice(1, 0, {
-              role: 'system',
-              content: `【用户头像】用户（${selectedPersona?.name || '我'}）设置了头像图片，但图片过大未随请求传入；若用户要你评价头像，请让用户把头像图片发到聊天里（发图片消息）再评价。`,
-            })
-          }
-        } catch {
-          // ignore
-        }
-
-
         // 允许“连续点箭头生成”：区分两种情况
         // - 如果用户刚发了新消息：正常回复即可（历史末尾应为 user）
         // - 如果用户没有新发言：根据“距离用户上次发言”的时长，决定是“继续补几句”还是“主动追问”
@@ -2593,8 +2545,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           }
         }
 
-        response = response.trim()
-
         // 强制校验：避免“重生成后不问了/不提时间差”
         if (shouldForceAcknowledge) {
           const firstLine = ((response || '').trim().split('\n').map(s => s.trim()).filter(Boolean)[0]) || ''
@@ -2725,82 +2675,44 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           }
         }
 
-        // 兜底：强制满足“线上回复气泡数量区间”（用户设置的 min/max），即使模型不听话也要补足/裁剪
+        // 兜底：如果模型输出条数不足（且用户输入不敷衍），再补一些短消息（不拆半句、不重复）
         {
           const lastUserText = getLastUserText(workingMessages)
-          const rawMin = Math.min(20, Math.max(1, Number((character as any).onlineReplyMin ?? 3) || 3))
-          const rawMax = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 8) || 8))
-          const onlineMin = Math.min(rawMin, rawMax)
-          const onlineMax = Math.max(rawMin, rawMax)
-          const requiredMin = isTrivialUserInput(lastUserText) ? 1 : onlineMin
-
-          if (!character.offlineMode) {
-            // 先裁剪到上限
-            if (replies.length > onlineMax) replies = replies.slice(0, onlineMax)
-            // 不足下限：补写（不拆半句、不重复）
-            if (replies.length < requiredMin) {
-              const need = Math.min(8, Math.max(1, requiredMin - replies.length))
-              const translationMode = characterLanguage !== 'zh' && translationEnabled && !character.offlineMode
+          if (!character.offlineMode && replies.length < 3 && !isTrivialUserInput(lastUserText)) {
+            try {
+              const need = Math.max(1, Math.min(4, 3 - replies.length))
+              const supplementPrompt =
+                `你刚才只输出了${replies.length}条微信消息。现在请再补充 ${need} 条“短消息”，要求：\n` +
+                `- 不要重复刚才的内容\n` +
+                `- 每条必须是完整句/完整语义，禁止拆半句\n` +
+                `- 每条尽量以“。/！/？/…/～”结尾（像真人微信）\n` +
+                `- 不能输出任何系统说明/格式说明/思维链\n` +
+                `- 不要输出转账/图片/音乐/位置等指令\n` +
+                `只输出补充消息，多条用换行分隔。`
+              let extra = await callLLM(
+                [...llmMessages, { role: 'assistant', content: response }, { role: 'user', content: supplementPrompt }],
+                undefined,
+                { maxTokens: 220, timeoutMs: 600000, temperature: 0.9 }
+              )
+              if (extra && !character.offlineMode) extra = stripThoughtForOnline(extra)
+              let extras = splitToReplies(extra || '')
+              if (!character.offlineMode) extras = extras.map(stripThoughtForOnline).map((s) => (s || '').trim()).filter(Boolean)
               const normalize = (s: string) => (s || '').trim().replace(/\s+/g, ' ')
               const seen = new Set(replies.map(normalize))
-              let picked: string[] = []
-
-              // 优先尝试让模型补写；但无论补写是否失败，都必须在本地兜底补到 requiredMin（否则用户设置区间会“失效”）
-              try {
-                const supplementPrompt =
-                  `你刚才只输出了${replies.length}条微信消息。现在请再补充 ${need} 条“短消息”，要求：\n` +
-                  `- 不要重复刚才的内容\n` +
-                  `- 每条必须是完整句/完整语义，禁止拆半句\n` +
-                  `- 每条尽量像微信聊天气泡\n` +
-                  `- 不能输出任何系统说明/格式说明/思维链\n` +
-                  `- 不要输出转账/图片/音乐/位置等指令\n` +
-                  (translationMode ? `- 每条必须使用格式：外语原文 ||| 简体中文翻译\n` : '') +
-                  `只输出补充消息，多条用换行分隔。`
-
-                let extra = await callLLM(
-                  [...llmMessages, { role: 'assistant', content: response }, { role: 'user', content: supplementPrompt }],
-                  undefined,
-                  { maxTokens: Math.max(220, 80 * need), timeoutMs: 600000, temperature: 0.9 }
-                )
-                if (extra) extra = stripThoughtForOnline(extra)
-                let extras = splitToReplies(extra || '')
-                extras = extras.map(stripThoughtForOnline).map((s) => (s || '').trim()).filter(Boolean)
-
-                for (const e of extras) {
-                  const n = normalize(e)
-                  if (!n) continue
-                  if (seen.has(n)) continue
-                  picked.push(e)
-                  seen.add(n)
-                  if (picked.length >= need) break
-                }
-              } catch {
-                // ignore supplement failure
+              const picked: string[] = []
+              for (const e of extras) {
+                const n = normalize(e)
+                if (!n) continue
+                if (seen.has(n)) continue
+                picked.push(e)
+                seen.add(n)
+                if (picked.length >= need) break
               }
-
-              // 兜底：补写失败或仍不足，必须本地填充到位（尽量不复读）
-              if (picked.length < need) {
-                const fillers = [
-                  '嗯嗯。',
-                  '我懂了。',
-                  '那你呢？',
-                  '你现在感觉怎么样？',
-                  '我在呢。',
-                  '继续说呀。',
-                  '我听着。',
-                  '慢慢说就行。',
-                ]
-                for (const f of fillers) {
-                  if (picked.length >= need) break
-                  const n = normalize(f)
-                  if (seen.has(n)) continue
-                  picked.push(f)
-                  seen.add(n)
-                }
+              if (picked.length > 0) {
+                replies = [...replies, ...picked]
               }
-
-              if (picked.length > 0) replies = [...replies, ...picked]
-              if (replies.length > onlineMax) replies = replies.slice(0, onlineMax)
+            } catch {
+              // ignore
             }
           }
         }
@@ -4356,8 +4268,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     // 触发回复时也自动滚到底部，确保看得到“正在输入…”
     forceScrollRef.current = true
     nearBottomRef.current = true
-    scrollToBottom('auto')
-    safeTimeout(() => scrollToBottom('auto'), 50)
+    messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+    safeTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'instant' }), 50)
     // 不在这里“秒收款/秒退还”。转账处理必须跟随一次API回复流程，由 generateAIReplies 统一处理。
     // 重置待回复计数
     setPendingCount(0)
@@ -5258,7 +5170,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       const reader = new FileReader()
       reader.onload = () => {
         const base64 = reader.result as string
-        // 保留图片消息本身，不再触发任何“自动换头像”逻辑。
         // 用户主动发送：强制滚到底部
         forceScrollRef.current = true
         nearBottomRef.current = true
@@ -8095,7 +8006,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
   return (
     <WeChatLayout>
       {/* 背景必须与内容分层，否则部分设备会把整页合成导致文字发糊 */}
-      <div className="relative isolate flex flex-col h-full overflow-hidden">
+      <div className="relative isolate flex flex-col h-full min-h-0 overflow-hidden">
         {character.chatBackground && (
           <>
             <div className="pointer-events-none absolute inset-0 -z-10" style={chatBgStyle} />
@@ -8198,7 +8109,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         {/* 消息列表 */}
         <div
           ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto px-3 py-4"
+          className="flex-1 min-h-0 overflow-y-auto px-3 py-4"
           style={{ contain: 'strict', willChange: 'scroll-position', WebkitOverflowScrolling: 'touch', transform: 'translateZ(0)' }}
           onScroll={(e) => {
             // 性能优化：使用 requestAnimationFrame 节流滚动处理
@@ -8275,7 +8186,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           const replyMsg = visibleMessages.find(m => m.id === replyingToMessageId)
           if (!replyMsg) return null
           return (
-            <div className="px-3 py-2 bg-gray-50 border-t border-gray-200 flex items-start gap-2">
+            <div className="flex-shrink-0 px-3 py-2 bg-gray-50 border-t border-gray-200 flex items-start gap-2">
               <div className="flex-1 min-w-0">
                 <div className="text-xs text-gray-500 mb-1">引用 {replyMsg.isUser ? (selectedPersona?.name || '我') : character.name}</div>
                 <div className="text-sm text-gray-700 truncate">{replyMsg.content}</div>
@@ -8295,7 +8206,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         
         {/* 输入框 */}
         {/* 移动端禁用 blur（滚动+输入会非常卡），桌面端保留 */}
-        <div className="px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40">
+        <div className="flex-shrink-0 px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40">
           <div className="flex items-center gap-2">
             {/* 语音按钮（虚拟语音：弹窗输入文字→发出语音条+转文字；线下模式不显示） */}
             {!character.offlineMode && (
@@ -8357,12 +8268,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               <button
                 type="button"
                 onClick={() => {
-                  const next = !showStickerPanel
-                  // 打开表情面板时：收起键盘（否则会出现“表情面板 + 键盘”双占位）
-                  if (next) {
-                    try { inputRef.current?.blur() } catch { /* ignore */ }
-                  }
-                  setShowStickerPanel(next)
+                  setShowStickerPanel(!showStickerPanel)
                   setShowPlusMenu(false)
                   setActivePanel(null)
                 }}
@@ -8379,25 +8285,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               ref={inputRef}
               placeholder="输入消息..."
               value={inputText}
-              onPointerDown={() => {
-                // 兜底：某些机型“点输入框”不会再次触发 focus（或 focus 已在），导致 + 面板不收起。
-                // 这里用 pointerdown 确保“点输入=收起面板”，符合微信/QQ 交互。
-                if (showPlusMenu || showStickerPanel || activePanel) {
-                  setShowPlusMenu(false)
-                  setShowStickerPanel(false)
-                  setActivePanel(null)
-                }
-              }}
-              onFocus={() => {
-                // 聚焦输入时：关闭“+号菜单/功能面板/表情面板”，避免它们挤占聊天区（用户反馈：打字时聊天界面看不见）
-                setShowPlusMenu(false)
-                setShowStickerPanel(false)
-                setActivePanel(null)
-                // iOS Safari：弹出键盘/输入时常把滚动定位到中间，强制保持最新消息可见
-                nearBottomRef.current = true
-                forceScrollRef.current = true
-                safeTimeout(() => scrollToBottom('auto'), 50)
-              }}
               onChange={(e) => {
                 setInputText(e.target.value)
                 // 下一帧再读 scrollHeight，避免 setState 前后抖动
@@ -8441,12 +8328,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                   handleSend()
                   return
                 }
-                const next = !showPlusMenu
-                // 打开“+号菜单”时：收起键盘（微信同款交互），避免菜单内容被键盘顶上去导致聊天区完全看不见
-                if (next) {
-                  try { inputRef.current?.blur() } catch { /* ignore */ }
-                }
-                setShowPlusMenu(next)
+                setShowPlusMenu(!showPlusMenu)
                 setShowStickerPanel(false)
                 setActivePanel(null)
               }}

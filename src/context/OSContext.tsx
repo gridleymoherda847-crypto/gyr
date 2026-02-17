@@ -127,22 +127,10 @@ export const COLOR_OPTIONS: ColorOption[] = [
   { id: 'cream', name: '奶油白', value: '#fdf6e3' },
   { id: 'black', name: '深黑', value: '#1a1a1a' },
   { id: 'brown', name: '棕褐', value: '#5d4037' },
-  { id: 'red', name: '正红', value: '#e53935' },
-  { id: 'wine-red', name: '棕红', value: '#8d3a3a' },
-  { id: 'rose-red', name: '玫红', value: '#d81b60' },
-  { id: 'brick-red', name: '砖红', value: '#b23a2b' },
-  { id: 'orange', name: '暖橙', value: '#fb8c00' },
-  { id: 'gold', name: '金黄', value: '#fbc02d' },
-  { id: 'amber', name: '琥珀', value: '#ffb300' },
   { id: 'pink', name: '樱花粉', value: '#f48fb1' },
   { id: 'purple', name: '梦幻紫', value: '#b39ddb' },
-  { id: 'violet', name: '紫罗兰', value: '#7e57c2' },
   { id: 'blue', name: '天空蓝', value: '#81d4fa' },
-  { id: 'cyan', name: '青蓝', value: '#00acc1' },
   { id: 'mint', name: '薄荷绿', value: '#a5d6a7' },
-  { id: 'teal', name: '青绿', value: '#26a69a' },
-  { id: 'navy', name: '深蓝', value: '#3949ab' },
-  { id: 'slate', name: '雾灰', value: '#607d8b' },
 ]
 
 // 默认壁纸：优先用图片，图片不存在则用渐变
@@ -236,9 +224,6 @@ type OSContextValue = {
   currentFont: FontOption; fontColor: ColorOption; userProfile: UserProfile
   fontSizeTier: FontSizeTier
   setFontSizeTier: (tier: FontSizeTier) => void
-  // 桌面“玻璃底图”透明度（影响主页各个半透明面板）
-  glassOpacity: number
-  setGlassOpacity: (opacity: number) => void
   llmConfig: LLMConfig; ttsConfig: TTSConfig; miCoinBalance: number; notifications: Notification[]
   characters: VirtualCharacter[]; chatLog: ChatMessage[]
   // 当前桌面排版（排版1=custom，排版2=minimal）下的自定义图标（仅作用于当前排版）
@@ -365,7 +350,6 @@ const STORAGE_KEYS = {
   currentFontId: 'os_current_font_id',
   fontColorId: 'os_font_color_id',
   fontSizeTier: 'os_font_size_tier',
-  glassOpacity: 'os_glass_opacity',
   wallpaper: 'os_wallpaper',
   // 兼容旧版本：曾经是单一 map（会在 hydration 时迁移到两份）
   customAppIcons: 'os_custom_app_icons',
@@ -639,8 +623,6 @@ export function OSProvider({ children }: PropsWithChildren) {
     return COLOR_OPTIONS[3]
   })
   const [fontSizeTier, setFontSizeTierState] = useState<FontSizeTier>('medium')
-  // 桌面玻璃底图透明度：0~100（0=完全透明，100=纯白不透明）
-  const [glassOpacity, setGlassOpacityState] = useState<number>(25)
   const [userProfile, setUserProfileState] = useState<UserProfile>(defaultUserProfile)
   const [llmConfig, setLLMConfigState] = useState<LLMConfig>(defaultLLMConfig)
   const [ttsConfig, setTTSConfigState] = useState<TTSConfig>(defaultTTSConfig)
@@ -753,7 +735,6 @@ export function OSProvider({ children }: PropsWithChildren) {
         nextFontId,
         nextColorId,
         nextFontSizeTier,
-        nextGlassOpacity,
         nextLocation,
         nextWeather,
         _savedVersion, // 不再用于强制重置，但保留读取以备将来使用
@@ -784,7 +765,6 @@ export function OSProvider({ children }: PropsWithChildren) {
         ),
         kvGetJSONDeep<string>(STORAGE_KEYS.fontColorId, COLOR_OPTIONS[3].id),
         kvGetJSONDeep<FontSizeTier>(STORAGE_KEYS.fontSizeTier, 'medium'),
-        kvGetJSONDeep<number>(STORAGE_KEYS.glassOpacity, 25),
         kvGetJSONDeep<LocationSettings>(LOCATION_STORAGE_KEY, defaultLocationSettings),
         kvGetJSONDeep<WeatherData>(WEATHER_STORAGE_KEY, defaultWeather),
         kvGetJSONDeep<string>(MUSIC_VERSION_KEY, ''),
@@ -933,23 +913,6 @@ export function OSProvider({ children }: PropsWithChildren) {
       setCurrentFontState(FONT_OPTIONS.find(f => f.id === nextFontId) || currentFont)
       setFontColorState(COLOR_OPTIONS.find(c => c.id === nextColorId) || fontColor)
       setFontSizeTierState((nextFontSizeTier === 'small' || nextFontSizeTier === 'medium' || nextFontSizeTier === 'large' || nextFontSizeTier === 'xlarge') ? nextFontSizeTier : 'medium')
-      // 玻璃底图透明度：0~100（0=完全透明，100=纯白不透明）
-      // 兼容旧版：以前存的是 30~170 的“倍率”，这里线性映射到 0~100
-      try {
-        const n = Number(nextGlassOpacity)
-        if (Number.isFinite(n)) {
-          const raw = Math.round(n)
-          const mapped =
-            raw > 100
-              ? Math.round(((Math.min(170, Math.max(30, raw)) - 30) / 140) * 100)
-              : raw
-          setGlassOpacityState(Math.min(100, Math.max(0, mapped)))
-        } else {
-          setGlassOpacityState(25)
-        }
-      } catch {
-        setGlassOpacityState(25)
-      }
       const fixedLocation = { ...(nextLocation as any), mode: 'manual' } as LocationSettings
       setLocationSettingsState(fixedLocation)
       // weather：如果已保存过手动天气（weather.updatedAt>0），优先尊重；否则用手动配置生成一个
@@ -1067,7 +1030,6 @@ export function OSProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.currentFontId, currentFont.id) }, [currentFont.id, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontColorId, fontColor.id) }, [fontColor.id, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fontSizeTier, fontSizeTier) }, [fontSizeTier, isHydrated])
-  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.glassOpacity, glassOpacity) }, [glassOpacity, isHydrated])
   // 壁纸、自定义图标等持久化
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.wallpaper, wallpaper) }, [wallpaper, isHydrated])
   // 新版：按排版分别存两份（旧 key 仅用于兼容读取，不再写回）
@@ -1097,11 +1059,6 @@ export function OSProvider({ children }: PropsWithChildren) {
 
   const setCurrentFont = (font: FontOption) => setCurrentFontState(font)
   const setFontSizeTier = (tier: FontSizeTier) => setFontSizeTierState(tier)
-  const setGlassOpacity = (opacity: number) => {
-    const n = Number(opacity)
-    const safe = Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : 25
-    setGlassOpacityState(safe)
-  }
   const setIconTheme = (theme: IconTheme) => setIconThemeState(theme)
   
   // 自定义字体管理
@@ -2588,7 +2545,6 @@ export function OSProvider({ children }: PropsWithChildren) {
     isHydrated,
     time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance,
     fontSizeTier, setFontSizeTier,
-    glassOpacity, setGlassOpacity,
     notifications,
     characters,
     chatLog,
@@ -2622,7 +2578,6 @@ export function OSProvider({ children }: PropsWithChildren) {
     customFonts, addCustomFont, removeCustomFont, getAllFontOptions,
     fetchAvailableModels, testLLMConfig, callLLM,
   }), [time, wallpaper, currentFont, fontColor, userProfile, llmConfig, ttsConfig, miCoinBalance, fontSizeTier,
-      glassOpacity,
       notifications, characters, chatLog, customAppIcons, customAppIconsLayout1, customAppIconsLayout2, decorImage, decorImageLayout1, decorImageLayout2, homeAvatar, signature, waterCount, wallpaperError, iconTheme, anniversaries, memo, customFonts,
       locationSettings, weather,
       musicPlaying, currentSong, musicProgress, musicPlaylist, musicFavorites, musicPlayMode, isHydrated, fetchAvailableModels])
