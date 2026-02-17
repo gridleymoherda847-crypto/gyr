@@ -715,12 +715,12 @@ export default function StickerManagerScreen() {
                         {renamingCatId === cat.id ? (
                           <div className="mb-3 rounded-xl bg-white/70 border border-black/10 p-2.5">
                             <div className="text-[11px] text-gray-600 mb-1">重命名分类</div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <input
                                 value={renameCatValue}
                                 onChange={(e) => setRenameCatValue(e.target.value)}
                                 placeholder="输入新名称"
-                                className="flex-1 px-3 py-2 rounded-xl bg-white/90 border border-black/10 outline-none text-sm text-[#111]"
+                                className="flex-1 min-w-[160px] px-3 py-2 rounded-xl bg-white/90 border border-black/10 outline-none text-sm text-[#111]"
                               />
                               <button
                                 type="button"
@@ -750,6 +750,7 @@ export default function StickerManagerScreen() {
                                 取消
                               </button>
                             </div>
+                            <div className="mt-2 text-[10px] text-gray-500">改名后需点“保存”才会生效</div>
                           </div>
                         ) : null}
 

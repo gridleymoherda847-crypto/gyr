@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ChangeEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PageContainer from '../components/PageContainer'
 import AppHeader from '../components/AppHeader'
@@ -382,6 +382,8 @@ export default function XScreen() {
       try {
         const loaded = await xLoad(meNameBase)
         setData(loaded)
+        // 把 xLoad 的去重结果回写，确保历史“重复账号”被真正清理掉
+        void xSave(loaded)
         setLoadingProgress(100)
         window.setTimeout(() => setLoadingOpen(false), 220)
       } catch {
@@ -441,6 +443,77 @@ export default function XScreen() {
       .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
       .slice(-120)
   }, [openPostId, replies])
+  const [visibleReplyLimitByPost, setVisibleReplyLimitByPost] = useState<Record<string, number>>({})
+  const visibleReplyLimit = openPostId ? (visibleReplyLimitByPost[openPostId] || 6) : 6
+  const openPostVisibleReplies = useMemo(() => {
+    if (!openPostId) return []
+    return openPostReplies.slice(0, Math.max(1, visibleReplyLimit))
+  }, [openPostId, openPostReplies, visibleReplyLimit])
+  useEffect(() => {
+    if (!openPostId) return
+    setVisibleReplyLimitByPost((prev) => (prev[openPostId] ? prev : { ...prev, [openPostId]: 6 }))
+  }, [openPostId])
+
+  const getFollowerCountByUser = useCallback((snapshot: XDataV1, userId: string, fallbackName?: string) => {
+    if (userId === 'me') return Math.max(0, Number(snapshot.meFollowerCount || 0))
+    const user = (snapshot.users || []).find((u) => u.id === userId)
+    const manual = Number(user?.followerCount)
+    if (Number.isFinite(manual) && manual > 0) return manual
+    // 无手动配置时给一个稳定估计值，避免互动量过于随机。
+    const seed = String(user?.handle || fallbackName || userId || '')
+    let h = 0
+    for (let i = 0; i < seed.length; i++) h = (h * 131 + seed.charCodeAt(i)) >>> 0
+    return 120 + (h % 3800)
+  }, [])
+
+  const calcEngagementByFollowers = useCallback((followers: number, mode: 'feed' | 'latest' | 'hot' | 'profile' = 'feed') => {
+    const f = Math.max(0, Number(followers || 0))
+    const baseLike = Math.max(5, Math.round(Math.pow(f + 20, 0.62) * 2.6))
+    const baseRepost = Math.max(0, Math.round(baseLike * 0.16))
+    const baseReply = Math.max(0, Math.round(baseLike * 0.08))
+    const mul = mode === 'hot' ? 1.7 : mode === 'latest' ? 0.55 : mode === 'profile' ? 1.1 : 1
+    const jitter = 0.75 + Math.random() * 0.6
+    const like = Math.max(0, Math.round(baseLike * mul * jitter))
+    const repost = Math.max(0, Math.round(baseRepost * mul * (0.75 + Math.random() * 0.55)))
+    const reply = Math.max(0, Math.round(baseReply * mul * (0.8 + Math.random() * 0.6)))
+    return { like, repost, reply }
+  }, [])
+
+  const makeSeedRepliesForPost = useCallback((post: XPost, snapshot: XDataV1) => {
+    const authorFollowers = getFollowerCountByUser(snapshot, post.authorId, post.authorName)
+    const wanted = 6
+    const words = String(post.text || '').replace(/\s+/g, ' ').trim()
+    const short = words.slice(0, 40)
+    const starterPool = [
+      '笑死，这条有点东西',
+      '这个角度我还真没想到',
+      '懂了，确实是这样',
+      '这句太真实了',
+      '信息量好大',
+      '说到点子上了',
+      '有被戳到',
+      '今天最像样的一条',
+    ]
+    const byScale = authorFollowers >= 100000
+      ? ['太会写了，直接转走', '评论区集合打卡', '这条肯定要爆', '粉丝来报到']
+      : authorFollowers >= 10000
+        ? ['有点热度了', '这条会有人转', '看得出你在认真写']
+        : ['路过支持一下', '小号也来留个言', '看完了，赞']
+    const lines = Array.from({ length: wanted }).map((_, i) => {
+      if (i === 0) return `${starterPool[Math.floor(Math.random() * starterPool.length)]}。`
+      if (i === 1 && short) return `“${short}${words.length > 40 ? '…' : ''}” 这句我记住了。`
+      const pool = Math.random() < 0.5 ? starterPool : byScale
+      return `${pool[Math.floor(Math.random() * pool.length)]}。`
+    })
+    const out: XReply[] = []
+    for (let i = 0; i < lines.length; i++) {
+      const name = `路人${(i + 1).toString().padStart(2, '0')}`
+      const ensured = ensurePasserbyUser(snapshot, name)
+      snapshot = ensured.data
+      out.push(xNewReply(post.id, ensured.userId, name, lines[i]))
+    }
+    return { replies: out, data: snapshot }
+  }, [ensurePasserbyUser, getFollowerCountByUser])
 
   const rewriteLeadingMentionToName = (text: string) => {
     const raw = String(text || '')
@@ -634,7 +707,7 @@ export default function XScreen() {
 
     const authorHint = authorPool.length ? authorPool.join('、') : '随机构造一些网名（2~4字/英文混合都可以）'
 
-    const want = 5 + Math.floor(Math.random() * 11) // 5~15
+    const want = 5 + Math.floor(Math.random() * 4) // 5~8
     await withLoading(mode === 'following' ? '正在刷新正在关注…' : '正在刷新为你推荐…', async () => {
       const sys =
         sysPrefix() +
@@ -705,17 +778,26 @@ export default function XScreen() {
         post.authorColor = ensured.color
         post.hashtags = p.hashtags
         post.imageDesc = p.imageDesc
-        // 随机一点互动数（不追求真实算法）
-        post.likeCount = Math.floor(Math.random() * 800)
-        post.repostCount = Math.floor(Math.random() * 180)
-        post.replyCount = Math.floor(Math.random() * 90)
+        const followers = getFollowerCountByUser(next, ensured.id, ensured.name)
+        const eg = calcEngagementByFollowers(followers, mode === 'following' ? 'latest' : 'feed')
+        post.likeCount = eg.like
+        post.repostCount = eg.repost
+        post.replyCount = Math.max(6, eg.reply)
         newPosts.push(post)
+      }
+
+      // 刷新主页时：每条新帖预置 6 条评论，先看再决定是否“查看更多”
+      const seededReplies: XReply[] = []
+      for (const p of newPosts) {
+        const seeded = makeSeedRepliesForPost(p, next)
+        next = seeded.data
+        seededReplies.push(...seeded.replies)
       }
 
       // 留存：非我的帖子最多 50；我的帖子永久保留
       const mine = (next.posts || []).filter((p) => p.authorId === 'me')
       const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 50)
-      next = { ...next, posts: [...mine, ...others].slice(0, 600) }
+      next = { ...next, posts: [...mine, ...others].slice(0, 600), replies: [...(next.replies || []), ...seededReplies].slice(-3000) }
       setData(next)
       await xSave(next)
     })
@@ -850,9 +932,13 @@ export default function XScreen() {
         post.authorHandle = u?.handle || xMakeHandle(authorName || 'User')
         post.authorColor = u?.color || xMakeColor(post.authorHandle)
         post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
-        post.likeCount = 500 + Math.floor(Math.random() * 2500)
-        post.repostCount = 100 + Math.floor(Math.random() * 500)
-        post.replyCount = 50 + Math.floor(Math.random() * 300)
+        {
+          const followers = getFollowerCountByUser(next, userId, authorName || 'User')
+          const eg = calcEngagementByFollowers(followers, 'hot')
+          post.likeCount = Math.max(post.likeCount, eg.like)
+          post.repostCount = Math.max(post.repostCount, eg.repost)
+          post.replyCount = Math.max(post.replyCount, eg.reply)
+        }
         hotIds.push(post.id); newPosts.push(post)
       }
 
@@ -867,9 +953,13 @@ export default function XScreen() {
         post.authorHandle = u?.handle || xMakeHandle(authorName || 'User')
         post.authorColor = u?.color || xMakeColor(post.authorHandle)
         post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
-        post.likeCount = Math.floor(Math.random() * 150)
-        post.repostCount = Math.floor(Math.random() * 30)
-        post.replyCount = Math.floor(Math.random() * 20)
+        {
+          const followers = getFollowerCountByUser(next, userId, authorName || 'User')
+          const eg = calcEngagementByFollowers(followers, 'latest')
+          post.likeCount = eg.like
+          post.repostCount = eg.repost
+          post.replyCount = eg.reply
+        }
         latestIds.push(post.id); newPosts.push(post)
       }
 
@@ -886,9 +976,13 @@ export default function XScreen() {
           post.authorHandle = u?.handle || identity.handle
           post.authorColor = u?.color || xMakeColor(post.authorHandle)
           post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
-          post.likeCount = 200 + Math.floor(Math.random() * 1000)
-          post.repostCount = 50 + Math.floor(Math.random() * 200)
-          post.replyCount = 30 + Math.floor(Math.random() * 150)
+          {
+            const followers = getFollowerCountByUser(next, userId, matchedCharacter.name)
+            const eg = calcEngagementByFollowers(followers, 'profile')
+            post.likeCount = Math.max(post.likeCount, eg.like)
+            post.repostCount = Math.max(post.repostCount, eg.repost)
+            post.replyCount = Math.max(post.replyCount, eg.reply)
+          }
           userIds.push(post.id); newPosts.push(post)
         }
       }
@@ -942,14 +1036,12 @@ export default function XScreen() {
       
       // 判断是否是用户自己的帖子（好友会来护驾）
       const isMyPost = openPost.authorId === 'me'
-      const myFollowerCount = Math.max(0, data.meFollowerCount || 0)
+      const authorFollowerCount = getFollowerCountByUser(data, openPost.authorId, openPost.authorName)
       const fanCount = (() => {
-        if (!isMyPost) return 0
-        if (myFollowerCount >= 100000) return 8
-        if (myFollowerCount >= 10000) return 5
-        if (myFollowerCount >= 1000) return 3
-        if (myFollowerCount >= 100) return 1
-        return 0
+        if (authorFollowerCount >= 100000) return 8
+        if (authorFollowerCount >= 10000) return 5
+        if (authorFollowerCount >= 1000) return 3
+        return 1
       })()
       
       // 如果是用户的帖子，让 chat 好友参与互动
@@ -984,15 +1076,16 @@ ${chatFriendList}
         }
       }
       
-      const want = 8 + Math.floor(Math.random() * 13) // 8~20
+      const baseWant = authorFollowerCount >= 100000 ? 20 : authorFollowerCount >= 10000 ? 14 : authorFollowerCount >= 1000 ? 10 : 8
+      const want = baseWant + Math.floor(Math.random() * 7)
       const passerbyWant = Math.max(2, want - fanCount)
       const fanHint = fanCount > 0
         ? `\n【粉丝评论（重要）】\n` +
-          `用户当前粉丝数量：${myFollowerCount}\n` +
-          `请额外生成 ${fanCount} 条“用户的粉丝”评论，放在 fanReplies 数组中。\n` +
+          `发帖人当前粉丝数量：${authorFollowerCount}\n` +
+          `请额外生成 ${fanCount} 条“发帖人的粉丝”评论，放在 fanReplies 数组中。\n` +
           `粉丝评论特点：\n` +
-          `- 100% 认识用户，是刷到偶像动态的感觉（支持/玩梗/安利/护短都行）\n` +
-          `- authorName 要像真实粉丝名字，且必须在名字里体现“粉丝”身份（比如“粉丝小雨”“${meName}的粉丝-阿米”）\n` +
+          `- 100% 认识发帖人，是刷到偶像动态的感觉（支持/玩梗/安利/护短都行）\n` +
+          `- authorName 要像真实粉丝名字，且必须在名字里体现“粉丝”身份（比如“粉丝小雨”“${openPost.authorName}的粉丝-阿米”）\n` +
           `- 允许少量阴阳黑粉，但整体更像“粉丝圈”\n`
         : ''
       const replyToSection = uniqueRepliedTo.length > 0 
@@ -1074,7 +1167,7 @@ ${chatFriendList}
 
       // 处理粉丝评论（会同步到 followers 列表，便于后续互动）
       for (const r of fanRaw.slice(0, fanCount)) {
-        const authorName = String(r?.authorName || '').trim() || `${meName}的粉丝`
+        const authorName = String(r?.authorName || '').trim() || `${openPost.authorName}的粉丝`
         const text = String(r?.text || '').trim()
         if (!text) continue
         const ensured = (() => {
@@ -1154,8 +1247,16 @@ ${chatFriendList}
       }
 
       // 轻量更新 replyCount，并把“点赞”合并成一条汇总通知（不逐条列人名）
-      const likeDelta = openPost.authorId === 'me' && newReplies.length > 0 ? (1 + Math.floor(Math.random() * Math.min(12, newReplies.length * 3 + 2))) : 0
-      if (likeDelta > 0) {
+      const likeDelta = newReplies.length > 0
+        ? Math.max(
+            1,
+            Math.floor(
+              (newReplies.length * (authorFollowerCount >= 100000 ? 9 : authorFollowerCount >= 10000 ? 6 : 3)) *
+                (0.65 + Math.random() * 0.8),
+            ),
+          )
+        : 0
+      if (likeDelta > 0 && openPost.authorId === 'me') {
         interactionNotifs.unshift({
           id: `xn_${nowTs}_${Math.random().toString(16).slice(2)}`,
           kind: 'like',
@@ -1198,6 +1299,10 @@ ${chatFriendList}
     if (!text) return
     const mePost = xNewPost('me', meName, text)
     const follower = bumpFollowers(data.meFollowerCount || 0)
+    const meEg = calcEngagementByFollowers(Math.max(0, follower.nextVal || 0), 'profile')
+    mePost.likeCount = meEg.like
+    mePost.repostCount = meEg.repost
+    mePost.replyCount = meEg.reply
     let next: XDataV1 = { ...data, posts: [mePost, ...data.posts], meFollowerCount: follower.nextVal }
     setData(next)
     await xSave(next)
@@ -2024,9 +2129,11 @@ ${chatFriendList}
             post.authorColor = meta.color
             post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 6).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
             post.imageDesc = typeof p?.imageDesc === 'string' ? p.imageDesc.trim().slice(0, 260) : ''
-            post.likeCount = Math.floor(Math.random() * 800)
-            post.repostCount = Math.floor(Math.random() * 180)
-            post.replyCount = Math.floor(Math.random() * 90)
+            const followers = getFollowerCountByUser(next, openProfileUserId, meta.name)
+            const eg = calcEngagementByFollowers(followers, 'profile')
+            post.likeCount = eg.like
+            post.repostCount = eg.repost
+            post.replyCount = Math.max(6, eg.reply)
             newPosts.push(post)
           }
           const refreshedBio = shouldRefreshBio ? normalizeBio(String((parsed as any)?.bio || '')) : ''
@@ -2036,9 +2143,15 @@ ${chatFriendList}
               users: (next.users || []).map((u) => (u.id === openProfileUserId ? { ...u, bio: refreshedBio } : u)),
             }
           }
+          const seededReplies: XReply[] = []
+          for (const p of newPosts) {
+            const seeded = makeSeedRepliesForPost(p, next)
+            next = seeded.data
+            seededReplies.push(...seeded.replies)
+          }
           const mine = (next.posts || []).filter((p) => p.authorId === 'me')
           const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 80)
-          next = { ...next, posts: [...mine, ...others].slice(0, 650) }
+          next = { ...next, posts: [...mine, ...others].slice(0, 650), replies: [...(next.replies || []), ...seededReplies].slice(-3000) }
           setData(next)
           await xSave(next)
         })
@@ -2847,17 +2960,7 @@ ${chatFriendList}
             </svg>
           </button>
           <div className="text-[14px] font-extrabold text-gray-900">帖子</div>
-          <button
-            type="button"
-            onClick={() => void refreshCurrentPage()}
-            className="w-9 h-9 rounded-full bg-gray-100 text-gray-800 flex items-center justify-center active:scale-[0.98]"
-            title="刷新评论"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M20 8a8 8 0 0 0-14.7-3M4 16a8 8 0 0 0 14.7 3" />
-            </svg>
-          </button>
+          <div className="w-9 h-9" />
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -2881,10 +2984,10 @@ ${chatFriendList}
 
           <div className="px-3 py-2 text-[12px] text-gray-500">评论</div>
           {openPostReplies.length === 0 ? (
-            <div className="px-3 pb-8 text-[13px] text-gray-500">还没有评论，点刷新生成，或者你先评一句。</div>
+            <div className="px-3 pb-8 text-[13px] text-gray-500">还没有评论，先评一句或点“查看更多”加载更多。</div>
           ) : (
             <div>
-              {openPostReplies.map((r) => (
+              {openPostVisibleReplies.map((r) => (
                 <div key={r.id} className="px-3 py-3 border-b border-black/5">
                   <div className="flex items-start gap-3">
                     <button
@@ -2926,6 +3029,31 @@ ${chatFriendList}
                   </div>
                 </div>
               ))}
+              {openPostVisibleReplies.length < openPostReplies.length && (
+                <div className="px-3 py-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVisibleReplyLimitByPost((prev) => ({
+                        ...prev,
+                        [openPost.id]: Math.min(openPostReplies.length, (prev[openPost.id] || 6) + 12),
+                      }))
+                    }}
+                    className="w-full rounded-2xl border border-black/10 bg-gray-50 py-2.5 text-[12px] font-semibold text-gray-700"
+                  >
+                    查看更多
+                  </button>
+                </div>
+              )}
+              <div className="px-3 pb-3">
+                <button
+                  type="button"
+                  onClick={() => void refreshReplies()}
+                  className="w-full rounded-2xl bg-black text-white py-2.5 text-[12px] font-semibold"
+                >
+                  加载更多评论（调用AI）
+                </button>
+              </div>
             </div>
           )}
         </div>

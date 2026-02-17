@@ -276,34 +276,51 @@ export async function xLoad(meName: string): Promise<XDataV1> {
     }
   })
 
-  // 去重：同一个虚拟人物只保留一个推特账号（按 handle 优先，其次按 name），并把引用迁移到规范 id
-  const keyOfUser = (u: XUser) => {
-    const h = normalizeHandle(u.handle || '')
-    return h ? `h:${h}` : `n:${String(u.name || '').trim().toLowerCase()}`
-  }
+  // 去重：同一个虚拟人物只保留一个推特账号（handle 或 name 任一命中都视为同人），并迁移所有引用
+  const normName = (s: string) => String(s || '').trim().toLowerCase()
   const scoreUser = (u: XUser) => {
     const stable = u.id && !String(u.id).startsWith('xu_') ? 20 : 0
     const realAvatar = u.avatarUrl && !String(u.avatarUrl).startsWith('data:image/svg+xml') ? 5 : 0
     return stable + realAvatar + (Number(u.createdAt || 0) || 0) / 1e15
   }
-  const canonicalByKey = new Map<string, XUser>()
-  for (const u of users0) {
-    const k = keyOfUser(u)
-    const prev = canonicalByKey.get(k)
-    if (!prev || scoreUser(u) > scoreUser(prev)) canonicalByKey.set(k, u)
-  }
+  const canonicalUsers: XUser[] = []
   const idMap = new Map<string, string>() // oldId -> canonicalId
   for (const u of users0) {
-    const k = keyOfUser(u)
-    const canon = canonicalByKey.get(k)
-    if (canon && u.id && u.id !== canon.id) idMap.set(u.id, canon.id)
+    const uh = normalizeHandle(u.handle || '')
+    const un = normName(u.name || '')
+    const idx = canonicalUsers.findIndex((c) => {
+      const ch = normalizeHandle(c.handle || '')
+      const cn = normName(c.name || '')
+      const sameHandle = !!uh && !!ch && uh === ch
+      const sameName = !!un && !!cn && un === cn
+      return sameHandle || sameName
+    })
+    if (idx < 0) {
+      canonicalUsers.push(u)
+      continue
+    }
+    const prev = canonicalUsers[idx]
+    const keepNew = scoreUser(u) > scoreUser(prev)
+    const winner = keepNew ? u : prev
+    const loser = keepNew ? prev : u
+    canonicalUsers[idx] = winner
+    if (loser.id && winner.id && loser.id !== winner.id) idMap.set(loser.id, winner.id)
+  }
+  const resolveMappedId = (id: string) => {
+    let cur = id
+    const seen = new Set<string>()
+    while (idMap.has(cur) && !seen.has(cur)) {
+      seen.add(cur)
+      cur = idMap.get(cur) || cur
+    }
+    return cur
   }
   const mapId = (id: any) => {
     const s = String(id || '').trim()
     if (!s) return s
-    return idMap.get(s) || s
+    return resolveMappedId(s)
   }
-  const users: XUser[] = Array.from(canonicalByKey.values()).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+  const users: XUser[] = canonicalUsers.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
   const dms: XDMThread[] = Array.isArray(safe.dms)
     ? safe.dms.map((t: any) => {
         const messages: XDMMessage[] = Array.isArray(t?.messages)
@@ -345,9 +362,9 @@ export async function xLoad(meName: string): Promise<XDataV1> {
     meBio: typeof safe.meBio === 'string' ? safe.meBio : '',
     meFollowerCount: typeof safe.meFollowerCount === 'number' ? safe.meFollowerCount : 0,
     suppressOtherProfileEditTip: typeof safe.suppressOtherProfileEditTip === 'boolean' ? safe.suppressOtherProfileEditTip : false,
-    follows: Array.isArray(safe.follows) ? safe.follows.map(mapId).filter(Boolean) : [],
-    muted: Array.isArray((safe as any).muted) ? ((safe as any).muted as any[]) : [],
-    blocked: Array.isArray((safe as any).blocked) ? ((safe as any).blocked as any[]) : [],
+    follows: Array.from(new Set(Array.isArray(safe.follows) ? safe.follows.map(mapId).filter(Boolean) : [])),
+    muted: Array.from(new Set(Array.isArray((safe as any).muted) ? ((safe as any).muted as any[]).map(mapId).filter(Boolean) : [])),
+    blocked: Array.from(new Set(Array.isArray((safe as any).blocked) ? ((safe as any).blocked as any[]).map(mapId).filter(Boolean) : [])),
     users,
     posts: Array.isArray(safe.posts) ? safe.posts.map((p: any) => ({ ...p, authorId: mapId(p?.authorId) })) : [],
     replies: Array.isArray(safe.replies) ? safe.replies.map((r: any) => ({ ...r, authorId: mapId(r?.authorId) })) : [],

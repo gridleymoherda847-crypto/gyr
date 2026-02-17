@@ -95,20 +95,31 @@ export default function PhoneShell({ children }: PropsWithChildren) {
       {/* 移动端：全屏沉浸式 */}
       {/* 外层：背景容器，填满整个屏幕（包括安全区域外），让壁纸/背景色延伸到边缘 */}
       <div
-        className="md:hidden fixed top-0 left-0 w-full select-none overflow-hidden"
+        className="md:hidden fixed inset-0 w-full select-none overflow-hidden"
         style={{
-          // 关键：用 visualViewport 驱动的 --app-height 作为高度（解决部分 Edge/安卓键盘弹起时输入栏掉到键盘下）
-          height: 'var(--app-height, 100dvh)',
           fontFamily: currentFont.fontFamily,
           fontSize: `${appliedFontPx}px`,
           color: fontColor.value,
+        }}
+      >
+        {/* 兜底背景层：即使 iOS standalone 出现底部白边，也优先显示壁纸而不是空白 */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
           background: isImageUrl ? undefined : wallpaper,
           backgroundImage: isImageUrl ? `url("${wallpaper}")` : undefined,
           backgroundSize: isImageUrl ? 'cover' : undefined,
           backgroundPosition: isImageUrl ? 'center' : undefined,
           backgroundColor: '#fef7f0',
         }}
-      >
+        />
+        <div
+          className="absolute top-0 left-0 w-full"
+          style={{
+            // 关键：交互层继续使用 visualViewport 驱动高度，保证输入区跟键盘走。
+            height: 'var(--app-height, 100dvh)',
+          }}
+        >
         {/* 内层：内容容器，用 padding 避开安全区域 */}
         <div 
           className="relative z-10 flex h-full flex-col"
@@ -145,6 +156,7 @@ export default function PhoneShell({ children }: PropsWithChildren) {
               ))}
             </div>
           )}
+        </div>
         </div>
       </div>
 
