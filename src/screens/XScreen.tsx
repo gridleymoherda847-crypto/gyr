@@ -479,42 +479,6 @@ export default function XScreen() {
     return { like, repost, reply }
   }, [])
 
-  const makeSeedRepliesForPost = useCallback((post: XPost, snapshot: XDataV1) => {
-    const authorFollowers = getFollowerCountByUser(snapshot, post.authorId, post.authorName)
-    const wanted = 6
-    const words = String(post.text || '').replace(/\s+/g, ' ').trim()
-    const short = words.slice(0, 40)
-    const starterPool = [
-      '笑死，这条有点东西',
-      '这个角度我还真没想到',
-      '懂了，确实是这样',
-      '这句太真实了',
-      '信息量好大',
-      '说到点子上了',
-      '有被戳到',
-      '今天最像样的一条',
-    ]
-    const byScale = authorFollowers >= 100000
-      ? ['太会写了，直接转走', '评论区集合打卡', '这条肯定要爆', '粉丝来报到']
-      : authorFollowers >= 10000
-        ? ['有点热度了', '这条会有人转', '看得出你在认真写']
-        : ['路过支持一下', '小号也来留个言', '看完了，赞']
-    const lines = Array.from({ length: wanted }).map((_, i) => {
-      if (i === 0) return `${starterPool[Math.floor(Math.random() * starterPool.length)]}。`
-      if (i === 1 && short) return `“${short}${words.length > 40 ? '…' : ''}” 这句我记住了。`
-      const pool = Math.random() < 0.5 ? starterPool : byScale
-      return `${pool[Math.floor(Math.random() * pool.length)]}。`
-    })
-    const out: XReply[] = []
-    for (let i = 0; i < lines.length; i++) {
-      const name = `路人${(i + 1).toString().padStart(2, '0')}`
-      const ensured = ensurePasserbyUser(snapshot, name)
-      snapshot = ensured.data
-      out.push(xNewReply(post.id, ensured.userId, name, lines[i]))
-    }
-    return { replies: out, data: snapshot }
-  }, [ensurePasserbyUser, getFollowerCountByUser])
-
   const rewriteLeadingMentionToName = (text: string) => {
     const raw = String(text || '')
     if (!raw.includes('@')) return raw
@@ -696,6 +660,75 @@ export default function XScreen() {
     )
   }
 
+  const generateSeedRepliesByPosts = useCallback(async (postsForSeed: XPost[], snapshot: XDataV1) => {
+    const targets = (postsForSeed || []).slice(0, 8)
+    if (targets.length === 0) return { data: snapshot, replies: [] as XReply[] }
+    const postHint = targets
+      .map((p, i) => {
+        const followers = getFollowerCountByUser(snapshot, p.authorId, p.authorName)
+        return `[${i}] 作者:${p.authorName} | 粉丝:${followers} | 内容:${String(p.text || '').replace(/\s+/g, ' ').slice(0, 180)} | 配图:${String(p.imageDesc || '').replace(/\s+/g, ' ').slice(0, 120) || '无'}`
+      })
+      .join('\n')
+
+    const sys =
+      sysPrefix() +
+      `【X（推特风格）/批量帖子首屏评论生成】\n` +
+      `你要为多条帖子同步生成“首屏评论”，每条帖子必须给 6 条。\n` +
+      `要求：\n` +
+      `- 评论必须和对应帖子内容强相关，禁止泛泛而谈\n` +
+      `- 允许少量分歧/抬杠，但整体像真实评论区\n` +
+      `- 至少 2 条评论要具体引用帖子中的某个细节（词语/观点/配图描述）\n` +
+      `- 每条 <= 90 字\n` +
+      `- 名字自然，不要重复\n` +
+      `- 内容需合规、避免不适宜主题与极端表达\n` +
+      `- 【翻译强制】若评论主体为外语，必须写成：外语原文（简体中文翻译）\n` +
+      `- 只输出 JSON\n\n` +
+      `待生成帖子：\n${postHint}\n\n` +
+      `JSON 格式：\n` +
+      `{\n` +
+      `  "postReplies": [\n` +
+      `    { "postIndex": 0, "replies": [ { "authorName": "名字", "text": "评论" } ] }\n` +
+      `  ]\n` +
+      `}\n`
+
+    const parsed = await callJson(sys, '现在生成 postReplies。', 1600)
+    const blocks = Array.isArray((parsed as any)?.postReplies) ? (parsed as any).postReplies : []
+
+    let next = snapshot
+    const out: XReply[] = []
+    const toTranslate: Array<{ idx: number; text: string }> = []
+    for (const b of blocks) {
+      const postIndex = Number(b?.postIndex)
+      if (!Number.isInteger(postIndex) || postIndex < 0 || postIndex >= targets.length) continue
+      const targetPost = targets[postIndex]
+      const rows = Array.isArray(b?.replies) ? b.replies : []
+      for (const r of rows.slice(0, 6)) {
+        const authorName = String(r?.authorName || '').trim() || '路人'
+        const text = String(r?.text || '').trim()
+        if (!text) continue
+        const { data: d2, userId } = ensurePasserbyUser(next, authorName)
+        next = d2
+        const created = xNewReply(targetPost.id, userId, authorName, text)
+        if (needsInlineZh(text)) toTranslate.push({ idx: out.length, text })
+        out.push(created)
+      }
+    }
+
+    if (toTranslate.length > 0) {
+      const zhs = await translateBatchToZh(toTranslate.map((x) => x.text))
+      if (zhs.length === toTranslate.length) {
+        toTranslate.forEach((x, i) => {
+          const zh = String(zhs[i] || '').trim()
+          if (!zh) return
+          const cur = String(out[x.idx]?.text || '').trim()
+          if (!cur || hasInlineZhParen(cur)) return
+          out[x.idx] = { ...out[x.idx], text: `${cur}（${zh}）` }
+        })
+      }
+    }
+    return { data: next, replies: out }
+  }, [callJson, ensurePasserbyUser, getFollowerCountByUser, hasInlineZhParen, needsInlineZh, sysPrefix, translateBatchToZh])
+
   const refreshHome = async () => {
     if (!data) return
     const mode = homeMode
@@ -786,13 +819,10 @@ export default function XScreen() {
         newPosts.push(post)
       }
 
-      // 刷新主页时：每条新帖预置 6 条评论，先看再决定是否“查看更多”
-      const seededReplies: XReply[] = []
-      for (const p of newPosts) {
-        const seeded = makeSeedRepliesForPost(p, next)
-        next = seeded.data
-        seededReplies.push(...seeded.replies)
-      }
+      // 刷新主页时：每条新帖首屏 6 条评论，改为 API 按帖内容生成（非固定模板）
+      const seeded = await generateSeedRepliesByPosts(newPosts, next)
+      next = seeded.data
+      const seededReplies = seeded.replies
 
       // 留存：非我的帖子最多 50；我的帖子永久保留
       const mine = (next.posts || []).filter((p) => p.authorId === 'me')
@@ -2143,12 +2173,9 @@ ${chatFriendList}
               users: (next.users || []).map((u) => (u.id === openProfileUserId ? { ...u, bio: refreshedBio } : u)),
             }
           }
-          const seededReplies: XReply[] = []
-          for (const p of newPosts) {
-            const seeded = makeSeedRepliesForPost(p, next)
-            next = seeded.data
-            seededReplies.push(...seeded.replies)
-          }
+          const seeded = await generateSeedRepliesByPosts(newPosts, next)
+          next = seeded.data
+          const seededReplies = seeded.replies
           const mine = (next.posts || []).filter((p) => p.authorId === 'me')
           const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 80)
           next = { ...next, posts: [...mine, ...others].slice(0, 650), replies: [...(next.replies || []), ...seededReplies].slice(-3000) }
