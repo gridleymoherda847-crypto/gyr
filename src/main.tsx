@@ -137,10 +137,12 @@ if (isIOS) {
     rafId = 0
     try {
       const layoutHeight = Math.round(window.innerHeight || 0)
-      // visualViewport.height = 键盘上方可见区域高度（iOS Safari 最可靠信号）
-      const vvHeight = vv ? Math.round(vv.height) : layoutHeight
-      // 取两者较小值：保证无论哪种场景都不会比“真实可见区”更大
-      const nextHeight = Math.min(layoutHeight, vvHeight) || layoutHeight
+      // iOS Safari 键盘场景下，visualViewport 可能带 offsetTop。
+      // 只用 vv.height 会偏小，导致底部输入栏“飘起来”（键盘与输入栏之间出现空带）。
+      // 正确姿势：使用 vv.height + vv.offsetTop 作为“可视区域底边”。
+      const viewportBottomRaw = vv ? (vv.height + vv.offsetTop) : layoutHeight
+      const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
+      const nextHeight = viewportBottom || layoutHeight
 
       if (nextHeight > 0 && Math.abs(nextHeight - lastH) >= 1) {
         lastH = nextHeight
@@ -148,7 +150,7 @@ if (isIOS) {
       }
 
       // 键盘是否打开（用于动态 safe-area 控制）
-      const keyboardHeight = Math.max(0, layoutHeight - vvHeight)
+      const keyboardHeight = Math.max(0, layoutHeight - viewportBottom)
       const keyboardLikelyOpen = keyboardHeight > 80
       document.documentElement.style.setProperty(
         '--runtime-safe-bottom',
