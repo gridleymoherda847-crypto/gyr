@@ -688,6 +688,21 @@ export default function ChatScreen() {
     }
   }, [messages])
 
+  // 键盘弹出/收起时，容器高度会变化。
+  // 如果用户本来就在底部附近，自动滚到底部，避免底部出现"一块空地"。
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    const ro = new ResizeObserver(() => {
+      // 只在用户本来就在底部附近时才自动滚
+      if (nearBottomRef.current || tailModeRef.current) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+      }
+    })
+    ro.observe(container)
+    return () => ro.disconnect()
+  }, [])
+
   // 处理从搜索结果跳转过来的高亮消息
   useEffect(() => {
     if (!highlightMsgId || !messages.length) return
