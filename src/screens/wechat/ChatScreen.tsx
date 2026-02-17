@@ -92,7 +92,6 @@ export default function ChatScreen() {
   const composingRef = useRef(false)
   const composerRef = useRef<HTMLDivElement>(null)
   const [composerHeight, setComposerHeight] = useState(56)
-  const [iosComposerDock, setIosComposerDock] = useState<{ enabled: boolean; bottom: number }>({ enabled: false, bottom: 0 })
   const isIOSDevice = useMemo(() => {
     try {
       return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
@@ -100,6 +99,14 @@ export default function ChatScreen() {
       return false
     }
   }, [])
+  const isIOSStandalone = useMemo(() => {
+    try {
+      return isIOSDevice && (window.navigator as any).standalone === true
+    } catch {
+      return false
+    }
+  }, [isIOSDevice])
+  const [iosComposerDock, setIosComposerDock] = useState<{ enabled: boolean; bottom: number }>({ enabled: false, bottom: 0 })
   const autosizeInput = useCallback((el?: HTMLTextAreaElement | null) => {
     const textarea = el || inputRef.current
     if (!textarea) return
@@ -131,11 +138,17 @@ export default function ChatScreen() {
   
   // 功能面板状态
   const [showPlusMenu, setShowPlusMenu] = useState(false)
-  // iOS（尤其主屏幕快捷方式/PWA）终极兜底：
-  // 输入栏脱离普通流，固定锚在 visualViewport 计算出的键盘上沿，避免“输入栏飘起/消失”。
+  useLayoutEffect(() => {
+    const el = composerRef.current
+    if (!el) return
+    const update = () => setComposerHeight(Math.max(48, Math.round(el.getBoundingClientRect().height || 0)))
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   useEffect(() => {
-    if (!isIOSDevice) return
-    let raf = 0
+    if (!isIOSStandalone) return
     const nonTextInputTypes = new Set(['button', 'checkbox', 'radio', 'range', 'file', 'color', 'submit', 'reset', 'image'])
     const isTextInputTarget = (target: EventTarget | null) => {
       const el = target as HTMLElement | null
@@ -147,67 +160,25 @@ export default function ChatScreen() {
       }
       return !!el.isContentEditable
     }
-    const apply = () => {
-      raf = 0
-      try {
-        const layoutHeight = Math.round(window.innerHeight || 0)
-        const vv = window.visualViewport
-        const viewportBottomRaw = vv ? vv.height + vv.offsetTop : layoutHeight
-        const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
-        const rawKeyboardHeight = Math.max(0, Math.round(layoutHeight - viewportBottom))
-        const keyboardHeight = Math.min(rawKeyboardHeight, Math.max(260, Math.round(layoutHeight * 0.62)))
-        const focused = isTextInputTarget(document.activeElement)
-        const open = focused || keyboardHeight > 80
-        if (!open) {
-          setIosComposerDock((prev) => (prev.enabled ? { enabled: false, bottom: 0 } : prev))
-          return
-        }
-        setIosComposerDock((prev) => {
-          if (prev.enabled && Math.abs(prev.bottom - keyboardHeight) < 2) return prev
-          return { enabled: true, bottom: keyboardHeight }
-        })
-      } catch {
-        // ignore
+    const onFocusIn = (e: FocusEvent) => {
+      if (isTextInputTarget(e.target)) {
+        // PWA 终极兜底：仅在真实输入态启用固定输入栏，避免页面结构被长期挤压。
+        setIosComposerDock({ enabled: true, bottom: 0 })
       }
     }
-    const schedule = () => {
-      if (raf) return
-      raf = window.requestAnimationFrame(apply)
-    }
-    const onFocusIn = () => {
-      schedule()
-      window.setTimeout(schedule, 60)
-      window.setTimeout(schedule, 180)
-      window.setTimeout(schedule, 320)
-    }
     const onFocusOut = () => {
-      window.setTimeout(schedule, 60)
-      window.setTimeout(schedule, 180)
-      window.setTimeout(schedule, 380)
+      window.setTimeout(() => {
+        const stillFocused = isTextInputTarget(document.activeElement)
+        if (!stillFocused) setIosComposerDock({ enabled: false, bottom: 0 })
+      }, 120)
     }
-    schedule()
-    window.addEventListener('resize', schedule, { passive: true } as any)
-    window.visualViewport?.addEventListener?.('resize', schedule, { passive: true } as any)
     document.addEventListener('focusin', onFocusIn as any, true)
     document.addEventListener('focusout', onFocusOut as any, true)
     return () => {
-      if (raf) window.cancelAnimationFrame(raf)
-      window.removeEventListener('resize', schedule as any)
-      window.visualViewport?.removeEventListener?.('resize', schedule as any)
       document.removeEventListener('focusin', onFocusIn as any, true)
       document.removeEventListener('focusout', onFocusOut as any, true)
     }
-  }, [isIOSDevice])
-
-  useLayoutEffect(() => {
-    const el = composerRef.current
-    if (!el) return
-    const update = () => setComposerHeight(Math.max(48, Math.round(el.getBoundingClientRect().height || 0)))
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+  }, [isIOSStandalone])
 
   const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | 'location' | 'takeout' | null>(null)
 
@@ -8203,7 +8174,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             willChange: 'scroll-position',
             WebkitOverflowScrolling: 'touch',
             transform: 'translateZ(0)',
-            // 只影响滚动锚点，不占实际可视空间（避免在输入框上方出现“空白挡板”）
+            // 只影响滚动锚点，不占据真实布局空间，避免输入栏上方出现“壁纸挡板”。
             scrollPaddingBottom: iosComposerDock.enabled ? `${composerHeight + 8}px` : undefined,
           }}
           onScroll={(e) => {
@@ -8310,7 +8281,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             right: 0,
             bottom: `${iosComposerDock.bottom}px`,
             zIndex: 45,
-            paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))',
+            paddingBottom: '8px',
           } : undefined}
         >
           <div className="flex items-center gap-2">
