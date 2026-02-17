@@ -100,6 +100,8 @@ export default function PhoneShell({ children }: PropsWithChildren) {
           fontFamily: currentFont.fontFamily,
           fontSize: `${appliedFontPx}px`,
           color: fontColor.value,
+          // iOS Safari fix: 强制 GPU 合成层，防止键盘弹出时 fixed 元素被 iOS 偷偷位移
+          transform: 'translate3d(0,0,0)',
         }}
       >
         {/* 兜底背景层：即使 iOS standalone 出现底部白边，也优先显示壁纸而不是空白 */}

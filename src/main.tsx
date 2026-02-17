@@ -137,12 +137,15 @@ if (isIOS) {
     rafId = 0
     try {
       const layoutHeight = Math.round(window.innerHeight || 0)
-      // iOS Safari 键盘场景下，visualViewport 可能带 offsetTop。
-      // 只用 vv.height 会偏小，导致底部输入栏“飘起来”（键盘与输入栏之间出现空带）。
-      // 正确姿势：使用 vv.height + vv.offsetTop 作为“可视区域底边”。
-      const viewportBottomRaw = vv ? (vv.height + vv.offsetTop) : layoutHeight
-      const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
-      const nextHeight = viewportBottom || layoutHeight
+      // 对 fixed 定位容器，只用 vv.height（不加 offsetTop），因为 fixed 不受文档滚动影响。
+      const vvHeight = vv ? Math.round(vv.height) : layoutHeight
+      const nextHeight = Math.min(layoutHeight, vvHeight) || layoutHeight
+
+      // iOS 键盘弹出时会偷偷给页面加一个 offsetTop 滚动量，
+      // 导致 fixed 容器底部露出壁纸。强制重置为 0 来消除这个 iOS 行为。
+      if (isIOS && vv && vv.offsetTop > 0) {
+        window.scrollTo(0, 0)
+      }
 
       if (nextHeight > 0 && Math.abs(nextHeight - lastH) >= 1) {
         lastH = nextHeight
@@ -150,7 +153,7 @@ if (isIOS) {
       }
 
       // 键盘是否打开（用于动态 safe-area 控制）
-      const keyboardHeight = Math.max(0, layoutHeight - viewportBottom)
+      const keyboardHeight = Math.max(0, layoutHeight - vvHeight)
       const keyboardLikelyOpen = keyboardHeight > 80
       document.documentElement.style.setProperty(
         '--runtime-safe-bottom',
