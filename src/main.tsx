@@ -137,15 +137,11 @@ if (isIOS) {
     rafId = 0
     try {
       const layoutHeight = Math.round(window.innerHeight || 0)
-      // 对 fixed 定位容器，只用 vv.height（不加 offsetTop），因为 fixed 不受文档滚动影响。
-      const vvHeight = vv ? Math.round(vv.height) : layoutHeight
-      const nextHeight = Math.min(layoutHeight, vvHeight) || layoutHeight
-
-      // iOS 键盘弹出时会偷偷给页面加一个 offsetTop 滚动量，
-      // 导致 fixed 容器底部露出壁纸。强制重置为 0 来消除这个 iOS 行为。
-      if (isIOS && vv && vv.offsetTop > 0) {
-        window.scrollTo(0, 0)
-      }
+      // iOS 键盘弹出时会滚动页面（offsetTop > 0）。
+      // 不跟 iOS 抢滚动（scrollTo 会导致输入框上下弹跳），而是把 offsetTop 也算进高度，
+      // 让内容区恰好填满"可视区域+被滚走的部分"，这样底部不会露壁纸。
+      const vvBottom = vv ? Math.round(vv.height + vv.offsetTop) : layoutHeight
+      const nextHeight = Math.max(0, Math.min(layoutHeight, vvBottom)) || layoutHeight
 
       if (nextHeight > 0 && Math.abs(nextHeight - lastH) >= 1) {
         lastH = nextHeight
@@ -153,7 +149,7 @@ if (isIOS) {
       }
 
       // 键盘是否打开（用于动态 safe-area 控制）
-      const keyboardHeight = Math.max(0, layoutHeight - vvHeight)
+      const keyboardHeight = Math.max(0, layoutHeight - vvBottom)
       const keyboardLikelyOpen = keyboardHeight > 80
       document.documentElement.style.setProperty(
         '--runtime-safe-bottom',
