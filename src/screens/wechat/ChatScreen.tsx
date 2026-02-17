@@ -91,22 +91,7 @@ export default function ChatScreen() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composingRef = useRef(false)
   const composerRef = useRef<HTMLDivElement>(null)
-  const [composerHeight, setComposerHeight] = useState(56)
-  const isIOSDevice = useMemo(() => {
-    try {
-      return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-    } catch {
-      return false
-    }
-  }, [])
-  const isIOSStandalone = useMemo(() => {
-    try {
-      return isIOSDevice && (window.navigator as any).standalone === true
-    } catch {
-      return false
-    }
-  }, [isIOSDevice])
-  const [iosComposerDock, setIosComposerDock] = useState<{ enabled: boolean; bottom: number }>({ enabled: false, bottom: 0 })
+  // iOS docking 已移除：全局 main.tsx 通过 --app-height 驱动布局，flex 自然正确
   const autosizeInput = useCallback((el?: HTMLTextAreaElement | null) => {
     const textarea = el || inputRef.current
     if (!textarea) return
@@ -138,47 +123,7 @@ export default function ChatScreen() {
   
   // 功能面板状态
   const [showPlusMenu, setShowPlusMenu] = useState(false)
-  useLayoutEffect(() => {
-    const el = composerRef.current
-    if (!el) return
-    const update = () => setComposerHeight(Math.max(48, Math.round(el.getBoundingClientRect().height || 0)))
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-  useEffect(() => {
-    if (!isIOSStandalone) return
-    const nonTextInputTypes = new Set(['button', 'checkbox', 'radio', 'range', 'file', 'color', 'submit', 'reset', 'image'])
-    const isTextInputTarget = (target: EventTarget | null) => {
-      const el = target as HTMLElement | null
-      if (!el) return false
-      if (el.tagName === 'TEXTAREA') return true
-      if (el.tagName === 'INPUT') {
-        const type = ((el as HTMLInputElement).type || 'text').toLowerCase()
-        return !nonTextInputTypes.has(type)
-      }
-      return !!el.isContentEditable
-    }
-    const onFocusIn = (e: FocusEvent) => {
-      if (isTextInputTarget(e.target)) {
-        // PWA 终极兜底：仅在真实输入态启用固定输入栏，避免页面结构被长期挤压。
-        setIosComposerDock({ enabled: true, bottom: 0 })
-      }
-    }
-    const onFocusOut = () => {
-      window.setTimeout(() => {
-        const stillFocused = isTextInputTarget(document.activeElement)
-        if (!stillFocused) setIosComposerDock({ enabled: false, bottom: 0 })
-      }, 120)
-    }
-    document.addEventListener('focusin', onFocusIn as any, true)
-    document.addEventListener('focusout', onFocusOut as any, true)
-    return () => {
-      document.removeEventListener('focusin', onFocusIn as any, true)
-      document.removeEventListener('focusout', onFocusOut as any, true)
-    }
-  }, [isIOSStandalone])
+  // composerHeight / iOS docking 已全部移除，高度由全局 --app-height 控制
 
   const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | 'location' | 'takeout' | null>(null)
 
@@ -8175,7 +8120,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             WebkitOverflowScrolling: 'touch',
             transform: 'translateZ(0)',
             // 只影响滚动锚点，不占据真实布局空间，避免输入栏上方出现“壁纸挡板”。
-            scrollPaddingBottom: iosComposerDock.enabled ? `${composerHeight + 8}px` : undefined,
+            // scrollPaddingBottom 已不需要，全局 --app-height 保证布局正确
           }}
           onScroll={(e) => {
             // 性能优化：使用 requestAnimationFrame 节流滚动处理
@@ -8275,14 +8220,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         <div
           ref={composerRef}
           className="flex-shrink-0 px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40"
-          style={iosComposerDock.enabled ? {
-            position: 'fixed',
-            left: 0,
-            right: 0,
-            bottom: `${iosComposerDock.bottom}px`,
-            zIndex: 45,
-            paddingBottom: '8px',
-          } : undefined}
+          style={undefined}
         >
           <div className="flex items-center gap-2">
             {/* 语音按钮（虚拟语音：弹窗输入文字→发出语音条+转文字；线下模式不显示） */}

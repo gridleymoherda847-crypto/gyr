@@ -125,88 +125,31 @@ if (isIOS) {
   }
 }
 
-// iOS 视口高度修复：用 innerHeight 兜底（解决部分机型 PWA 底部露黑）
-// 同时修复：键盘弹起时部分机型会“抖动/输入栏跑到键盘下面”。
-// 关键点：优先使用 visualViewport.height（代表可视区域高度），并节流 + 去抖动（避免 1px 反复 resize）。
+// 视口高度修复（iOS + Android 通用）
+// 核心思路：直接用 visualViewport.height 驱动 --app-height，不做复杂 clamp/lock。
+// iOS 键盘弹起时 visualViewport.height 会缩小到键盘上方可视区域，flex 布局自然正确。
 {
   let lastH = 0
-  let lastKb = -1
   let rafId = 0
-  let focusInputActive = false
-  let focusLockedHeight = 0
-  let focusUnlockTimer = 0
   const vv = window.visualViewport
-  const nonTextInputTypes = new Set(['button', 'checkbox', 'radio', 'range', 'file', 'color', 'submit', 'reset', 'image'])
-
-  const isTextInputTarget = (target: EventTarget | null) => {
-    const el = target as HTMLElement | null
-    if (!el) return false
-    const tag = el.tagName
-    if (tag === 'TEXTAREA') return true
-    if (tag === 'INPUT') {
-      const type = ((el as HTMLInputElement).type || 'text').toLowerCase()
-      return !nonTextInputTypes.has(type)
-    }
-    return !!el.isContentEditable
-  }
 
   const apply = () => {
     rafId = 0
     try {
       const layoutHeight = Math.round(window.innerHeight || 0)
-      // iOS Safari 键盘场景下，visualViewport 可能带 offsetTop。
-      // 只读 vv.height 会算短，导致输入栏和键盘之间出现“空带”。
-      const viewportBottomRaw = vv ? (vv.height + vv.offsetTop) : layoutHeight
-      const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
-      // 保守回退：iOS 非 PWA 浏览器在非输入态使用 innerHeight 作为主高度，优先稳态。
-      const useStableIOSHeight = isIOS && !isIOSStandalone
-      const rawKeyboardHeight = Math.max(0, Math.round(layoutHeight - viewportBottom))
-      // iOS 某些帧会短暂上报异常大的键盘高度（会把输入栏顶到很高，出现“键盘与输入框中间大空带”）。
-      // 这里做上限钳制，避免异常值污染布局。
-      const maxReasonableKeyboard = Math.max(260, Math.round(layoutHeight * 0.62))
-      const keyboardHeight = isIOS ? Math.min(rawKeyboardHeight, maxReasonableKeyboard) : rawKeyboardHeight
-      // iOS（含主屏幕模式）在输入期启用锁高，防止键盘动画结束后的“二次重算”把输入框压回键盘下方。
-      // 关键：只在“键盘已打开”时才开始锁，避免 focusin 初期把键盘前高度锁进去。
-      if (isIOS && focusInputActive && keyboardHeight > 80) {
-        const candidate = Math.max(0, layoutHeight - keyboardHeight)
-        if (!focusLockedHeight) {
-          focusLockedHeight = candidate
-        } else {
-          // 仅接受“接近当前锁值”的变化，过滤掉瞬时异常跳变（防止高度越锁越小）。
-          const delta = candidate - focusLockedHeight
-          if (Math.abs(delta) <= 44) {
-            focusLockedHeight = candidate
-          } else if (delta > 0) {
-            // 键盘轻微回落（候选变大）可放宽跟进，避免输入框被卡住。
-            focusLockedHeight = candidate
-          }
-        }
-      }
-      const useFocusLock = isIOS && focusInputActive && keyboardHeight > 80 && focusLockedHeight > 0
-      const focusedIOSHeight = focusInputActive ? viewportBottom : layoutHeight
-      let nextHeight = useFocusLock ? focusLockedHeight : (useStableIOSHeight ? focusedIOSHeight : viewportBottom)
-      if (isIOS && focusInputActive) {
-        // 关键兜底：iOS 有时会上报异常小的可视高度，导致输入栏被顶到屏幕上方形成大空带。
-        // 键盘打开期给一个合理下限，防止 app-height 发生“塌陷”。
-        const minFocusedHeight = Math.round(layoutHeight * 0.64)
-        if (nextHeight < minFocusedHeight) {
-          nextHeight = lastH >= minFocusedHeight ? lastH : minFocusedHeight
-        }
-      }
-      const keyboardLikelyOpen = keyboardHeight > 80 || focusInputActive
-      // 键盘动画期间适当放宽阈值，降低 1~3px 抖动导致的“跳动感”
-      const hThreshold = keyboardLikelyOpen ? 8 : 2
-      const kbThreshold = keyboardLikelyOpen ? 6 : 2
+      // visualViewport.height = 键盘上方可见区域高度（iOS Safari 最可靠信号）
+      const vvHeight = vv ? Math.round(vv.height) : layoutHeight
+      // 取两者较小值：保证无论哪种场景都不会比“真实可见区”更大
+      const nextHeight = Math.min(layoutHeight, vvHeight) || layoutHeight
 
-      if (nextHeight && Math.abs(nextHeight - lastH) >= hThreshold) {
+      if (nextHeight > 0 && Math.abs(nextHeight - lastH) >= 1) {
         lastH = nextHeight
         document.documentElement.style.setProperty('--app-height', `${nextHeight}px`)
       }
-      if (Math.abs(keyboardHeight - lastKb) >= kbThreshold) {
-        lastKb = keyboardHeight
-        document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight}px`)
-      }
-      // iOS 键盘打开时，不再叠加底部 safe-area（否则会在键盘上方出现一截“壁纸空带”）。
+
+      // 键盘是否打开（用于动态 safe-area 控制）
+      const keyboardHeight = Math.max(0, layoutHeight - vvHeight)
+      const keyboardLikelyOpen = keyboardHeight > 80
       document.documentElement.style.setProperty(
         '--runtime-safe-bottom',
         keyboardLikelyOpen ? '0px' : 'env(safe-area-inset-bottom, 0px)',
@@ -221,77 +164,40 @@ if (isIOS) {
     rafId = window.requestAnimationFrame(apply)
   }
 
-  // 首次设置（避免首次渲染白边/高度不对）
+  // 首次设置
   schedule()
 
-  // layout viewport resize（旋转、地址栏变化、部分键盘触发）
+  // 所有可能触发高度变化的事件
   window.addEventListener('resize', schedule, { passive: true } as any)
-  window.addEventListener('orientationchange', () => window.setTimeout(schedule, 60), { passive: true } as any)
+  window.addEventListener('orientationchange', () => window.setTimeout(schedule, 80), { passive: true } as any)
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) window.setTimeout(schedule, 60)
+    if (!document.hidden) window.setTimeout(schedule, 80)
   }, { passive: true } as any)
 
-  // visual viewport resize/scroll（iOS 键盘最可靠信号）
+  // visualViewport resize 是 iOS 键盘最可靠的信号
   try {
     vv?.addEventListener?.('resize', schedule, { passive: true } as any)
-    // vv.scroll 在多端壳浏览器上噪声较大，容易触发底部输入栏“跳动”，这里不再监听。
   } catch {
     // ignore
   }
 
-  // 兜底：部分浏览器在键盘开合时不会稳定触发 resize，用焦点事件补几次测量。
+  // focus 事件兆底：部分机型 resize 不够及时
   try {
-    const onFocusIn = (e: FocusEvent) => {
-      focusInputActive = isTextInputTarget(e.target)
-      if (focusUnlockTimer) {
-        window.clearTimeout(focusUnlockTimer)
-        focusUnlockTimer = 0
-      }
-      if (isIOS && focusInputActive) focusLockedHeight = 0
+    const onFocus = () => {
       schedule()
-      window.setTimeout(schedule, 60)
-      window.setTimeout(schedule, 180)
-      window.setTimeout(schedule, 320)
+      window.setTimeout(schedule, 100)
+      window.setTimeout(schedule, 300)
+      window.setTimeout(schedule, 600)
     }
-    const onFocusOut = () => {
-      window.setTimeout(() => {
-        focusInputActive = isTextInputTarget(document.activeElement)
-        if (isIOS) {
-          if (focusInputActive) {
-            // 输入框之间切换时清掉旧锁，等待新输入框在键盘打开后重新锁定。
-            focusLockedHeight = 0
-            return
-          }
-          if (focusUnlockTimer) window.clearTimeout(focusUnlockTimer)
-          focusUnlockTimer = window.setTimeout(() => {
-            // iOS 某些输入法会产生瞬时失焦；若键盘仍开着，不要马上解锁高度，避免“恢复1秒后又塌回去”。
-            const stillFocused = isTextInputTarget(document.activeElement)
-            if (stillFocused || lastKb > 80) {
-              focusInputActive = stillFocused || focusInputActive
-              focusUnlockTimer = 0
-              schedule()
-              return
-            }
-            focusLockedHeight = 0
-            focusUnlockTimer = 0
-            schedule()
-          }, 520)
-        }
-      }, 0)
-      window.setTimeout(schedule, 60)
-      window.setTimeout(schedule, 180)
-      window.setTimeout(schedule, 320)
-    }
-    document.addEventListener('focusin', onFocusIn as any, true)
-    document.addEventListener('focusout', onFocusOut as any, true)
+    document.addEventListener('focusin', onFocus, true)
+    document.addEventListener('focusout', onFocus, true)
   } catch {
     // ignore
   }
 
-  // iOS：禁用双指缩放/页面手势（避免"像电脑模式一样能拖动/缩放导致点击错位"）
+  // iOS：禁用双指缩放/页面手势
   if (isIOS) {
     const preventGesture = (e: Event) => {
-      // Safari 的 gesture 事件是可 cancel 的
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ev: any = e as any
       if (typeof ev?.preventDefault === 'function') ev.preventDefault()
