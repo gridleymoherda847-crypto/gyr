@@ -90,6 +90,16 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composingRef = useRef(false)
+  const composerRef = useRef<HTMLDivElement>(null)
+  const [composerHeight, setComposerHeight] = useState(56)
+  const [iosComposerDock, setIosComposerDock] = useState<{ enabled: boolean; bottom: number }>({ enabled: false, bottom: 0 })
+  const isIOSDevice = useMemo(() => {
+    try {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    } catch {
+      return false
+    }
+  }, [])
   const autosizeInput = useCallback((el?: HTMLTextAreaElement | null) => {
     const textarea = el || inputRef.current
     if (!textarea) return
@@ -121,6 +131,84 @@ export default function ChatScreen() {
   
   // 功能面板状态
   const [showPlusMenu, setShowPlusMenu] = useState(false)
+  // iOS（尤其主屏幕快捷方式/PWA）终极兜底：
+  // 输入栏脱离普通流，固定锚在 visualViewport 计算出的键盘上沿，避免“输入栏飘起/消失”。
+  useEffect(() => {
+    if (!isIOSDevice) return
+    let raf = 0
+    const nonTextInputTypes = new Set(['button', 'checkbox', 'radio', 'range', 'file', 'color', 'submit', 'reset', 'image'])
+    const isTextInputTarget = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null
+      if (!el) return false
+      if (el.tagName === 'TEXTAREA') return true
+      if (el.tagName === 'INPUT') {
+        const type = ((el as HTMLInputElement).type || 'text').toLowerCase()
+        return !nonTextInputTypes.has(type)
+      }
+      return !!el.isContentEditable
+    }
+    const apply = () => {
+      raf = 0
+      try {
+        const layoutHeight = Math.round(window.innerHeight || 0)
+        const vv = window.visualViewport
+        const viewportBottomRaw = vv ? vv.height + vv.offsetTop : layoutHeight
+        const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
+        const rawKeyboardHeight = Math.max(0, Math.round(layoutHeight - viewportBottom))
+        const keyboardHeight = Math.min(rawKeyboardHeight, Math.max(260, Math.round(layoutHeight * 0.62)))
+        const focused = isTextInputTarget(document.activeElement)
+        const open = focused || keyboardHeight > 80
+        if (!open) {
+          setIosComposerDock((prev) => (prev.enabled ? { enabled: false, bottom: 0 } : prev))
+          return
+        }
+        setIosComposerDock((prev) => {
+          if (prev.enabled && Math.abs(prev.bottom - keyboardHeight) < 2) return prev
+          return { enabled: true, bottom: keyboardHeight }
+        })
+      } catch {
+        // ignore
+      }
+    }
+    const schedule = () => {
+      if (raf) return
+      raf = window.requestAnimationFrame(apply)
+    }
+    const onFocusIn = () => {
+      schedule()
+      window.setTimeout(schedule, 60)
+      window.setTimeout(schedule, 180)
+      window.setTimeout(schedule, 320)
+    }
+    const onFocusOut = () => {
+      window.setTimeout(schedule, 60)
+      window.setTimeout(schedule, 180)
+      window.setTimeout(schedule, 380)
+    }
+    schedule()
+    window.addEventListener('resize', schedule, { passive: true } as any)
+    window.visualViewport?.addEventListener?.('resize', schedule, { passive: true } as any)
+    document.addEventListener('focusin', onFocusIn as any, true)
+    document.addEventListener('focusout', onFocusOut as any, true)
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf)
+      window.removeEventListener('resize', schedule as any)
+      window.visualViewport?.removeEventListener?.('resize', schedule as any)
+      document.removeEventListener('focusin', onFocusIn as any, true)
+      document.removeEventListener('focusout', onFocusOut as any, true)
+    }
+  }, [isIOSDevice])
+
+  useLayoutEffect(() => {
+    const el = composerRef.current
+    if (!el) return
+    const update = () => setComposerHeight(Math.max(48, Math.round(el.getBoundingClientRect().height || 0)))
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const [activePanel, setActivePanel] = useState<'album' | 'music' | 'period' | 'diary' | 'location' | 'takeout' | null>(null)
 
   // 外卖（仅线上模式，本地模拟）
@@ -8110,7 +8198,13 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         <div
           ref={messagesContainerRef}
           className="flex-1 min-h-0 overflow-y-auto px-3 py-4"
-          style={{ contain: 'strict', willChange: 'scroll-position', WebkitOverflowScrolling: 'touch', transform: 'translateZ(0)' }}
+          style={{
+            contain: 'strict',
+            willChange: 'scroll-position',
+            WebkitOverflowScrolling: 'touch',
+            transform: 'translateZ(0)',
+            paddingBottom: iosComposerDock.enabled ? `${composerHeight + 8}px` : undefined,
+          }}
           onScroll={(e) => {
             // 性能优化：使用 requestAnimationFrame 节流滚动处理
             if ((e.target as any)._scrollRafId) return
@@ -8206,7 +8300,18 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         
         {/* 输入框 */}
         {/* 移动端禁用 blur（滚动+输入会非常卡），桌面端保留 */}
-        <div className="flex-shrink-0 px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40">
+        <div
+          ref={composerRef}
+          className="flex-shrink-0 px-3 py-2 bg-white/90 md:bg-white/80 md:backdrop-blur-sm border-t border-gray-200/40"
+          style={iosComposerDock.enabled ? {
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            bottom: `${iosComposerDock.bottom}px`,
+            zIndex: 45,
+            paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))',
+          } : undefined}
+        >
           <div className="flex items-center gap-2">
             {/* 语音按钮（虚拟语音：弹窗输入文字→发出语音条+转文字；线下模式不显示） */}
             {!character.offlineMode && (
