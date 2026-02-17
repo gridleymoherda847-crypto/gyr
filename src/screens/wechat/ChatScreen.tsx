@@ -8203,7 +8203,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             willChange: 'scroll-position',
             WebkitOverflowScrolling: 'touch',
             transform: 'translateZ(0)',
-            paddingBottom: iosComposerDock.enabled ? `${composerHeight + 8}px` : undefined,
+            // 只影响滚动锚点，不占实际可视空间（避免在输入框上方出现“空白挡板”）
+            scrollPaddingBottom: iosComposerDock.enabled ? `${composerHeight + 8}px` : undefined,
           }}
           onScroll={(e) => {
             // 性能优化：使用 requestAnimationFrame 节流滚动处理
