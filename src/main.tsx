@@ -158,14 +158,19 @@ if (isIOS) {
       // 只读 vv.height 会算短，导致输入栏和键盘之间出现“空带”。
       const viewportBottomRaw = vv ? (vv.height + vv.offsetTop) : layoutHeight
       const viewportBottom = Math.round(Math.min(layoutHeight || viewportBottomRaw, Math.max(0, viewportBottomRaw || 0)))
-      // 保守回退：iOS 非 PWA 浏览器使用 innerHeight 作为主高度，优先稳态，避免键盘上方露壁纸。
+      // 保守回退：iOS 非 PWA 浏览器在非输入态使用 innerHeight 作为主高度，优先稳态。
       const useStableIOSHeight = isIOS && !isIOSStandalone
-      // iOS（含主屏幕模式）在输入期启用锁高，防止键盘动画结束后“二次重算”导致再跳一次。
-      const useFocusLock = isIOS && focusInputActive && focusLockedHeight > 0
-      const nextHeight = useFocusLock ? focusLockedHeight : (useStableIOSHeight ? layoutHeight : viewportBottom)
-      const keyboardHeight = useStableIOSHeight
-        ? Math.max(0, Math.round(layoutHeight - (vv ? (vv.height + vv.offsetTop) : layoutHeight)))
-        : Math.max(0, layoutHeight - viewportBottom)
+      const keyboardHeight = Math.max(0, Math.round(layoutHeight - viewportBottom))
+      // iOS（含主屏幕模式）在输入期启用锁高，防止键盘动画结束后的“二次重算”把输入框压回键盘下方。
+      // 关键：只在“键盘已打开”时才开始锁，避免 focusin 初期把键盘前高度锁进去。
+      if (isIOS && focusInputActive && keyboardHeight > 80) {
+        const candidate = Math.max(0, viewportBottom || layoutHeight)
+        if (!focusLockedHeight) focusLockedHeight = candidate
+        else focusLockedHeight = Math.min(focusLockedHeight, candidate)
+      }
+      const useFocusLock = isIOS && focusInputActive && keyboardHeight > 80 && focusLockedHeight > 0
+      const focusedIOSHeight = focusInputActive ? viewportBottom : layoutHeight
+      const nextHeight = useFocusLock ? focusLockedHeight : (useStableIOSHeight ? focusedIOSHeight : viewportBottom)
       const keyboardLikelyOpen = keyboardHeight > 80 || focusInputActive
       // 键盘动画期间适当放宽阈值，降低 1~3px 抖动导致的“跳动感”
       const hThreshold = keyboardLikelyOpen ? 8 : 2
@@ -215,14 +220,7 @@ if (isIOS) {
         window.clearTimeout(focusUnlockTimer)
         focusUnlockTimer = 0
       }
-      if (isIOS && focusInputActive) {
-        // iOS（含主屏幕模式）在输入后 0.5~1s 可能出现二次 resize，这里锁定高度直到失焦。
-        const inner = Math.round(window.innerHeight || 0)
-        const vvHeight = Math.round((window.visualViewport?.height ?? inner) || 0)
-        const vvTop = Math.round((window.visualViewport?.offsetTop ?? 0) || 0)
-        const vvBottom = Math.round(Math.min(inner || (vvHeight + vvTop), Math.max(0, vvHeight + vvTop)))
-        focusLockedHeight = isIOSStandalone ? (vvBottom || inner) : inner
-      }
+      if (isIOS && focusInputActive) focusLockedHeight = 0
       schedule()
       window.setTimeout(schedule, 60)
       window.setTimeout(schedule, 180)
@@ -233,12 +231,8 @@ if (isIOS) {
         focusInputActive = isTextInputTarget(document.activeElement)
         if (isIOS) {
           if (focusInputActive) {
-            // 输入框之间切换时保持锁定，避免瞬间抖动。
-            const inner = Math.round(window.innerHeight || 0)
-            const vvHeight = Math.round((window.visualViewport?.height ?? inner) || 0)
-            const vvTop = Math.round((window.visualViewport?.offsetTop ?? 0) || 0)
-            const vvBottom = Math.round(Math.min(inner || (vvHeight + vvTop), Math.max(0, vvHeight + vvTop)))
-            focusLockedHeight = isIOSStandalone ? (vvBottom || inner) : inner
+            // 输入框之间切换时清掉旧锁，等待新输入框在键盘打开后重新锁定。
+            focusLockedHeight = 0
             return
           }
           if (focusUnlockTimer) window.clearTimeout(focusUnlockTimer)

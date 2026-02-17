@@ -255,6 +255,38 @@ export default function XScreen() {
   const [profileDraftFollower, setProfileDraftFollower] = useState('')
   const [profileTab, setProfileTab] = useState<'posts' | 'replies'>('posts')
   const [tipDialog, setTipDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
+  const [expandedBioByUser, setExpandedBioByUser] = useState<Record<string, boolean>>({})
+
+  const normalizeBio = (raw: string) => {
+    const lines = String(raw || '')
+      .split(/\r?\n/g)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 3)
+    return lines.join('\n').slice(0, 120).trim()
+  }
+
+  const makePasserbyBio = (seedName: string) => {
+    const seed = normalizeHandle(xMakeHandle(seedName || 'user')) || String(seedName || 'user')
+    let h = 0
+    for (let i = 0; i < seed.length; i++) h = (h * 131 + seed.charCodeAt(i)) >>> 0
+    const pick = (arr: string[], offset: number) => arr[(h + offset) % arr.length]
+    const rolePool = ['路过吃瓜', '深夜冲浪', '摸鱼选手', '社媒搬运', '电子流浪', '碎碎念人格', '偶尔上线']
+    const stylePool = ['话多但真诚', '脾气一般', '看心情发言', '偏理性', '情绪化选手', '轻微社恐', '喜欢抖机灵']
+    const interestPool = ['咖啡续命', '二次元补番', '拍照党', '电影夜猫', '游戏杂食', '音乐随机播放', '城市漫游']
+    const lineCount = 2 + (h % 2) // 2~3 行
+    const lines = [`${pick(rolePool, 3)}｜${pick(stylePool, 7)}`, `${pick(interestPool, 11)}`]
+    if (lineCount >= 3) lines.push('慢回但会回')
+    return normalizeBio(lines.join('\n'))
+  }
+
+  const ensurePasserbyUser = (next: XDataV1, name: string) => {
+    const finalName = String(name || '').trim() || 'User'
+    const exists = (next.users || []).find((u) => String(u.name || '').trim() === finalName)
+    const bio = exists?.bio ? undefined : makePasserbyBio(finalName)
+    const { data: d2, userId } = xEnsureUser(next, { name: finalName, bio })
+    return { data: d2, userId }
+  }
 
   const getCharacterIdentity = (c: (typeof characters)[number], persist: boolean) => {
     const rawHandle = String(c.xHandle || '').trim()
@@ -659,7 +691,7 @@ export default function XScreen() {
       for (const p of picked) {
         const authorName = String(p.authorName || '').trim()
         const text = String(p.text || '').trim()
-        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        const { data: d2, userId } = ensurePasserbyUser(next, authorName || 'User')
         next = d2
         const u = next.users.find((x) => x.id === userId)
         const ensured = {
@@ -811,7 +843,7 @@ export default function XScreen() {
       for (const p of hotRaw) {
         const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
         if (!text) continue
-        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        const { data: d2, userId } = ensurePasserbyUser(next, authorName || 'User')
         next = d2
         const u = next.users.find((x) => x.id === userId)
         const post = xNewPost(userId, authorName || 'User', text)
@@ -828,7 +860,7 @@ export default function XScreen() {
       for (const p of latestRaw) {
         const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
         if (!text) continue
-        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        const { data: d2, userId } = ensurePasserbyUser(next, authorName || 'User')
         next = d2
         const u = next.users.find((x) => x.id === userId)
         const post = xNewPost(userId, authorName || 'User', text)
@@ -1033,7 +1065,7 @@ ${chatFriendList}
         const text = String(r?.text || '').trim()
         if (!text) continue
         const ensured = (() => {
-          const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+          const { data: d2, userId } = ensurePasserbyUser(next, authorName || 'User')
           next = d2
           return { id: userId, name: (authorName || 'User').trim() || 'User' }
         })()
@@ -1046,7 +1078,7 @@ ${chatFriendList}
         const text = String(r?.text || '').trim()
         if (!text) continue
         const ensured = (() => {
-          const { data: d2, userId } = xEnsureUser(next, { name: authorName })
+          const { data: d2, userId } = ensurePasserbyUser(next, authorName)
           next = d2
           return { id: userId, name: authorName }
         })()
@@ -1956,22 +1988,30 @@ ${chatFriendList}
             .map((p) => `- ${p.text.replace(/\s+/g, ' ').slice(0, 80)}`)
             .join('\n')
           const want = 1 + Math.floor(Math.random() * 5)
+          const linkedCharacter = characters.find((c) => c.id === openProfileUserId)
+          const shouldRefreshBio = !!linkedCharacter && Math.random() < 0.2
           const sys =
             sysPrefix() +
             `【X（推特风格）/角色主页日常生成】\n` +
             `角色：${meta.name}\n` +
             `账号：${meta.handle}\n` +
             `人物设定：${meta.bio || '（无）'}\n` +
+            `原始人设：${(linkedCharacter?.prompt || '').replace(/\s+/g, ' ').slice(0, 140) || '（无）'}\n` +
             `最近已发：\n${myRecentPosts || '（无）'}\n` +
             `要求：\n` +
             `- 生成 ${want} 条“日常/碎碎念”推文\n` +
             `- 更像真实推特，不要过长\n` +
             `- 允许情绪与脏话，但严禁辱女/性羞辱词汇\n` +
+            (shouldRefreshBio
+              ? `- 本次请同步生成一个新的签名 bio（最多3行，总长<=120字，需符合人设与最近发帖语气）\n`
+              : '') +
             `- 只输出 JSON\n` +
             `\n` +
             `JSON 格式：\n` +
             `{\n` +
-            `  "posts": [ { "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]\n` +
+            `  "posts": [ { "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]` +
+            (shouldRefreshBio ? `,\n  "bio": "可选，最多3行"` : '') +
+            `\n` +
             `}\n`
           const parsed = await callJson(sys, '现在生成 posts。', 700)
           const raw = Array.isArray((parsed as any).posts) ? (parsed as any).posts : []
@@ -1988,6 +2028,13 @@ ${chatFriendList}
             post.repostCount = Math.floor(Math.random() * 180)
             post.replyCount = Math.floor(Math.random() * 90)
             newPosts.push(post)
+          }
+          const refreshedBio = shouldRefreshBio ? normalizeBio(String((parsed as any)?.bio || '')) : ''
+          if (refreshedBio) {
+            next = {
+              ...next,
+              users: (next.users || []).map((u) => (u.id === openProfileUserId ? { ...u, bio: refreshedBio } : u)),
+            }
           }
           const mine = (next.posts || []).filter((p) => p.authorId === 'me')
           const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 80)
@@ -2024,7 +2071,7 @@ ${chatFriendList}
           const kind = String(e?.kind || 'like')
           const fromName = String(e?.fromName || '').trim() || 'User'
           const ensured = (() => {
-            const { data: d2, userId } = xEnsureUser(next, { name: fromName })
+            const { data: d2, userId } = ensurePasserbyUser(next, fromName)
             next = d2
             return { id: userId, name: fromName }
           })()
@@ -2114,7 +2161,7 @@ ${chatFriendList}
           if (textList.length === 0) continue
 
           const ensured = (() => {
-            const { data: d2, userId } = xEnsureUser(next, { name: peerName })
+            const { data: d2, userId } = ensurePasserbyUser(next, peerName)
             next = d2
             return { userId }
           })()
@@ -2218,7 +2265,7 @@ ${chatFriendList}
           const kind = String(e?.kind || 'like')
           const fromName = String(e?.fromName || '').trim() || 'User'
           const ensured = (() => {
-            const { data: d2, userId } = xEnsureUser(next, { name: fromName })
+            const { data: d2, userId } = ensurePasserbyUser(next, fromName)
             next = d2
             return { id: userId, name: fromName }
           })()
@@ -3070,11 +3117,33 @@ ${chatFriendList}
                 </button>
               </div>
               <div className="mt-2 text-[12px] text-gray-700 leading-relaxed">
-                {meta.bio
-                  ? `签名：${meta.bio}`
-                  : isMe && !data?.meAvatarUrl && !data?.meBannerUrl && !data?.meBio
-                    ? '点击更换头像、背景或简介'
-                    : ''}
+                {meta.bio ? (
+                  <div>
+                    <div
+                      className="whitespace-pre-wrap"
+                      style={
+                        expandedBioByUser[uid]
+                          ? undefined
+                          : ({ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as any)
+                      }
+                    >
+                      {`签名：${meta.bio}`}
+                    </div>
+                    {(String(meta.bio || '').length > 54 || String(meta.bio || '').includes('\n')) && (
+                      <button
+                        type="button"
+                        className="mt-1 text-[11px] text-blue-500"
+                        onClick={() => setExpandedBioByUser((prev) => ({ ...prev, [uid]: !prev[uid] }))}
+                      >
+                        {expandedBioByUser[uid] ? '收起' : '更多'}
+                      </button>
+                    )}
+                  </div>
+                ) : isMe && !data?.meAvatarUrl && !data?.meBannerUrl && !data?.meBio ? (
+                  '点击更换头像、背景或简介'
+                ) : (
+                  ''
+                )}
               </div>
               <div className="mt-2 flex items-center gap-4 text-[12px] text-gray-600">
                 <button
