@@ -127,10 +127,22 @@ export const COLOR_OPTIONS: ColorOption[] = [
   { id: 'cream', name: '奶油白', value: '#fdf6e3' },
   { id: 'black', name: '深黑', value: '#1a1a1a' },
   { id: 'brown', name: '棕褐', value: '#5d4037' },
+  { id: 'red', name: '正红', value: '#e53935' },
+  { id: 'wine-red', name: '棕红', value: '#8d3a3a' },
+  { id: 'rose-red', name: '玫红', value: '#d81b60' },
+  { id: 'brick-red', name: '砖红', value: '#b23a2b' },
+  { id: 'orange', name: '暖橙', value: '#fb8c00' },
+  { id: 'gold', name: '金黄', value: '#fbc02d' },
+  { id: 'amber', name: '琥珀', value: '#ffb300' },
   { id: 'pink', name: '樱花粉', value: '#f48fb1' },
   { id: 'purple', name: '梦幻紫', value: '#b39ddb' },
+  { id: 'violet', name: '紫罗兰', value: '#7e57c2' },
   { id: 'blue', name: '天空蓝', value: '#81d4fa' },
+  { id: 'cyan', name: '青蓝', value: '#00acc1' },
   { id: 'mint', name: '薄荷绿', value: '#a5d6a7' },
+  { id: 'teal', name: '青绿', value: '#26a69a' },
+  { id: 'navy', name: '深蓝', value: '#3949ab' },
+  { id: 'slate', name: '雾灰', value: '#607d8b' },
 ]
 
 // 默认壁纸：优先用图片，图片不存在则用渐变

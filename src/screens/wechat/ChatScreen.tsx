@@ -658,14 +658,6 @@ export default function ChatScreen() {
   }, [stickerTab, libraryStickers, recentStickers])
   
   const imageInputRef = useRef<HTMLInputElement>(null)
-  // 最近一次“用户发送的图片”（用于：用户说“把这个换成头像/看看我头像”之类的场景）
-  const lastUserImageRef = useRef<{ url: string; at: number } | null>(null)
-  // “让对方考虑是否换头像”的待处理请求（不再秒生效）
-  const pendingAvatarDecisionRef = useRef<{
-    imageUrl: string
-    requestedAt: number
-    requestText: string
-  } | null>(null)
   const aliveRef = useRef(true)
   const timeoutsRef = useRef<number[]>([])
 
@@ -2369,13 +2361,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
         // 线上“聊天翻译(外语 ||| 中文)”会与线下叙事格式冲突；线下模式统一走“对白括号翻译”规则
         const translationMode = !character.offlineMode && characterLanguage !== 'zh' && chatTranslationEnabled
-        const pendingAvatarDecision = (() => {
-          const req = pendingAvatarDecisionRef.current
-          if (!req) return null
-          const fresh = (Date.now() - req.requestedAt) < 30 * 60 * 1000
-          if (!fresh || !req.imageUrl) return null
-          return req
-        })()
         const llmMessages = [
           {
             role: 'system',
@@ -2411,27 +2396,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           // ignore
         }
 
-        // “发图换头像”请求：让角色在本轮回复里决定是否接受（由角色自主决定，不是立即生效）
-        if (pendingAvatarDecision && !character.offlineMode) {
-          try {
-            llmMessages.push({
-              role: 'system',
-              content: [
-                {
-                  type: 'text',
-                  text:
-                    `【头像更换请求】用户最近让你考虑更换头像。你要根据你的人设、你和用户关系、当前聊天氛围、以及图片内容自行决定。` +
-                    `你可以拒绝，不需要讨好。若决定接受，在整段回复最后单独一行输出：[AVATAR_DECISION:ACCEPT]；` +
-                    `若决定拒绝，输出：[AVATAR_DECISION:REJECT]。除这两个标记外，禁止输出任何系统说明。` +
-                    `\n用户原话：${pendingAvatarDecision.requestText}`,
-                },
-                { type: 'image_url', image_url: { url: pendingAvatarDecision.imageUrl } },
-              ],
-            } as any)
-          } catch {
-            // ignore
-          }
-        }
 
         // 允许“连续点箭头生成”：区分两种情况
         // - 如果用户刚发了新消息：正常回复即可（历史末尾应为 user）
@@ -2629,25 +2593,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           }
         }
 
-        // 解析“头像更换请求”决策（由角色自主决定；在本轮生成后才生效）
-        let avatarDecision: 'accept' | 'reject' | null = null
-        if (pendingAvatarDecision && !character.offlineMode) {
-          if (/\[AVATAR_DECISION:ACCEPT\]/i.test(response)) {
-            avatarDecision = 'accept'
-          } else if (/\[AVATAR_DECISION:REJECT\]/i.test(response)) {
-            avatarDecision = 'reject'
-          } else {
-            // 兜底：模型漏掉标记时按语义判断
-            const acceptRe = /(好|行|可以|那就|给你|听你的).{0,8}(换|改|设|用).{0,8}(头像)/
-            const rejectRe = /(不想|不太想|先不|暂时不|还是不|不太合适|不换).{0,8}(头像)?/
-            if (acceptRe.test(response) && !rejectRe.test(response)) avatarDecision = 'accept'
-            else if (rejectRe.test(response)) avatarDecision = 'reject'
-          }
-          response = response
-            .replace(/\s*\[AVATAR_DECISION:ACCEPT\]\s*/gi, ' ')
-            .replace(/\s*\[AVATAR_DECISION:REJECT\]\s*/gi, ' ')
-            .trim()
-        }
+        response = response.trim()
 
         // 强制校验：避免“重生成后不问了/不提时间差”
         if (shouldForceAcknowledge) {
@@ -3106,18 +3052,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           return last
         }
         const transferDecisionHit = pendingUserTransfers.length > 0 ? findTransferDecisionInReplies(replies) : null
-
-        // 头像更换在“开始出回复”时才落地，避免出现“用户刚发完就秒改头像”。
-        if (pendingAvatarDecision && avatarDecision) {
-          if (avatarDecision === 'accept' && pendingAvatarDecision.imageUrl) {
-            try {
-              updateCharacter(character.id, { avatar: pendingAvatarDecision.imageUrl } as any)
-            } catch {
-              // ignore
-            }
-          }
-          pendingAvatarDecisionRef.current = null
-        }
 
         // 决定在哪条回复后处理转账：优先跟随“明确表态”的那条；否则统一放到最后（不再随机）
         const transferProcessIndex = pendingUserTransfers.length > 0
@@ -4262,29 +4196,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     const raw = (inputRef.current?.value ?? inputText) || ''
     if (!raw.trim()) return
 
-    // ====== 用户指令：请求对方换头像（角色在回复阶段自行决定，不再秒生效） ======
-    try {
-      const text = String(raw || '').trim()
-      const hasAvatarTopic = /(头像|头像图|头像照|头像照片|profile\s*pic|pfp)/i.test(text)
-      const hasAvatarIntent =
-        /(换|改|设置|设为|设成|用|当|做|替换|更新).{0,10}(头像|profile\s*pic|pfp)/i.test(text) ||
-        /(头像|profile\s*pic|pfp).{0,10}(换|改|设置|设为|设成|用|当|做|替换|更新)/i.test(text)
-      const wantsSetAvatar = hasAvatarTopic && hasAvatarIntent
-      if (wantsSetAvatar) {
-        const last = lastUserImageRef.current
-        const fresh = last && (Date.now() - last.at) < 30 * 60 * 1000 // 30分钟内都视为“最近图片”
-        if (fresh && last?.url && character?.id) {
-          pendingAvatarDecisionRef.current = {
-            imageUrl: last.url,
-            requestedAt: Date.now(),
-            requestText: text.slice(0, 180),
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
-
     // 用户主动发送：强制滚到底部
     forceScrollRef.current = true
     nearBottomRef.current = true
@@ -5347,8 +5258,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       const reader = new FileReader()
       reader.onload = () => {
         const base64 = reader.result as string
-        // 记录最近图片：用于“把这个设为头像/评价头像”等对话能力
-        lastUserImageRef.current = { url: base64, at: Date.now() }
+        // 保留图片消息本身，不再触发任何“自动换头像”逻辑。
         // 用户主动发送：强制滚到底部
         forceScrollRef.current = true
         nearBottomRef.current = true

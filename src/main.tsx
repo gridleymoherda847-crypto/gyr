@@ -184,7 +184,15 @@ if (isIOS) {
       }
       const useFocusLock = isIOS && focusInputActive && keyboardHeight > 80 && focusLockedHeight > 0
       const focusedIOSHeight = focusInputActive ? viewportBottom : layoutHeight
-      const nextHeight = useFocusLock ? focusLockedHeight : (useStableIOSHeight ? focusedIOSHeight : viewportBottom)
+      let nextHeight = useFocusLock ? focusLockedHeight : (useStableIOSHeight ? focusedIOSHeight : viewportBottom)
+      if (isIOS && focusInputActive) {
+        // 关键兜底：iOS 有时会上报异常小的可视高度，导致输入栏被顶到屏幕上方形成大空带。
+        // 键盘打开期给一个合理下限，防止 app-height 发生“塌陷”。
+        const minFocusedHeight = Math.round(layoutHeight * 0.64)
+        if (nextHeight < minFocusedHeight) {
+          nextHeight = lastH >= minFocusedHeight ? lastH : minFocusedHeight
+        }
+      }
       const keyboardLikelyOpen = keyboardHeight > 80 || focusInputActive
       // 键盘动画期间适当放宽阈值，降低 1~3px 抖动导致的“跳动感”
       const hThreshold = keyboardLikelyOpen ? 8 : 2
