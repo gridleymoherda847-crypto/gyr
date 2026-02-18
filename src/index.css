@@ -52,11 +52,14 @@ html.ios-pwa {
   overflow: hidden !important;
   overscroll-behavior: none !important;
   touch-action: manipulation !important;
-  background: #000 !important;
+  background: var(--safe-area-bg, #000) !important;
+  background-size: cover !important;
+  background-position: center !important;
 }
 html.ios-pwa body {
   position: fixed !important;
   inset: 0 !important;
+  height: auto;
   width: 100% !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
@@ -77,15 +80,20 @@ html.ios-safe-area {
   width: 100% !important;
   height: 100% !important;
   overflow: hidden !important;
-  background: #000;
+  background: var(--safe-area-bg, #000);
+  background-size: cover;
+  background-position: center;
 }
 html.ios-safe-area body {
-  background: #000;
+  background: var(--safe-area-bg, #000);
+  background-size: cover;
+  background-position: center;
 }
 
 html.ios-safe-area body {
   position: fixed !important;
   inset: 0 !important;
+  height: auto;
   overflow: hidden !important;
   overscroll-behavior: none !important;
 }

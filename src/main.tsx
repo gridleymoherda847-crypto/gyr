@@ -152,7 +152,7 @@ if (isIOS) {
           document.body.style.top = `${Math.round(vv.offsetTop)}px`
         }
       } else {
-        document.body.style.removeProperty('height')
+        document.body.style.height = `${window.innerHeight}px`
         document.body.style.top = '0px'
       }
 
