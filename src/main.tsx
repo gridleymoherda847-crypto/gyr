@@ -118,7 +118,7 @@ if (isIOS) {
   // 先给一个安全的默认底色，避免在壁纸/React 挂载前出现“白边”
   try {
     if (!document.documentElement.style.getPropertyValue('--safe-area-bg')) {
-      document.documentElement.style.setProperty('--safe-area-bg', '#000')
+      document.documentElement.style.setProperty('--safe-area-bg', '#fff')
     }
   } catch {
     // ignore
