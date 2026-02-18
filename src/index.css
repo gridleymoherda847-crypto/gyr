@@ -58,8 +58,8 @@ html.ios-pwa {
 }
 html.ios-pwa body {
   position: fixed !important;
-  inset: 0 !important;
-  height: auto;
+  left: 0 !important;
+  right: 0 !important;
   width: 100% !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
@@ -94,8 +94,8 @@ html.ios-safe-area body {
 
 html.ios-safe-area body {
   position: fixed !important;
-  inset: 0 !important;
-  height: auto;
+  left: 0 !important;
+  right: 0 !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
 }
