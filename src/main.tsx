@@ -169,9 +169,10 @@ if (isIOS) {
   // 初始化
   update()
 
-  // visualViewport resize 是唯一需要监听的事件
+  // visualViewport resize + scroll
   try {
     vv?.addEventListener?.('resize', update, { passive: true } as any)
+    vv?.addEventListener?.('scroll', update, { passive: true } as any)
   } catch { /* ignore */ }
 
   // 兆底：window resize + focus 事件

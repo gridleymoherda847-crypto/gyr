@@ -73,7 +73,15 @@ html.ios-pwa #root {
 }
 
 /* iOS 安全区域适配 - JS 直接控制 body.style.height */
-html.ios-safe-area,
+html.ios-safe-area {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  background: #000;
+}
 html.ios-safe-area body {
   background: #000;
 }
