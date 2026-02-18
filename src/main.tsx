@@ -125,13 +125,10 @@ if (isIOS) {
   }
 }
 
-// 视口高度修复（iOS + Android 通用）
-// 核心思路：直接用 visualViewport.height 驱动 --app-height，不做复杂 clamp/lock。
-// iOS 键盘弹起时 visualViewport.height 会缩小到键盘上方可视区域，flex 布局自然正确。
+// 视口高度修复（全新方案：直接设置 body.style.height = visualViewport.height）
+// 不再用 CSS 变量 --app-height，不做复杂计算。
+// 键盘弹起时 visualViewport.height 缩小，body 跟着缩，flex 布局自动把输入栏顶到键盘上沿。
 {
-  let lastH = 0
-  let rafId = 0
-  let textInputFocused = false
   const vv = window.visualViewport
   const nonTextTypes = new Set(['button', 'checkbox', 'radio', 'range', 'file', 'color', 'submit', 'reset', 'image'])
 
@@ -143,29 +140,20 @@ if (isIOS) {
     return !!el.isContentEditable
   }
 
-  const apply = () => {
-    rafId = 0
+  const update = () => {
     try {
-      const layoutHeight = Math.round(window.innerHeight || 0)
-      const vvBottom = vv ? Math.round(vv.height + vv.offsetTop) : layoutHeight
-      const nextHeight = Math.max(0, Math.min(layoutHeight, vvBottom)) || layoutHeight
+      const h = vv ? Math.round(vv.height) : window.innerHeight
+      // 核心：直接设置 body 高度为可视区域高度，其他交给 CSS Flex
+      document.body.style.height = `${h}px`
 
-      if (nextHeight > 0 && Math.abs(nextHeight - lastH) >= 1) {
-        lastH = nextHeight
-        document.documentElement.style.setProperty('--app-height', `${nextHeight}px`)
-      }
-
-      // 键盘检测：高度差 > 80 OR 文字输入框正在聚焦。
-      // 关键：iOS PWA 弹键盘时 innerHeight 可能跟着缩，导致高度差为 0，
-      // 但键盘确实是开着的。用 textInputFocused 兜底，保证 safe-area padding 被清零。
-      const keyboardHeight = Math.max(0, layoutHeight - vvBottom)
-      const keyboardLikelyOpen = keyboardHeight > 80 || textInputFocused
+      // 键盘检测：高度差 OR 输入框聚焦。用于清除 safe-area padding。
+      const textFocused = checkTextInputFocused()
+      const kbOpen = (window.innerHeight - h > 80) || textFocused
       document.documentElement.style.setProperty(
         '--runtime-safe-bottom',
-        keyboardLikelyOpen ? '0px' : 'env(safe-area-inset-bottom, 0px)',
+        kbOpen ? '0px' : 'env(safe-area-inset-bottom, 0px)',
       )
-      // 键盘打开时：临时禁用用户自定义“屏幕下边距”，否则会把输入栏整体往上顶，表现为“飘起来”
-      if (keyboardLikelyOpen) {
+      if (kbOpen) {
         document.documentElement.style.setProperty('--runtime-screen-padding-bottom', '0px')
       } else {
         document.documentElement.style.removeProperty('--runtime-screen-padding-bottom')
@@ -175,55 +163,25 @@ if (isIOS) {
     }
   }
 
-  const schedule = () => {
-    if (rafId) return
-    rafId = window.requestAnimationFrame(apply)
-  }
+  // 初始化
+  update()
 
-  // 首次设置
-  schedule()
-
-  // 所有可能触发高度变化的事件
-  window.addEventListener('resize', schedule, { passive: true } as any)
-  window.addEventListener('orientationchange', () => window.setTimeout(schedule, 80), { passive: true } as any)
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) window.setTimeout(schedule, 80)
-  }, { passive: true } as any)
-
-  // visualViewport resize 是 iOS 键盘最可靠的信号
+  // visualViewport resize 是唯一需要监听的事件
   try {
-    vv?.addEventListener?.('resize', schedule, { passive: true } as any)
-    // iOS 键盘动画/系统滚动期间，offsetTop 往往通过 visualViewport.scroll 变化。
-    // 若不监听 scroll，会出现“输入框先飘着，用户轻轻滑一下才恢复正常”的现象。
-    vv?.addEventListener?.('scroll', schedule, { passive: true } as any)
-  } catch {
-    // ignore
-  }
+    vv?.addEventListener?.('resize', update, { passive: true } as any)
+  } catch { /* ignore */ }
 
-  // focus 事件：追踪输入框聚焦状态 + 触发高度更新
-  try {
-    const onFocusIn = () => {
-      textInputFocused = checkTextInputFocused()
-      schedule()
-      window.setTimeout(schedule, 100)
-      window.setTimeout(schedule, 300)
-      window.setTimeout(schedule, 600)
-    }
-    const onFocusOut = () => {
-      // 延迟检查：iOS 输入法切换会短暂失焦
-      window.setTimeout(() => {
-        textInputFocused = checkTextInputFocused()
-        schedule()
-      }, 80)
-      schedule()
-      window.setTimeout(schedule, 300)
-      window.setTimeout(schedule, 600)
-    }
-    document.addEventListener('focusin', onFocusIn, true)
-    document.addEventListener('focusout', onFocusOut, true)
-  } catch {
-    // ignore
-  }
+  // 兆底：window resize + focus 事件
+  window.addEventListener('resize', update, { passive: true } as any)
+  document.addEventListener('focusin', () => {
+    update()
+    window.setTimeout(update, 100)
+    window.setTimeout(update, 300)
+  }, true)
+  document.addEventListener('focusout', () => {
+    window.setTimeout(update, 80)
+    window.setTimeout(update, 300)
+  }, true)
 
   // iOS：禁用双指缩放/页面手势
   if (isIOS) {
@@ -237,7 +195,6 @@ if (isIOS) {
     document.addEventListener('gestureend', preventGesture as any, { passive: false } as any)
   }
 }
-
 // ========= 手动版本检测（设置页按钮触发） =========
 // 按用户要求：不再自动弹更新提示，不再自动刷新；仅在“设置 -> 检测更新”手动执行。
 window.__LP_CHECK_UPDATE__ = async () => {
