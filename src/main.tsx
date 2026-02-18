@@ -143,15 +143,19 @@ if (isIOS) {
   const update = () => {
     try {
       const h = vv ? Math.round(vv.height) : window.innerHeight
-      // 核心：直接设置 body 高度为可视区域高度，其他交给 CSS Flex
-      document.body.style.height = `${h}px`
-      if (vv) {
-        document.body.style.top = `${Math.round(vv.offsetTop)}px`
-      }
-
-      // 键盘检测：高度差 OR 输入框聚焦。用于清除 safe-area padding。
       const textFocused = checkTextInputFocused()
       const kbOpen = (window.innerHeight - h > 80) || textFocused
+
+      if (kbOpen) {
+        document.body.style.height = `${h}px`
+        if (vv) {
+          document.body.style.top = `${Math.round(vv.offsetTop)}px`
+        }
+      } else {
+        document.body.style.removeProperty('height')
+        document.body.style.top = '0px'
+      }
+
       document.documentElement.style.setProperty(
         '--runtime-safe-bottom',
         kbOpen ? '0px' : 'env(safe-area-inset-bottom, 0px)',
