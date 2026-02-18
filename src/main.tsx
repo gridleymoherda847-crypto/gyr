@@ -142,7 +142,7 @@ if (isIOS) {
 
   const update = () => {
     try {
-      const h = vv ? Math.round(vv.height) : window.innerHeight
+      const h = vv ? Math.round(vv.height + vv.offsetTop) : window.innerHeight
       // 核心：直接设置 body 高度为可视区域高度，其他交给 CSS Flex
       document.body.style.height = `${h}px`
 
