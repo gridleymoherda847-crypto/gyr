@@ -44,10 +44,19 @@ html, body {
 }
 
 /* iOS PWA 模式 - JS 会直接设置 body.style.height，这里只做兆底 */
-html.ios-pwa,
-html.ios-pwa body {
+html.ios-pwa {
   position: fixed !important;
   top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: manipulation !important;
+  background: #000 !important;
+}
+html.ios-pwa body {
+  position: fixed !important;
   left: 0 !important;
   right: 0 !important;
   width: 100% !important;
@@ -71,7 +80,6 @@ html.ios-safe-area body {
 
 html.ios-safe-area body {
   position: fixed !important;
-  top: 0 !important;
   left: 0 !important;
   right: 0 !important;
   overflow: hidden !important;
