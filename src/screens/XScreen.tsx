@@ -1391,8 +1391,38 @@ ${chatFriendList}
         }
         pruned.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
         next2 = { ...next2, posts: updatedPosts, replies: pruned }
-        setData(next2)
-        await xSave(next2)
+        let savedState: XDataV1 | null = null
+        setData((prev) => {
+          if (!prev) {
+            savedState = next2
+            return next2
+          }
+          const hasMePost = prev.posts.some((p) => p.id === mePost.id)
+          const basePosts = hasMePost ? prev.posts : [mePost, ...prev.posts]
+          const mergedPosts = basePosts.map((p) => {
+            const patch = next2.posts.find((x) => x.id === p.id)
+            return patch || p
+          })
+          const combinedReplies = [...prev.replies, ...newReplies]
+          const groupedReplies: Record<string, XReply[]> = {}
+          for (const r of combinedReplies) (groupedReplies[r.postId] ||= []).push(r)
+          const prunedReplies: XReply[] = []
+          for (const [, arr] of Object.entries(groupedReplies)) {
+            arr.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+            prunedReplies.push(...arr.slice(-50))
+          }
+          prunedReplies.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+          const out: XDataV1 = {
+            ...prev,
+            users: next2.users,
+            followers: next2.followers,
+            posts: mergedPosts,
+            replies: prunedReplies,
+          }
+          savedState = out
+          return out
+        })
+        if (savedState) await xSave(savedState)
       } catch {
         // 静默失败：不影响发帖
       }
@@ -2825,7 +2855,35 @@ ${chatFriendList}
   }
 
   const renderPostDetail = () => {
-    if (!data || !openPost) return null
+    if (!data) return null
+    if (!openPost) {
+      return (
+        <div className="flex h-full flex-col bg-white">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-black/10">
+            <button
+              type="button"
+              onClick={() => {
+                setView('main')
+                setOpenPostId(null)
+                const nextParams = new URLSearchParams(searchParams)
+                nextParams.delete('postId')
+                setSearchParams(nextParams, { replace: true })
+              }}
+              className="w-9 h-9 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center active:scale-[0.98]"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div className="text-[14px] font-extrabold text-gray-900">帖子</div>
+            <div className="w-9 h-9" />
+          </div>
+          <div className="flex-1 flex items-center justify-center text-[13px] text-gray-500">
+            这条帖子暂时不可见，返回列表再试一次。
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="flex h-full flex-col bg-white">
         <div className="flex items-center justify-between px-3 py-2 border-b border-black/10">

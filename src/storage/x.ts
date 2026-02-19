@@ -389,7 +389,8 @@ export function xEnsureUser(
 
 export function xNewPost(authorId: string, authorName: string, text: string): XPost {
   const now = Date.now()
-  const clean = (text || '').trim().replace(/\n{3,}/g, '\n\n').slice(0, 140)
+  // 不再硬性截断到 140 字，支持长文；仅做基础清洗与极端上限保护
+  const clean = (text || '').trim().replace(/\n{3,}/g, '\n\n').slice(0, 12000)
   return {
     id: genId('xp'),
     authorId,
