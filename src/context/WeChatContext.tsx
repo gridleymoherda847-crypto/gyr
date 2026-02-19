@@ -1188,8 +1188,24 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   // - JSON.stringify(大量 messages) + 写入存储会阻塞主线程
   // - 用“防抖写入”把短时间内的多次变更合并为一次，减少进/退聊天时的卡顿
   const MESSAGES_PERSIST_DEBOUNCE_MS = 700
+  const MESSAGES_PERSIST_MAX_WAIT_MS = 4000
   const messagesPersistTimerRef = useRef<number | null>(null)
   const messagesPersistLatestRef = useRef<WeChatMessage[]>([])
+  const messagesPersistLastWriteAtRef = useRef<number>(0)
+
+  const flushMessagesPersistNow = useCallback(() => {
+    if (!canPersist()) return
+    const latest = messagesPersistLatestRef.current || []
+    void kvSetJSON(STORAGE_KEYS.messages, latest)
+    // 备份最近消息到 localStorage（只保留最近 200 条）
+    if (latest.length > 0) {
+      try {
+        const recent = latest.slice(-200).map(m => ({ ...m, content: m.content?.slice(0, 500) }))
+        localStorage.setItem(STORAGE_KEYS.messages + '_backup', JSON.stringify(recent))
+      } catch { /* ignore quota errors */ }
+    }
+    messagesPersistLastWriteAtRef.current = Date.now()
+  }, [isHydrated])
 
   // 角色和消息额外备份到 localStorage（防止 IndexedDB 被清除导致数据丢失）
   useEffect(() => {
@@ -1215,16 +1231,14 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       window.clearTimeout(messagesPersistTimerRef.current)
       messagesPersistTimerRef.current = null
     }
+    // 高频写入期间设置“最晚落盘时间”，避免一直输入/生成时定时器被反复推迟导致刷新后丢最近消息
+    const now = Date.now()
+    if (now - messagesPersistLastWriteAtRef.current >= MESSAGES_PERSIST_MAX_WAIT_MS) {
+      flushMessagesPersistNow()
+      return
+    }
     messagesPersistTimerRef.current = window.setTimeout(() => {
-      const latest = messagesPersistLatestRef.current || []
-      void kvSetJSON(STORAGE_KEYS.messages, latest)
-      // 备份最近消息到 localStorage（只保留最近 200 条）
-      if (latest.length > 0) {
-        try {
-          const recent = latest.slice(-200).map(m => ({ ...m, content: m.content?.slice(0, 500) }))
-          localStorage.setItem(STORAGE_KEYS.messages + '_backup', JSON.stringify(recent))
-        } catch { /* ignore quota errors */ }
-      }
+      flushMessagesPersistNow()
     }, MESSAGES_PERSIST_DEBOUNCE_MS)
 
     return () => {
@@ -1235,6 +1249,24 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, isHydrated])
+
+  // 页面刷新/切后台/离开前兜底落盘，降低“刚聊完一刷新少一截”概率
+  useEffect(() => {
+    const flushOnLeave = () => {
+      if (messagesPersistTimerRef.current != null) {
+        window.clearTimeout(messagesPersistTimerRef.current)
+        messagesPersistTimerRef.current = null
+      }
+      flushMessagesPersistNow()
+    }
+    window.addEventListener('pagehide', flushOnLeave)
+    window.addEventListener('beforeunload', flushOnLeave)
+    return () => {
+      window.removeEventListener('pagehide', flushOnLeave)
+      window.removeEventListener('beforeunload', flushOnLeave)
+      flushOnLeave()
+    }
+  }, [flushMessagesPersistNow])
   // 关键：我的人设与钱包也做 localStorage 备份（这两项是用户最敏感的资产/设定）
   useEffect(() => {
     if (!canPersist()) return

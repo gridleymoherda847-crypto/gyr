@@ -36,72 +36,6 @@ export default function MomentsTab({ onBack }: Props) {
 
   const pickOne = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)]
 
-  const extractTopic = (text: string, textZh?: string) => {
-    const src = `${String(text || '').trim()} ${String(textZh || '').trim()}`.trim()
-    if (!src) return ''
-    const tokens = src
-      .split(/[，。！？、；：,.!?()[\]【】\s]+/)
-      .map(s => s.trim())
-      .filter(Boolean)
-      .filter(s => s.length >= 2 && s.length <= 8)
-      .filter(s => !/^(今天|真的|就是|这个|那个|感觉|有点|然后|我们|你们|他们|一下|哈哈|嗯嗯)$/.test(s))
-    if (tokens.length > 0) return pickOne(tokens.slice(0, 8))
-    if (/(图|照片|截图|配图|自拍|风景)/.test(src)) return '这图'
-    return src.slice(0, 6)
-  }
-
-  const buildLitePeerComment = (peer: { name: string; relationship?: string }, authorName: string, momentText: string, momentZh?: string) => {
-    const rel = String(peer.relationship || '')
-    const topic = extractTopic(momentText, momentZh)
-    const close = /(恋人|情侣|对象|老公|老婆|宝贝|暧昧|crush)/i.test(rel)
-    const friend = /(朋友|闺蜜|兄弟|同学|搭子|好友)/i.test(rel)
-
-    const moodPrefix = close
-      ? pickOne(['我懂你', '你这个我秒懂', '这条太你了', '你又戳我了'])
-      : friend
-        ? pickOne(['笑死', '有点东西', '你这波可以', '我狠狠共鸣'])
-        : pickOne(['这条不错', '有点意思', '这个表达可以', '懂你的点'])
-
-    const action = pickOne(['拿捏', '说到点上', '很有画面', '太真实', '很会写', '有共鸣'])
-    const connector = pickOne(['，', '，', '。', '——'])
-    const suffix = topic
-      ? pickOne([
-          `${topic}${pickOne(['这块', '这个点', '这个角度'])}${pickOne(['真的', '确实', '挺'])}${action}`,
-          `${pickOne(['尤其是', '特别是'])}${topic}，${pickOne(['我同意', '我也一样', '我懂'])}`,
-          `${topic}${pickOne(['我也会这样', '我也是这个感觉', '说得太准'])}`,
-        ])
-      : pickOne([
-          `这个节奏${pickOne(['很你', '很对', '很自然'])}`,
-          `看完${pickOne(['就懂了', '有点上头', '有被击中'])}`,
-          `${pickOne(['今天状态在线', '这条质量很高', '继续发'])}`,
-        ])
-
-    const toneTail = pickOne(['。', '！', '～', '', '', ''])
-    const slangTail = Math.random() < 0.35 ? pickOne([' 哈哈', ' 真实', ' 狠狠懂了', ' +1']) : ''
-    const maybeAt = Math.random() < 0.22 ? `@${authorName} ` : ''
-    return `${maybeAt}${moodPrefix}${connector}${suffix}${slangTail}${toneTail}`.replace(/\s+/g, ' ').trim().slice(0, 34)
-  }
-
-  const buildLitePeerReply = (toName: string, momentText: string, momentZh?: string) => {
-    const topic = extractTopic(momentText, momentZh)
-    const cores = topic
-      ? [
-          `你说的${topic}确实`,
-          `${topic}这块我同意`,
-          `${topic}这个点挺准`,
-          `${topic}我也有同感`,
-        ]
-      : [
-          '你这句说到点上了',
-          '这波我同意',
-          '我也这么觉得',
-          '这个回复可以',
-        ]
-    const tail = pickOne(['哈哈', '确实', '真的', '离谱但对', '没毛病', ''])
-    const body = `${pickOne(cores)}${tail ? `，${tail}` : ''}`.slice(0, 26)
-    return `回复 ${toName}：${body}`.slice(0, 34)
-  }
-
   const displayNameById = useMemo(() => {
     const map: Record<string, string> = {}
     map['user'] = currentPersona?.name || '我'
@@ -269,55 +203,62 @@ ${translationOn ? `- 【翻译规则】如果不是中文，必须在后面加�
         const lore = getLorebookEntriesForCharacter(friend.id, `${recentChat || ''}`)
         const characterMemory = friend.memorySummary || ''
         
-        // 非中文角色需要同时生成原文和中文翻译
-        const prompt = isNonChinese
-          ? `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈"发布动态"的方式发言。
-你是：${friend.name}
-你的人设：${friend.prompt || '（未设置）'}
-你的国家/地区：${(friend as any).country || '（未设置）'}
-你的主要语言：${langName}
-${characterMemory ? `你的长期记忆：\n${characterMemory}\n` : ''}
-最近聊天片段（可用来贴合语境）：
+        // 一次 API 同时生成：动态正文 + 评论 + 互评，避免“本地模板评论”的人机感
+        const peers = characters.filter((c) => c.id !== friend.id).sort(() => Math.random() - 0.5)
+        const picked = peers.slice(0, Math.min(peers.length, 1 + Math.floor(Math.random() * 3))) // 1~3
+        const peerRoster = picked.map((p) => ({
+          id: p.id,
+          name: p.name,
+          language: (p as any).language || 'zh',
+          chatTranslationEnabled: !!(p as any).chatTranslationEnabled,
+          relationToAuthor: p.relationship || '朋友',
+          prompt: String(p.prompt || '').slice(0, 120),
+        }))
+        const batchPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你是“朋友圈一体化生成器”，一次性生成：动态正文 + 评论 + 互评回复。
+【发布者】
+name: ${friend.name}
+language: ${langName}
+country: ${(friend as any).country || '（未设置）'}
+persona: ${friend.prompt || '（未设置）'}
+${characterMemory ? `memory:\n${characterMemory}\n` : ''}
+
+【近期聊天片段】
 ${recentChat || '（暂无）'}
 
-请写1条朋友圈动态，同时提供原文和中文翻译：
-- 原文用「${langName}」写，中文翻译要自然流畅
-- 口语化、自然（<=80字）
-- 不要动作描写/旁白
+【可评论好友（可为空）】
+${JSON.stringify(peerRoster)}
 
-【输出格式】严格按以下格式输出：
-原文：（${langName}内容）
-中文：（中文翻译）`
-          : `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你正在以微信朋友圈"发布动态"的方式发言。
-你是：${friend.name}
-你的人设：${friend.prompt || '（未设置）'}
-你的国家/地区：${(friend as any).country || '（未设置）'}
-你的主要语言：${langName}
-${characterMemory ? `你的长期记忆：\n${characterMemory}\n` : ''}
-最近聊天片段（可用来贴合语境）：
-${recentChat || '（暂无）'}
+【强约束】
+1) 只输出严格 JSON，不要解释，不要 markdown
+2) 动态口语自然，不要旁白；长度 <= 80
+3) 如果发布者语言不是中文且开启翻译，post.content 用原语言，post.contentZh 用中文；否则 contentZh 为空字符串
+4) comments/replies 要像真人微信，不要模板腔，不要重复句式
+5) comments 数量 1~${Math.max(1, peerRoster.length)}
+6) replies 可以为空，非空时最多 ${Math.max(0, Math.floor(peerRoster.length / 2))}
 
-请写1条朋友圈动态：
-- 【语言强规则】只用「${langName}」输出
-- 口语化、自然（<=80字）
-- 不要动作描写/旁白
-- 只输出动态内容，不要加引号，不要换行`
-
-        const text = await callLLM([{ role: 'user', content: prompt }], undefined, { maxTokens: isNonChinese ? 280 : 140, timeoutMs: 600000 })
-        
-        // 解析双语内容
-        let content = text.trim()
+【输出 JSON 格式】
+{"post":{"content":"...","contentZh":"..."},"comments":[{"friendId":"id","content":"..."}],"replies":[{"friendId":"id","replyToFriendId":"id","content":"..."}]}
+`
+        const batchRaw = await callLLM([{ role: 'user', content: batchPrompt }], undefined, { maxTokens: isNonChinese ? 420 : 360, timeoutMs: 600000 })
+        let content = ''
         let contentZh: string | undefined
-        
-        if (isNonChinese) {
-          // 尝试解析格式：原文：xxx\n中文：xxx
-          const originalMatch = text.match(/原文[：:]\s*(.+?)(?:\n|中文[：:]|$)/s)
-          const zhMatch = text.match(/中文[：:]\s*(.+?)$/s)
-          
-          if (originalMatch && zhMatch) {
-            content = originalMatch[1].trim()
-            contentZh = zhMatch[1].trim()
-          }
+        let generatedComments: Array<{ friendId: string; content: string }> = []
+        let generatedReplies: Array<{ friendId: string; replyToFriendId: string; content: string }> = []
+        try {
+          const j = String(batchRaw || '').match(/\{[\s\S]*\}/)
+          const parsed = j ? JSON.parse(j[0]) : {}
+          content = String(parsed?.post?.content || '').trim()
+          contentZh = String(parsed?.post?.contentZh || '').trim() || undefined
+          generatedComments = Array.isArray(parsed?.comments) ? parsed.comments : []
+          generatedReplies = Array.isArray(parsed?.replies) ? parsed.replies : []
+        } catch {
+          content = String(batchRaw || '').trim()
+          contentZh = undefined
+          generatedComments = []
+          generatedReplies = []
+        }
+        if (!content) {
+          content = isNonChinese ? pickOne(['Today felt softer than usual.', 'Keeping this little moment here.', 'A quiet update from my day.']) : pickOne(['今天想记录一下这一刻。', '留个小动态。', '今天状态还不错。'])
         }
         
         const newMoment = addMoment({
@@ -329,19 +270,12 @@ ${recentChat || '（暂无）'}
           images: [],
           timestamp: postTime,
         })
-        // 保持“刷新一次只调用一次 API”不变：
-        // 这里用本地轻量互评补齐可见角色互动，避免看起来“不能互相评论”。
-        const peers = characters.filter((c) => c.id !== friend.id).sort(() => Math.random() - 0.5)
-        const picked = peers.slice(0, Math.min(peers.length, 1 + Math.floor(Math.random() * 3))) // 1~3
+        // 仍保持“刷新一次只调用一次 API”，只是把评论改为同次模型生成
         const pickedNames = new Map<string, string>()
-        for (let i = 0; i < picked.length; i++) {
-          const p = picked[i]
-          const txt = buildLitePeerComment(
-            { name: p.name, relationship: p.relationship },
-            friend.name,
-            content,
-            contentZh
-          ).slice(0, 34)
+        for (const item of generatedComments) {
+          const p = characters.find((c) => c.id === String(item?.friendId || ''))
+          const txt = String(item?.content || '').trim().slice(0, 64)
+          if (!p || !txt) continue
           addMomentComment(newMoment.id, {
             authorId: p.id,
             authorName: p.name,
@@ -350,13 +284,17 @@ ${recentChat || '（暂无）'}
           })
           pickedNames.set(p.id, p.name)
         }
-        if (picked.length >= 2 && Math.random() < 0.8) {
-          const from = picked[0]
-          const to = picked[1]
+        for (const item of generatedReplies) {
+          const from = characters.find((c) => c.id === String(item?.friendId || ''))
+          const toId = String(item?.replyToFriendId || '')
+          const toName = pickedNames.get(toId) || characters.find((c) => c.id === toId)?.name || ''
+          const txt = String(item?.content || '').trim().slice(0, 64)
+          if (!from || !toName || !txt) continue
           addMomentComment(newMoment.id, {
             authorId: from.id,
             authorName: from.name,
-            content: buildLitePeerReply(pickedNames.get(to.id) || to.name, content, contentZh),
+            content: txt,
+            replyToAuthorName: toName,
             timestamp: Date.now() - Math.random() * 2 * 60 * 1000,
           })
         }
@@ -546,15 +484,17 @@ ${params.userText}
     return new Date(timestamp).toLocaleDateString('zh-CN')
   }
 
+  const enableCoverShrink = !userSettings.momentsBackground
+
   return (
     <div className="flex flex-col h-full bg-transparent">
       {/* 封面区域 */}
       <div 
         className="relative bg-cover bg-center"
         style={{
-          // 重要：滚动时用“即时高度”而不是 transition 动画，避免高度变化反过来干扰滚动，出现“弹簧抖动”
-          height: `${Math.max(140, 256 - coverShrink)}px`,
-          willChange: 'height',
+          // 自定义图片封面时禁用收缩，避免某些机型出现“背景牵连滚动”的抖动
+          height: `${enableCoverShrink ? Math.max(140, 256 - coverShrink) : 256}px`,
+          willChange: enableCoverShrink ? 'height' : 'auto',
           backgroundImage: userSettings.momentsBackground
             ? `url(${userSettings.momentsBackground})`
             : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -642,6 +582,7 @@ ${params.userText}
       <div
         className="flex-1 overflow-y-auto bg-transparent"
         onScroll={(e) => {
+          if (!enableCoverShrink) return
           const top = (e.currentTarget as HTMLDivElement).scrollTop
           // 增大收缩力度：滚动距离乘以2.5倍，最大收缩到116px（从256到140）
           const next = Math.min(116, Math.max(0, top * 2.5))
