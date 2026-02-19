@@ -325,7 +325,13 @@ type OSContextValue = {
           }>
     }[],
     model?: string,
-    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number },
+    configOverride?: {
+      apiBaseUrl?: string
+      apiKey?: string
+      apiInterface?: LLMApiInterface
+      selectedModel?: string
+    }
   ) => Promise<string>
 }
 
@@ -2536,14 +2542,20 @@ export function OSProvider({ children }: PropsWithChildren) {
           }>
     }[],
     model?: string,
-    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number },
+    configOverride?: {
+      apiBaseUrl?: string
+      apiKey?: string
+      apiInterface?: LLMApiInterface
+      selectedModel?: string
+    }
   ): Promise<string> => {
     return await callLLMWithConfig(
       {
-        apiBaseUrl: llmConfig.apiBaseUrl,
-        apiKey: llmConfig.apiKey,
-        apiInterface: llmConfig.apiInterface ?? 'openai_compatible',
-        selectedModel: model || llmConfig.selectedModel,
+        apiBaseUrl: configOverride?.apiBaseUrl || llmConfig.apiBaseUrl,
+        apiKey: configOverride?.apiKey || llmConfig.apiKey,
+        apiInterface: configOverride?.apiInterface || llmConfig.apiInterface || 'openai_compatible',
+        selectedModel: model || configOverride?.selectedModel || llmConfig.selectedModel,
       },
       messages,
       options

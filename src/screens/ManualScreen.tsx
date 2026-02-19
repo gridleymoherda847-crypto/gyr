@@ -60,6 +60,7 @@ const MANUAL_TEXT = `
 - X 推特刷新私信
 - 手动点「重新生成」会再调用一次
 - 自动找我聊天（开启后）：按你设置的“每天最少~最多次数”执行；离线补齐也严格不超过该区间上限
+- 心声/心情按钮（聊天页右上角爱心）：仅查看不额外消耗 API；会在触发 AI 回复时同步刷新
 
 不消耗 API 的操作：
 - 日记本查看/编辑
@@ -81,6 +82,7 @@ const MANUAL_TEXT = `
 
 【微信功能】
 - 私聊：进入聊天 → 发送消息 → 点击右下角播放按钮让 AI 回复
+- 心声/心情：聊天页右上角点击爱心图标查看；数据会在触发 AI 回复时同步刷新
 - 群聊：微信 → 右上角加号 → 发起群聊
 - 朋友圈：微信 → 底部朋友圈 Tab → 右上角刷新
 - 偷看日记：聊天 → 点击「+」→ 偷看日记（生成角色视角的私人日记）
@@ -266,6 +268,15 @@ ${MANUAL_TEXT}
               1. 检查 API 是否配置正确：设置 → API 配置
               <br />2. 确认 API 额度是否充足
               <br />3. 发送消息后，需要点击输入框右边的「播放按钮 ▶」触发 AI 回复
+            </p>
+          </div>
+
+          <div className="p-4 bg-gray-50 rounded-2xl">
+            <h4 className="font-bold mb-2">Q: 心声/心情是怎么更新的？</h4>
+            <p className="text-sm text-gray-600">
+              聊天页右上角爱心按钮可以查看「心情与心声」。
+              <br />心声和心情会在每次触发 AI 回复时同步更新，不会单独触发一次额外回复。
+              <br />如果显示为空，先点击一次播放按钮，让 TA 回复后再查看。
             </p>
           </div>
           
@@ -548,6 +559,11 @@ ${MANUAL_TEXT}
               <div className="font-medium text-red-700">部分复杂流程（如格式修复）</div>
               <div className="text-sm text-red-600">偶尔会二次调用，用来“修格式/补内容”，避免你看到错误或半句</div>
             </div>
+          </div>
+
+          <div className="p-3 bg-green-50 rounded-xl border border-green-100">
+            <div className="font-medium text-green-700">心声/心情面板（右上角爱心）</div>
+            <div className="text-sm text-green-600">查看面板本身不消耗 API；仅在触发 AI 回复时随当次回复同步更新</div>
           </div>
 
           <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 mt-4">

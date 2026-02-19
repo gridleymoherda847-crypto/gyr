@@ -9,10 +9,12 @@ import TakeoutPanel, { formatTakeoutOrderText, type TakeoutOrder } from './compo
 import { getGlobalPresets, getLorebookEntriesForCharacter } from '../PresetScreen'
 import { xEnsureUser, xLoad, xNewPost, xSave, xAddFollow, xRemoveFollow, xIsFollowing } from '../../storage/x'
 
+const FOLLOW_GLOBAL_API_CONFIG_ID = '__global__'
+
 export default function ChatScreen() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { fontColor, musicPlaylist, llmConfig, callLLM, playSong, pauseMusic, ttsConfig, getAllFontOptions, currentFont, decorImage } = useOS()
+  const { fontColor, musicPlaylist, llmConfig, callLLM: callLLMBase, playSong, pauseMusic, ttsConfig, getAllFontOptions, currentFont, decorImage } = useOS()
   const { characterId } = useParams<{ characterId: string }>()
   const highlightMsgId = searchParams.get('highlightMsg') // 从搜索结果跳转时高亮的消息ID
   const { 
@@ -119,7 +121,103 @@ export default function ChatScreen() {
   const prevScrollTopRef = useRef<number | null>(null)
   const navLockRef = useRef(0)
   const [showMenu, setShowMenu] = useState(false)
+  const [showHeartPanel, setShowHeartPanel] = useState(false)
+  const [showApiConfigSwitchPanel, setShowApiConfigSwitchPanel] = useState(false)
+  const [savedApiConfigs, setSavedApiConfigs] = useState<Array<{
+    id: string
+    name: string
+    baseUrl: string
+    apiKey: string
+    selectedModel: string
+    apiInterface?: 'openai_compatible' | 'anthropic_native' | 'gemini_native' | 'ollama'
+  }>>([])
   const [infoDialog, setInfoDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
+
+  const loadSavedApiConfigs = useCallback(() => {
+    try {
+      const raw = localStorage.getItem('mina_api_configs')
+      const list = raw ? JSON.parse(raw) : []
+      const configs = Array.isArray(list) ? list : []
+      const normalized = configs
+        .map((it: any) => ({
+          id: String(it?.id || '').trim(),
+          name: String(it?.name || '').trim(),
+          baseUrl: String(it?.baseUrl || '').trim(),
+          apiKey: String(it?.apiKey || '').trim(),
+          selectedModel: String(it?.selectedModel || '').trim(),
+          apiInterface: (it?.apiInterface || 'openai_compatible') as 'openai_compatible' | 'anthropic_native' | 'gemini_native' | 'ollama',
+        }))
+        .filter((it: any) => it.id && it.baseUrl && it.apiKey && it.selectedModel)
+      setSavedApiConfigs(normalized)
+    } catch {
+      setSavedApiConfigs([])
+    }
+  }, [])
+
+  useEffect(() => {
+    loadSavedApiConfigs()
+  }, [loadSavedApiConfigs, character?.id])
+
+  useEffect(() => {
+    if (!character?.id) return
+    const current = String((character as any)?.apiConfigId || '').trim()
+    if (!current) {
+      updateCharacter(character.id, { apiConfigId: FOLLOW_GLOBAL_API_CONFIG_ID } as any)
+    }
+  }, [character?.id, (character as any)?.apiConfigId, updateCharacter])
+
+  const openApiConfigSwitchPanel = useCallback(() => {
+    loadSavedApiConfigs()
+    setShowApiConfigSwitchPanel(true)
+  }, [loadSavedApiConfigs])
+
+  const currentApiConfigIdRaw = String((character as any)?.apiConfigId || '').trim()
+  const currentApiConfigId = currentApiConfigIdRaw || FOLLOW_GLOBAL_API_CONFIG_ID
+  const isFollowingGlobalApiConfig = currentApiConfigId === FOLLOW_GLOBAL_API_CONFIG_ID
+  const currentCharacterApiConfig = useMemo(() => {
+    if (isFollowingGlobalApiConfig) return null
+    return savedApiConfigs.find((cfg) => cfg.id === currentApiConfigId) || null
+  }, [savedApiConfigs, currentApiConfigId, isFollowingGlobalApiConfig])
+
+  const switchCharacterApiConfig = useCallback((configId: string) => {
+    if (!character) return
+    const target = savedApiConfigs.find((cfg) => cfg.id === configId)
+    if (!target) return
+    updateCharacter(character.id, { apiConfigId: target.id } as any)
+    setShowApiConfigSwitchPanel(false)
+    setInfoDialog({
+      open: true,
+      title: '已切换角色专属 API',
+      message: `当前角色已使用「${target.name || '未命名配置'}」`,
+    })
+  }, [character, savedApiConfigs, updateCharacter])
+
+  const clearCharacterApiConfig = useCallback(() => {
+    if (!character) return
+    updateCharacter(character.id, { apiConfigId: FOLLOW_GLOBAL_API_CONFIG_ID } as any)
+    setShowApiConfigSwitchPanel(false)
+    setInfoDialog({
+      open: true,
+      title: '已切回全局配置',
+      message: '当前角色将跟随设置页中的 AI 对话配置。',
+    })
+  }, [character, updateCharacter])
+
+  const callLLM = useCallback((
+    messages: Parameters<typeof callLLMBase>[0],
+    model?: string,
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number },
+  ) => {
+    const configOverride = currentCharacterApiConfig
+      ? {
+          apiBaseUrl: currentCharacterApiConfig.baseUrl,
+          apiKey: currentCharacterApiConfig.apiKey,
+          apiInterface: currentCharacterApiConfig.apiInterface || 'openai_compatible',
+          selectedModel: currentCharacterApiConfig.selectedModel,
+        }
+      : undefined
+    return callLLMBase(messages, model, options, configOverride)
+  }, [callLLMBase, currentCharacterApiConfig])
   
   // 功能面板状态
   const [showPlusMenu, setShowPlusMenu] = useState(false)
@@ -1970,12 +2068,13 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
   - 你只能使用与上述标签一致的相对时间词：例如标签为“昨天/前天/前几天”时，绝对禁止说“刚刚/刚才/刚聊完”。
   - 如果看到时间线里日期不是今天，就必须用“昨天/前天/前几天”这类说法，不能装作“刚刚发生”。
 - 【严禁】绝对不能在回复中说出任何精确时间数字！如"间隔：3小时20分15秒"、"过了2小时"、"（间隔：xx）"等，这样非常出戏！
-- 【正确做法】用自然口语表达时间感，例如："好久没理我了"、"你去哪了"、"怎么这么久才回"、"刚刚在忙？"、"终于回了"
+- 【正确做法】用自然口语表达时间感，例如："你终于回我啦"、"想你了"、"你什么时候可以理理我呀"、"刚刚在忙吗"
+- 【重要限制】可以表达思念/小情绪，但禁止说具体时长或具体日期：如"几天没理我"、"两天了"、"昨天/前天你没回"、"这么多天不找我"
 - 时间感应规则（偶尔提一下就好，不要每次都问）：
   - 间隔 >= 30分钟：可以自然地问一句"在忙吗"或"干嘛去了"（但不是每次都问）
-  - 间隔 >= 2小时：用自然语言表达"好久没回"的感觉
-  - 间隔 >= 1天：可以带点小情绪
-  - 间隔 >= 2天：可以明显表达"好几天没理我了"
+  - 间隔 >= 2小时：用自然语言表达"有点想你/终于回我"的感觉
+  - 间隔 >= 1天：可以带一点思念或小情绪，但仍然不要提天数
+  - 间隔 >= 2天：可以更明显表达在意和想念，但仍然不要提具体时间长度
 - 重要：不是每次都要追问时间！如果用户正常回复了，就正常聊天
 - 当"用户没有新发言"时，你可以主动发消息，但要多样化：
   - 问问用户在干嘛、今天怎么样、中午吃了什么
@@ -2060,6 +2159,10 @@ ${timeAwarenessOn ? `【中国节日感知（按中国日历/节气氛围）】
   - ✅ 正确示例："我刚刚在吃饭。" "你呢？"（两句完整的话，可以分开）
   - 如果一句话很短（如"我刚刚在吃饭。"），不要强行拆成多条，保持完整！
 - 如果想给对方转账，单独一行写：[转账:金额:备注]
+- 在你所有正常聊天消息结束后，最后追加一行“心情/心声元数据”（这行不会显示给用户）：
+  [HEART_STATE]{"mood":"当前心情(2~8字)","innerVoice":"当前最真实的内心想法(<=60字，直白、不掩饰)"}
+  - 必须是严格 JSON，双引号，单行输出
+  - mood 不要写句子；innerVoice 要符合你真实性格，不要官话
 `
 
         systemPrompt += `
@@ -2405,7 +2508,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             llmMessages.push({ role: 'user', content: '再多说几句，像真人一样自然延展（不要重复）。' })
           } else {
             // silenceSinceUserMs 大：用户很久没说话，应该主动追问/关心，而不是继续机械接上次话题
-            llmMessages.push({ role: 'user', content: '用户没有新发言，请你主动发一条关心/追问/吐槽的微信消息（禁止报时间数字）。' })
+            llmMessages.push({ role: 'user', content: '用户没有新发言，请你主动发一条关心/追问/吐槽的微信消息（禁止报时间数字，禁止说具体几天/昨天前天）。' })
           }
         }
         
@@ -2416,8 +2519,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         const pickTimeAckRegex = (ms: number) => {
           const h = ms / 3600000
           const d = ms / 86400000
-          if (d >= 2) return /(两天|这两天|好几天|几天|这么多天|都两天了|都好几天了)/
-          if (d >= 1) return /(一天|昨天|昨晚|前天|这一天|都一天了|都一天多了)/
+          if (d >= 2) return /(好久|这么久|怎么这么久|终于回我|终于出现|舍得理我|想你|什么时候可以理理我)/
+          if (d >= 1) return /(好久|这么久|怎么这么久|终于回我|舍得理我|想你|什么时候可以理理我)/
           if (h >= 2) return /(这么久|好久|这么长时间|怎么这么久|都这么久了|都好久了)/
           return /(刚刚|刚才|一会儿|刚聊完)/
         }
@@ -2428,8 +2531,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           llmMessages.unshift({
             role: 'system',
             content:
-              `【首句强制要求】你必须在第一条回复里用“自然语言”提到时间差并追问/关心（带问句）。` +
-              `严禁输出任何“间隔：xx小时xx分xx秒”或括号元信息，不能报时长数字，必须像真人。` +
+              `【首句强制要求】你必须在第一条回复里用“自然语言”表达思念/在意并追问或关心（带问句）。` +
+              `严禁输出任何“间隔：xx小时xx分xx秒”或括号元信息，不能报时长数字，也不能说具体几天/昨天前天，必须像真人。` +
               `不满足则视为失败，需要你重写。`,
           })
         }
@@ -2603,9 +2706,9 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           if (!hasQuestion || !hasTimeAck || !hasNoLeakyInterval) {
             const fixPrompt =
               `你刚才没有严格遵守时间规则。现在必须重写你的回复：\n` +
-              `- 第一条必须用自然语言提到“很久没回/昨天/前天/这两天/好几天”等（不要报具体数字时长）\n` +
+              `- 第一条必须用自然语言表达“想你了/终于回我/什么时候可以理理我”这类在意感（不要报具体数字时长）\n` +
               `- 第一条必须包含一个追问/关心（带问句）\n` +
-              `- 严禁输出“（间隔：xx小时xx分xx秒）”这类内容\n` +
+              `- 严禁输出“（间隔：xx小时xx分xx秒）”、"几天没理我"、"昨天/前天没回我"这类内容\n` +
               `- 其余内容再正常接着聊\n` +
               `只输出重写后的回复内容（多条用换行分隔）。`
             response = await callLLM(
@@ -2694,6 +2797,28 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             if (cleaned) response = stripThoughtForOnline(cleaned)
           } catch {
             // ignore rewrite failure
+          }
+        }
+
+        // 从同一次回复里抽取“心情/心声”元数据（不占气泡、不计入条数）
+        {
+          const m = String(response || '').match(/\[HEART_STATE\]\s*(\{[\s\S]*?\})/)
+          if (m) {
+            try {
+              const obj = JSON.parse(m[1] || '{}') as { mood?: string; innerVoice?: string }
+              const mood = String(obj?.mood || '').trim().slice(0, 12)
+              const innerVoice = String(obj?.innerVoice || '').trim().slice(0, 120)
+              if (mood || innerVoice) {
+                updateCharacter(character.id, {
+                  mood: mood || (character as any).mood || '',
+                  innerVoice: innerVoice || (character as any).innerVoice || '',
+                  innerVoiceUpdatedAt: Date.now(),
+                } as any)
+              }
+            } catch {
+              // ignore heart metadata parse failure
+            }
+            response = String(response || '').replace(m[0], '').trim()
           }
         }
 
@@ -6361,9 +6486,16 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       return (
         <div 
           data-primary-click="1"
-          className={`min-w-[160px] rounded-lg overflow-hidden ${canClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
+          className={`min-w-[160px] rounded-lg overflow-hidden ${(canClick || !isPending) ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
           style={{ background: (isRefunded || isRejected) ? '#f5f5f5' : '#FA9D3B' }}
-          onClick={() => canClick && setTransferActionMsg(msg)}
+          onClick={(e) => {
+            if (canClick) {
+              setTransferActionMsg(msg)
+              return
+            }
+            // 完成态卡片：点击后像消息气泡一样，在上方弹出操作（含删除）
+            openMsgActionMenu(msg, e.currentTarget as HTMLElement)
+          }}
         >
           <div className="px-3 py-2">
             <div className={`text-base font-medium ${isRefunded ? 'text-gray-500' : 'text-white'}`}>
@@ -8141,15 +8273,38 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                   </span>
                 )}
               </div>
-              <button 
-                type="button" 
-                onClick={() => setShowMenu(true)}
-                className="w-7 h-7 flex items-center justify-center"
-              >
-                <svg className="w-5 h-5 text-[#000]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={openApiConfigSwitchPanel}
+                  className="w-7 h-7 flex items-center justify-center"
+                  title="切换角色专属 API"
+                >
+                  <svg className="w-5 h-5 text-[#000]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M15.5 4a4.5 4.5 0 0 1 4.19 6.14l-2.04 2.05a1 1 0 0 1-.7.29H14v2a1 1 0 0 1-1 1h-1v1a1 1 0 0 1-1 1H9v1a1 1 0 0 1-1 1H5.5a1.5 1.5 0 0 1-1.5-1.5v-2.43a1 1 0 0 1 .3-.7l4.44-4.44A4.5 4.5 0 0 1 15.5 4Zm0 2.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowHeartPanel(true)}
+                  className="w-7 h-7 flex items-center justify-center"
+                  title="心情与心声"
+                >
+                  <svg className="w-5 h-5 text-[#000]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.84 5.61a5.5 5.5 0 00-7.78 0L12 6.67l-1.06-1.06a5.5 5.5 0 10-7.78 7.78l1.06 1.06L12 22.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+                  </svg>
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setShowMenu(true)}
+                  className="w-7 h-7 flex items-center justify-center"
+                  title="更多"
+                >
+                  <svg className="w-5 h-5 text-[#000]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+                  </svg>
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -9139,6 +9294,105 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         confirmText="知道了"
         onConfirm={() => setInfoDialog({ open: false, title: '', message: '' })}
       />
+
+      <WeChatDialog
+        open={showHeartPanel}
+        title="TA 的心动信号"
+        message=""
+        confirmText="收下了"
+        onConfirm={() => setShowHeartPanel(false)}
+      >
+        <div className="text-left">
+          <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-pink-50 to-orange-50 px-3.5 py-3 shadow-[0_10px_24px_rgba(244,114,182,0.12)]">
+            <div className="mb-2 flex items-center gap-1.5 text-[12px] text-rose-500">
+              <span aria-hidden>❤</span>
+              <span>此刻恋爱天气</span>
+            </div>
+            <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2.5">
+              <div className="text-[11px] text-pink-500 mb-1">当前心情</div>
+              <div className="text-sm font-medium text-gray-800">{String((character as any).mood || '（暂无）')}</div>
+            </div>
+            <div className="mt-2 rounded-xl border border-white/70 bg-white/70 px-3 py-2.5">
+              <div className="text-[11px] text-rose-500 mb-1">当前心声</div>
+              <div className="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap break-words">
+                {String((character as any).innerVoice || '（还没有生成，点一次播放键后会更新）')}
+              </div>
+            </div>
+            {!!(character as any).innerVoiceUpdatedAt && (
+              <div className="mt-2 text-[11px] text-rose-400">
+                最近更新：{new Date((character as any).innerVoiceUpdatedAt).toLocaleString('zh-CN', { hour12: false })}
+              </div>
+            )}
+          </div>
+        </div>
+      </WeChatDialog>
+
+      <WeChatDialog
+        open={showApiConfigSwitchPanel}
+        title="切换角色专属 API 配置"
+        message=""
+        confirmText="关闭"
+        onConfirm={() => setShowApiConfigSwitchPanel(false)}
+        onCancel={() => setShowApiConfigSwitchPanel(false)}
+      >
+        <div className="space-y-2 text-left">
+          <div className="text-[12px] text-gray-500">
+            当前角色配置：
+                    <span className="text-gray-800 font-medium">
+              {currentCharacterApiConfig?.name || '跟随设置页全局配置'}
+            </span>
+          </div>
+          {savedApiConfigs.length > 0 ? (
+            <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1">
+              {savedApiConfigs.map((cfg) => {
+                const active = cfg.id === currentApiConfigId
+                return (
+                  <button
+                    key={cfg.id}
+                    type="button"
+                    onClick={() => switchCharacterApiConfig(cfg.id)}
+                    className={`w-full rounded-xl border px-3 py-2 text-left text-[13px] transition ${
+                      active
+                        ? 'border-pink-300 bg-pink-50 text-pink-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-pink-200 hover:bg-pink-50/60'
+                    }`}
+                  >
+                    <div className="font-medium">{cfg.name || '未命名配置'}</div>
+                    <div className="text-[11px] opacity-80 mt-0.5">
+                      {cfg.selectedModel} · {cfg.apiInterface || 'openai_compatible'}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+              还没有已保存的 API 配置。请先去设置里保存一套配置。
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={clearCharacterApiConfig}
+            className={`w-full rounded-full border px-4 py-2 text-[13px] font-medium active:scale-[0.98] ${
+              isFollowingGlobalApiConfig
+                ? 'border-pink-300 bg-pink-50 text-pink-700'
+                : 'border-black/10 bg-white/70 text-gray-700'
+            }`}
+          >
+            跟随设置页全局配置
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowApiConfigSwitchPanel(false)
+              navigate('/apps/settings/api')
+            }}
+            className="w-full rounded-full border border-black/10 bg-white/70 px-4 py-2 text-[13px] font-medium text-gray-700 active:scale-[0.98]"
+          >
+            去 API 配置
+          </button>
+        </div>
+      </WeChatDialog>
 
       <WeChatDialog
         open={coupleInviteConfirmOpen}

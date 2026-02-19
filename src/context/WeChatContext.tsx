@@ -113,6 +113,12 @@ export type WeChatCharacter = {
   autoReachEnabled?: boolean
   autoReachMinPerDay?: number
   autoReachMaxPerDay?: number
+  // 心情/心声（由聊天同次API顺带产出，不占消息气泡）
+  mood?: string
+  innerVoice?: string
+  innerVoiceUpdatedAt?: number
+  // 该角色专属的 API 配置（来自“设置 → API 配置”中已保存项）
+  apiConfigId?: string
 }
 
 // 聊天消息
@@ -1367,6 +1373,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       autoReachEnabled: !!(character as any).autoReachEnabled,
       autoReachMinPerDay: autoReachMin,
       autoReachMaxPerDay: autoReachMax,
+      apiConfigId: (character as any).apiConfigId || '__global__',
     }
     setCharacters(prev => [...prev, newCharacter])
     return newCharacter
