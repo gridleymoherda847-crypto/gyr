@@ -688,10 +688,9 @@ export default function XScreen() {
       setData(next)
       await xSave(next)
 
-      // 后台为每条新帖子生成 6 条评论
-      void (async () => {
+      // 为每条新帖子生成 6 条评论（在 withLoading 内 await，确保数据一致）
+      if (newPosts.length > 0) {
         try {
-          if (newPosts.length === 0) return
           const postsForComments = newPosts.slice(0, 5)
           const postsSummary = postsForComments.map((p, i) => (
             `帖子${i + 1} [id=${p.id}]：\n` +
@@ -705,7 +704,7 @@ export default function XScreen() {
             `你要为以下帖子各生成 6 条评论，像真实推特评论区一样。\n\n` +
             `${postsSummary}\n` +
             `要求：\n` +
-            `- 每条帖子生成 6 条评论\n` +
+            `- 每条帖子生成恰好 6 条评论\n` +
             `- 评论要和帖子内容紧密相关，围绕帖子主题展开\n` +
             `- 如果帖子有图片描述，要有评论围绕图片内容反应\n` +
             `- 风格多样：支持/吐槽/玩梗/阴阳怪气/认真回复/补充信息\n` +
@@ -722,9 +721,7 @@ export default function XScreen() {
             `}\n`
           const parsed = await callJson(sys, '现在为每条帖子生成 6 条评论。', 1200)
           const postReplies = (parsed as any)?.postReplies || {}
-          let latestData = data
-          if (!latestData) return
-          const allNewReplies: typeof latestData.replies = [...(latestData.replies || [])]
+          const allNewReplies: typeof next.replies = [...(next.replies || [])]
           const replyCountMap: Record<string, number> = {}
           for (const post of postsForComments) {
             const rawArr = Array.isArray(postReplies[post.id]) ? postReplies[post.id] : []
@@ -733,10 +730,10 @@ export default function XScreen() {
               const authorName = String(r?.authorName || '').trim()
               const text = String(r?.text || '').trim()
               if (!text) continue
-              const { data: d3, userId: rUserId } = xEnsureUser(latestData, { name: authorName || 'User' })
-              latestData = d3
+              const { data: d3, userId: rUserId } = xEnsureUser(next, { name: authorName || 'User' })
+              next = d3
               const reply = xNewReply(post.id, rUserId, authorName || 'User', text)
-              const ru = latestData.users.find(u => u.id === rUserId)
+              const ru = next.users.find(u => u.id === rUserId)
               if (ru) {
                 ;(reply as any).authorHandle = ru.handle
                 ;(reply as any).authorColor = ru.color
@@ -746,16 +743,16 @@ export default function XScreen() {
             }
             replyCountMap[post.id] = added
           }
-          const updatedPosts = latestData.posts.map(p =>
+          const updatedPosts = next.posts.map(p =>
             replyCountMap[p.id] ? { ...p, replyCount: (p.replyCount || 0) + replyCountMap[p.id] } : p
           )
-          latestData = { ...latestData, posts: updatedPosts, replies: allNewReplies.slice(-2000) }
-          setData(latestData)
-          await xSave(latestData)
+          next = { ...next, posts: updatedPosts, replies: allNewReplies.slice(-2000) }
+          setData(next)
+          await xSave(next)
         } catch {
-          // 静默失败
+          // 评论生成失败不影响帖子展示
         }
-      })()
+      }
     })
   }
 
