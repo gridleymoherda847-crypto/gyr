@@ -2162,6 +2162,7 @@ ${timeAwarenessOn ? `【中国节日感知（按中国日历/节气氛围）】
 - 在你所有正常聊天消息结束后，最后追加一行“心情/心声元数据”（这行不会显示给用户）：
   [HEART_STATE]{"mood":"当前心情(2~8字)","innerVoice":"当前最真实的内心想法(<=60字，直白、不掩饰)"}
   - 必须是严格 JSON，双引号，单行输出
+  - 这行元数据必须始终使用中文，不受角色语言影响（mood/innerVoice 都必须是中文）
   - mood 不要写句子；innerVoice 要符合你真实性格，不要官话
 `
 
@@ -2806,8 +2807,38 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           if (m) {
             try {
               const obj = JSON.parse(m[1] || '{}') as { mood?: string; innerVoice?: string }
-              const mood = String(obj?.mood || '').trim().slice(0, 12)
-              const innerVoice = String(obj?.innerVoice || '').trim().slice(0, 120)
+              let mood = String(obj?.mood || '').trim().slice(0, 12)
+              let innerVoice = String(obj?.innerVoice || '').trim().slice(0, 120)
+
+              // 心声面板属于用户可见信息：无论角色主语言是什么，统一保证中文显示。
+              const hasChinese = (s: string) => /[\u4e00-\u9fff]/.test(String(s || ''))
+              if ((mood && !hasChinese(mood)) || (innerVoice && !hasChinese(innerVoice))) {
+                try {
+                  const translatePrompt =
+                    `把以下内容翻成自然中文，并且只输出严格 JSON：` +
+                    `{"mood":"...","innerVoice":"..."}\n` +
+                    `- mood 保持 2~8 字\n` +
+                    `- innerVoice 保持简短直白，不要官话\n` +
+                    `待翻译内容：${JSON.stringify({ mood, innerVoice })}`
+                  const translatedRaw = await callLLM(
+                    [
+                      { role: 'system', content: '你是中文润色助手。只输出 JSON，不要输出解释。' },
+                      { role: 'user', content: translatePrompt },
+                    ],
+                    undefined,
+                    { maxTokens: 120, timeoutMs: 60000, temperature: 0.1 }
+                  )
+                  const j = String(translatedRaw || '').match(/\{[\s\S]*\}/)
+                  if (j) {
+                    const t = JSON.parse(j[0] || '{}') as { mood?: string; innerVoice?: string }
+                    mood = String(t?.mood || mood).trim().slice(0, 12)
+                    innerVoice = String(t?.innerVoice || innerVoice).trim().slice(0, 120)
+                  }
+                } catch {
+                  // 翻译失败则保留原文，避免影响主回复链路
+                }
+              }
+
               if (mood || innerVoice) {
                 updateCharacter(character.id, {
                   mood: mood || (character as any).mood || '',
@@ -8198,7 +8229,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         {/* 一起听歌浮窗已移至 WeChatLayout 全局显示 */}
         
         {/* 头部 - 参考 ChatsTab 的结构 */}
-        <div className="flex items-center justify-between px-3 py-2.5 bg-transparent mt-1">
+        <div className="relative flex items-center justify-between px-3 py-2.5 bg-transparent mt-1">
           {editMode ? (
             <>
               <button
@@ -8245,35 +8276,37 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             </>
           ) : (
             <>
-              <button 
-                type="button" 
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  const now = Date.now()
-                  if (now - navLockRef.current < 450) return
-                  navLockRef.current = now
-                  // 先清空 currentChatId，避免“退出瞬间生成的消息”被认为仍在当前聊天，从而不计入未读
-                  setCurrentChatId(null)
-                  navigate('/apps/wechat')
-                }}
-                className="flex items-center gap-0.5 transition-opacity hover:opacity-70"
-                style={{ color: fontColor.value }}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
-                <span className="text-[13px] font-medium">返回</span>
-              </button>
-              <div className="flex flex-col items-center">
-                <span className="font-semibold text-[#000]">{character.nickname || character.name}</span>
+              <div className="w-[76px]">
+                <button 
+                  type="button" 
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    const now = Date.now()
+                    if (now - navLockRef.current < 450) return
+                    navLockRef.current = now
+                    // 先清空 currentChatId，避免“退出瞬间生成的消息”被认为仍在当前聊天，从而不计入未读
+                    setCurrentChatId(null)
+                    navigate('/apps/wechat')
+                  }}
+                  className="flex items-center gap-0.5 transition-opacity hover:opacity-70"
+                  style={{ color: fontColor.value }}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                  <span className="text-[13px] font-medium">返回</span>
+                </button>
+              </div>
+              <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center max-w-[52%]">
+                <span className="font-semibold text-[#000] truncate max-w-full">{character.nickname || character.name}</span>
                 {showTyping && (
-                  <span className="text-[10px] text-gray-500 mt-0.5">
+                  <span className="text-[10px] text-gray-500 mt-0.5 truncate max-w-full">
                     对方正在输入中...
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-1">
+              <div className="w-[94px] flex items-center justify-end gap-1">
                 <button
                   type="button"
                   onClick={openApiConfigSwitchPanel}
