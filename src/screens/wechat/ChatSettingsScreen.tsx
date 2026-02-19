@@ -161,8 +161,8 @@ export default function ChatSettingsScreen() {
   const [onlineReplyMinDraft, setOnlineReplyMinDraft] = useState<string>(String(Math.min(20, Math.max(1, Number((character as any)?.onlineReplyMin ?? 3) || 3))))
   const [onlineReplyMaxDraft, setOnlineReplyMaxDraft] = useState<string>(String(Math.min(20, Math.max(1, Number((character as any)?.onlineReplyMax ?? 8) || 8))))
   // 主动发消息（草稿，字符串）
-  const [autoReachMinDraft, setAutoReachMinDraft] = useState<string>(String(Math.min(20, Math.max(0, Number((character as any)?.autoReachMinPerDay ?? 3) || 3))))
-  const [autoReachMaxDraft, setAutoReachMaxDraft] = useState<string>(String(Math.min(20, Math.max(1, Number((character as any)?.autoReachMaxPerDay ?? 5) || 5))))
+  const [autoReachMinDraft, setAutoReachMinDraft] = useState<string>(String(Math.min(20, Math.max(0, ((v => Number.isFinite(Number(v)) ? Number(v) : 3)((character as any)?.autoReachMinPerDay))))))
+  const [autoReachMaxDraft, setAutoReachMaxDraft] = useState<string>(String(Math.min(20, Math.max(1, ((v => Number.isFinite(Number(v)) ? Number(v) : 5)((character as any)?.autoReachMaxPerDay))))))
 
   const toIntInRange = (raw: string, min: number, max: number, fallback: number) => {
     const n = Number(raw)
@@ -198,18 +198,20 @@ export default function ChatSettingsScreen() {
 
   useEffect(() => {
     if (!character) return
-    const minV = Math.min(20, Math.max(1, Number((character as any).onlineReplyMin ?? 3) || 3))
-    const maxV = Math.min(20, Math.max(1, Number((character as any).onlineReplyMax ?? 8) || 8))
+    const minV = Math.min(20, Math.max(1, ((v => Number.isFinite(Number(v)) ? Number(v) : 3)((character as any).onlineReplyMin))))
+    const maxV = Math.min(20, Math.max(1, ((v => Number.isFinite(Number(v)) ? Number(v) : 8)((character as any).onlineReplyMax))))
     setOnlineReplyMinDraft(String(Math.min(minV, maxV)))
     setOnlineReplyMaxDraft(String(Math.max(minV, maxV)))
-  }, [character?.id, (character as any)?.onlineReplyMin, (character as any)?.onlineReplyMax])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [character?.id])
   useEffect(() => {
     if (!character) return
-    const minV = Math.min(20, Math.max(0, Number((character as any).autoReachMinPerDay ?? 3) || 3))
-    const maxV = Math.min(20, Math.max(1, Number((character as any).autoReachMaxPerDay ?? 5) || 5))
+    const minV = Math.min(20, Math.max(0, ((v => Number.isFinite(Number(v)) ? Number(v) : 3)((character as any).autoReachMinPerDay))))
+    const maxV = Math.min(20, Math.max(1, ((v => Number.isFinite(Number(v)) ? Number(v) : 5)((character as any).autoReachMaxPerDay))))
     setAutoReachMinDraft(String(Math.min(minV, maxV)))
     setAutoReachMaxDraft(String(Math.max(minV, maxV)))
-  }, [character?.id, (character as any)?.autoReachMinPerDay, (character as any)?.autoReachMaxPerDay])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [character?.id])
   
   // 线下模式设置（折叠面板）
   const [offlineSettingsExpanded, setOfflineSettingsExpanded] = useState(false)

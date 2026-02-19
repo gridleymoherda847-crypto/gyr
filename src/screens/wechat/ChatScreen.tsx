@@ -1023,6 +1023,11 @@ export default function ChatScreen() {
           for (let i = all.length - 1; i >= 0; i--) {
             const m = all[i]
             if (!m?.isUser) continue
+            if (m.type === 'voice') {
+              const vt = String((m as any).voiceOriginalText || (m as any).voiceText || '').trim()
+              if (vt) return vt
+              continue
+            }
             if (m.type !== 'text') continue
             const t = String(m.content || '').trim()
             if (t) return t
@@ -1643,6 +1648,15 @@ export default function ChatScreen() {
                 : `<转发聊天 records="${fwd.length}" />`
               used += content.length
             }
+            else if (m.type === 'voice') {
+              const vText = String((m as any).voiceOriginalText || (m as any).voiceText || '').trim()
+              if (vText) {
+                content = m.isUser ? `[语音转文字] ${vText}` : vText
+              } else {
+                content = m.isUser ? '[用户发送了一条语音]' : '[对方发送了一条语音]'
+              }
+              used += String(content).length
+            }
             else {
               // 普通文本消息（包含引用）
               let textContent = m.content || ''
@@ -1676,7 +1690,10 @@ export default function ChatScreen() {
             if (!m) return ''
             if (m.type === 'image') return '[图片]'
             if (m.type === 'sticker') return '[表情包]'
-            if (m.type === 'voice') return '[语音]'
+            if (m.type === 'voice') {
+              const vt = String((m as any).voiceOriginalText || (m as any).voiceText || '').trim()
+              return vt ? `[语音] ${vt.slice(0, 200)}` : '[语音]'
+            }
             if (m.type === 'transfer') return `[转账:${Number(m.transferAmount || 0).toFixed(2)}]`
             if (m.type === 'chat_forward') return '[转发聊天]'
             const text = String(m.content || '')
@@ -6741,12 +6758,16 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       const isFake = msg.isUser && !hasUrl && !!msg.voiceText
       // 虚拟语音：外观对齐“对方语音条”（白底），但消息位置仍然由外层布局决定（用户在右）
       const styleAsUser = msg.isUser && !isFake
-      // 语音条宽度根据时长变化（最小140px，最大280px）- 加宽了
-      const barWidth = Math.min(280, Math.max(140, 100 + duration * 6))
+      const vSz = (() => {
+        if (bubbleSize === 'xs') return { minW: 100, maxW: 200, maxOuter: 220, icon: 'w-5 h-5', iconSvg: 'w-3 h-3', pad: 'px-2 py-1.5 gap-1.5', barW: 3, barBase: 7, barRand: 7, dur: 'text-[11px]', errTxt: 'text-[10px]', transTxt: 'text-[11px]', transLabel: 'text-[10px]', transP: 'px-2 py-1', errP: 'px-2 py-1' }
+        if (bubbleSize === 'sm') return { minW: 120, maxW: 240, maxOuter: 260, icon: 'w-6 h-6', iconSvg: 'w-3.5 h-3.5', pad: 'px-3 py-2 gap-2', barW: 3, barBase: 8, barRand: 9, dur: 'text-[12px]', errTxt: 'text-[11px]', transTxt: 'text-[12px]', transLabel: 'text-[10px]', transP: 'px-2.5 py-1.5', errP: 'px-2.5 py-1.5' }
+        if (bubbleSize === 'lg') return { minW: 160, maxW: 300, maxOuter: 320, icon: 'w-9 h-9', iconSvg: 'w-5 h-5', pad: 'px-5 py-3.5 gap-3', barW: 5, barBase: 12, barRand: 14, dur: 'text-[15px]', errTxt: 'text-[13px]', transTxt: 'text-sm', transLabel: 'text-xs', transP: 'px-3 py-2', errP: 'px-3 py-2' }
+        return { minW: 140, maxW: 280, maxOuter: 300, icon: 'w-8 h-8', iconSvg: 'w-4 h-4', pad: 'px-4 py-3 gap-3', barW: 4, barBase: 10, barRand: 12, dur: 'text-sm', errTxt: 'text-[12px]', transTxt: 'text-sm', transLabel: 'text-xs', transP: 'px-3 py-2', errP: 'px-3 py-2' }
+      })()
+      const barWidth = Math.min(vSz.maxW, Math.max(vSz.minW, vSz.minW * 0.6 + duration * 6 * (vSz.minW / 140)))
       
       return (
-        <div className="min-w-[140px] max-w-[300px]">
-          {/* 语音条 - 加宽加高 */}
+        <div style={{ minWidth: vSz.minW, maxWidth: vSz.maxOuter }}>
           <button
             type="button"
             data-allow-msg-menu={isFake ? '1' : undefined}
@@ -6763,86 +6784,83 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               }
             }}
             disabled={(!hasUrl && status !== 'error') || isFake}
-            className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-transform active:scale-[0.98] ${
+            className={`flex items-center ${vSz.pad} rounded-2xl transition-transform active:scale-[0.98] ${
               styleAsUser
                 ? 'bg-green-500 text-white'
                 : 'bg-white text-gray-800 shadow-sm border border-gray-100'
             } ${(!hasUrl && !isFake) ? 'opacity-70' : ''}`}
             style={{ width: barWidth }}
           >
-            {/* 播放/加载图标 - 播放按钮改为白色圆形 */}
             {status !== 'ready' ? (
               isFake ? (
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                <div className={`${vSz.icon} rounded-full flex items-center justify-center flex-shrink-0 ${
                   styleAsUser ? 'bg-white/20' : 'bg-gray-100'
                 }`}>
-                  <svg className={`w-4 h-4 ${styleAsUser ? 'text-white' : 'text-gray-600'}`} fill="currentColor" viewBox="0 0 24 24">
+                  <svg className={`${vSz.iconSvg} ${styleAsUser ? 'text-white' : 'text-gray-600'}`} fill="currentColor" viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 </div>
               ) : (
                 status === 'error' ? (
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  <div className={`${vSz.icon} rounded-full flex items-center justify-center flex-shrink-0 ${
                     styleAsUser ? 'bg-white/20' : 'bg-red-50 border border-red-200'
                   }`}>
-                    <span className={`${styleAsUser ? 'text-white' : 'text-red-600'} text-[12px] font-bold`}>!</span>
+                    <span className={`${styleAsUser ? 'text-white' : 'text-red-600'} ${vSz.errTxt} font-bold`}>!</span>
                   </div>
                 ) : (
-                  <div className="w-8 h-8 rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0" />
+                  <div className={`${vSz.icon} rounded-full border-2 border-current border-t-transparent animate-spin flex-shrink-0`} />
                 )
               )
             ) : isPlaying ? (
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+              <div className={`${vSz.icon} rounded-full flex items-center justify-center flex-shrink-0 ${
                 styleAsUser ? 'bg-white/20' : 'bg-gray-100'
               }`}>
                 <div className="flex items-center gap-0.5">
-                  <div className={`w-1 h-3 rounded-full ${styleAsUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} />
-                  <div className={`w-1 h-4 rounded-full ${styleAsUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ animationDelay: '0.1s' }} />
-                  <div className={`w-1 h-3 rounded-full ${styleAsUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ animationDelay: '0.2s' }} />
+                  <div className={`rounded-full ${styleAsUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ width: vSz.barW, height: vSz.barBase * 0.75 }} />
+                  <div className={`rounded-full ${styleAsUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ width: vSz.barW, height: vSz.barBase, animationDelay: '0.1s' }} />
+                  <div className={`rounded-full ${styleAsUser ? 'bg-white' : 'bg-gray-600'} animate-pulse`} style={{ width: vSz.barW, height: vSz.barBase * 0.75, animationDelay: '0.2s' }} />
                 </div>
               </div>
             ) : (
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+              <div className={`${vSz.icon} rounded-full flex items-center justify-center flex-shrink-0 ${
                 styleAsUser ? 'bg-white/20' : 'bg-gray-100'
               }`}>
-                <svg className={`w-4 h-4 ${styleAsUser ? 'text-white' : 'text-gray-600'}`} fill="currentColor" viewBox="0 0 24 24">
+                <svg className={`${vSz.iconSvg} ${styleAsUser ? 'text-white' : 'text-gray-600'}`} fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
               </div>
             )}
             
-            {/* 声波动画 - 更多条更高 */}
             <div className="flex-1 flex items-center justify-center gap-1">
               {[...Array(Math.min(12, Math.max(5, Math.floor(duration / 1.5))))].map((_, i) => (
                 <div
                   key={i}
-                  className={`w-1 rounded-full transition-all ${
+                  className={`rounded-full transition-all ${
                     styleAsUser ? 'bg-white/70' : 'bg-gray-300'
                   } ${isPlaying ? 'animate-pulse' : ''}`}
                   style={{ 
-                    height: `${10 + Math.random() * 12}px`,
+                    width: vSz.barW,
+                    height: `${vSz.barBase + Math.random() * vSz.barRand}px`,
                     animationDelay: `${i * 0.08}s`
                   }}
                 />
               ))}
             </div>
             
-            {/* 时长 */}
-            <span className={`text-sm font-medium flex-shrink-0 ${styleAsUser ? 'text-white/90' : 'text-gray-500'}`}>
+            <span className={`${vSz.dur} font-medium flex-shrink-0 ${styleAsUser ? 'text-white/90' : 'text-gray-500'}`}>
               {duration}"
             </span>
           </button>
 
           {status === 'error' && !msg.isUser && (
-            <div className="mt-2 px-3 py-2 rounded-xl text-[12px] bg-red-50/80 border border-red-200 text-red-700 whitespace-pre-wrap">
+            <div className={`mt-1.5 ${vSz.errP} rounded-xl ${vSz.errTxt} bg-red-50/80 border border-red-200 text-red-700 whitespace-pre-wrap`}>
               {String((msg as any).voiceError || '语音生成/播放失败，点语音条可重试生成。')}
             </div>
           )}
           
-          {/* 语音转文字（展开） */}
           {msg.voiceText && (
-            <div className="mt-2 px-3 py-2 rounded-xl text-sm bg-white/90 border border-gray-200 text-gray-700">
-              <div className="text-xs mb-1 text-gray-400">转文字</div>
+            <div className={`mt-1.5 ${vSz.transP} rounded-xl ${vSz.transTxt} bg-white/90 border border-gray-200 text-gray-700`}>
+              <div className={`${vSz.transLabel} mb-0.5 text-gray-400`}>转文字</div>
               <div className="whitespace-pre-wrap break-words leading-relaxed">{msg.voiceText}</div>
             </div>
           )}
@@ -8182,33 +8200,32 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           {/* AI正在输入提示 - 线下模式时不显示头像 */}
           {showTyping && (
             character.offlineMode ? (
-              // 线下模式：只显示三个点，居中
               <div className="flex justify-center mb-3">
-                <div className="px-4 py-2 bg-gray-100/80 rounded-full">
-                  <div className="flex gap-1.5">
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className={`${sizeCls.bubbleBase} bg-gray-100/80 rounded-full`}>
+                  <div className={`flex ${bubbleSize === 'xs' ? 'gap-0.5' : 'gap-1'}`}>
+                    <span className={`${bubbleSize === 'xs' ? 'w-1 h-1' : bubbleSize === 'sm' ? 'w-1.5 h-1.5' : 'w-2 h-2'} bg-gray-400 rounded-full animate-bounce`} style={{ animationDelay: '0ms' }} />
+                    <span className={`${bubbleSize === 'xs' ? 'w-1 h-1' : bubbleSize === 'sm' ? 'w-1.5 h-1.5' : 'w-2 h-2'} bg-gray-400 rounded-full animate-bounce`} style={{ animationDelay: '150ms' }} />
+                    <span className={`${bubbleSize === 'xs' ? 'w-1 h-1' : bubbleSize === 'sm' ? 'w-1.5 h-1.5' : 'w-2 h-2'} bg-gray-400 rounded-full animate-bounce`} style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </div>
             ) : (
-              // 线上模式：显示头像和气泡
+              // 线上模式：显示头像和气泡（跟随 bubbleSize）
               <div className="flex gap-2 mb-3">
-                <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
+                <div className={`${sizeCls.avatarWrap} overflow-hidden flex-shrink-0 shadow-sm`}>
                   {character.avatar ? (
                     <img src={character.avatar} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-[15px] font-medium">
+                    <div className={`w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white ${sizeCls.avatarText} font-medium`}>
                       {character.name[0]}
                     </div>
                   )}
                 </div>
-                <div className="px-4 py-3 bg-white/90 rounded-2xl rounded-tl-md shadow-sm">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className={`${sizeCls.bubbleBase} bg-white/90 rounded-2xl rounded-tl-md shadow-sm flex items-center`}>
+                  <div className={`flex ${bubbleSize === 'xs' ? 'gap-0.5' : 'gap-1'}`}>
+                    <span className={`${bubbleSize === 'xs' ? 'w-1 h-1' : bubbleSize === 'sm' ? 'w-1.5 h-1.5' : 'w-2 h-2'} bg-gray-400 rounded-full animate-bounce`} style={{ animationDelay: '0ms' }} />
+                    <span className={`${bubbleSize === 'xs' ? 'w-1 h-1' : bubbleSize === 'sm' ? 'w-1.5 h-1.5' : 'w-2 h-2'} bg-gray-400 rounded-full animate-bounce`} style={{ animationDelay: '150ms' }} />
+                    <span className={`${bubbleSize === 'xs' ? 'w-1 h-1' : bubbleSize === 'sm' ? 'w-1.5 h-1.5' : 'w-2 h-2'} bg-gray-400 rounded-full animate-bounce`} style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </div>

@@ -233,6 +233,7 @@ export default function XScreen() {
   // Compose
   const [composeOpen, setComposeOpen] = useState(false)
   const [composeText, setComposeText] = useState('')
+  const [composeImageDesc, setComposeImageDesc] = useState('')
 
   // Profile edit
   const avatarInputRef = useRef<HTMLInputElement>(null)
@@ -686,6 +687,75 @@ export default function XScreen() {
       next = { ...next, posts: [...mine, ...others].slice(0, 600) }
       setData(next)
       await xSave(next)
+
+      // 后台为每条新帖子生成 6 条评论
+      void (async () => {
+        try {
+          if (newPosts.length === 0) return
+          const postsForComments = newPosts.slice(0, 5)
+          const postsSummary = postsForComments.map((p, i) => (
+            `帖子${i + 1} [id=${p.id}]：\n` +
+            `  作者：${p.authorName}\n` +
+            `  内容：${p.text}\n` +
+            (p.imageDesc ? `  图片描述：${p.imageDesc}\n` : '')
+          )).join('\n')
+          const sys =
+            sysPrefix() +
+            `【X（推特风格）/批量评论生成】\n` +
+            `你要为以下帖子各生成 6 条评论，像真实推特评论区一样。\n\n` +
+            `${postsSummary}\n` +
+            `要求：\n` +
+            `- 每条帖子生成 6 条评论\n` +
+            `- 评论要和帖子内容紧密相关，围绕帖子主题展开\n` +
+            `- 如果帖子有图片描述，要有评论围绕图片内容反应\n` +
+            `- 风格多样：支持/吐槽/玩梗/阴阳怪气/认真回复/补充信息\n` +
+            `- 长度分布：2 条超短（1~10字），2 条中等（10~40字），2 条稍长（40~80字）\n` +
+            `- 评论者名字要多样，至少 30% 非中文\n` +
+            `- 允许情绪与脏话，但严禁辱女/性羞辱\n` +
+            `- 【翻译强制】如果某条评论不是中文，必须写成：外语原文（简体中文翻译）\n` +
+            `- 只输出 JSON，不要解释\n\n` +
+            `JSON 格式：\n` +
+            `{\n` +
+            `  "postReplies": {\n` +
+            `    "帖子id": [ { "authorName": "名字", "text": "评论" } ]\n` +
+            `  }\n` +
+            `}\n`
+          const parsed = await callJson(sys, '现在为每条帖子生成 6 条评论。', 1200)
+          const postReplies = (parsed as any)?.postReplies || {}
+          let latestData = data
+          if (!latestData) return
+          const allNewReplies: typeof latestData.replies = [...(latestData.replies || [])]
+          const replyCountMap: Record<string, number> = {}
+          for (const post of postsForComments) {
+            const rawArr = Array.isArray(postReplies[post.id]) ? postReplies[post.id] : []
+            let added = 0
+            for (const r of rawArr.slice(0, 6)) {
+              const authorName = String(r?.authorName || '').trim()
+              const text = String(r?.text || '').trim()
+              if (!text) continue
+              const { data: d3, userId: rUserId } = xEnsureUser(latestData, { name: authorName || 'User' })
+              latestData = d3
+              const reply = xNewReply(post.id, rUserId, authorName || 'User', text)
+              const ru = latestData.users.find(u => u.id === rUserId)
+              if (ru) {
+                ;(reply as any).authorHandle = ru.handle
+                ;(reply as any).authorColor = ru.color
+              }
+              allNewReplies.push(reply)
+              added++
+            }
+            replyCountMap[post.id] = added
+          }
+          const updatedPosts = latestData.posts.map(p =>
+            replyCountMap[p.id] ? { ...p, replyCount: (p.replyCount || 0) + replyCountMap[p.id] } : p
+          )
+          latestData = { ...latestData, posts: updatedPosts, replies: allNewReplies.slice(-2000) }
+          setData(latestData)
+          await xSave(latestData)
+        } catch {
+          // 静默失败
+        }
+      })()
     })
   }
 
@@ -1164,7 +1234,9 @@ ${chatFriendList}
     if (!data) return
     const text = composeText.trim()
     if (!text) return
+    const imageDesc = composeImageDesc.trim()
     const mePost = xNewPost('me', meName, text)
+    if (imageDesc) mePost.imageDesc = imageDesc
     const follower = bumpFollowers(data.meFollowerCount || 0)
     let next: XDataV1 = { ...data, posts: [mePost, ...data.posts], meFollowerCount: follower.nextVal }
     setData(next)
@@ -1225,6 +1297,7 @@ ${chatFriendList}
           `\n` +
           `用户（我）刚发布了一条推文。\n` +
           `推文内容：${text}\n` +
+          (imageDesc ? `推文配图描述：${imageDesc}\n` : '') +
           mentionHint +
           (fanCount > 0
             ? `\n【粉丝评论】用户当前粉丝数量：${myFollowerCount}\n` +
@@ -1250,6 +1323,7 @@ ${chatFriendList}
           `\n` +
           `其他要求：\n` +
           `- 口语化，像熟人刷到动态随口评论，必须体现出认识发帖人！可以用亲昵称呼、调侃、吐槽\n` +
+          (imageDesc ? `- 推文附带了图片（描述：${imageDesc}），评论要有一部分围绕图片内容做反应，不要只回复文字\n` : '') +
           `- 每条 <= 50 字\n` +
           `- 不要动作描写/旁白\n` +
           `- 不要说“我们一起玩/我们聊天”这种强绑定微信的句子，像 X 评论区即可\n` +
@@ -1354,6 +1428,7 @@ ${chatFriendList}
       }
     })()
     setComposeText('')
+    setComposeImageDesc('')
     setComposeOpen(false)
     setHomeMode('forYou')
     setTab('home')
@@ -3597,6 +3672,12 @@ ${chatFriendList}
               onChange={(e) => setComposeText(e.target.value)}
               placeholder="你在想什么？"
               className="w-full min-h-[130px] resize-none px-3 py-2 rounded-xl bg-white border border-black/10 text-[13px] text-gray-900 outline-none"
+            />
+            <textarea
+              value={composeImageDesc}
+              onChange={(e) => setComposeImageDesc(e.target.value)}
+              placeholder="图片描述（选填）：用文字描述你想配的图，不填则不发图"
+              className="w-full min-h-[52px] resize-none px-3 py-2 rounded-xl bg-gray-50 border border-dashed border-gray-300 text-[12px] text-gray-700 outline-none placeholder:text-gray-400"
             />
             <div className="text-[11px] text-gray-500">@好友 艾特好友来评论，刷新时好友会帮你互动：点“刷新”。</div>
           </div>

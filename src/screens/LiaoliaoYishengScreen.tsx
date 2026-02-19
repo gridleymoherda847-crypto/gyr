@@ -5244,6 +5244,7 @@ export default function LiaoliaoYishengScreen() {
   const [copyHint, setCopyHint] = useState<string>('')
   const [showRelations, setShowRelations] = useState(false)
   const [showExplore, setShowExplore] = useState(false)
+  const [showCliffConfirm, setShowCliffConfirm] = useState(false)
   const [showMarket, setShowMarket] = useState(false)
   const [showBrothel, setShowBrothel] = useState(false)
   const [showItems, setShowItems] = useState(false)
@@ -5678,9 +5679,22 @@ export default function LiaoliaoYishengScreen() {
   
   const handleExplorePlace = (placeId: string) => {
     if (!game) return
+    if (placeId === 'cliff_fall') {
+      setShowCliffConfirm(true)
+      return
+    }
     const rng = makeRng(game.seed + game.age * 200 + game.logs.length)
     shouldAutoScroll.current = true
     setGame(handleExplore(rng, game, placeId))
+    setShowExplore(false)
+  }
+
+  const confirmCliffFall = () => {
+    if (!game) return
+    const rng = makeRng(game.seed + game.age * 200 + game.logs.length)
+    shouldAutoScroll.current = true
+    setGame(handleExplore(rng, game, 'cliff_fall'))
+    setShowCliffConfirm(false)
     setShowExplore(false)
   }
 
@@ -7899,6 +7913,32 @@ export default function LiaoliaoYishengScreen() {
                   <div className="text-xs text-gray-500 mt-0.5">{p.desc}</div>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 坠崖确认弹窗 */}
+      {showCliffConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onClick={() => setShowCliffConfirm(false)}>
+          <div className="w-[280px] bg-white rounded-2xl p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="text-center text-sm font-bold text-gray-800 mb-2">确认坠崖</div>
+            <div className="text-center text-[13px] text-gray-600 mb-5">坠崖后将结束此生，还要再考虑一下吗？</div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCliffConfirm(false)}
+                className="flex-1 py-2 rounded-xl bg-gray-100 text-sm text-gray-700 font-medium active:bg-gray-200"
+              >
+                再考虑一下
+              </button>
+              <button
+                type="button"
+                onClick={confirmCliffFall}
+                className="flex-1 py-2 rounded-xl bg-red-500 text-sm text-white font-medium active:bg-red-600"
+              >
+                确认坠崖
+              </button>
             </div>
           </div>
         </div>

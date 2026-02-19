@@ -153,15 +153,15 @@ export default function DesktopBeautifyScreen() {
       const kvList = normalizePresets(fromKv)
       if (cancelled) return
       if (kvList.length > 0) {
-        // 只合并不覆盖：避免用户刚导入/刚储存就被异步加载结果“覆盖掉”，导致历史不显示
-        setBeautyPresets((prev) => mergePresets(prev, kvList))
+        setBeautyPresets(kvList)
+        beautyPresetsRef.current = kvList
         return
       }
       const localList = readPresetsFromLocalStorage()
       if (localList.length > 0) {
-        setBeautyPresets((prev) => mergePresets(prev, localList))
-        // 迁移到 kv（后续读写都以 kv 为准）
-        void kvSetJSON(BEAUTY_PRESETS_KEY, mergePresets(beautyPresetsRef.current, localList).slice(-30))
+        setBeautyPresets(localList)
+        beautyPresetsRef.current = localList
+        void kvSetJSON(BEAUTY_PRESETS_KEY, localList.slice(-30))
       }
     }
     void run()
@@ -173,13 +173,24 @@ export default function DesktopBeautifyScreen() {
     try {
       localStorage.setItem(BEAUTY_PRESETS_KEY, JSON.stringify(cut))
     } catch {
-      // ignore
+      try { localStorage.removeItem(BEAUTY_PRESETS_KEY) } catch { /* noop */ }
     }
-    // 主存储：IndexedDB(kv)，避免 Safari localStorage 导致“历史不显示/刷新丢失”
     void kvSetJSON(BEAUTY_PRESETS_KEY, cut)
-    // 立即同步 ref，避免后续逻辑读到旧 state 覆盖新导入记录
     beautyPresetsRef.current = cut
     setBeautyPresets(cut)
+  }
+
+  const deleteBeautyPreset = async (id: string) => {
+    const next = (beautyPresetsRef.current || []).filter((x) => x.id !== id)
+    const cut = next.slice(-30)
+    beautyPresetsRef.current = cut
+    setBeautyPresets(cut)
+    try {
+      localStorage.setItem(BEAUTY_PRESETS_KEY, JSON.stringify(cut))
+    } catch {
+      try { localStorage.removeItem(BEAUTY_PRESETS_KEY) } catch { /* noop */ }
+    }
+    await kvSetJSON(BEAUTY_PRESETS_KEY, cut)
   }
 
   const buildBeautyPreset = (name: string, source: 'import' | 'export' | 'save'): DesktopBeautifyPresetV1 => {
@@ -770,10 +781,7 @@ export default function DesktopBeautifyScreen() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          const next = (beautyPresets || []).filter((x) => x.id !== p.id)
-                          saveBeautyPresets(next)
-                        }}
+                        onClick={() => void deleteBeautyPreset(p.id)}
                         className="text-[12px] text-red-500"
                       >
                         删除
@@ -958,10 +966,7 @@ export default function DesktopBeautifyScreen() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          const next = (beautyPresets || []).filter((x) => x.id !== p.id)
-                          saveBeautyPresets(next)
-                        }}
+                        onClick={() => void deleteBeautyPreset(p.id)}
                         className="text-[12px] text-red-500"
                       >
                         删除

@@ -294,6 +294,11 @@ export default function AutoReachDaemon() {
         if (fixed[key]) return `${fixed[key]}（今天）`
         return '普通日期'
       })()
+      const { set: _recentDedupKeys } = recentAutoReachKeySet(c.id, 72 * 60 * 60 * 1000)
+      const _recentSamples = [..._recentDedupKeys].slice(0, 15)
+      const _recentHint = _recentSamples.length > 0
+        ? `\n【禁止复读】你最近发过这些内容，绝对不要再发类似的：\n${_recentSamples.slice(0, 10).map(k => `- "${k}"`).join('\n')}\n必须聊全新的话题/角度！\n`
+        : ''
       const prompt = await callLLM([
         {
           role: 'system',
@@ -305,11 +310,12 @@ export default function AutoReachDaemon() {
             `3) 禁止 emoji；\n` +
             `4) 只延续已有话题，避免突然新设定；\n` +
             `5) 口吻自然，像真人。\n` +
-            `6) 禁止重复同一句话。\n` +
+            `6) 【最重要】禁止重复之前发过的内容！每次必须聊不同的事情，不同的开场白！\n` +
             `6.1) 结合中国节日/饭点时间感自然聊天；当前节日提示：${holidayHint}。\n` +
             `${(c as any)?.language && (c as any).language !== 'zh' && (c as any)?.chatTranslationEnabled
               ? `7) 每行必须使用格式：外语原文 ||| 简体中文翻译`
-              : ''}`,
+              : ''}` +
+            _recentHint,
         },
         {
           role: 'user',
@@ -317,7 +323,7 @@ export default function AutoReachDaemon() {
             `这是最近聊天上下文：\n${histText || '（暂无历史）'}\n\n` +
             `请直接输出消息内容，每行一条，不要解释。`,
         },
-      ], undefined, { temperature: 0.85, maxTokens: 260, timeoutMs: 45_000 })
+      ], undefined, { temperature: 0.92, maxTokens: 260, timeoutMs: 45_000 })
       let lines = dedupeLines(toBubbleLines(prompt, targetN, targetN)).slice(0, maxN)
       if (lines.length < minN) {
         const extra = String(prompt || '')
@@ -332,7 +338,7 @@ export default function AutoReachDaemon() {
       }
       if (lines.length > maxN) lines = lines.slice(0, maxN)
       if (lines.length < minN) {
-        const fillers = ['在吗？', '我刚想到你了。', '有空回我一下呀。', '你今天还顺利吗？']
+        const fillers = ['你在忙啥呢？', '刚好想到你了。', '有空聊两句不？', '今天过得咋样？', '在干嘛呀？', '想你了。', '最近忙不忙啊？', '吃了没？']
         for (const f of fillers) {
           if (lines.length >= minN) break
           if (!lines.includes(f)) lines.push(f)
@@ -379,15 +385,27 @@ export default function AutoReachDaemon() {
     }
 
     const makeFallbackWaves = (remain: number): CatchUpWave[] => {
+      const pool: Array<{ topic: string; messages: string[] }> = [
+        { topic: '日常分享', messages: ['今天看到一个超搞笑的视频。', '笑得我停不下来哈哈哈。'] },
+        { topic: '思念惦记', messages: ['你最近怎么样啊？', '好久没聊了。'] },
+        { topic: '天气闲聊', messages: ['今天天气还不错诶。', '适合出去走走。'] },
+        { topic: '吃饭提醒', messages: ['你吃饭了吗？', '别忘了按时吃饭啊。'] },
+        { topic: '碎碎念', messages: ['刚才发了好一会儿呆。', '突然有点无聊。'] },
+        { topic: '随便聊聊', messages: ['你在干嘛呀？', '有空回我一下。'] },
+        { topic: '分享见闻', messages: ['路上看到一只好可爱的猫。', '下次拍给你看。'] },
+        { topic: '晚安问候', messages: ['困了困了。', '早点休息吧。'] },
+        { topic: '工作吐槽', messages: ['今天好累啊。', '感觉一天都没停过。'] },
+        { topic: '追剧分享', messages: ['最近在看一部剧还挺好看的。', '有空推荐给你。'] },
+      ]
+      const shuffled = [...pool].sort(() => Math.random() - 0.5)
       const waves: CatchUpWave[] = []
       const n = clamp(remain, 1, 8)
       for (let i = 0; i < n; i++) {
+        const pick = shuffled[i % shuffled.length]
         waves.push({
-          topic: i % 2 ? '思念惦记' : '日常分享',
+          topic: pick.topic,
           ratio: (i + 1) / (n + 1),
-          messages: i % 2
-            ? ['我有点想你了。', '等你有空回我就好。']
-            : ['今天遇到个挺有意思的小事。', '想跟你分享一下。'],
+          messages: pick.messages,
         })
       }
       return waves
@@ -408,7 +426,7 @@ export default function AutoReachDaemon() {
               `- waves 数量 = ${remain}（每个 wave 代表一次主动找我）；\n` +
               `- 每个 wave 的 messages 为 2~4 条；\n` +
               `- 同一 wave 只聊一个话题，不要跨话题；\n` +
-              `- 不同 wave 话题尽量不同，不要把同一话题拆成多波；\n` +
+              `- 不同 wave 话题必须完全不同！严禁把同一话题拆成多波，严禁重复之前发过的内容；\n` +
               `- 只有在提及旧话题时，才可用“前段时间/上次聊到/之前你提过”；日常分享和思念开场不要强行加这类词；\n` +
               `- 可结合中国节日、三餐饭点、作息时段自然提一嘴，但不要条条都提节日；\n` +
               `- 禁止“刚刚/现在/5分钟前”这类精确实时词；\n` +
