@@ -603,37 +603,55 @@ export default function XScreen() {
 
     const authorHint = authorPool.length ? authorPool.join('、') : '随机构造一些网名（2~4字/英文混合都可以）'
 
-    const want = 5 + Math.floor(Math.random() * 11) // 5~15
+    const want = 5 + Math.floor(Math.random() * 4) // 5~8
     await withLoading(mode === 'following' ? '正在刷新正在关注…' : '正在刷新为你推荐…', async () => {
       const sys =
         sysPrefix() +
-        `【X（推特风格）/首页信息流生成】\n` +
+        `【X（推特风格）/首页信息流 + 评论生成】\n` +
         `${knownAuthorsForLLM ? `${knownAuthorsForLLM}\n` : ''}` +
-        `你要生成一些“像真的推特/X”的帖子（短为主，偶尔长一点）。\n` +
+        `你要生成一些“像真的推特/X”的帖子，并且每条帖子必须自带 6 条评论。\n` +
         `要求（重要，必须遵守）：\n` +
-        `- 每次生成 ${want} 条\n` +
-        `- 长度分布：至少 3 条超短（1~20字）；至少 3 条中等（20~80字）；最多 2 条接近上限（80~140字）\n` +
-        `- 风格必须有明显差异：吐槽/阴阳怪气/梗/碎碎念/认真科普/一句话问号/冷幽默/新闻搬运 等至少 6 种\n` +
-        `- 可以带情绪与脏话，但严禁辱女/性羞辱词汇\n` +
+        `- 生成 ${want} 条帖子，每条帖子必须附带 replies 数组，里面恰好 6 条评论\n` +
+        `- 帖子长度分布：至少 2 条超短（1~20字）；至少 2 条中等（20~80字）；最多 2 条接近上限（80~140字）\n` +
+        `- 帖子风格有明显差异：吐槽/阴阳怪气/梳/碎碎念/认真科普/冷幽默/新闻搬运 等\n` +
+        `- 评论必须紧密围绕该帖子内容展开！是看到这条帖子后的真实反应\n` +
+        `- 评论风格多样：支持/反驳/吐槽/玩梳/阴阳怪气/补充信息/超短回复\n` +
+        `- 评论长度分布：2 条超短（“？”“笑死”“真的假的”），2 条中等，2 条稍长\n` +
+        `- 可以带情绪与脏话，但严禁辱女/性羞辱\n` +
         `- 内容需合规、避免不适宜主题与极端表达\n` +
         (knownAuthorsForLLM
-          ? `- 【作者一致性】当 authorName 取自“已存在的聊天好友作者池”时，text 必须严格符合该作者的人设与世界书（口吻/背景/关系）。\n`
+          ? `- 【作者一致性】当 authorName 取自“已存在的聊天好友作者池”时，text 必须严格符合该作者的人设。\n`
           : '') +
-        `- 作者名字必须多样：至少 30% 非中文（英文/日文/韩文/混合都可以）\n` +
-        // 关键：非中文内容强制带翻译（展示为“原文（中文）”）
-        `- 【翻译强制】如果某条 text 不是中文（或主要为外语），必须输出为：外语原文（简体中文翻译）\n` +
-        `  - 括号内必须是简体中文翻译，不能是繁体，不能加“翻译：”前缀\n` +
-        `- 可选字段：hashtags（0~3 个话题，不要每条都堆）；imageDesc（可选，用一句话描述“配图”，像真的配图说明）\n` +
+        `- 帖子作者名字必须多样：至少 30% 非中文\n` +
+        `- 评论者名字也要多样，不能和帖子作者重名\n` +
+        `- 【翻译强制】如果 text 不是中文，必须输出为：外语原文（简体中文翻译）\n` +
+        `- 可选字段：hashtags（0~3 个话题）；imageDesc（配图描述，可选）\n` +
+        `- 如果帖子带 imageDesc，评论里要有围绕图片的反应\n` +
         `- 只输出 JSON，不要解释\n` +
         `\n` +
         `可用作者名字参考：${authorHint}\n` +
         `\n` +
-        `JSON 格式：\n` +
+        `JSON 格式（严格遵守）：\n` +
         `{\n` +
-        `  "posts": [ { "authorName": "名字", "text": "内容(<=140字)", "hashtags": ["话题"], "imageDesc": "图片描述(可选)" } ]\n` +
+        `  "posts": [\n` +
+        `    {\n` +
+        `      "authorName": "帖子作者名",\n` +
+        `      "text": "帖子内容(<=140字)",\n` +
+        `      "hashtags": ["话题"],\n` +
+        `      "imageDesc": "图片描述(可选)",\n` +
+        `      "replies": [\n` +
+        `        { "authorName": "评论者名", "text": "评论" },\n` +
+        `        { "authorName": "评论者名", "text": "评论" },\n` +
+        `        { "authorName": "评论者名", "text": "评论" },\n` +
+        `        { "authorName": "评论者名", "text": "评论" },\n` +
+        `        { "authorName": "评论者名", "text": "评论" },\n` +
+        `        { "authorName": "评论者名", "text": "评论" }\n` +
+        `      ]\n` +
+        `    }\n` +
+        `  ]\n` +
         `}\n`
 
-      const parsed = await callJson(sys, '现在生成 posts。', 900)
+      const parsed = await callJson(sys, '现在生成带评论的 posts。', 2400)
       const raw = Array.isArray((parsed as any).posts) ? (parsed as any).posts : []
 
       let next = data
@@ -643,9 +661,10 @@ export default function XScreen() {
         text: String(p?.text || '').trim(),
         hashtags: Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 6).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : [],
         imageDesc: typeof p?.imageDesc === 'string' ? p.imageDesc.trim().slice(0, 260) : '',
+        replies: Array.isArray(p?.replies) ? p.replies.slice(0, 6) : [],
       })).filter((x: any) => !!x.text)
 
-      // 兜底：模型偶尔不按要求输出括号翻译时，批量补一次（只处理非中文且未带括号翻译的）
+      // 兆底：模型偶尔不按要求输出括号翻译时，批量补一次
       const idxs = picked.map((x: any, i: number) => (needsInlineZh(x.text) ? i : -1)).filter((i: number) => i >= 0)
       if (idxs.length > 0) {
         const zhs = await translateBatchToZh(idxs.map((i: number) => picked[i].text))
@@ -656,6 +675,8 @@ export default function XScreen() {
           })
         }
       }
+
+      const allNewReplies: typeof next.replies = [...(next.replies || [])]
 
       for (const p of picked) {
         const authorName = String(p.authorName || '').trim()
@@ -674,85 +695,37 @@ export default function XScreen() {
         post.authorColor = ensured.color
         post.hashtags = p.hashtags
         post.imageDesc = p.imageDesc
-        // 随机一点互动数（不追求真实算法）
         post.likeCount = Math.floor(Math.random() * 800)
         post.repostCount = Math.floor(Math.random() * 180)
-        post.replyCount = Math.floor(Math.random() * 90)
+
+        // 处理这条帖子的 6 条评论
+        let replyAdded = 0
+        for (const r of (p.replies || []).slice(0, 6)) {
+          const rName = String(r?.authorName || '').trim()
+          const rText = String(r?.text || '').trim()
+          if (!rText) continue
+          const { data: d3, userId: rUserId } = xEnsureUser(next, { name: rName || 'User' })
+          next = d3
+          const reply = xNewReply(post.id, rUserId, rName || 'User', rText)
+          const ru = next.users.find(x => x.id === rUserId)
+          if (ru) {
+            ;(reply as any).authorHandle = ru.handle
+            ;(reply as any).authorColor = ru.color
+          }
+          allNewReplies.push(reply)
+          replyAdded++
+        }
+        post.replyCount = replyAdded
+
         newPosts.push(post)
       }
 
-      // 留存：非我的帖子最多 50；我的帖子永久保留
+      // 留存
       const mine = (next.posts || []).filter((p) => p.authorId === 'me')
       const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 50)
-      next = { ...next, posts: [...mine, ...others].slice(0, 600) }
+      next = { ...next, posts: [...mine, ...others].slice(0, 600), replies: allNewReplies.slice(-2000) }
       setData(next)
       await xSave(next)
-
-      // 为每条新帖子生成 6 条评论（在 withLoading 内 await，确保数据一致）
-      if (newPosts.length > 0) {
-        try {
-          const postsForComments = newPosts.slice(0, 5)
-          const postsSummary = postsForComments.map((p, i) => (
-            `帖子${i + 1} [id=${p.id}]：\n` +
-            `  作者：${p.authorName}\n` +
-            `  内容：${p.text}\n` +
-            (p.imageDesc ? `  图片描述：${p.imageDesc}\n` : '')
-          )).join('\n')
-          const sys =
-            sysPrefix() +
-            `【X（推特风格）/批量评论生成】\n` +
-            `你要为以下帖子各生成 6 条评论，像真实推特评论区一样。\n\n` +
-            `${postsSummary}\n` +
-            `要求：\n` +
-            `- 每条帖子生成恰好 6 条评论\n` +
-            `- 评论要和帖子内容紧密相关，围绕帖子主题展开\n` +
-            `- 如果帖子有图片描述，要有评论围绕图片内容反应\n` +
-            `- 风格多样：支持/吐槽/玩梗/阴阳怪气/认真回复/补充信息\n` +
-            `- 长度分布：2 条超短（1~10字），2 条中等（10~40字），2 条稍长（40~80字）\n` +
-            `- 评论者名字要多样，至少 30% 非中文\n` +
-            `- 允许情绪与脏话，但严禁辱女/性羞辱\n` +
-            `- 【翻译强制】如果某条评论不是中文，必须写成：外语原文（简体中文翻译）\n` +
-            `- 只输出 JSON，不要解释\n\n` +
-            `JSON 格式：\n` +
-            `{\n` +
-            `  "postReplies": {\n` +
-            `    "帖子id": [ { "authorName": "名字", "text": "评论" } ]\n` +
-            `  }\n` +
-            `}\n`
-          const parsed = await callJson(sys, '现在为每条帖子生成 6 条评论。', 1200)
-          const postReplies = (parsed as any)?.postReplies || {}
-          const allNewReplies: typeof next.replies = [...(next.replies || [])]
-          const replyCountMap: Record<string, number> = {}
-          for (const post of postsForComments) {
-            const rawArr = Array.isArray(postReplies[post.id]) ? postReplies[post.id] : []
-            let added = 0
-            for (const r of rawArr.slice(0, 6)) {
-              const authorName = String(r?.authorName || '').trim()
-              const text = String(r?.text || '').trim()
-              if (!text) continue
-              const { data: d3, userId: rUserId } = xEnsureUser(next, { name: authorName || 'User' })
-              next = d3
-              const reply = xNewReply(post.id, rUserId, authorName || 'User', text)
-              const ru = next.users.find(u => u.id === rUserId)
-              if (ru) {
-                ;(reply as any).authorHandle = ru.handle
-                ;(reply as any).authorColor = ru.color
-              }
-              allNewReplies.push(reply)
-              added++
-            }
-            replyCountMap[post.id] = added
-          }
-          const updatedPosts = next.posts.map(p =>
-            replyCountMap[p.id] ? { ...p, replyCount: (p.replyCount || 0) + replyCountMap[p.id] } : p
-          )
-          next = { ...next, posts: updatedPosts, replies: allNewReplies.slice(-2000) }
-          setData(next)
-          await xSave(next)
-        } catch {
-          // 评论生成失败不影响帖子展示
-        }
-      }
     })
   }
 
