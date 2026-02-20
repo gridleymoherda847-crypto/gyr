@@ -276,6 +276,7 @@ export type GroupChat = {
   memberVoiceSettings?: Record<string, { voiceId?: string }> // 每个成员的语音覆盖
   // 关系网
   relations?: GroupRelation[]
+  memberHeartStates?: Record<string, { mood: string; innerVoice: string; updatedAt: number }>
 }
 
 // 纪念日

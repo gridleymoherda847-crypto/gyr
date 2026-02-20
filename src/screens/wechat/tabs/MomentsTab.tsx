@@ -205,15 +205,19 @@ ${translationOn ? `- 【翻译规则】如果不是中文，必须在后面加�
         
         // 一次 API 同时生成：动态正文 + 评论 + 互评，避免“本地模板评论”的人机感
         const peers = characters.filter((c) => c.id !== friend.id).sort(() => Math.random() - 0.5)
-        const picked = peers.slice(0, Math.min(peers.length, 1 + Math.floor(Math.random() * 3))) // 1~3
-        const peerRoster = picked.map((p) => ({
-          id: p.id,
-          name: p.name,
-          language: (p as any).language || 'zh',
-          chatTranslationEnabled: !!(p as any).chatTranslationEnabled,
-          relationToAuthor: p.relationship || '朋友',
-          prompt: String(p.prompt || '').slice(0, 120),
-        }))
+        const picked = peers.slice(0, Math.min(peers.length, 10))
+        const peerRoster = picked.map((p) => {
+          const peerChat = getMessagesByCharacter(p.id).slice(-5).map(m => `${m.isUser ? '我' : p.name}：${String(m.content || '').slice(0, 40)}`).join('\n')
+          return {
+            id: p.id,
+            name: p.name,
+            language: (p as any).language || 'zh',
+            chatTranslationEnabled: !!(p as any).chatTranslationEnabled,
+            relationToAuthor: p.relationship || '朋友',
+            prompt: String(p.prompt || '').slice(0, 200),
+            recentChat: peerChat || '',
+          }
+        })
         const batchPrompt = `${globalPresets ? globalPresets + '\n\n' : ''}${lore ? lore + '\n\n' : ''}你是“朋友圈一体化生成器”，一次性生成：动态正文 + 评论 + 互评回复。
 【发布者】
 name: ${friend.name}
@@ -232,8 +236,9 @@ ${JSON.stringify(peerRoster)}
 1) 只输出严格 JSON，不要解释，不要 markdown
 2) 动态口语自然，不要旁白；长度 <= 80
 3) 如果发布者语言不是中文且开启翻译，post.content 用原语言，post.contentZh 用中文；否则 contentZh 为空字符串
-4) comments/replies 要像真人微信，不要模板腔，不要重复句式
-5) comments 数量 1~${Math.max(1, peerRoster.length)}
+4) 【重要】每个好友的评论必须基于他们自己的人设和性格，严禁模板腔/重复句式！读它们的 prompt 和 recentChat，写出符合它们性格的评论
+5) 不同好友的评论风格必须明显不同：某人可能吐槽、某人可能撞撇、某人可能关心、某人可能恶搞
+5) comments 数量 ${Math.max(1, Math.ceil(peerRoster.length * 0.6))}~${Math.max(1, peerRoster.length)}
 6) replies 可以为空，非空时最多 ${Math.max(0, Math.floor(peerRoster.length / 2))}
 
 【输出 JSON 格式】
@@ -343,14 +348,18 @@ ${JSON.stringify(peerRoster)}
       window.setTimeout(async () => {
         try {
           const globalPresets = getGlobalPresets()
-          const roster = commenters.map((c) => ({
-            id: c.id,
-            name: c.name,
-            language: (c as any).language || 'zh',
-            relation: c.relationship || '朋友',
-            callMeName: c.callMeName || '',
-            prompt: String(c.prompt || '').slice(0, 140),
-          }))
+          const roster = commenters.map((ch) => {
+            const peerChat = getMessagesByCharacter(ch.id).slice(-5).map(m => `${m.isUser ? '我' : ch.name}：${String(m.content || '').slice(0, 40)}`).join('\n')
+            return {
+              id: ch.id,
+              name: ch.name,
+              language: (ch as any).language || 'zh',
+              relation: ch.relationship || '朋友',
+              callMeName: ch.callMeName || '',
+              prompt: String(ch.prompt || '').slice(0, 200),
+              recentChat: peerChat || '',
+            }
+          })
           const prompt =
             `${globalPresets ? globalPresets + '\n\n' : ''}` +
             `你是“朋友圈批量生成器”。一次性输出多位好友的评论和互评回复。\n` +
@@ -363,6 +372,8 @@ ${JSON.stringify(peerRoster)}
             `要求：\n` +
             `- comments 覆盖大约 60%~90% 好友\n` +
             `- replies 可为空；不为空时控制在 comments 数量的一半以内\n` +
+            `- 【重要】每个好友的评论必须基于他的 prompt（人设）和 recentChat（最近聊天），写出符合它们性格的评论\n` +
+            `- 严禁全部好友评论风格一样！必须根据不同人设写出不同风格（吐槽、撞撇、关心、恶搞等）\n` +
             `- 每条内容短句、口语化，不要旁白\n` +
             `- 只能用给定 friendId，不允许新 id\n` +
             `- 只输出 JSON，不要多余文字`
@@ -490,14 +501,14 @@ ${params.userText}
     <div className="flex flex-col h-full bg-transparent">
       {/* 封面区域 */}
       <div 
-        className="relative bg-cover bg-center"
+        className="relative bg-cover bg-center flex-shrink-0 overflow-hidden"
         style={{
-          // 自定义图片封面时禁用收缩，避免某些机型出现“背景牵连滚动”的抖动
-          height: `${enableCoverShrink ? Math.max(140, 256 - coverShrink) : 256}px`,
-          willChange: enableCoverShrink ? 'height' : 'auto',
+          height: enableCoverShrink ? `${Math.max(140, 256 - coverShrink)}px` : '256px',
+          willChange: enableCoverShrink ? 'height' : undefined,
           backgroundImage: userSettings.momentsBackground
             ? `url(${userSettings.momentsBackground})`
             : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          backgroundAttachment: 'local',
         }}
         onClick={() => coverInputRef.current?.click()}
       >

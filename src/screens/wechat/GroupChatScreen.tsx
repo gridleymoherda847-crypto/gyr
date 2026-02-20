@@ -200,6 +200,8 @@ export default function GroupChatScreen() {
   }, [])
   const [aiTyping, setAiTyping] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showGroupHeartPanel, setShowGroupHeartPanel] = useState(false)
+  const [selectedHeartMemberId, setSelectedHeartMemberId] = useState<string | null>(null)
   // 群聊绑定世界书（来自创作工坊）
   const lorebooks = useMemo(() => {
     try {
@@ -680,6 +682,12 @@ ${getCurrentTimeStr()}
    - 中文翻译必须是简体中文
    - 只允许用 "|||" 作为分隔符，不要添加其他括号/标签
 
+9. 【必须执行 - 心声元数据】在所有回复消息之后，为每个参与回复的成员各输出一行心声元数据（此行不会显示给用户，但必须输出）：
+   [HEART_STATE:成员名]{"mood":"当前心情(2~8字)","innerVoice":"内心真实想法(<=40字)"}
+   - 每个回复过的成员都必须有一行，mood 和 innerVoice 必须用中文
+   - 心声是该成员此刻内心的真实想法，不能说出来，不能混入聊天内容
+   - 必须是严格 JSON，双引号，单行输出
+
 【群聊上下文】
 ${params.recentMessages || '（暂无消息）'}`
     
@@ -845,6 +853,10 @@ ${uniqueNames.join('、')}
 
 注意：如果要回复/引用某人说的话，使用 >> 符号，比如[小刚>>小红]表示小刚回复小红
 
+【必须】在所有回复消息之后，为每个参与回复的成员输出心声元数据：
+[HEART_STATE:小明]{"mood":"兴奋","innerVoice":"终于有人约出去玩了"}
+[HEART_STATE:小红]{"mood":"开心","innerVoice":"希望今天能买到喜欢的东西"}
+
 现在开始生成回复：`
 
       const response = await callLLM([
@@ -857,6 +869,8 @@ ${uniqueNames.join('、')}
       const parsedReplies: { name: string; content: string; replyTo?: string }[] = []
       
       for (const line of lines) {
+        // 跳过 HEART_STATE 元数据行
+        if (/^\[HEART_STATE[:：]/.test(line.trim())) continue
         // 尝试匹配引用格式：[成员名>>被引用者]内容
         const matchWithReply = line.match(/^[\[【]([^\]】>]+)>>([^\]】]+)[\]】]\s*(.+)$/)
         if (matchWithReply) {
@@ -874,6 +888,58 @@ ${uniqueNames.join('、')}
         }
       }
       
+      // 提取每个成员的心声元数据
+      {
+        const heartStates: Record<string, { mood: string; innerVoice: string; updatedAt: number }> = { ...(group.memberHeartStates || {}) }
+        const heartRe = /\[HEART_STATE[:：]([^\]]+)\]\s*(\{[\s\S]*?\})/g
+        let hm
+        while ((hm = heartRe.exec(response)) !== null) {
+          try {
+            const memberName = String(hm[1] || '').trim()
+            const obj = JSON.parse(hm[2] || '{}')
+            const mood = String(obj?.mood || '').trim().slice(0, 12)
+            const voice = String(obj?.innerVoice || '').trim().slice(0, 120)
+            if (!memberName || (!mood && !voice)) continue
+            const member = members.find(m => {
+              const aliases = [String(getNameInGroup(m.id) || '').trim(), String(m.name || '').trim()].filter(Boolean)
+              return aliases.some(a => a === memberName)
+            })
+            if (member && (mood || voice)) {
+              heartStates[member.id] = { mood: mood || heartStates[member.id]?.mood || '', innerVoice: voice || heartStates[member.id]?.innerVoice || '', updatedAt: Date.now() }
+            }
+          } catch { /* ignore */ }
+        }
+        if (Object.keys(heartStates).length > 0) {
+          updateGroup(group.id, { memberHeartStates: heartStates } as any)
+        }
+      }
+
+      // 提取每个成员的心声元数据
+      {
+        const heartStates: Record<string, { mood: string; innerVoice: string; updatedAt: number }> = { ...(group.memberHeartStates || {}) }
+        const heartRe = /\[HEART_STATE[:：]([^\]]+)\]\s*(\{[\s\S]*?\})/g
+        let hm
+        while ((hm = heartRe.exec(response)) !== null) {
+          try {
+            const memberName = String(hm[1] || '').trim()
+            const obj = JSON.parse(hm[2] || '{}')
+            const mood = String(obj?.mood || '').trim().slice(0, 12)
+            const voice = String(obj?.innerVoice || '').trim().slice(0, 120)
+            if (!memberName || (!mood && !voice)) continue
+            const member = members.find(m => {
+              const aliases = [String(getNameInGroup(m.id) || '').trim(), String(m.name || '').trim()].filter(Boolean)
+              return aliases.some(a => a === memberName)
+            })
+            if (member && (mood || voice)) {
+              heartStates[member.id] = { mood: mood || heartStates[member.id]?.mood || '', innerVoice: voice || heartStates[member.id]?.innerVoice || '', updatedAt: Date.now() }
+            }
+          } catch { /* ignore */ }
+        }
+        if (Object.keys(heartStates).length > 0) {
+          updateGroup(group.id, { memberHeartStates: heartStates } as any)
+        }
+      }
+
       // 逐条发送，根据字数间隔1-5秒
       // 记录每个成员最近发送的消息ID，用于引用
       const recentMessageIdBySender: Record<string, string> = {}
@@ -1631,11 +1697,19 @@ ${history}`
                 <span className="font-semibold text-[#000]">{group.name}</span>
                 <span className="text-[10px] text-gray-500">{members.length}人</span>
               </div>
-              <button type="button" onClick={() => setShowSettings(true)} className="w-7 h-7 flex items-center justify-center">
-                <svg className="w-5 h-5 text-[#000]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => { setSelectedHeartMemberId(members[0]?.id || null); setShowGroupHeartPanel(true) }}
+                  className="w-7 h-7 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-rose-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                  </svg>
+                </button>
+                <button type="button" onClick={() => setShowSettings(true)} className="w-7 h-7 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-[#000]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+                  </svg>
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -2220,7 +2294,63 @@ ${history}`
         </div>
       </div>
       
-      {/* ========== 群设置弹窗 ========== */}
+      {/* ========== 群聊心声面板 ========== */}
+      {showGroupHeartPanel && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setShowGroupHeartPanel(false)}>
+          <div className="w-full max-w-[400px] bg-white rounded-t-2xl shadow-xl max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+              <span className="text-rose-500 text-sm">❤</span>
+              <span className="font-semibold text-sm">群成员心声</span>
+              <button type="button" onClick={() => setShowGroupHeartPanel(false)} className="text-gray-400 text-sm">关闭</button>
+            </div>
+            {/* 成员切换条 */}
+            <div className="flex gap-2 px-4 py-3 overflow-x-auto border-b border-gray-50 flex-shrink-0">
+              {members.map(m => (
+                <button key={m.id} type="button" onClick={() => setSelectedHeartMemberId(m.id)}
+                  className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-xl transition-colors min-w-[56px] ${selectedHeartMemberId === m.id ? 'bg-rose-50 ring-1 ring-rose-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
+                    {m.avatar ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> :
+                      <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-xs">{(m.name || '?')[0]}</div>}
+                  </div>
+                  <span className={`text-[10px] truncate max-w-[48px] ${selectedHeartMemberId === m.id ? 'text-rose-600 font-medium' : 'text-gray-500'}`}>{getNameInGroup(m.id)}</span>
+                </button>
+              ))}
+            </div>
+            {/* 心声内容 */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {(() => {
+                const hs = (group.memberHeartStates || {})[selectedHeartMemberId || '']
+                const memberChar = members.find(m => m.id === selectedHeartMemberId)
+                return (
+                  <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-pink-50 to-orange-50 px-3.5 py-3 shadow-[0_10px_24px_rgba(244,114,182,0.12)]">
+                    <div className="mb-2 flex items-center gap-1.5 text-[12px] text-rose-500">
+                      <span>❤</span>
+                      <span>{memberChar ? getNameInGroup(memberChar.id) : '未选择'} 的心动信号</span>
+                    </div>
+                    <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2.5">
+                      <div className="text-[11px] text-pink-500 mb-1">当前心情</div>
+                      <div className="text-sm font-medium text-gray-800">{hs?.mood || '（暂无）'}</div>
+                    </div>
+                    <div className="mt-2 rounded-xl border border-white/70 bg-white/70 px-3 py-2.5">
+                      <div className="text-[11px] text-rose-500 mb-1">当前心声</div>
+                      <div className="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap break-words">
+                        {hs?.innerVoice || '（还没有生成，点一次播放键后会更新）'}
+                      </div>
+                    </div>
+                    {hs?.updatedAt ? (
+                      <div className="mt-2 text-[11px] text-rose-400">
+                        最近更新：{new Date(hs.updatedAt).toLocaleString('zh-CN', { hour12: false })}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* ========== 群设置弹窗 ========== */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="w-full max-w-[340px] bg-white rounded-2xl shadow-xl max-h-[85vh] flex flex-col">
