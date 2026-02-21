@@ -212,13 +212,17 @@ export default function DesktopBeautifyScreen() {
         currentFontId: String(currentFont?.id || ''),
         fontColorId: String(fontColor?.id || ''),
         fontSizeTier: (fontSizeTier === 'small' || fontSizeTier === 'medium' || fontSizeTier === 'large' || fontSizeTier === 'xlarge') ? fontSizeTier : 'medium',
-        customFonts: Array.isArray(customFonts)
-          ? customFonts.map((f: any) => ({
-            name: String(f?.name || ''),
-            fontFamily: String(f?.fontFamily || ''),
-            dataUrl: String(f?.dataUrl || ''),
-          })).filter((f: any) => !!f.name && !!f.fontFamily && !!f.dataUrl).slice(0, 50)
-          : [],
+        customFonts: (() => {
+          const cid = String(currentFont?.id || '')
+          if (!cid || !cid.startsWith('custom-') || !Array.isArray(customFonts)) return []
+          const used = customFonts.find((f: any) => String(f?.id || '') === cid)
+          if (!used) return []
+          return [{
+            name: String(used.name || ''),
+            fontFamily: String(used.fontFamily || ''),
+            dataUrl: String(used.dataUrl || ''),
+          }].filter((f: any) => !!f.name && !!f.fontFamily && !!f.dataUrl)
+        })(),
         homeAvatar: String(homeAvatar || ''),
         signature: String(signature || ''),
         memoDecorImage: String((memo as any)?.image || ''),

@@ -680,7 +680,7 @@ export default function ChatSettingsScreen() {
     : null
   const defaultPersona = getCurrentPersona()
 
-  const myStickers = useMemo(() => stickers.filter(s => s.characterId === character.id), [stickers, character.id])
+  const myStickers = useMemo(() => stickers, [stickers])
   const myStickerImageSet = useMemo(() => new Set(myStickers.map(s => s.imageUrl)), [myStickers])
   const publicOnlyStickers = useMemo(() => publicStickers.filter(s => s.characterId === 'all' && !myStickerImageSet.has(s.imageUrl)), [publicStickers, myStickerImageSet])
 

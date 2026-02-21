@@ -255,6 +255,9 @@ export default function XScreen() {
   const [profileDraftBio, setProfileDraftBio] = useState('')
   const [profileDraftFollower, setProfileDraftFollower] = useState('')
   const [profileTab, setProfileTab] = useState<'posts' | 'replies'>('posts')
+  const [profileBannerShrink, setProfileBannerShrink] = useState(0)
+  const profileBannerShrinkRaf = useRef<number>(0)
+  const profileBannerShrinkPending = useRef<number>(0)
   const [tipDialog, setTipDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
 
   const getCharacterIdentity = (c: (typeof characters)[number], persist: boolean) => {
@@ -385,6 +388,7 @@ export default function XScreen() {
       return d2
     })
     setOpenProfileUserId(userId)
+    setProfileBannerShrink(0)
     setView('profile')
     setTab('home')
   }, [data, searchParams])
@@ -760,9 +764,10 @@ export default function XScreen() {
         sysPrefix() +
         `【X搜索（三标签）】搜索：${key}\n` + charInfo +
         `一次生成三类：hot(热门路人热议${wantPerTab}条)、latest(最新路人刚发${wantPerTab}条)、user(${hasUser ? matchedCharacter!.name + '本人发' + wantPerTab + '条' : '空[]'})\n` +
+        `每条帖子必须附带 replies 数组，里面恰好 6 条评论。评论必须紧密围绕帖子内容，风格多样（支持/反驳/吐槽/玩梗/超短回复），评论者名字多样。\n` +
         `要求：与"${key}"强相关；禁辱女/性羞辱；内容需合规、避免不适宜主题与极端表达；作者名多样30%+非中文；只输出JSON\n` +
         `【翻译强制】如果某条 text 不是中文（或主要为外语），必须输出为：外语原文（简体中文翻译），括号内只能是简体中文\n` +
-        `格式：{"hot":[{"authorName":"名","text":"<=140字","hashtags":[]}],"latest":[...],"user":[{"text":"","hashtags":[]}]}`
+        `格式：{"hot":[{"authorName":"名","text":"<=140字","hashtags":[],"replies":[{"authorName":"评论者","text":"评论"},{"authorName":"评论者","text":"评论"},{"authorName":"评论者","text":"评论"},{"authorName":"评论者","text":"评论"},{"authorName":"评论者","text":"评论"},{"authorName":"评论者","text":"评论"}]}],"latest":[同上格式],"user":[{"text":"","hashtags":[],"replies":[同上6条]}]}`
       /* 旧代码已删除 */
       if (false as boolean) { const want = 0; void want; (() => {
         if (matchedCharacter) {
@@ -815,10 +820,11 @@ export default function XScreen() {
         )
       })() }
 
-      const parsed = await callJson(sys, '生成帖子。', 1200)
+      const parsed = await callJson(sys, '生成带评论的帖子。', 3000)
       let next = data
       const hotIds: string[] = [], latestIds: string[] = [], userIds: string[] = []
       const newPosts: XPost[] = []
+      const allNewReplies: typeof next.replies = [...(next.replies || [])]
 
       // 先把三组内容收集出来，做一次批量“括号翻译兜底”，避免分多次调用
       const hotRaw = (Array.isArray((parsed as any).hot) ? (parsed as any).hot : []).slice(0, wantPerTab + 2)
@@ -847,6 +853,26 @@ export default function XScreen() {
         }
       }
 
+      const processSearchReplies = (post: XPost, rawReplies: any[]) => {
+        let replyAdded = 0
+        for (const r of (rawReplies || []).slice(0, 6)) {
+          const rName = String(r?.authorName || '').trim()
+          const rText = String(r?.text || '').trim()
+          if (!rText) continue
+          const { data: d3, userId: rUserId } = xEnsureUser(next, { name: rName || 'User' })
+          next = d3
+          const reply = xNewReply(post.id, rUserId, rName || 'User', rText)
+          const ru = next.users.find(x => x.id === rUserId)
+          if (ru) {
+            ;(reply as any).authorHandle = ru.handle
+            ;(reply as any).authorColor = ru.color
+          }
+          allNewReplies.push(reply)
+          replyAdded++
+        }
+        return replyAdded
+      }
+
       // 处理热门帖子
       for (const p of hotRaw) {
         const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
@@ -860,7 +886,8 @@ export default function XScreen() {
         post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
         post.likeCount = 500 + Math.floor(Math.random() * 2500)
         post.repostCount = 100 + Math.floor(Math.random() * 500)
-        post.replyCount = 50 + Math.floor(Math.random() * 300)
+        const replyAdded = processSearchReplies(post, Array.isArray(p?.replies) ? p.replies : [])
+        post.replyCount = Math.max(replyAdded, 50 + Math.floor(Math.random() * 300))
         hotIds.push(post.id); newPosts.push(post)
       }
 
@@ -877,7 +904,8 @@ export default function XScreen() {
         post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
         post.likeCount = Math.floor(Math.random() * 150)
         post.repostCount = Math.floor(Math.random() * 30)
-        post.replyCount = Math.floor(Math.random() * 20)
+        const replyAdded = processSearchReplies(post, Array.isArray(p?.replies) ? p.replies : [])
+        post.replyCount = Math.max(replyAdded, Math.floor(Math.random() * 20))
         latestIds.push(post.id); newPosts.push(post)
       }
 
@@ -896,7 +924,8 @@ export default function XScreen() {
           post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
           post.likeCount = 200 + Math.floor(Math.random() * 1000)
           post.repostCount = 50 + Math.floor(Math.random() * 200)
-          post.replyCount = 30 + Math.floor(Math.random() * 150)
+          const replyAdded = processSearchReplies(post, Array.isArray(p?.replies) ? p.replies : [])
+          post.replyCount = Math.max(replyAdded, 30 + Math.floor(Math.random() * 150))
           userIds.push(post.id); newPosts.push(post)
         }
       }
@@ -908,6 +937,7 @@ export default function XScreen() {
           const others = [...newPosts, ...next.posts].filter((p) => p.authorId !== 'me').slice(0, 80)
           return [...mine, ...others].slice(0, 700)
         })(),
+        replies: allNewReplies.slice(-2000),
         searchCache: { ...(next.searchCache || {}), [key]: { hot: hotIds, latest: latestIds, user: userIds, updatedAt: Date.now() } },
         searchHistory: [key, ...(next.searchHistory || []).filter((x) => x !== key)].slice(0, 10),
       }
@@ -992,6 +1022,45 @@ ${chatFriendList}
         }
       }
       
+      // 帖主回复用户评论（非自己的帖子 + 用户发过评论）
+      let authorReplySection = ''
+      let authorIsCharacter: (typeof characters)[number] | null = null
+      if (!isMyPost && myReplies.length > 0) {
+        authorIsCharacter = characters.find((c) => c.id === openPost.authorId) || null
+        if (authorIsCharacter) {
+          const chatMsgs = getMessagesByCharacter(authorIsCharacter.id)
+          const recentChat = chatMsgs.length > 0
+            ? chatMsgs.slice(-8).map((m) => {
+                const sender = (m as any).isUser ? '用户' : authorIsCharacter!.name
+                const content = ((m as any).content || '').replace(/\s+/g, ' ').slice(0, 80)
+                return `${sender}: ${content}`
+              }).join('\n')
+            : ''
+          authorReplySection =
+            `\n【帖主回复（重要！必须生成）】\n` +
+            `帖主「${authorIsCharacter.name}」是用户的虚拟好友（微信聊天角色）。\n` +
+            `帖主人设：${(authorIsCharacter.prompt || '').replace(/\s+/g, ' ').slice(0, 300) || '（无）'}\n` +
+            `帖主与用户的关系：${(authorIsCharacter as any).relationship || '（未设定）'}\n` +
+            (recentChat ? `帖主与用户最近的微信聊天：\n${recentChat}\n` : '') +
+            `用户在帖主的帖子下评论了，帖主必须回复用户！\n` +
+            `要求：\n` +
+            `- 生成 1~2 条帖主的回复，放在 authorReply 数组中\n` +
+            `- 回复必须符合帖主的人设性格\n` +
+            `- 回复要针对用户的评论内容进行回应，体现出和用户的关系\n` +
+            `- 如果有微信聊天上下文，可以引用/延续聊天中的话题\n` +
+            `- 格式：{ "text": "帖主的回复" }\n`
+        } else {
+          authorReplySection =
+            `\n【帖主回复（重要！必须生成）】\n` +
+            `帖主「${openPost.authorName}」是路人。\n` +
+            `用户在帖主的帖子下评论了，帖主必须回复用户！\n` +
+            `要求：\n` +
+            `- 生成 1 条帖主的回复，放在 authorReply 数组中\n` +
+            `- 回复要针对用户评论内容回应，口吻随意自然\n` +
+            `- 格式：{ "text": "帖主的回复" }\n`
+        }
+      }
+
       const want = 8 + Math.floor(Math.random() * 13) // 8~20
       const passerbyWant = Math.max(2, want - fanCount)
       const fanHint = fanCount > 0
@@ -1020,6 +1089,7 @@ ${chatFriendList}
         replyToSection +
         friendSection +
         fanHint +
+        authorReplySection +
         `\n要求：\n` +
         `- 生成 ${passerbyWant} 条路人评论（放在 replies 数组中）\n` +
         `- 如果用户发过评论：本次新评论中，必须有 20%~40% 是“在和用户评论互动”的（回复/引用/阴阳/支持/反驳都行）\n` +
@@ -1037,11 +1107,13 @@ ${chatFriendList}
         `  "replies": [ { "authorName": "名字", "text": "评论" } ]` +
         (fanCount > 0 ? `,\n  "fanReplies": [ { "authorName": "粉丝名字", "text": "评论" } ]` : '') +
         (friendsToInclude.length > 0 ? `,\n  "friendReplies": [ { "characterId": "...", "text": "评论" } ]` : '') +
+        (authorReplySection ? `,\n  "authorReply": [ { "text": "帖主回复" } ]` : '') +
         `\n}\n`
-      const parsed = await callJson(sys, '现在生成 replies。', 900)
+      const parsed = await callJson(sys, '现在生成 replies。', authorReplySection ? 1200 : 900)
       const raw = Array.isArray((parsed as any).replies) ? (parsed as any).replies : []
       const fanRaw = Array.isArray((parsed as any).fanReplies) ? (parsed as any).fanReplies : []
       const friendRaw = Array.isArray((parsed as any).friendReplies) ? (parsed as any).friendReplies : []
+      const authorReplyRaw = Array.isArray((parsed as any).authorReply) ? (parsed as any).authorReply : []
 
       let next = data
       const newReplies: XReply[] = []
@@ -1051,6 +1123,7 @@ ${chatFriendList}
         ...raw.slice(0, passerbyWant).map((r: any) => ({ kind: 'reply' as const, obj: r, field: 'text' as const })),
         ...fanRaw.slice(0, fanCount).map((r: any) => ({ kind: 'fan' as const, obj: r, field: 'text' as const })),
         ...friendRaw.slice(0, friendsToInclude.length).map((r: any) => ({ kind: 'friend' as const, obj: r, field: 'text' as const })),
+        ...authorReplyRaw.slice(0, 2).map((r: any) => ({ kind: 'author' as const, obj: r, field: 'text' as const })),
       ]
       const need = all
         .map((x, i) => ({ i, t: String((x.obj as any)?.text || '').trim() }))
@@ -1116,6 +1189,27 @@ ${chatFriendList}
           return { id: userId, name: c.name }
         })()
         newReplies.push(xNewReply(openPost.id, ensured.id, ensured.name, text))
+      }
+
+      // 处理帖主回复
+      for (const ar of authorReplyRaw.slice(0, 2)) {
+        const text = String(ar?.text || '').trim()
+        if (!text) continue
+        if (authorIsCharacter) {
+          const identity = getCharacterIdentity(authorIsCharacter, true)
+          const { data: d2, userId } = xEnsureUser(next, {
+            id: authorIsCharacter.id,
+            name: authorIsCharacter.name,
+            handle: identity.handle,
+            avatarUrl: authorIsCharacter.avatar || undefined,
+          })
+          next = d2
+          newReplies.push(xNewReply(openPost.id, userId, authorIsCharacter.name, `@${meName} ${text}`))
+        } else {
+          const { data: d2, userId } = xEnsureUser(next, { id: openPost.authorId, name: openPost.authorName })
+          next = d2
+          newReplies.push(xNewReply(openPost.id, userId, openPost.authorName, `@${meName} ${text}`))
+        }
       }
 
       const meHandleRaw = String(next.meHandle || '').trim().replace(/^@/, '')
@@ -3117,11 +3211,12 @@ ${chatFriendList}
         </div>
 
         {/* Banner */}
-        <div className="relative">
+        <div className="relative flex-shrink-0 overflow-hidden">
           <div
-            className={`h-[190px] w-full bg-gray-100 ${isMe ? 'cursor-pointer' : ''} ${uploadingBanner ? 'opacity-80' : ''}`}
+            className={`w-full bg-gray-100 ${isMe ? 'cursor-pointer' : ''} ${uploadingBanner ? 'opacity-80' : ''}`}
             onClick={isMe && !uploadingBanner ? handlePickMeBanner : undefined}
             style={{
+              height: `${Math.max(95, 190 - profileBannerShrink)}px`,
               backgroundImage: meta.bannerUrl ? `url(${meta.bannerUrl})` : undefined,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
@@ -3247,7 +3342,20 @@ ${chatFriendList}
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div
+          className="flex-1 overflow-y-auto"
+          onScroll={(e) => {
+            const top = (e.currentTarget as HTMLDivElement).scrollTop
+            const next = Math.min(95, Math.max(0, top * 2))
+            profileBannerShrinkPending.current = next
+            if (profileBannerShrinkRaf.current) return
+            profileBannerShrinkRaf.current = window.requestAnimationFrame(() => {
+              profileBannerShrinkRaf.current = 0
+              const v = profileBannerShrinkPending.current
+              setProfileBannerShrink((prev) => (Math.abs(v - prev) < 1 ? prev : v))
+            })
+          }}
+        >
           {isMe && (
             <div className="sticky top-0 z-10 bg-white/95 border-b border-black/5 px-4 py-2 flex gap-2">
               <button

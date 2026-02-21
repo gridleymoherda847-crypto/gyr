@@ -7167,6 +7167,8 @@ export default function LiaoliaoYishengScreen() {
                 <div>
                   <span className="text-sm font-bold text-gray-800">{game.name}</span>
                   <span className="text-xs text-gray-500 ml-2">{game.age}岁</span>
+                  <span className="text-xs text-gray-400">/</span>
+                  <span className="text-xs text-orange-500">{getMaxLifespan(game.realm) + getPlayerLifeBonusYears(game)}寿</span>
                   <span className="text-xs text-purple-600 ml-2">{REALM_NAMES[game.realm]}</span>
                 </div>
                 <div className="text-xs text-gray-500">

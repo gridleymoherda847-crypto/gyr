@@ -495,7 +495,7 @@ ${params.userText}
     return new Date(timestamp).toLocaleDateString('zh-CN')
   }
 
-  const enableCoverShrink = !userSettings.momentsBackground
+  const enableCoverShrink = true
 
   return (
     <div className="flex flex-col h-full bg-transparent">
