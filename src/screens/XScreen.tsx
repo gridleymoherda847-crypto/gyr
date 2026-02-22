@@ -3211,9 +3211,9 @@ ${chatFriendList}
         </div>
 
         {/* Banner */}
-        <div className="relative flex-shrink-0 overflow-hidden">
+        <div className="relative flex-shrink-0">
           <div
-            className={`w-full bg-gray-100 ${isMe ? 'cursor-pointer' : ''} ${uploadingBanner ? 'opacity-80' : ''}`}
+            className={`w-full bg-gray-100 overflow-hidden ${isMe ? 'cursor-pointer' : ''} ${uploadingBanner ? 'opacity-80' : ''}`}
             onClick={isMe && !uploadingBanner ? handlePickMeBanner : undefined}
             style={{
               height: `${Math.max(95, 190 - profileBannerShrink)}px`,
