@@ -277,6 +277,7 @@ export type GroupChat = {
   // 关系网
   relations?: GroupRelation[]
   memberHeartStates?: Record<string, { mood: string; innerVoice: string; updatedAt: number }>
+  apiConfigId?: string
 }
 
 // 纪念日

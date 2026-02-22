@@ -7,9 +7,11 @@ import WeChatDialog from './components/WeChatDialog'
 import { compressImageFileToDataUrl } from '../../utils/image'
 import { getGlobalPresets, getLorebookEntriesByLorebookId, getLorebookEntriesForCharacter, getLorebooks } from '../PresetScreen'
 
+const FOLLOW_GLOBAL_API_CONFIG_ID = '__global__'
+
 export default function GroupChatScreen() {
   const navigate = useNavigate()
-  const { fontColor, callLLM, ttsConfig } = useOS()
+  const { fontColor, callLLM: callLLMBase, ttsConfig } = useOS()
   const { groupId } = useParams<{ groupId: string }>()
   const { 
     getGroup, getGroupMessages, addMessage, updateMessage, updateGroup, deleteGroup, deleteMessage,
@@ -202,6 +204,68 @@ export default function GroupChatScreen() {
   const [showSettings, setShowSettings] = useState(false)
   const [showGroupHeartPanel, setShowGroupHeartPanel] = useState(false)
   const [selectedHeartMemberId, setSelectedHeartMemberId] = useState<string | null>(null)
+
+  // ===== 群聊 API 切换 =====
+  const [showApiConfigSwitchPanel, setShowApiConfigSwitchPanel] = useState(false)
+  const [savedApiConfigs, setSavedApiConfigs] = useState<Array<{
+    id: string; name: string; baseUrl: string; apiKey: string; selectedModel: string
+    apiInterface?: 'openai_compatible' | 'anthropic_native' | 'gemini_native' | 'ollama'
+  }>>([])
+  const [apiInfoDialog, setApiInfoDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' })
+
+  const loadSavedApiConfigs = useCallback(() => {
+    try {
+      const raw = localStorage.getItem('mina_api_configs')
+      const list = raw ? JSON.parse(raw) : []
+      const configs = Array.isArray(list) ? list : []
+      setSavedApiConfigs(configs
+        .map((it: any) => ({
+          id: String(it?.id || '').trim(),
+          name: String(it?.name || '').trim(),
+          baseUrl: String(it?.baseUrl || '').trim(),
+          apiKey: String(it?.apiKey || '').trim(),
+          selectedModel: String(it?.selectedModel || '').trim(),
+          apiInterface: (it?.apiInterface || 'openai_compatible') as 'openai_compatible' | 'anthropic_native' | 'gemini_native' | 'ollama',
+        }))
+        .filter((it: any) => it.id && it.baseUrl && it.apiKey && it.selectedModel))
+    } catch { setSavedApiConfigs([]) }
+  }, [])
+
+  useEffect(() => { loadSavedApiConfigs() }, [loadSavedApiConfigs, group?.id])
+
+  const currentGroupApiConfigId = String(group?.apiConfigId || '').trim() || FOLLOW_GLOBAL_API_CONFIG_ID
+  const isFollowingGlobalApi = currentGroupApiConfigId === FOLLOW_GLOBAL_API_CONFIG_ID
+  const currentGroupApiConfig = useMemo(() => {
+    if (isFollowingGlobalApi) return null
+    return savedApiConfigs.find(c => c.id === currentGroupApiConfigId) || null
+  }, [savedApiConfigs, currentGroupApiConfigId, isFollowingGlobalApi])
+
+  const switchGroupApiConfig = useCallback((configId: string) => {
+    if (!group) return
+    const target = savedApiConfigs.find(c => c.id === configId)
+    if (!target) return
+    updateGroup(group.id, { apiConfigId: target.id } as any)
+    setShowApiConfigSwitchPanel(false)
+    setApiInfoDialog({ open: true, title: '已切换群聊 API', message: `本群聊将使用「${target.name || '未命名配置'}」` })
+  }, [group, savedApiConfigs, updateGroup])
+
+  const clearGroupApiConfig = useCallback(() => {
+    if (!group) return
+    updateGroup(group.id, { apiConfigId: FOLLOW_GLOBAL_API_CONFIG_ID } as any)
+    setShowApiConfigSwitchPanel(false)
+    setApiInfoDialog({ open: true, title: '已切回全局配置', message: '本群聊将跟随设置页中的 AI 对话配置。' })
+  }, [group, updateGroup])
+
+  const callLLM = useCallback((
+    messages: Parameters<typeof callLLMBase>[0],
+    model?: string,
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number },
+  ) => {
+    const configOverride = currentGroupApiConfig
+      ? { apiBaseUrl: currentGroupApiConfig.baseUrl, apiKey: currentGroupApiConfig.apiKey, apiInterface: currentGroupApiConfig.apiInterface || ('openai_compatible' as const), selectedModel: currentGroupApiConfig.selectedModel }
+      : undefined
+    return callLLMBase(messages, model, options, configOverride)
+  }, [callLLMBase, currentGroupApiConfig])
   // 群聊绑定世界书（来自创作工坊）
   const lorebooks = useMemo(() => {
     try {
@@ -682,9 +746,10 @@ ${getCurrentTimeStr()}
    - 中文翻译必须是简体中文
    - 只允许用 "|||" 作为分隔符，不要添加其他括号/标签
 
-9. 【必须执行 - 心声元数据】在所有回复消息之后，为每个参与回复的成员各输出一行心声元数据（此行不会显示给用户，但必须输出）：
+9. 【必须执行 - 心声元数据（⚠️缺少=回复失败）】在所有回复消息之后，为每个参与回复的成员各输出一行心声元数据（此行不会显示给用户，但必须输出）：
    [HEART_STATE:成员名]{"mood":"当前心情(2~8字)","innerVoice":"内心真实想法(<=40字)"}
-   - 每个回复过的成员都必须有一行，mood 和 innerVoice 必须用中文
+   - ⚠️⚠️ 每个回复过的成员都必须有对应的 HEART_STATE 行，缺少任何一个成员的心声视为回复不合格！
+   - mood 和 innerVoice 必须用中文
    - 心声是该成员此刻内心的真实想法，不能说出来，不能混入聊天内容
    - 必须是严格 JSON，双引号，单行输出
 
@@ -1698,6 +1763,12 @@ ${history}`
                 <span className="text-[10px] text-gray-500">{members.length}人</span>
               </div>
               <div className="flex items-center gap-1">
+                <button type="button" onClick={() => { loadSavedApiConfigs(); setShowApiConfigSwitchPanel(true) }}
+                  className="w-7 h-7 flex items-center justify-center" title="切换群聊 API">
+                  <svg className="w-4 h-4 text-[#000]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M15.5 4a4.5 4.5 0 0 1 4.19 6.14l-2.04 2.05a1 1 0 0 1-.7.29H14v2a1 1 0 0 1-1 1h-1v1a1 1 0 0 1-1 1H9v1a1 1 0 0 1-1 1H5.5a1.5 1.5 0 0 1-1.5-1.5v-2.43a1 1 0 0 1 .3-.7l4.44-4.44A4.5 4.5 0 0 1 15.5 4Zm0 2.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" />
+                  </svg>
+                </button>
                 <button type="button" onClick={() => { setSelectedHeartMemberId(members[0]?.id || null); setShowGroupHeartPanel(true) }}
                   className="w-7 h-7 flex items-center justify-center">
                   <svg className="w-4 h-4 text-rose-400" viewBox="0 0 24 24" fill="currentColor">
@@ -2349,6 +2420,55 @@ ${history}`
           </div>
         </div>
       )}
+
+      {/* ========== 群聊 API 切换面板 ========== */}
+      {showApiConfigSwitchPanel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setShowApiConfigSwitchPanel(false)}>
+          <div className="w-full max-w-[320px] bg-white rounded-2xl shadow-xl p-4" onClick={e => e.stopPropagation()}>
+            <div className="text-sm font-semibold text-center mb-3">切换群聊 API 配置</div>
+            <div className="text-[12px] text-gray-500 mb-2">
+              当前群聊配置：<span className="text-gray-800 font-medium">{currentGroupApiConfig?.name || '跟随设置页全局配置'}</span>
+            </div>
+            {savedApiConfigs.length > 0 ? (
+              <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1 mb-3">
+                {savedApiConfigs.map(cfg => {
+                  const active = cfg.id === currentGroupApiConfigId
+                  return (
+                    <button key={cfg.id} type="button" onClick={() => switchGroupApiConfig(cfg.id)}
+                      className={`w-full rounded-xl border px-3 py-2 text-left text-[13px] transition ${active ? 'border-green-300 bg-green-50 text-green-700' : 'border-gray-200 bg-white text-gray-700 hover:border-green-200 hover:bg-green-50/60'}`}>
+                      <div className="font-medium">{cfg.name || '未命名配置'}</div>
+                      <div className="text-[11px] opacity-80 mt-0.5">{cfg.selectedModel} · {cfg.apiInterface || 'openai_compatible'}</div>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700 mb-3">
+                还没有已保存的 API 配置。请先去设置里保存一套配置。
+              </div>
+            )}
+            <div className="space-y-2">
+              <button type="button" onClick={clearGroupApiConfig}
+                className={`w-full rounded-full border px-4 py-2 text-[13px] font-medium active:scale-[0.98] ${isFollowingGlobalApi ? 'border-green-300 bg-green-50 text-green-700' : 'border-black/10 bg-white/70 text-gray-700'}`}>
+                跟随设置页全局配置
+              </button>
+              <button type="button" onClick={() => { setShowApiConfigSwitchPanel(false); navigate('/apps/settings/api') }}
+                className="w-full rounded-full border border-black/10 bg-white/70 px-4 py-2 text-[13px] font-medium text-gray-700 active:scale-[0.98]">
+                去 API 配置
+              </button>
+              <button type="button" onClick={() => setShowApiConfigSwitchPanel(false)}
+                className="w-full rounded-full border border-black/10 bg-gray-50 px-4 py-2 text-[13px] text-gray-500 active:scale-[0.98]">
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* API 切换提示 */}
+      <WeChatDialog open={apiInfoDialog.open} title={apiInfoDialog.title} message={apiInfoDialog.message}
+        confirmText="好的" onConfirm={() => setApiInfoDialog({ open: false, title: '', message: '' })}
+        onCancel={() => setApiInfoDialog({ open: false, title: '', message: '' })} />
 
             {/* ========== 群设置弹窗 ========== */}
       {showSettings && (

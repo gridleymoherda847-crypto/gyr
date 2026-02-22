@@ -4402,6 +4402,13 @@ function defaultNewGame(seed: number, gender: 'male' | 'female'): GameState {
   return g
 }
 
+function buildCurrentEvent(def: EventDef, g: GameState, rng: ReturnType<typeof makeRng>): CurrentEvent {
+  const rawText = def.text(g, rng)
+  const gWithRaw: GameState = { ...g, currentEvent: { id: def.id, title: def.title, rawText, text: rawText.replace(/\[[^\]]+\]/g, ''), options: [], resolved: false } }
+  const options = def.options(gWithRaw, rng)
+  return { id: def.id, title: def.title, rawText, text: rawText.replace(/\[[^\]]+\]/g, ''), options: options.map(o => ({ id: o.id, text: o.text, picked: false })), resolved: false }
+}
+
 function pickEvent(rng: ReturnType<typeof makeRng>, g: GameState): EventDef | null {
   const defs = getEvents()
   const candidates = defs
@@ -4469,16 +4476,7 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
       if (rng.chance(p)) {
         const def = getEvents().find(e => e.id === 'E810_disciple_seeks')
         if (def) {
-          const rawText = def.text(g, rng)
-          const options = def.options(g, rng)
-          const ce: CurrentEvent = {
-            id: def.id,
-            title: def.title,
-            rawText,
-            text: rawText.replace(/\[[^\]]+\]/g, ''),
-            options: options.map(o => ({ id: o.id, text: o.text, picked: false })),
-            resolved: false,
-          }
+          const ce = buildCurrentEvent(def, g, rng)
           return { ...g, currentEvent: ce, lastEventId: ce.id }
         }
       }
@@ -4646,16 +4644,7 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
   if (g.age === 8 && !hasFlag(g, 'tested_root')) {
     const def = getEvents().find(e => e.id === 'E100_test_root')
     if (def) {
-      const rawText = def.text(g, rng)
-      const options = def.options(g, rng)
-      const ce: CurrentEvent = {
-        id: def.id,
-        title: def.title,
-        rawText,
-        text: rawText.replace(/\[[^\]]+\]/g, ''),
-        options: options.map(o => ({ id: o.id, text: o.text, picked: false })),
-        resolved: false,
-      }
+      const ce = buildCurrentEvent(def, g, rng)
       return { ...g, currentEvent: ce, lastEventId: ce.id }
     }
   }
@@ -4680,18 +4669,7 @@ function startYear(rng: ReturnType<typeof makeRng>, g: GameState): GameState {
     return { ...next, lastEventId: 'calm_year' }
   }
   
-  const rawText = def.text(g, rng)
-  const options = def.options(g, rng)
-  
-  const ce: CurrentEvent = {
-    id: def.id,
-    title: def.title,
-    rawText,
-    text: rawText.replace(/\[[^\]]+\]/g, ''), // 展示时移除临时标记
-    options: options.map(o => ({ id: o.id, text: o.text, picked: false })),
-    resolved: false,
-  }
-
+  const ce = buildCurrentEvent(def, g, rng)
   return { ...g, currentEvent: ce, lastEventId: ce.id }
 }
 
@@ -5708,16 +5686,7 @@ export default function LiaoliaoYishengScreen() {
     const rng = makeRng(game.seed + game.age * 515 + game.logs.length + 7)
     const def = getEvents().find((e) => e.id === (canAscend(game) ? 'E700_ascend' : 'E500_breakthrough'))
     if (!def) return
-    const rawText = def.text(game, rng)
-    const options = def.options(game, rng)
-    const ce: CurrentEvent = {
-      id: def.id,
-      title: def.title,
-      rawText,
-      text: rawText.replace(/\[[^\]]+\]/g, ''),
-      options: options.map((o) => ({ id: o.id, text: o.text, picked: false })),
-      resolved: false,
-    }
+    const ce = buildCurrentEvent(def, game, rng)
     shouldAutoScroll.current = true
     setGame({ ...game, currentEvent: ce, lastEventId: ce.id })
   }
