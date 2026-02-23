@@ -3236,6 +3236,7 @@ ${chatFriendList}
             className={`absolute left-4 -bottom-10 w-24 h-24 rounded-full overflow-hidden border-4 border-white bg-gray-100 ${isMe ? 'cursor-pointer' : ''} ${uploadingAvatar ? 'opacity-80' : ''}`}
             onClick={isMe && !uploadingAvatar ? handlePickMeAvatar : undefined}
             title={isMe ? '更换头像' : undefined}
+            style={{ transform: `translateY(-${Math.round(profileBannerShrink * 0.72)}px)` }}
           >
             {(meta as any).avatarUrl ? (
               <img src={(meta as any).avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -3250,8 +3251,9 @@ ${chatFriendList}
           </div>
         </div>
 
-        <div className="px-4 pt-16 pb-4 border-b border-black/5">
-          <div className="flex items-start justify-between gap-3">
+        <div style={{ marginTop: `-${Math.round(profileBannerShrink * 0.72)}px` }}>
+          <div className="px-4 pt-16 pb-4 border-b border-black/5">
+            <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="text-[16px] font-extrabold text-gray-900">{userName}</div>
               <div className="flex items-center gap-2 mt-0.5">
@@ -3343,29 +3345,29 @@ ${chatFriendList}
                 </button>
               </div>
             )}
+            </div>
+            {isMe && (
+              <div className="mt-3" />
+            )}
           </div>
-          {isMe && (
-            <div className="mt-3" />
-          )}
-        </div>
 
-        <div
-          className="flex-1 overflow-y-auto"
-          onScroll={(e) => {
-            const top = (e.currentTarget as HTMLDivElement).scrollTop
-            const progress = Math.min(1, Math.max(0, top / 120))
-            const next = progress * 95
-            profileBannerShrinkPending.current = next
-            if (profileBannerShrinkRaf.current) return
-            profileBannerShrinkRaf.current = window.requestAnimationFrame(() => {
-              profileBannerShrinkRaf.current = 0
-              const v = profileBannerShrinkPending.current
-              setProfileBannerShrink((prev) => (Math.abs(v - prev) < 1 ? prev : v))
-            })
-          }}
-        >
-          {isMe && (
-            <div className="sticky top-0 z-10 bg-white/95 border-b border-black/5 px-4 py-2 flex gap-2">
+          <div
+            className="flex-1 overflow-y-auto"
+            onScroll={(e) => {
+              const top = (e.currentTarget as HTMLDivElement).scrollTop
+              const progress = Math.min(1, Math.max(0, top / 120))
+              const next = progress * 95
+              profileBannerShrinkPending.current = next
+              if (profileBannerShrinkRaf.current) return
+              profileBannerShrinkRaf.current = window.requestAnimationFrame(() => {
+                profileBannerShrinkRaf.current = 0
+                const v = profileBannerShrinkPending.current
+                setProfileBannerShrink((prev) => (Math.abs(v - prev) < 1 ? prev : v))
+              })
+            }}
+          >
+            {isMe && (
+              <div className="sticky top-0 z-10 bg-white/95 border-b border-black/5 px-4 py-2 flex gap-2">
               <button
                 type="button"
                 onClick={() => setProfileTab('posts')}
@@ -3380,17 +3382,17 @@ ${chatFriendList}
               >
                 我的评论
               </button>
-            </div>
-          )}
-          {!isMe || profileTab === 'posts' ? (
+              </div>
+            )}
+            {!isMe || profileTab === 'posts' ? (
             mine.length === 0 ? (
               <div className="py-14 text-center text-[13px] text-gray-500">{isMe ? '你还没发过帖。' : 'TA 还没发过帖。'}</div>
             ) : (
               <div>{mine.map(renderPostCard)}</div>
             )
-          ) : myReplies.length === 0 ? (
+            ) : myReplies.length === 0 ? (
             <div className="py-14 text-center text-[13px] text-gray-500">你还没在别人评论区发过内容。</div>
-          ) : (
+            ) : (
             <div className="divide-y divide-black/5">
               {myReplies.map((r) => {
                 const p = posts.find((x) => x.id === r.postId)
@@ -3430,7 +3432,8 @@ ${chatFriendList}
                 )
               })}
             </div>
-          )}
+            )}
+          </div>
         </div>
 
         <>
