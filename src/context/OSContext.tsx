@@ -413,6 +413,13 @@ function normalizeApiBaseUrl(input: string, apiInterface: LLMApiInterface = 'ope
   trimmed = trimmed.replace(/\/tags\/?$/i, '')
 
   const lower = trimmed.toLowerCase()
+  // 智谱 GLM（open.bigmodel.cn /api/paas/v4）是 OpenAI 兼容但不走 /v1 路径，保持原路径
+  if (
+    apiInterface === 'openai_compatible' &&
+    /^https?:\/\/open\.bigmodel\.cn\/api\/paas\/v4(?:\/|$)/i.test(trimmed)
+  ) {
+    return trimmed
+  }
   // Gemini 原生：v1beta
   const v1betaMatch = lower.match(/\/v1beta(\/|$)/)
   if (v1betaMatch) {

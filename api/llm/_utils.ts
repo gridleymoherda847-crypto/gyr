@@ -30,6 +30,10 @@ export function normalizeApiBaseUrl(input: string): string {
   trimmed = trimmed.replace(/\/+$/, '')
   trimmed = trimmed.replace(/\/chat\/completions\/?$/i, '')
   trimmed = trimmed.replace(/\/models\/?$/i, '')
+  // 智谱 GLM（open.bigmodel.cn /api/paas/v4）是 OpenAI 兼容但不走 /v1 路径，保持原路径
+  if (/^https?:\/\/open\.bigmodel\.cn\/api\/paas\/v4(?:\/|$)/i.test(trimmed)) {
+    return trimmed
+  }
   const v1Index = trimmed.toLowerCase().indexOf('/v1')
   if (v1Index >= 0) {
     const prefix = trimmed.slice(0, v1Index)
