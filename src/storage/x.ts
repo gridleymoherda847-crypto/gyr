@@ -216,8 +216,6 @@ export function xMakeBannerSvgDataUrl(seed: string) {
 }
 
 export function xBase(meName: string): XDataV1 {
-  const normalizedUsers = users.filter((u) => u.name !== 'User' && u.name !== 'user')
-
   return {
     version: 1,
     meName,
@@ -304,6 +302,8 @@ export async function xLoad(meName: string): Promise<XDataV1> {
         }
       })
     : []
+
+  const normalizedUsers = users.filter((u) => u.name !== 'User' && u.name !== 'user')
 
   return {
     ...base,
