@@ -17,7 +17,7 @@ export default function GroupChatScreen() {
     getGroup, getGroupMessages, addMessage, updateMessage, updateGroup, deleteGroup, deleteMessage,
     addGroupMember, removeGroupMember, addPeriodRecord, updatePeriodRecord,
     characters, getCurrentPersona, getStickersByCharacter, groups,
-    getPeriodRecords, getCurrentPeriod, deleteMessagesByIds
+    getPeriodRecords, getCurrentPeriod, deleteMessagesByIds, getMessagesByCharacter, setCurrentGroupChatId
   } = useWeChat()
   
   const group = getGroup(groupId || '')
@@ -29,6 +29,11 @@ export default function GroupChatScreen() {
   
   const selectedPersona = getCurrentPersona()
   getCurrentPeriod() // 调用以保持依赖
+
+  useEffect(() => {
+    if (groupId) setCurrentGroupChatId(groupId)
+    return () => setCurrentGroupChatId(null)
+  }, [groupId, setCurrentGroupChatId])
 
   // 群备注（仅本群显示/使用）
   const getNameInGroup = useCallback((id: string) => {
@@ -522,12 +527,17 @@ export default function GroupChatScreen() {
   // 只在需要时滚动到底部（发消息/收到回复时）
   useEffect(() => {
     if (shouldScrollRef.current) {
-      try {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' })
-      } catch {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-      }
       shouldScrollRef.current = false
+      const doScroll = () => {
+        try {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' })
+        } catch {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }
+      }
+      doScroll()
+      setTimeout(doScroll, 80)
+      setTimeout(doScroll, 250)
     }
   }, [messages])
   
@@ -754,7 +764,13 @@ ${getCurrentTimeStr()}
    - 必须是严格 JSON，双引号，单行输出
 
 【群聊上下文】
-${params.recentMessages || '（暂无消息）'}`
+${params.recentMessages || '（暂无消息）'}
+${group.enableCrossChat ? `
+【私聊记忆互通（被动记忆）】
+- 上下文中标注了 <私聊:XXX> 的内容是各成员的私聊记录。
+- 每个成员只知道自己的私聊内容，不知道其他成员的私聊。
+- 这些是各成员的自然记忆背景，不要在群聊中主动提起私聊内容，除非话题自然关联。
+` : ''}`
     
     // 记忆功能
     if (group.memoryEnabled && group.memorySummary) {
@@ -780,7 +796,7 @@ ${params.recentMessages || '（暂无消息）'}`
     const text = inputText.trim()
     setInputText('')
     
-    shouldScrollRef.current = true // 发送消息时滚动到底部
+    shouldScrollRef.current = true
     
     addMessage({
       characterId: '',
@@ -790,6 +806,10 @@ ${params.recentMessages || '（暂无消息）'}`
       type: 'text',
       replyToMessageId: replyingToMessageId || undefined,
     })
+
+    setTimeout(() => {
+      try { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) } catch {}
+    }, 60)
     
     setReplyingToMessageId(null)
     updateGroup(group.id, { lastMessageAt: Date.now() })
@@ -799,7 +819,12 @@ ${params.recentMessages || '（暂无消息）'}`
   const generateReplies = useCallback(async (specificMembers?: string[]) => {
     if (aiTyping || !group) return
     setAiTyping(true)
+    updateGroup(group.id, { isTyping: true })
     setShowGenerateSelector(false)
+    shouldScrollRef.current = true
+    setTimeout(() => {
+      try { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) } catch {}
+    }, 100)
     
     try {
       const replyCount = specificMembers?.length || getReplyCount()
@@ -885,8 +910,8 @@ ${params.recentMessages || '（暂无消息）'}`
       }
       
       const recentContextText = messages.slice(-10).map(m => summarizeForContext(m)).join(' ')
-      const recentMessagesText = messages.slice(-30).map(m => {
-        // 如果有引用消息，添加引用信息
+
+      let mergedForContext: Array<{ timestamp: number; text: string }> = messages.slice(-50).map(m => {
         let replyInfo = ''
         if (m.replyToMessageId) {
           const replyTo = messages.find(rm => rm.id === m.replyToMessageId)
@@ -896,8 +921,32 @@ ${params.recentMessages || '（暂无消息）'}`
             replyInfo = `[回复${replyToSender}："${replyPreview}${replyPreview.length >= 20 ? '...' : ''}"] `
           }
         }
-        return `${senderNameOf(m)}: ${replyInfo}${summarizeForContext(m)}`
-      }).join('\n')
+        return { timestamp: m.timestamp || 0, text: `${senderNameOf(m)}: ${replyInfo}${summarizeForContext(m)}` }
+      })
+
+      if (group.enableCrossChat) {
+        for (const member of members) {
+          const privateMsgs = getMessagesByCharacter(member.id)
+          let rounds = 0
+          const maxRounds = 30
+          for (let i = privateMsgs.length - 1; i >= 0; i--) {
+            const pm = privateMsgs[i]
+            if (pm.type === 'system') continue
+            if (pm.isUser) rounds++
+            if (rounds > maxRounds) break
+            const sender = pm.isUser ? (selectedPersona?.name || '我') : member.name
+            const content = String(pm.content || '').slice(0, 150)
+            if (!content.trim()) continue
+            mergedForContext.push({
+              timestamp: pm.timestamp || 0,
+              text: `<私聊:${member.name}> ${sender}: ${content}`
+            })
+          }
+        }
+        mergedForContext.sort((a, b) => a.timestamp - b.timestamp)
+      }
+
+      const recentMessagesText = mergedForContext.map(m => m.text).join('\n')
       
       const systemPrompt = buildSystemPrompt({ recentContext: recentContextText, recentMessages: recentMessagesText })
       
@@ -1163,6 +1212,7 @@ ${uniqueNames.join('、')}
       console.error('群聊回复失败:', err)
     } finally {
       setAiTyping(false)
+      if (group) updateGroup(group.id, { isTyping: false })
       setGenerateSelectedMembers([])
     }
   }, [aiTyping, group, members, messages, selectedPersona, characters, callLLM, addMessage, updateGroup, updateMessage, shouldSendVoiceForMember, generateVoiceUrlForMember])
@@ -2618,6 +2668,27 @@ ${history}`
                       >
                         <span
                           className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${group.hideBubbleTimestamps ? 'translate-x-5' : ''}`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 私聊记忆互通 */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between py-2">
+                      <div>
+                        <span className="text-sm text-gray-800">私聊记忆互通</span>
+                        <div className="text-[11px] text-gray-400 mt-0.5">开启后群聊与成员私聊共享上下文记忆（按时间轴合并）</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => updateGroup(group.id, { enableCrossChat: !group.enableCrossChat })}
+                        className={`relative w-11 h-6 rounded-full transition-colors ${group.enableCrossChat ? 'bg-green-500' : 'bg-gray-300'}`}
+                        aria-label="私聊记忆互通"
+                        aria-pressed={!!group.enableCrossChat}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${group.enableCrossChat ? 'translate-x-5' : ''}`}
                         />
                       </button>
                     </div>

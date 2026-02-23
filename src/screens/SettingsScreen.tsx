@@ -406,7 +406,7 @@ export default function SettingsScreen() {
           />
 
           <SettingsGroup title="关于">
-            <SettingsItem label="Mina phone" value="V1.2.0" showArrow={false} />
+            <SettingsItem label="Mina phone" value="V1.3.0" showArrow={false} />
           </SettingsGroup>
         </div>
 

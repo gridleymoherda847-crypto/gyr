@@ -72,6 +72,7 @@ export default function ApiConfigScreen() {
     selectedModel: string
     models: string[]
     apiInterface?: LLMApiInterface
+    useStreaming?: boolean
     // 高级参数（可选，向后兼容）
     advanced?: {
       temperature: number
@@ -120,8 +121,10 @@ export default function ApiConfigScreen() {
   const [editFrequencyPenalty, setEditFrequencyPenalty] = useState(0)
   const [editPresencePenalty, setEditPresencePenalty] = useState(0)
   const [showEditAdvanced, setShowEditAdvanced] = useState(false)
+  const [editUseStreaming, setEditUseStreaming] = useState(true)
   
   // LLM 配置状态
+  const [useStreaming, setUseStreaming] = useState(llmConfig.useStreaming !== false)
   const [baseUrl, setBaseUrl] = useState(llmConfig.apiBaseUrl)
   const [apiKey, setApiKey] = useState(llmConfig.apiKey)
   const [selectedModel, setSelectedModel] = useState(llmConfig.selectedModel)
@@ -393,6 +396,7 @@ export default function ApiConfigScreen() {
     setEditFrequencyPenalty(advConfig.frequencyPenalty)
     setEditPresencePenalty(advConfig.presencePenalty)
     setShowEditAdvanced(false)
+    setEditUseStreaming(config.useStreaming !== false)
   }
 
   const fetchModelsForEdit = async () => {
@@ -489,7 +493,7 @@ export default function ApiConfigScreen() {
       selectedModel: editSelectedModel,
       models: editModels,
       apiInterface: editApiInterface,
-      // 保存高级参数
+      useStreaming: editUseStreaming,
       advanced: {
         temperature: editTemperature,
         topP: editTopP,
@@ -535,7 +539,7 @@ export default function ApiConfigScreen() {
       selectedModel: modelToSave,
       models,
       apiInterface: v.apiInterface,
-      // 保存高级参数
+      useStreaming,
       advanced: {
         temperature,
         topP,
@@ -549,13 +553,13 @@ export default function ApiConfigScreen() {
     saveSavedConfigs(updated)
     setCurrentConfigId(newConfig.id)
     localStorage.setItem('mina_current_api_config_id', newConfig.id)
-    // 同时更新到全局配置（立即使用）
     setLLMConfig({ 
       apiBaseUrl: v.baseUrl, 
       apiKey: v.apiKey, 
       selectedModel: modelToSave, 
       availableModels: models,
       apiInterface: v.apiInterface,
+      useStreaming,
     })
     // 保存高级参数
     saveAdvancedConfig({ temperature, topP, maxTokens, frequencyPenalty, presencePenalty })
@@ -589,25 +593,24 @@ export default function ApiConfigScreen() {
     setSelectedModel(config.selectedModel)
     setModels(config.models)
     setApiInterface((config.apiInterface as any) || 'openai_compatible')
+    setUseStreaming(config.useStreaming !== false)
     setCurrentConfigId(config.id)
     localStorage.setItem('mina_current_api_config_id', config.id)
-    // 加载高级参数（如果配置中有保存）
     if (config.advanced) {
       setTemperature(config.advanced.temperature)
       setTopP(config.advanced.topP)
       setMaxTokens(config.advanced.maxTokens)
       setFrequencyPenalty(config.advanced.frequencyPenalty)
       setPresencePenalty(config.advanced.presencePenalty)
-      // 保存到全局配置
       saveAdvancedConfig(config.advanced)
     }
-    // 同时更新到全局配置
     setLLMConfig({ 
       apiBaseUrl: config.baseUrl, 
       apiKey: config.apiKey, 
       selectedModel: config.selectedModel, 
       availableModels: config.models,
       apiInterface: ((config.apiInterface as any) || 'openai_compatible') as LLMApiInterface,
+      useStreaming: config.useStreaming !== false,
     })
   }
   
@@ -1041,6 +1044,12 @@ export default function ApiConfigScreen() {
                         {currentConfig.selectedModel || '未选择'}
                       </span>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <span className="opacity-60 w-16" style={{ color: fontColor.value }}>响应模式：</span>
+                      <span style={{ color: fontColor.value }}>
+                        {currentConfig.useStreaming !== false ? '流式' : '非流式'}
+                      </span>
+                    </div>
                     {currentConfig.advanced && (
                       <button
                         type="button"
@@ -1217,6 +1226,27 @@ export default function ApiConfigScreen() {
               </div>
               <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
                 如果报“返回空内容/格式不兼容”，通常是接口类型没选对。
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs sm:text-sm font-medium opacity-60" style={{ color: fontColor.value }}>响应模式</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setUseStreaming(true); setLLMConfig({ useStreaming: true }) }}
+                  className={`flex-1 px-3 py-2 rounded-2xl text-xs sm:text-sm border transition-all ${useStreaming ? 'bg-blue-500/20 border-blue-400/50 font-medium' : 'bg-white/30 border-white/20 opacity-60'}`}
+                  style={{ color: fontColor.value }}
+                >流式（推荐）</button>
+                <button
+                  type="button"
+                  onClick={() => { setUseStreaming(false); setLLMConfig({ useStreaming: false }) }}
+                  className={`flex-1 px-3 py-2 rounded-2xl text-xs sm:text-sm border transition-all ${!useStreaming ? 'bg-blue-500/20 border-blue-400/50 font-medium' : 'bg-white/30 border-white/20 opacity-60'}`}
+                  style={{ color: fontColor.value }}
+                >非流式（稳定）</button>
+              </div>
+              <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
+                流式更快出字；非流式更稳定，适合查手机/日记等复杂生成。
               </div>
             </div>
           
@@ -2118,6 +2148,23 @@ export default function ApiConfigScreen() {
                     <option value="ollama">Ollama 本地</option>
                   </select>
                   <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" style={{ color: fontColor.value }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs opacity-60" style={{ color: fontColor.value }}>响应模式</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditUseStreaming(true)}
+                    className={`flex-1 px-3 py-2 rounded-xl text-xs border transition-all ${editUseStreaming ? 'bg-blue-500/15 border-blue-400/40 font-medium' : 'bg-white border-black/10 opacity-60'}`}
+                    style={{ color: fontColor.value }}
+                  >流式（推荐）</button>
+                  <button
+                    type="button"
+                    onClick={() => setEditUseStreaming(false)}
+                    className={`flex-1 px-3 py-2 rounded-xl text-xs border transition-all ${!editUseStreaming ? 'bg-blue-500/15 border-blue-400/40 font-medium' : 'bg-white border-black/10 opacity-60'}`}
+                    style={{ color: fontColor.value }}
+                  >非流式（稳定）</button>
                 </div>
               </div>
               <div className="space-y-1.5">

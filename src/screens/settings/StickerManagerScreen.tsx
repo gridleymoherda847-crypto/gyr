@@ -630,7 +630,10 @@ export default function StickerManagerScreen() {
   return (
     <PageContainer>
       <div className="flex h-full flex-col px-3 sm:px-4 pt-2 pb-2 animate-fade-in">
-        <AppHeader title="表情包管理" onBack={() => navigate('/apps/settings')} />
+        <AppHeader title="表情包管理" onBack={() => {
+          const returnTo = searchParams.get('returnTo')
+          navigate(returnTo || '/apps/settings')
+        }} />
 
         <div className="flex-1 overflow-y-auto hide-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4">
           {targetCharacterId !== 'all' && (

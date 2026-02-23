@@ -19,6 +19,7 @@ export type LLMConfig = {
   selectedModel: string
   availableModels: string[]
   apiInterface: LLMApiInterface
+  useStreaming?: boolean
 }
 
 // MiniMax 语音配置
@@ -331,6 +332,7 @@ type OSContextValue = {
       apiKey?: string
       apiInterface?: LLMApiInterface
       selectedModel?: string
+      useStreaming?: boolean
     }
   ) => Promise<string>
 }
@@ -340,7 +342,7 @@ const OSContext = createContext<OSContextValue | undefined>(undefined)
 const formatTime = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 
 const defaultUserProfile: UserProfile = { avatar: '', nickname: '用户', persona: '' }
-const defaultLLMConfig: LLMConfig = { apiBaseUrl: '', apiKey: '', selectedModel: '', availableModels: [], apiInterface: 'openai_compatible' }
+const defaultLLMConfig: LLMConfig = { apiBaseUrl: '', apiKey: '', selectedModel: '', availableModels: [], apiInterface: 'openai_compatible', useStreaming: true }
 const defaultTTSConfig: TTSConfig = { 
   apiKey: '', 
   voiceId: 'female-shaonv',  // 默认少女音色
@@ -1794,7 +1796,7 @@ export function OSProvider({ children }: PropsWithChildren) {
   }
 
   const callLLMWithConfig = async (
-    cfg: { apiBaseUrl: string; apiKey: string; apiInterface: LLMApiInterface; selectedModel: string },
+    cfg: { apiBaseUrl: string; apiKey: string; apiInterface: LLMApiInterface; selectedModel: string; useStreaming?: boolean },
     messages: {
       role: string
       content:
@@ -1810,7 +1812,8 @@ export function OSProvider({ children }: PropsWithChildren) {
   ): Promise<string> => {
     const apiInterface = cfg.apiInterface ?? 'openai_compatible'
     const base = normalizeApiBaseUrl(cfg.apiBaseUrl, apiInterface)
-    const key = cfg.apiKey
+    const key = (cfg.apiKey || '').trim()
+    const wantStream = cfg.useStreaming !== false
     if (!base || !key) throw new Error('请先在「设置 -> API 配置」中填写 Base URL 和 API Key')
 
     const callCore = async (selectedModel: string): Promise<string> => {
@@ -2006,13 +2009,13 @@ export function OSProvider({ children }: PropsWithChildren) {
                 messages,
                 temperature,
                 max_tokens: maxTokens,
-                stream: true,
+                stream: wantStream,
               },
             }),
           })
 
           const ct = String(proxyRes.headers.get('content-type') || '').toLowerCase()
-          if (proxyRes.ok && ct.includes('text/event-stream')) {
+          if (wantStream && proxyRes.ok && ct.includes('text/event-stream')) {
             const sseText = (await readOpenAISSE(proxyRes)).trim()
             if (!sseText) throw new Error('模型返回空内容（Gemini SSE）')
             return await maybeContinueOnce(sseText)
@@ -2252,10 +2255,11 @@ export function OSProvider({ children }: PropsWithChildren) {
 
       // 代理优先（尤其是排查阶段要看到上游详细报错）
       try {
-        // 优先走流式：避免 serverless 等完整响应超时；同时更容易把上游错误吐到前端
-        const proxyStreamAny: any = await callOpenAICompatViaProxy(payload, { stream: true, signal: controller.signal })
-        const streamText = typeof proxyStreamAny?.__streamText === 'string' ? proxyStreamAny.__streamText.trim() : ''
-        if (streamText) return await maybeContinueOnce(streamText)
+        if (wantStream) {
+          const proxyStreamAny: any = await callOpenAICompatViaProxy(payload, { stream: true, signal: controller.signal })
+          const streamText = typeof proxyStreamAny?.__streamText === 'string' ? proxyStreamAny.__streamText.trim() : ''
+          if (streamText) return await maybeContinueOnce(streamText)
+        }
 
         const proxyData = await callOpenAICompatViaProxy(payload, { stream: false, signal: controller.signal })
         const proxyContent = extractOpenAIContent(proxyData)
@@ -2555,6 +2559,7 @@ export function OSProvider({ children }: PropsWithChildren) {
       apiKey?: string
       apiInterface?: LLMApiInterface
       selectedModel?: string
+      useStreaming?: boolean
     }
   ): Promise<string> => {
     return await callLLMWithConfig(
@@ -2563,6 +2568,7 @@ export function OSProvider({ children }: PropsWithChildren) {
         apiKey: configOverride?.apiKey || llmConfig.apiKey,
         apiInterface: configOverride?.apiInterface || llmConfig.apiInterface || 'openai_compatible',
         selectedModel: model || configOverride?.selectedModel || llmConfig.selectedModel,
+        useStreaming: configOverride?.useStreaming ?? llmConfig.useStreaming,
       },
       messages,
       options

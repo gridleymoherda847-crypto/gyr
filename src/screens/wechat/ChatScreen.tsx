@@ -26,7 +26,7 @@ export default function ChatScreen() {
     walletBalance, updateWalletBalance, addWalletBill,
     getUserPersona, getCurrentPersona,
     addFavoriteDiary, isDiaryFavorited,
-    characters, getTransfersByCharacter, groups, moments
+    characters, getTransfersByCharacter, groups, moments, getGroupMessages
   } = useWeChat()
   
   const character = getCharacter(characterId || '')
@@ -549,6 +549,7 @@ export default function ChatScreen() {
   // 单条消息编辑和引用
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editingContent, setEditingContent] = useState('')
+  const [pendingDeleteMsgId, setPendingDeleteMsgId] = useState<string | null>(null)
   const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(null)
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set())
 
@@ -570,17 +571,20 @@ export default function ChatScreen() {
       characterId: string
       characterName: string
       characterAvatar: string
-      remark: string  // 备注
+      remark: string
       messages: Array<{ isUser: boolean; content: string; contentZh?: string; timestamp: number }>
     }>
     bills: Array<{ type: string; amount: number; description: string; timestamp: number }>
-    walletBalance: number  // 钱包余额
+    walletBalance: number
     memo: string
-    memoZh?: string  // 备忘录中文翻译
-    recentPhotos: string[]  // 文字描述
+    memoZh?: string
+    recentPhotos: string[]
+    browserHistory: Array<{ title: string; url: string; snippet?: string; lastVisited: number }>
   } | null>(null)
-  const [phonePeekTab, setPhonePeekTab] = useState<'chats' | 'bills' | 'wallet' | 'memo' | 'photos'>('chats')
+  const [phonePeekTab, setPhonePeekTab] = useState<'home' | 'chats' | 'bills' | 'wallet' | 'memo' | 'photos' | 'browser'>('home')
   const [phonePeekSelectedChat, setPhonePeekSelectedChat] = useState<number | null>(null)
+  const [phonePeekBattery] = useState(() => Math.floor(Math.random() * 60) + 30)
+  const [phonePeekSignal] = useState(() => Math.floor(Math.random() * 2) + 3)
   
   // 查手机等待提示语
   const phonePeekLoadingMessages = useMemo(() => [
@@ -1113,7 +1117,24 @@ export default function ChatScreen() {
     safeSetTyping(true)
     setCharacterTyping(character.id, true)
     const workingMessages = messagesOverride || messages
-    
+
+    const crossChatGroups = groups.filter(g => g.enableCrossChat && g.memberIds.includes(character.id))
+    const buildMergedTimeline = (privateMsgs: typeof messages) => {
+      if (crossChatGroups.length === 0) return privateMsgs
+      const groupMsgs: typeof messages = []
+      for (const g of crossChatGroups) {
+        const gMsgs = getGroupMessages(g.id)
+        for (const m of gMsgs) {
+          if (m.type === 'system') continue
+          groupMsgs.push({ ...m, _crossChatSource: `group:${g.name}` } as any)
+        }
+      }
+      if (groupMsgs.length === 0) return privateMsgs
+      const tagged = privateMsgs.map(m => ({ ...m, _crossChatSource: undefined } as any))
+      const merged = [...tagged, ...groupMsgs].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+      return merged
+    }
+
     // 如果配置了API，使用真实的LLM回复
     if (hasApiConfig) {
       try {
@@ -1454,8 +1475,22 @@ export default function ChatScreen() {
           let rounds = 0
           const out: { role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }[] = []
           for (let i = all.length - 1; i >= 0; i--) {
-            const m = all[i]
+            const m = all[i] as any
             if (m.type === 'system') continue
+
+            if (m._crossChatSource) {
+              const senderName = m.groupSenderId
+                ? (characters.find((c: any) => c.id === m.groupSenderId)?.name || (m.isUser ? (selectedPersona?.name || '我') : '某人'))
+                : (m.isUser ? (selectedPersona?.name || '我') : '某人')
+              const groupName = String(m._crossChatSource).replace('group:', '')
+              const text = String(m.content || '').slice(0, 100)
+              const tag = `[群聊「${groupName}」${senderName}]: ${text}`
+              const cost = tag.length + 12
+              if (used + cost > maxChars) break
+              used += cost
+              out.push({ role: 'user', content: `<CROSS_CHAT_CONTEXT>${tag}</CROSS_CHAT_CONTEXT>` })
+              continue
+            }
 
             // 以“用户发言”为一个回合边界
             if (m.isUser) rounds += 1
@@ -1777,7 +1812,8 @@ export default function ChatScreen() {
         const maxRounds = Math.max(1, Math.min(1000, character.memoryRounds || 100))
         // 性能：上下文过大时会显著变慢（网络+模型推理都会慢）
         // 这里保留“回合数”策略，但把字符上限收敛一些，默认仍足够支撑连贯聊天
-        const chatHistory = buildChatHistory(workingMessages, maxRounds, 14000)
+        const mergedTimeline = buildMergedTimeline(workingMessages)
+        const chatHistory = buildChatHistory(mergedTimeline, maxRounds, 14000)
         
         // 获取全局预设和世界书
         const globalPresets = getGlobalPresets()
@@ -2036,6 +2072,13 @@ ${character.memorySummary ? character.memorySummary : '（暂无）'}
 - 如果需要引用过去，只允许用一句话“概括式提醒”（例如提到一个关键词/结论即可），不要写成大段情景复现。
 - 当用户没有提出相关话题时，你应该继续推进当前对话或换一个自然的新话题，而不是回放旧桥段。
 
+${crossChatGroups.length > 0 ? `【群聊记忆互通（被动记忆）】
+- 对话历史中标注了 <CROSS_CHAT_CONTEXT> 的内容是你在群聊中的发言和见闻。
+- 这些是你的自然记忆背景，你知道这些事发生过就行。
+- 【重要】不要主动提起群聊内容，除非用户问到、或话题自然关联。
+- 不要说"我在群里看到……"之类的话，除非对方先提起。
+- 互通群聊：${crossChatGroups.map(g => `「${g.name}」`).join('、')}
+` : ''}
 ${timeAwarenessOn ? `【当前时间（精确到秒）】
 ${manualNow !== null ? new Date(manualNow).toLocaleString('zh-CN', { hour12: false }) : new Date().toLocaleString('zh-CN', { hour12: false })}
 
@@ -4580,7 +4623,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
     setShowPhonePeek(true)
     setPhonePeekLoading(true)
     setPhonePeekData(null)
-    setPhonePeekTab('chats')
+    setPhonePeekTab('home')
     setPhonePeekSelectedChat(null)
 
     try {
@@ -4598,7 +4641,6 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       // 随机2-8人的聊天记录，展示角色的社交圈
       const targetChatCount = 2 + Math.floor(Math.random() * 7) // 2-8人
       
-      // 获取更多上下文：最近50条消息的摘要
       const fullContext = messages.slice(-50).map(m => {
         const sender = m.isUser ? (selectedPersona?.name || '用户') : character.name
         const content = m.content?.slice(0, 100) || ''
@@ -4686,6 +4728,12 @@ ${languageRule}
 【照片描述】基于聊天记录中提到的场景或事件
 - 注意：照片描述必须始终用中文书写，不管角色是什么语言！
 
+【浏览器历史】生成5-8条最近浏览记录，体现角色的兴趣和生活：
+- title: 网页标题（符合角色兴趣）
+- url: 看起来真实的网址（可以是购物网站、社交媒体、资讯、视频等）
+- snippet: 搜索结果摘要/页面简介（1-2句话）
+- 注意：浏览历史也要符合角色人设和当前聊天话题
+
 输出格式（纯JSON，不要markdown）：
 {
   "chats": [
@@ -4703,13 +4751,23 @@ ${languageRule}
   ],
   "walletBalance": 1234.56,
   "memo": "备忘录内容"${isNonChinese ? ',\n  "memoZh": "备忘录中文翻译"' : ''},
-  "recentPhotos": ["用中文描述照片1", "用中文描述照片2"]
+  "recentPhotos": ["用中文描述照片1", "用中文描述照片2"],
+  "browserHistory": [
+    {"title": "网页标题", "url": "https://example.com/...", "snippet": "页面简介"}
+  ]
 }
 
-${otherCharacters.length > 0 ? `【同一世界书的已有角色 - 可以出现在聊天记录中】
-${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
-（上面这些角色和${character.name}在同一个世界观里，可以作为朋友/认识的人出现）` : `【重要】该角色没有绑定世界书，或没有同世界书的其他角色。
+${otherCharacters.length > 0 ? `【同一世界书的已有角色 - 必须优先出现在聊天记录中！】
+${otherCharacters.map((c, i) => `${i + 1}. ${c.name}（人设：${c.prompt?.slice(0, 60) || '无'}）`).join('\n')}
+【强制要求】上面这些角色和${character.name}在同一个世界观里，是真实存在的人物关系。
+- 必须至少让其中 ${Math.min(otherCharacters.length, Math.max(1, Math.floor(targetChatCount * 0.6)))} 个角色出现在聊天记录中
+- 他们之间的对话要符合世界书中描述的关系（朋友/同事/家人等）
+- 世界书里提到的任何人物（包括角色的朋友、家人、同事等名字）都应该尽量体现在聊天记录中` : `【重要】该角色没有绑定世界书，或没有同世界书的其他角色。
 请完全根据角色人设自由编造TA的社交圈（朋友、家人、同事等），不要使用任何用户创建的其他角色名字！`}
+
+${lorebookText ? `【世界书中提到的人物关系 - 请仔细阅读】
+以下世界书内容可能包含${character.name}认识的人、朋友、家人等信息，请从中提取人物关系用于生成聊天记录：
+${lorebookText}` : ''}
 
 世界书：${lorebookText}`
 
@@ -4807,13 +4865,31 @@ ${otherCharacters.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}
           
           const allBills = [...aiBills, ...existingBills].sort((a, b) => b.timestamp - a.timestamp).slice(0, 20)
 
+          const now2 = Date.now()
+          const threeDaysAgo2 = now2 - 3 * 24 * 60 * 60 * 1000
+          const browserHistory = (parsed.browserHistory || []).map((item: any, idx: number) => {
+            let ts = item.lastVisited
+            if (!ts || ts < threeDaysAgo2 || ts > now2) {
+              const count = (parsed.browserHistory || []).length
+              ts = threeDaysAgo2 + ((now2 - threeDaysAgo2) * (idx + 1) / (count + 1))
+              ts += Math.random() * 60 * 60 * 1000
+            }
+            return {
+              title: item.title || '',
+              url: item.url || '',
+              snippet: item.snippet || '',
+              lastVisited: ts,
+            }
+          })
+
           setPhonePeekData({
             chats: processedChats,
             bills: allBills,
             walletBalance: typeof parsed.walletBalance === 'number' ? parsed.walletBalance : parseFloat(parsed.walletBalance) || 0,
             memo: parsed.memo || '',
-            memoZh: isNonChinese ? (parsed.memoZh || undefined) : undefined,  // 备忘录中文翻译（按翻译开关）
+            memoZh: isNonChinese ? (parsed.memoZh || undefined) : undefined,
             recentPhotos: parsed.recentPhotos || [],
+            browserHistory,
           })
         } catch (e) {
           console.error('Parse phone peek data failed:', e, response)
@@ -6255,15 +6331,69 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           { role: 'user', content: user },
         ],
         undefined,
-        { maxTokens: 900, timeoutMs: 600000 }
+        { maxTokens: 3000, timeoutMs: 600000 }
       )
 
-      const text = (res || '').trim()
+      let text = (res || '').trim()
+
+      const isNonChinese = !!((character as any).language && (character as any).language !== 'zh' && chatTranslationEnabled)
+      const diaryCutOverlap = (base: string, tail: string) => {
+        const a = String(base || '')
+        const b = String(tail || '')
+        const max = Math.min(120, a.length, b.length)
+        for (let i = max; i >= 8; i--) {
+          const head = b.slice(0, i)
+          if (a.endsWith(head)) return b.slice(i)
+        }
+        return b
+      }
+      const diaryMergeContinuation = (base: string, cont: string) => {
+        const a = String(base || '').trimEnd()
+        const b = diaryCutOverlap(a, String(cont || '').trimStart())
+        if (!b) return a
+        if (!a) return b
+        if (/[\u4e00-\u9fff]$/.test(a)) return `${a}${b}`
+        if (/[A-Za-z0-9]$/.test(a) && /^[A-Za-z0-9]/.test(b)) return `${a} ${b}`
+        return `${a}${b}`
+      }
+      const looksIncomplete = (s: string) => {
+        const t = String(s || '').trim()
+        if (t.length < 80) return true
+        if (isNonChinese && t.includes('Original:') && !t.includes('Chinese:')) return true
+        if (/[，,、；;：:的了着过在和与是把被让给用向往]$/.test(t)) return true
+        const validEndings = /[。！？…~」）】.!?)"'\]~]$/
+        if (!validEndings.test(t)) return true
+        if (t.endsWith('——') || t.endsWith('—')) return true
+        const lines = t.split('\n').filter(l => l.trim())
+        if (lines.length < 4) return true
+        const bodyLines = lines.filter(l => !/^(日期|天气|心情|Date|Weather|Mood)[：:]/.test(l))
+        const bodyText = bodyLines.join('')
+        if (bodyText.length < 80) return true
+        return false
+      }
+      for (let retry = 0; retry < 2 && looksIncomplete(text); retry++) {
+        try {
+          setDiaryStage('内容续写中…')
+          const cont = await callLLM(
+            [
+              { role: 'system', content: system },
+              { role: 'user', content: user },
+              { role: 'assistant', content: text },
+              { role: 'user', content: `你的回复在"${text.slice(-15)}"处被截断了。请直接从断点处继续写完，只输出后续内容，不要重复已有文字。` },
+            ],
+            undefined,
+            { maxTokens: 2000, timeoutMs: 600000 }
+          )
+          const ct = String(cont || '').trim()
+          if (ct) text = diaryMergeContinuation(text, ct).trim()
+        } catch {
+          break
+        }
+      }
+
       setDiaryProgress(100)
       setDiaryStage('已获取')
 
-      // 解析双语版本（非中文角色）
-      const isNonChinese = !!((character as any).language && (character as any).language !== 'zh' && chatTranslationEnabled)
       if (isNonChinese && text.includes('Original:') && text.includes('Chinese:')) {
         const originalMatch = text.match(/Original:\s*([\s\S]*?)(?=Chinese:|$)/i)
         const chineseMatch = text.match(/Chinese:\s*([\s\S]*?)$/i)
@@ -7900,7 +8030,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               <div className={`mt-1.5 flex gap-3 ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
                 <button
                   type="button"
-                  onClick={() => deleteMessage(msg.id)}
+                  onClick={() => setPendingDeleteMsgId(msg.id)}
                   className="text-xs text-gray-300 hover:text-red-500 active:opacity-70"
                 >
                   删除
@@ -7950,7 +8080,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
               </button>
               <button
                 type="button"
-                onClick={() => deleteMessage(msg.id)}
+                onClick={() => setPendingDeleteMsgId(msg.id)}
                 className="text-xs text-gray-300 hover:text-red-500 active:opacity-70"
               >
                 删除
@@ -9270,7 +9400,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                     type="button"
                     onClick={() => {
                       setShowStickerPanel(false)
-                      navigate('/apps/settings/stickers')
+                      navigate(`/apps/settings/stickers?returnTo=${encodeURIComponent(`/apps/wechat/chat/${characterId}`)}`)
                     }}
                     className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 bg-gray-100 text-gray-500"
                   >
@@ -10258,6 +10388,15 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         </div>
       )}
 
+      {/* 线下模式删除确认 */}
+      <WeChatDialog
+        open={!!pendingDeleteMsgId}
+        title="确认删除"
+        message="确定要删除这条消息吗？"
+        onConfirm={() => { if (pendingDeleteMsgId) deleteMessage(pendingDeleteMsgId); setPendingDeleteMsgId(null) }}
+        onCancel={() => setPendingDeleteMsgId(null)}
+      />
+
       {/* 编辑消息对话框 */}
       {editingMessageId && (() => {
         const editMsg = messages.find(m => m.id === editingMessageId)
@@ -10343,49 +10482,41 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         onCancel={handleRejectDoudizhuInvite}
       />
       
-      {/* 查手机悬浮窗 */}
-      {showPhonePeek && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center px-4 py-8 bg-black/50">
-          <div className="w-full max-w-[400px] h-[85vh] rounded-2xl bg-white shadow-2xl flex flex-col overflow-hidden">
-            {/* 头部 */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-pink-50 to-purple-50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full overflow-hidden">
-                  {character?.avatar ? (
-                    <img src={character.avatar} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-sm font-medium">
-                      {character?.name[0]}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-gray-800">{character?.name}的手机</div>
-                  <div className="text-xs text-gray-500">{new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</div>
-                </div>
+      {/* 查手机悬浮窗 - iPhone风格 */}
+      {showPhonePeek && (() => {
+        const realTime = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+        return (
+        <div className="absolute inset-0 z-50 flex items-center justify-center px-3 py-6 bg-black/60">
+          <div className="w-full max-w-[400px] h-[85vh] rounded-[2rem] bg-black shadow-2xl flex flex-col overflow-hidden border-[3px] border-gray-700">
+            {/* iPhone状态栏 */}
+            <div className="flex items-center justify-between px-5 py-1.5 bg-black text-white text-[11px]">
+              <div className="flex items-center gap-1">
+                <span>{realTime}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPhonePeek(false)
-                  setPhonePeekData(null)
-                  setPhonePeekSelectedChat(null)
-                }}
-                className="w-8 h-8 rounded-full bg-white/80 flex items-center justify-center text-gray-600 hover:bg-white"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="absolute left-1/2 -translate-x-1/2 w-[90px] h-[22px] bg-black rounded-b-2xl" />
+              <div className="flex items-center gap-1.5">
+                <span>{'●'.repeat(phonePeekSignal)}{'○'.repeat(4 - phonePeekSignal)}</span>
+                <span className="text-[10px]">{phonePeekBattery}%</span>
+                <svg className="w-4 h-2.5" viewBox="0 0 25 12" fill="white"><rect x="0" y="0" width="22" height="12" rx="2" ry="2" stroke="white" strokeWidth="1" fill="none"/><rect x="1.5" y="1.5" width={Math.round(19 * phonePeekBattery / 100)} height="9" rx="1" fill="white"/><rect x="23" y="3" width="2" height="6" rx="1" fill="white"/></svg>
+              </div>
             </div>
+
+            {/* 关闭按钮（绝对定位） */}
+            <button
+              type="button"
+              onClick={() => { setShowPhonePeek(false); setPhonePeekData(null); setPhonePeekSelectedChat(null) }}
+              className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-black/50 flex items-center justify-center text-white/80"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
 
             {/* 加载中 */}
             {phonePeekLoading && (
-              <div className="flex-1 flex items-center justify-center">
+              <div className="flex-1 flex items-center justify-center bg-gradient-to-b from-gray-900 to-gray-800">
                 <div className="text-center px-6">
-                  <div className="w-16 h-16 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                  <div className="text-sm text-gray-700 font-medium animate-pulse">{phonePeekLoadingMsg}</div>
-                  <div className="text-xs text-gray-400 mt-2">正在整理对方手机数据...</div>
+                  <div className="w-16 h-16 border-4 border-white/40 border-t-white rounded-full animate-spin mx-auto mb-4" />
+                  <div className="text-sm text-white/90 font-medium animate-pulse">{phonePeekLoadingMsg}</div>
+                  <div className="text-xs text-white/40 mt-2">正在整理对方手机数据...</div>
                 </div>
               </div>
             )}
@@ -10393,48 +10524,60 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             {/* 内容区 */}
             {!phonePeekLoading && phonePeekData && (
               <>
-                {/* Tab导航 */}
-                <div className="flex border-b border-gray-200 bg-gray-50">
-                  <button
-                    type="button"
-                    onClick={() => { setPhonePeekTab('chats'); setPhonePeekSelectedChat(null) }}
-                    className={`flex-1 py-2 text-sm font-medium ${phonePeekTab === 'chats' ? 'text-pink-600 border-b-2 border-pink-600' : 'text-gray-600'}`}
-                  >
-                    消息 ({phonePeekData.chats.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setPhonePeekTab('wallet'); setPhonePeekSelectedChat(null) }}
-                    className={`flex-1 py-2 text-sm font-medium ${phonePeekTab === 'wallet' ? 'text-pink-600 border-b-2 border-pink-600' : 'text-gray-600'}`}
-                  >
-                    钱包
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setPhonePeekTab('bills'); setPhonePeekSelectedChat(null) }}
-                    className={`flex-1 py-2 text-sm font-medium ${phonePeekTab === 'bills' ? 'text-pink-600 border-b-2 border-pink-600' : 'text-gray-600'}`}
-                  >
-                    账单
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setPhonePeekTab('memo'); setPhonePeekSelectedChat(null) }}
-                    className={`flex-1 py-2 text-sm font-medium ${phonePeekTab === 'memo' ? 'text-pink-600 border-b-2 border-pink-600' : 'text-gray-600'}`}
-                  >
-                    备忘
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setPhonePeekTab('photos'); setPhonePeekSelectedChat(null) }}
-                    className={`flex-1 py-2 text-sm font-medium ${phonePeekTab === 'photos' ? 'text-pink-600 border-b-2 border-pink-600' : 'text-gray-600'}`}
-                  >
-                    照片
-                  </button>
-                </div>
+                {/* 主屏幕 - App图标网格 */}
+                {phonePeekTab === 'home' && (
+                  <div className="flex-1 bg-gradient-to-b from-indigo-900 via-purple-900 to-pink-900 flex flex-col">
+                    <div className="flex-1 flex flex-col items-center justify-center px-6">
+                      <div className="text-white/60 text-xs mb-6">{character?.name}的iPhone</div>
+                      <div className="grid grid-cols-3 gap-x-8 gap-y-5">
+                        {[
+                          { icon: '💬', label: '消息', badge: phonePeekData.chats.length, tab: 'chats' as const },
+                          { icon: '💰', label: '钱包', tab: 'wallet' as const },
+                          { icon: '🧾', label: '账单', tab: 'bills' as const },
+                          { icon: '📝', label: '备忘录', tab: 'memo' as const },
+                          { icon: '📷', label: '照片', badge: phonePeekData.recentPhotos.length, tab: 'photos' as const },
+                          { icon: '🌐', label: '浏览器', badge: phonePeekData.browserHistory?.length || 0, tab: 'browser' as const },
+                        ].map((app) => (
+                          <button
+                            key={app.tab}
+                            type="button"
+                            onClick={() => { setPhonePeekTab(app.tab); setPhonePeekSelectedChat(null) }}
+                            className="flex flex-col items-center gap-1.5 group"
+                          >
+                            <div className="relative w-14 h-14 rounded-[16px] bg-white/15 backdrop-blur-sm flex items-center justify-center text-2xl shadow-lg group-active:scale-90 transition-transform border border-white/10">
+                              {app.icon}
+                              {(app.badge ?? 0) > 0 && (
+                                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1">{app.badge}</span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-white/80">{app.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex justify-center pb-3">
+                      <div className="w-32 h-1 rounded-full bg-white/30" />
+                    </div>
+                  </div>
+                )}
+
+                {/* 返回主屏按钮（非home页面通用） */}
+                {phonePeekTab !== 'home' && (
+                  <div className="flex items-center px-3 py-2 bg-gray-50 border-b border-gray-200">
+                    <button type="button" onClick={() => { setPhonePeekTab('home'); setPhonePeekSelectedChat(null) }} className="flex items-center gap-1 text-blue-500 text-sm">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                      主屏
+                    </button>
+                    <span className="flex-1 text-center text-sm font-medium text-gray-800">
+                      {phonePeekTab === 'chats' ? '消息' : phonePeekTab === 'wallet' ? '钱包' : phonePeekTab === 'bills' ? '账单' : phonePeekTab === 'memo' ? '备忘录' : phonePeekTab === 'photos' ? '照片' : phonePeekTab === 'browser' ? '浏览器' : ''}
+                    </span>
+                    <div className="w-12" />
+                  </div>
+                )}
 
                 {/* 消息列表 */}
                 {phonePeekTab === 'chats' && (
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto bg-white">
                     {phonePeekSelectedChat === null ? (
                       <div className="divide-y divide-gray-100">
                         {phonePeekData.chats.map((chat, index) => (
@@ -10468,61 +10611,24 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                     ) : (
                       <div className="h-full flex flex-col">
                         <div className="px-4 py-2 border-b border-gray-200 flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setPhonePeekSelectedChat(null)}
-                            className="text-gray-600"
-                          >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                            </svg>
+                          <button type="button" onClick={() => setPhonePeekSelectedChat(null)} className="text-gray-600">
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
                           </button>
-                          <div className="flex-1 text-sm font-medium text-gray-800">
-                            {phonePeekData.chats[phonePeekSelectedChat]?.remark}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => forwardToCharacter('chat', phonePeekSelectedChat)}
-                            className="px-2 py-1 rounded text-xs text-pink-600 hover:bg-pink-50"
-                          >
-                            转发
-                          </button>
+                          <div className="flex-1 text-sm font-medium text-gray-800">{phonePeekData.chats[phonePeekSelectedChat]?.remark}</div>
+                          <button type="button" onClick={() => forwardToCharacter('chat', phonePeekSelectedChat)} className="px-2 py-1 rounded text-xs text-pink-600 hover:bg-pink-50">转发</button>
                         </div>
                         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
                           {phonePeekData.chats[phonePeekSelectedChat]?.messages.map((msg, idx) => (
-                            <div
-                              key={idx}
-                              className={`flex gap-2 ${msg.isUser ? 'flex-row-reverse' : ''}`}
-                            >
-                              {/* 当前角色头像（只在isUser时显示） */}
+                            <div key={idx} className={`flex gap-2 ${msg.isUser ? 'flex-row-reverse' : ''}`}>
                               {msg.isUser && (
                                 <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0">
-                                  {character?.avatar ? (
-                                    <img src={character.avatar} alt="" className="w-full h-full object-cover" />
-                                  ) : (
-                                    <div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-xs font-medium">
-                                      {character?.name?.[0]}
-                                    </div>
-                                  )}
+                                  {character?.avatar ? (<img src={character.avatar} alt="" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-xs font-medium">{character?.name?.[0]}</div>)}
                                 </div>
                               )}
                               <div className={`flex flex-col ${msg.isUser ? 'items-end' : 'items-start'}`}>
-                                <div className={`max-w-[220px] px-3 py-2 rounded-2xl text-sm ${
-                                  msg.isUser
-                                    ? 'bg-pink-500 text-white rounded-tr-md'
-                                    : 'bg-gray-100 text-gray-800 rounded-tl-md'
-                                }`}>
-                                  {msg.content}
-                                </div>
-                                {/* 翻译（非中文角色） */}
-                                {msg.contentZh && (
-                                  <div className={`max-w-[220px] px-2 py-1 mt-1 rounded text-xs bg-blue-50 text-blue-600 ${msg.isUser ? 'text-right' : 'text-left'}`}>
-                                    {msg.contentZh}
-                                  </div>
-                                )}
-                                <div className="text-xs text-gray-400 mt-1 px-1">
-                                  {formatTime(msg.timestamp)}
-                                </div>
+                                <div className={`max-w-[220px] px-3 py-2 rounded-2xl text-sm ${msg.isUser ? 'bg-pink-500 text-white rounded-tr-md' : 'bg-gray-100 text-gray-800 rounded-tl-md'}`}>{msg.content}</div>
+                                {msg.contentZh && (<div className={`max-w-[220px] px-2 py-1 mt-1 rounded text-xs bg-blue-50 text-blue-600 ${msg.isUser ? 'text-right' : 'text-left'}`}>{msg.contentZh}</div>)}
+                                <div className="text-xs text-gray-400 mt-1 px-1">{formatTime(msg.timestamp)}</div>
                               </div>
                             </div>
                           ))}
@@ -10534,65 +10640,39 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
                 {/* 钱包 */}
                 {phonePeekTab === 'wallet' && (
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto bg-white">
                     <div className="p-4">
-                      {/* 钱包余额卡片 */}
                       <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-5 text-white shadow-lg">
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-2">
-                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
-                            </svg>
+                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" /></svg>
                             <span className="text-sm font-medium opacity-90">微信零钱</span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => forwardToCharacter('wallet')}
-                            className="px-2 py-1 rounded text-xs bg-white/20 hover:bg-white/30 transition"
-                          >
-                            转发
-                          </button>
+                          <button type="button" onClick={() => forwardToCharacter('wallet')} className="px-2 py-1 rounded text-xs bg-white/20 hover:bg-white/30 transition">转发</button>
                         </div>
-                        <div className="text-3xl font-bold mb-1">
-                          ¥{phonePeekData.walletBalance.toFixed(2)}
-                        </div>
-                        <div className="text-xs opacity-75">
-                          {character?.name}的钱包余额
-                        </div>
+                        <div className="text-3xl font-bold mb-1">¥{phonePeekData.walletBalance.toFixed(2)}</div>
+                        <div className="text-xs opacity-75">{character?.name}的钱包余额</div>
                       </div>
-                      
-                      {/* 快捷操作（仅展示） */}
                       <div className="mt-4 grid grid-cols-4 gap-3">
-                        {[
-                          { icon: '💳', label: '收付款' },
-                          { icon: '🏦', label: '银行卡' },
-                          { icon: '📊', label: '账单' },
-                          { icon: '🎁', label: '红包' },
-                        ].map((item, idx) => (
+                        {[{ icon: '💳', label: '收付款' }, { icon: '🏦', label: '银行卡' }, { icon: '📊', label: '账单' }, { icon: '🎁', label: '红包' }].map((item, idx) => (
                           <div key={idx} className="flex flex-col items-center gap-1 py-3 bg-gray-50 rounded-xl">
                             <span className="text-xl">{item.icon}</span>
                             <span className="text-xs text-gray-600">{item.label}</span>
                           </div>
                         ))}
                       </div>
-                      
-                      {/* 最近交易 */}
                       <div className="mt-4">
                         <div className="text-sm font-medium text-gray-800 mb-2">最近交易</div>
                         <div className="space-y-2">
                           {phonePeekData.bills.slice(0, 5).map((bill, idx) => (
                             <div key={idx} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                               <div className="flex items-center gap-2">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                  bill.type === '收入' ? 'bg-green-100' : 'bg-orange-100'
-                                }`}>
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${bill.type === '收入' ? 'bg-green-100' : 'bg-orange-100'}`}>
                                   <span className="text-sm">{bill.type === '收入' ? '📥' : '📤'}</span>
                                 </div>
                                 <div className="text-xs text-gray-600 truncate max-w-[140px]">{bill.description}</div>
                               </div>
-                              <span className={`text-sm font-medium ${bill.type === '收入' ? 'text-green-600' : 'text-gray-800'}`}>
-                                {bill.type === '收入' ? '+' : '-'}¥{bill.amount.toFixed(2)}
-                              </span>
+                              <span className={`text-sm font-medium ${bill.type === '收入' ? 'text-green-600' : 'text-gray-800'}`}>{bill.type === '收入' ? '+' : '-'}¥{bill.amount.toFixed(2)}</span>
                             </div>
                           ))}
                         </div>
@@ -10603,52 +10683,35 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
                 {/* 账单列表 */}
                 {phonePeekTab === 'bills' && (
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto bg-white">
                     <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
                       <span className="text-sm font-medium text-gray-800">最近消费</span>
-                      <button
-                        type="button"
-                        onClick={() => forwardToCharacter('bill')}
-                        className="px-2 py-1 rounded text-xs text-pink-600 hover:bg-pink-50"
-                      >
-                        转发全部
-                      </button>
+                      <button type="button" onClick={() => forwardToCharacter('bill')} className="px-2 py-1 rounded text-xs text-pink-600 hover:bg-pink-50">转发全部</button>
                     </div>
                     <div className="divide-y divide-gray-100">
                       {phonePeekData.bills.map((bill, index) => (
                         <div key={index} className="px-4 py-3">
                           <div className="flex items-center justify-between mb-1">
-                            <span className={`text-sm font-medium ${bill.type === '收入' ? 'text-green-600' : 'text-red-600'}`}>
-                              {bill.type === '收入' ? '+' : '-'}¥{bill.amount.toFixed(2)}
-                            </span>
-                            <span className="text-xs text-gray-400">
-                              {formatTime(bill.timestamp)}
-                            </span>
+                            <span className={`text-sm font-medium ${bill.type === '收入' ? 'text-green-600' : 'text-red-600'}`}>{bill.type === '收入' ? '+' : '-'}¥{bill.amount.toFixed(2)}</span>
+                            <span className="text-xs text-gray-400">{formatTime(bill.timestamp)}</span>
                           </div>
                           <div className="text-xs text-gray-600">{bill.description}</div>
                         </div>
                       ))}
-                      {phonePeekData.bills.length === 0 && (
-                        <div className="px-4 py-8 text-center text-sm text-gray-400">暂无消费记录</div>
-                      )}
+                      {phonePeekData.bills.length === 0 && (<div className="px-4 py-8 text-center text-sm text-gray-400">暂无消费记录</div>)}
                     </div>
                   </div>
                 )}
 
                 {/* 备忘录 */}
                 {phonePeekTab === 'memo' && (
-                  <div className="flex-1 overflow-y-auto px-4 py-4">
+                  <div className="flex-1 overflow-y-auto bg-white px-4 py-4">
                     <div className="bg-gray-50 rounded-xl p-4 min-h-[200px]">
-                      <div className="text-sm text-gray-800 whitespace-pre-wrap">
-                        {phonePeekData.memo || '暂无备忘录'}
-                      </div>
-                      {/* 备忘录翻译（非中文角色） */}
+                      <div className="text-sm text-gray-800 whitespace-pre-wrap">{phonePeekData.memo || '暂无备忘录'}</div>
                       {phonePeekData.memoZh && (
                         <div className="mt-3 pt-3 border-t border-gray-200">
                           <div className="text-xs text-blue-500 mb-1">翻译：</div>
-                          <div className="text-sm text-blue-600 whitespace-pre-wrap">
-                            {phonePeekData.memoZh}
-                          </div>
+                          <div className="text-sm text-blue-600 whitespace-pre-wrap">{phonePeekData.memoZh}</div>
                         </div>
                       )}
                     </div>
@@ -10657,16 +10720,39 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
                 {/* 最近照片 */}
                 {phonePeekTab === 'photos' && (
-                  <div className="flex-1 overflow-y-auto px-4 py-4">
+                  <div className="flex-1 overflow-y-auto bg-white px-4 py-4">
                     <div className="grid grid-cols-2 gap-3">
                       {phonePeekData.recentPhotos.map((desc, index) => (
                         <div key={index} className="bg-gray-100 rounded-xl p-3 aspect-square flex items-center justify-center">
                           <div className="text-xs text-gray-600 text-center">{desc}</div>
                         </div>
                       ))}
-                      {phonePeekData.recentPhotos.length === 0 && (
-                        <div className="col-span-2 px-4 py-8 text-center text-sm text-gray-400">暂无照片</div>
-                      )}
+                      {phonePeekData.recentPhotos.length === 0 && (<div className="col-span-2 px-4 py-8 text-center text-sm text-gray-400">暂无照片</div>)}
+                    </div>
+                  </div>
+                )}
+
+                {/* 浏览器历史 */}
+                {phonePeekTab === 'browser' && (
+                  <div className="flex-1 overflow-y-auto bg-gray-50">
+                    <div className="px-4 py-3">
+                      <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-gray-200 mb-3">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8" /><path strokeLinecap="round" d="M21 21l-4.35-4.35" /></svg>
+                        <span className="text-sm text-gray-400">搜索浏览记录...</span>
+                      </div>
+                      <div className="space-y-3">
+                        {(phonePeekData.browserHistory || []).map((item, idx) => (
+                          <div key={idx} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+                            <div className="text-sm font-medium text-blue-600 mb-1 line-clamp-2">{item.title}</div>
+                            <div className="text-[11px] text-green-700 truncate mb-1">{item.url}</div>
+                            {item.snippet && <div className="text-xs text-gray-500 line-clamp-2">{item.snippet}</div>}
+                            <div className="text-[10px] text-gray-400 mt-1.5">{new Date(item.lastVisited).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                          </div>
+                        ))}
+                        {(!phonePeekData.browserHistory || phonePeekData.browserHistory.length === 0) && (
+                          <div className="py-8 text-center text-sm text-gray-400">暂无浏览记录</div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -10674,7 +10760,8 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
             )}
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* 线上模式：长按气泡操作菜单（线下模式不动） */}
       {((!character?.offlineMode) || msgActionMenu.msg?.type === 'system') && msgActionMenu.open && msgActionMenu.msg && createPortal(

@@ -278,6 +278,9 @@ export type GroupChat = {
   relations?: GroupRelation[]
   memberHeartStates?: Record<string, { mood: string; innerVoice: string; updatedAt: number }>
   apiConfigId?: string
+  enableCrossChat?: boolean
+  unreadCount?: number
+  isTyping?: boolean
 }
 
 // 纪念日
@@ -530,6 +533,7 @@ type WeChatContextValue = {
   hideFromChat: (id: string) => void
   showInChat: (id: string) => void
   setCurrentChatId: (id: string | null) => void
+  setCurrentGroupChatId: (id: string | null) => void
   setCharacterTyping: (characterId: string, isTyping: boolean) => void
   
   // 消息操作
@@ -863,6 +867,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   )
   const [currentChatId, setCurrentChatIdState] = useState<string | null>(null)
   const currentChatIdRef = useRef<string | null>(null)
+  const currentGroupChatIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     currentChatIdRef.current = currentChatId
@@ -1499,6 +1504,13 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     }
   }, [])
 
+  const setCurrentGroupChatId = useCallback((id: string | null) => {
+    currentGroupChatIdRef.current = id
+    if (id) {
+      setGroups(prev => prev.map(g => g.id === id ? { ...g, unreadCount: 0 } : g))
+    }
+  }, [])
+
   // ==================== 消息操作 ====================
 
   const addMessage = (message: Omit<WeChatMessage, 'id' | 'timestamp'>): WeChatMessage => {
@@ -1514,6 +1526,12 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     if (!message.isUser && message.characterId !== currentChatIdRef.current) {
       setCharacters(prev => prev.map(c =>
         c.id === message.characterId ? { ...c, unreadCount: (c.unreadCount || 0) + 1 } : c
+      ))
+    }
+    // 群聊未读数
+    if (!message.isUser && message.groupId && message.groupId !== currentGroupChatIdRef.current) {
+      setGroups(prev => prev.map(g =>
+        g.id === message.groupId ? { ...g, unreadCount: (g.unreadCount || 0) + 1 } : g
       ))
     }
     return newMessage
@@ -2266,7 +2284,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     characters, messages, stickers, favoriteDiaries, moments, userSettings, userPersonas,
     transfers, anniversaries, periods, listenTogether,
     addCharacter, updateCharacter, deleteCharacter, getCharacter,
-    togglePinned, toggleSpecialCare, toggleBlocked, hideFromChat, showInChat, setCurrentChatId, setCharacterTyping,
+    togglePinned, toggleSpecialCare, toggleBlocked, hideFromChat, showInChat, setCurrentChatId, setCurrentGroupChatId, setCharacterTyping,
     addMessage, updateMessage, deleteMessage, deleteMessagesByIds, deleteMessagesAfter, getMessagesByCharacter, getLastMessage, clearMessages, replaceMessagesForCharacter,
     getMessagesPage,
     addSticker, removeSticker, updateSticker, getStickersByCharacter, addStickerToCharacter, addStickerToAll,
@@ -2288,7 +2306,7 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     funds, fundHoldings, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue,
     // 群聊
     groups, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages,
-  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, funds, fundHoldings, groups, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages, updateFavoriteDiaryNote])
+  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, funds, fundHoldings, groups, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages, setCurrentGroupChatId, updateFavoriteDiaryNote])
 
   return <WeChatContext.Provider value={value}>{children}</WeChatContext.Provider>
 }
