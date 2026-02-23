@@ -3251,7 +3251,7 @@ ${chatFriendList}
           </div>
         </div>
 
-        <div style={{ marginTop: `-${Math.round(profileBannerShrink)}px` }}>
+        <div className="flex-1 min-h-0 flex flex-col" style={{ marginTop: `-${Math.round(profileBannerShrink)}px` }}>
           <div className="px-4 pt-16 pb-4 border-b border-black/5">
             <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
@@ -3371,7 +3371,7 @@ ${chatFriendList}
           )}
 
           <div
-            className="flex-1 overflow-y-auto"
+            className="flex-1 min-h-0 overflow-y-auto"
             onScroll={(e) => {
               const top = (e.currentTarget as HTMLDivElement).scrollTop
               const progress = Math.min(1, Math.max(0, top / 120))
