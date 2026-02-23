@@ -424,7 +424,7 @@ export default function XScreen() {
       if (!token) return ''
       const key = token.toLowerCase()
 
-      if (key === 'user' || key === 'me' || key === 'you') {
+      if (['user', 'me', 'you', '我', '用户', '楼主', 'op'].includes(key)) {
         const mine = String(meName || '').trim()
         if (mine) return mine
       }
@@ -439,7 +439,7 @@ export default function XScreen() {
       return ''
     }
 
-    return raw.replace(/(^|[\s([{（【"'“‘])@([A-Za-z0-9_@.-]+)/g, (full, prefix, token) => {
+    return raw.replace(/(^|[\s([{（【"'“‘])@([A-Za-z0-9_@.\u4e00-\u9fff\u3400-\u4dbf-]+)/g, (full, prefix, token) => {
       const name = resolveMentionName(String(token || ''))
       if (!name) return full
       return `${prefix}@${name}`
@@ -685,14 +685,15 @@ export default function XScreen() {
       for (const p of picked) {
         const authorName = String(p.authorName || '').trim()
         const text = String(p.text || '').trim()
-        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        const safeAuthor = (authorName && authorName.toLowerCase() !== 'user') ? authorName : `路人${Math.random().toString(36).slice(2, 5)}`
+        const { data: d2, userId } = xEnsureUser(next, { name: safeAuthor })
         next = d2
         const u = next.users.find((x) => x.id === userId)
         const ensured = {
           id: userId,
-          name: (authorName || 'User').trim() || 'User',
-          handle: u?.handle || xMakeHandle(authorName || 'User'),
-          color: u?.color || xMakeColor((u?.handle || authorName || 'User').trim()),
+          name: safeAuthor,
+          handle: u?.handle || xMakeHandle(safeAuthor),
+          color: u?.color || xMakeColor((u?.handle || safeAuthor).trim()),
         }
         const post = xNewPost(ensured.id, ensured.name, text)
         post.authorHandle = ensured.handle
@@ -708,9 +709,10 @@ export default function XScreen() {
           const rName = String(r?.authorName || '').trim()
           const rText = String(r?.text || '').trim()
           if (!rText) continue
-          const { data: d3, userId: rUserId } = xEnsureUser(next, { name: rName || 'User' })
+          const safeRName = (rName && rName.toLowerCase() !== 'user') ? rName : `路人${Math.random().toString(36).slice(2, 5)}`
+          const { data: d3, userId: rUserId } = xEnsureUser(next, { name: safeRName })
           next = d3
-          const reply = xNewReply(post.id, rUserId, rName || 'User', rText)
+          const reply = xNewReply(post.id, rUserId, safeRName, rText)
           const ru = next.users.find(x => x.id === rUserId)
           if (ru) {
             ;(reply as any).authorHandle = ru.handle
@@ -859,9 +861,10 @@ export default function XScreen() {
           const rName = String(r?.authorName || '').trim()
           const rText = String(r?.text || '').trim()
           if (!rText) continue
-          const { data: d3, userId: rUserId } = xEnsureUser(next, { name: rName || 'User' })
+          const safeRName = (rName && rName.toLowerCase() !== 'user') ? rName : `路人${Math.random().toString(36).slice(2, 5)}`
+          const { data: d3, userId: rUserId } = xEnsureUser(next, { name: safeRName })
           next = d3
-          const reply = xNewReply(post.id, rUserId, rName || 'User', rText)
+          const reply = xNewReply(post.id, rUserId, safeRName, rText)
           const ru = next.users.find(x => x.id === rUserId)
           if (ru) {
             ;(reply as any).authorHandle = ru.handle
@@ -877,11 +880,12 @@ export default function XScreen() {
       for (const p of hotRaw) {
         const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
         if (!text) continue
-        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        const safeAuthor = (authorName && authorName.toLowerCase() !== 'user') ? authorName : `路人${Math.random().toString(36).slice(2, 5)}`
+        const { data: d2, userId } = xEnsureUser(next, { name: safeAuthor })
         next = d2
         const u = next.users.find((x) => x.id === userId)
-        const post = xNewPost(userId, authorName || 'User', text)
-        post.authorHandle = u?.handle || xMakeHandle(authorName || 'User')
+        const post = xNewPost(userId, safeAuthor, text)
+        post.authorHandle = u?.handle || xMakeHandle(safeAuthor)
         post.authorColor = u?.color || xMakeColor(post.authorHandle)
         post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
         post.likeCount = 500 + Math.floor(Math.random() * 2500)
@@ -895,11 +899,12 @@ export default function XScreen() {
       for (const p of latestRaw) {
         const authorName = String(p?.authorName || '').trim(), text = String(p?.text || '').trim()
         if (!text) continue
-        const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+        const safeAuthor = (authorName && authorName.toLowerCase() !== 'user') ? authorName : `路人${Math.random().toString(36).slice(2, 5)}`
+        const { data: d2, userId } = xEnsureUser(next, { name: safeAuthor })
         next = d2
         const u = next.users.find((x) => x.id === userId)
-        const post = xNewPost(userId, authorName || 'User', text)
-        post.authorHandle = u?.handle || xMakeHandle(authorName || 'User')
+        const post = xNewPost(userId, safeAuthor, text)
+        post.authorHandle = u?.handle || xMakeHandle(safeAuthor)
         post.authorColor = u?.color || xMakeColor(post.authorHandle)
         post.hashtags = Array.isArray(p?.hashtags) ? p.hashtags.slice(0, 5).map((t: any) => String(t || '').replace(/^#/, '').trim()).filter(Boolean) : []
         post.likeCount = Math.floor(Math.random() * 150)
@@ -1085,6 +1090,7 @@ ${chatFriendList}
         `主贴内容：${openPost.text}\n` +
         `主贴图片描述：${String(openPost.imageDesc || '').trim() || '（无）'}\n` +
         existingContext +
+        `用户的推特名：${meName}（当评论中需要 @ 提到用户时，必须写 @${meName}，禁止写 @user/@我/@用户）\n` +
         `用户（我）的最近评论：\n${myRecent || '（无）'}\n` +
         replyToSection +
         friendSection +
@@ -1145,10 +1151,11 @@ ${chatFriendList}
         const authorName = String(r?.authorName || '').trim()
         const text = String(r?.text || '').trim()
         if (!text) continue
+        const safeName = (authorName && authorName.toLowerCase() !== 'user') ? authorName : `路人${Math.random().toString(36).slice(2, 5)}`
         const ensured = (() => {
-          const { data: d2, userId } = xEnsureUser(next, { name: authorName || 'User' })
+          const { data: d2, userId } = xEnsureUser(next, { name: safeName })
           next = d2
-          return { id: userId, name: (authorName || 'User').trim() || 'User' }
+          return { id: userId, name: safeName }
         })()
         newReplies.push(xNewReply(openPost.id, ensured.id, ensured.name, text))
       }
@@ -3211,9 +3218,9 @@ ${chatFriendList}
         </div>
 
         {/* Banner */}
-        <div className="relative flex-shrink-0">
+        <div className="relative flex-shrink-0 h-[190px]">
           <div
-            className={`w-full bg-gray-100 overflow-hidden ${isMe ? 'cursor-pointer' : ''} ${uploadingBanner ? 'opacity-80' : ''}`}
+            className={`absolute inset-x-0 top-0 w-full bg-gray-100 overflow-hidden ${isMe ? 'cursor-pointer' : ''} ${uploadingBanner ? 'opacity-80' : ''}`}
             onClick={isMe && !uploadingBanner ? handlePickMeBanner : undefined}
             style={{
               height: `${Math.max(95, 190 - profileBannerShrink)}px`,
@@ -3346,7 +3353,8 @@ ${chatFriendList}
           className="flex-1 overflow-y-auto"
           onScroll={(e) => {
             const top = (e.currentTarget as HTMLDivElement).scrollTop
-            const next = Math.min(95, Math.max(0, top * 2))
+            const progress = Math.min(1, Math.max(0, top / 120))
+            const next = progress * 95
             profileBannerShrinkPending.current = next
             if (profileBannerShrinkRaf.current) return
             profileBannerShrinkRaf.current = window.requestAnimationFrame(() => {

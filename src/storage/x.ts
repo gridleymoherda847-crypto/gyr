@@ -216,6 +216,8 @@ export function xMakeBannerSvgDataUrl(seed: string) {
 }
 
 export function xBase(meName: string): XDataV1 {
+  const normalizedUsers = users.filter((u) => u.name !== 'User' && u.name !== 'user')
+
   return {
     version: 1,
     meName,
@@ -314,10 +316,16 @@ export async function xLoad(meName: string): Promise<XDataV1> {
     meBio: typeof safe.meBio === 'string' ? safe.meBio : '',
     meFollowerCount: typeof safe.meFollowerCount === 'number' ? safe.meFollowerCount : 0,
     suppressOtherProfileEditTip: typeof safe.suppressOtherProfileEditTip === 'boolean' ? safe.suppressOtherProfileEditTip : false,
-    follows: Array.isArray(safe.follows) ? safe.follows : [],
+    follows: (() => {
+      const raw = Array.isArray(safe.follows) ? safe.follows : []
+      const idSet = new Set(normalizedUsers.map((u) => u.id))
+      return raw
+        .map((id) => String(id || '').trim())
+        .filter((id) => !!id && idSet.has(id))
+    })(),
     muted: Array.isArray((safe as any).muted) ? ((safe as any).muted as any[]) : [],
     blocked: Array.isArray((safe as any).blocked) ? ((safe as any).blocked as any[]) : [],
-    users,
+    users: normalizedUsers,
     posts: Array.isArray(safe.posts) ? safe.posts : [],
     replies: Array.isArray(safe.replies) ? safe.replies : [],
     notifications: Array.isArray(safe.notifications) ? safe.notifications : [],
