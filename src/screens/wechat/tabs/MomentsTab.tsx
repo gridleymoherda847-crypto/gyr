@@ -595,8 +595,9 @@ ${params.userText}
         onScroll={(e) => {
           if (!enableCoverShrink) return
           const top = (e.currentTarget as HTMLDivElement).scrollTop
-          // 增大收缩力度：滚动距离乘以2.5倍，最大收缩到116px（从256到140）
-          const next = Math.min(116, Math.max(0, top * 2.5))
+          // 用“滚动位移 + 已收缩量”计算，避免某些浏览器（如 Via）因布局回流导致的抖动
+          const effectiveTop = top + coverShrinkPendingRef.current
+          const next = Math.min(116, Math.max(0, Math.round(effectiveTop)))
           coverShrinkPendingRef.current = next
           if (coverShrinkRafRef.current) return
           coverShrinkRafRef.current = window.requestAnimationFrame(() => {
