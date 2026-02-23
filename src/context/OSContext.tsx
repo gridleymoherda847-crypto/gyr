@@ -2249,7 +2249,6 @@ export function OSProvider({ children }: PropsWithChildren) {
       const controller = new AbortController()
       const timeoutMs = options?.timeoutMs ?? 600000
       const t = window.setTimeout(() => controller.abort(), timeoutMs)
-      const allowDirectFallback = ['localhost', '127.0.0.1'].includes(window.location.hostname)
 
       // 代理优先（尤其是排查阶段要看到上游详细报错）
       try {
@@ -2263,9 +2262,8 @@ export function OSProvider({ children }: PropsWithChildren) {
         const proxyText = typeof proxyContent === 'string' ? proxyContent.trim() : ''
         if (proxyText) return await maybeContinueOnce(proxyText, proxyData?.choices?.[0]?.finish_reason)
         // 如果代理返回了标准 OpenAI JSON：继续走下面的正常解析/报错逻辑
-      } catch (proxyError) {
-        // 线上优先固定走同域代理（后端使用官方 SDK 处理），减少端上格式适配分叉导致的不兼容
-        if (!allowDirectFallback) throw proxyError
+      } catch {
+        // ignore and fall back to direct fetch
       }
 
       // 兜底：直连（本地开发/Vite 环境可能没有 /api/llm/chat）
