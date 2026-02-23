@@ -3236,7 +3236,7 @@ ${chatFriendList}
             className={`absolute left-4 -bottom-10 w-24 h-24 rounded-full overflow-hidden border-4 border-white bg-gray-100 ${isMe ? 'cursor-pointer' : ''} ${uploadingAvatar ? 'opacity-80' : ''}`}
             onClick={isMe && !uploadingAvatar ? handlePickMeAvatar : undefined}
             title={isMe ? '更换头像' : undefined}
-            style={{ transform: `translateY(-${Math.round(profileBannerShrink * 0.72)}px)` }}
+            style={{ transform: `translateY(-${Math.round(profileBannerShrink)}px)` }}
           >
             {(meta as any).avatarUrl ? (
               <img src={(meta as any).avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -3251,7 +3251,7 @@ ${chatFriendList}
           </div>
         </div>
 
-        <div style={{ marginTop: `-${Math.round(profileBannerShrink * 0.72)}px` }}>
+        <div style={{ marginTop: `-${Math.round(profileBannerShrink)}px` }}>
           <div className="px-4 pt-16 pb-4 border-b border-black/5">
             <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
@@ -3351,6 +3351,25 @@ ${chatFriendList}
             )}
           </div>
 
+          {isMe && (
+            <div className="bg-white/95 border-b border-black/5 px-4 py-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setProfileTab('posts')}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold ${profileTab === 'posts' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
+              >
+                我的帖子
+              </button>
+              <button
+                type="button"
+                onClick={() => setProfileTab('replies')}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold ${profileTab === 'replies' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
+              >
+                我的评论
+              </button>
+            </div>
+          )}
+
           <div
             className="flex-1 overflow-y-auto"
             onScroll={(e) => {
@@ -3366,24 +3385,6 @@ ${chatFriendList}
               })
             }}
           >
-            {isMe && (
-              <div className="sticky top-0 z-10 bg-white/95 border-b border-black/5 px-4 py-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setProfileTab('posts')}
-                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold ${profileTab === 'posts' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
-              >
-                我的帖子
-              </button>
-              <button
-                type="button"
-                onClick={() => setProfileTab('replies')}
-                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold ${profileTab === 'replies' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
-              >
-                我的评论
-              </button>
-              </div>
-            )}
             {!isMe || profileTab === 'posts' ? (
             mine.length === 0 ? (
               <div className="py-14 text-center text-[13px] text-gray-500">{isMe ? '你还没发过帖。' : 'TA 还没发过帖。'}</div>
