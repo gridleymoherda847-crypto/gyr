@@ -16,7 +16,7 @@ export default function GroupChatScreen() {
   const { 
     getGroup, getGroupMessages, addMessage, updateMessage, updateGroup, deleteGroup, deleteMessage,
     addGroupMember, removeGroupMember, addPeriodRecord, updatePeriodRecord,
-    characters, getCurrentPersona, getStickersByCharacter, groups,
+    characters, getCurrentPersona, getUserPersona, userPersonas, getStickersByCharacter, groups,
     getPeriodRecords, getCurrentPeriod, deleteMessagesByIds, getMessagesByCharacter, setCurrentGroupChatId
   } = useWeChat()
   
@@ -27,7 +27,9 @@ export default function GroupChatScreen() {
     return group.memberIds.map(id => characters.find(c => c.id === id)).filter(Boolean) as typeof characters
   }, [group, characters])
   
-  const selectedPersona = getCurrentPersona()
+  const selectedPersona = group?.selectedUserPersonaId
+    ? getUserPersona(group.selectedUserPersonaId) || getCurrentPersona()
+    : getCurrentPersona()
   getCurrentPeriod() // 调用以保持依赖
 
   useEffect(() => {
@@ -52,6 +54,7 @@ export default function GroupChatScreen() {
       next[id] = String(group.memberRemarks?.[id] || '')
     }
     setMemberRemarkDrafts(next)
+    setVisibleRemarkMemberIds(group.memberIds.length > 0 ? [group.memberIds[0]] : [])
   }, [group?.id])
 
   // ===== 对话统计（回合/Token 预估）=====
@@ -311,6 +314,8 @@ export default function GroupChatScreen() {
   // 群设置相关
   const [settingsTab, setSettingsTab] = useState<'info' | 'chat' | 'bubble' | 'relations'>('info')
   const [groupNameDraft, setGroupNameDraft] = useState('')
+  const [showPersonaSelector, setShowPersonaSelector] = useState(false)
+  const [visibleRemarkMemberIds, setVisibleRemarkMemberIds] = useState<string[]>([])
   
   // 关系网状态
   const [relationExpanded, setRelationExpanded] = useState<Set<string>>(new Set())
@@ -338,7 +343,7 @@ export default function GroupChatScreen() {
   const [memoryGenerating, setMemoryGenerating] = useState(false)
   const [summaryRoundsDraft, setSummaryRoundsDraft] = useState(50)
   
-  // 时间同步弹窗
+  // 时间感知弹窗
   const [showTimeSyncModal, setShowTimeSyncModal] = useState(false)
   const [timeSyncTypeDraft, setTimeSyncTypeDraft] = useState<'realtime' | 'custom'>('realtime')
   const [customTimeDraft, setCustomTimeDraft] = useState('')
@@ -552,7 +557,7 @@ export default function GroupChatScreen() {
     }
   }, [showSettings, group])
   
-  // 打开时间同步弹窗时初始化
+  // 打开时间感知弹窗时初始化
   useEffect(() => {
     if (showTimeSyncModal && group) {
       setTimeSyncTypeDraft(group.timeSyncType || 'realtime')
@@ -630,7 +635,7 @@ export default function GroupChatScreen() {
     return { orig, zh }
   }
   
-  // 获取当前时间字符串（用于时间同步）
+  // 获取当前时间字符串（用于时间感知）
   const getCurrentTimeStr = () => {
     if (!group.timeSyncEnabled) return new Date().toLocaleString('zh-CN')
     if (group.timeSyncType === 'custom' && group.customTime) {
@@ -735,7 +740,7 @@ ${memberProfiles}
 ${relationsText ? '【关系网（必读，影响成员间互动方式）】\n' + relationsText + '\n\n' : ''}【群聊信息】
 - 群名：${group.name}
 - 群成员：${members.map(m => getNameInGroup(m.id)).join('、')}
-- 用户名：${selectedPersona?.name || '我'}
+- 用户名：${selectedPersona?.name || '我'}${selectedPersona?.description ? `\n- 用户人设：${selectedPersona.description}` : ''}
 ${Object.keys(group.memberRemarks || {}).length ? `\n【群备注（成员在本群里的显示名）】\n${Object.entries(group.memberRemarks || {}).map(([id, name]) => `- ${characters.find(c => c.id === id)?.name || '未知'} → ${String(name || '').trim()}`).join('\n')}\n` : ''}
 
 【当前时间】
@@ -2554,6 +2559,37 @@ ${history}`
                     <input type="text" value={groupNameDraft} onChange={(e) => setGroupNameDraft(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-100 text-sm outline-none mb-2" placeholder="输入群名称" />
                     <button type="button" onClick={handleSaveGroupName} className="w-full py-2 rounded-lg bg-green-500 text-white text-sm font-medium">保存群名称</button>
                   </div>
+
+                  <div className="mb-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (userPersonas.length === 0) {
+                          setInfoDialog({
+                            open: true,
+                            title: '还没有人设',
+                            message: '请先到微信「我」里添加一个人设。',
+                          })
+                          return
+                        }
+                        setShowPersonaSelector(true)
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-3 rounded-xl bg-white border border-black/10 active:scale-[0.99]"
+                    >
+                      <span className="text-[#000] font-medium">我的人设</span>
+                      <span className="flex items-center gap-2 text-[11px] text-gray-500">
+                        {group.selectedUserPersonaId
+                          ? (selectedPersona?.name || '未找到')
+                          : `跟随默认（${getCurrentPersona()?.name || '无'}）`}
+                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </span>
+                    </button>
+                    <div className="px-1 pt-2 text-[11px] text-gray-400">
+                      点击后再选择，不会在这里展开全部人设。
+                    </div>
+                  </div>
                   
                   {/* 群成员 + 添加/移除按钮（包含自己） */}
                   <div className="mb-4">
@@ -2597,9 +2633,22 @@ ${history}`
                     <div className="text-sm text-gray-600 mb-2">群备注</div>
                     <div className="text-xs text-gray-400 mb-2">仅本群生效；成员与 AI 都会读取群备注名</div>
                     <div className="space-y-2">
-                      {members.map((m) => (
+                      {members
+                        .filter((m) => visibleRemarkMemberIds.includes(m.id))
+                        .map((m) => (
                         <div key={m.id} className="rounded-xl bg-gray-50 p-2">
-                          <div className="text-[11px] text-gray-500 mb-1">原名：{m.name}</div>
+                          <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
+                            <span>原名：{m.name}</span>
+                            {visibleRemarkMemberIds.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => setVisibleRemarkMemberIds((prev) => prev.filter((id) => id !== m.id))}
+                                className="text-[11px] text-gray-400 hover:text-gray-600"
+                              >
+                                收起
+                              </button>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2">
                             <input
                               value={memberRemarkDrafts[m.id] ?? ''}
@@ -2622,6 +2671,22 @@ ${history}`
                         </div>
                       ))}
                     </div>
+                    {members.some((m) => !visibleRemarkMemberIds.includes(m.id)) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {members
+                          .filter((m) => !visibleRemarkMemberIds.includes(m.id))
+                          .map((m) => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setVisibleRemarkMemberIds((prev) => [...prev, m.id])}
+                              className="px-2 py-1 rounded-full bg-gray-100 text-[11px] text-gray-600"
+                            >
+                              + {m.name}
+                            </button>
+                          ))}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -2821,10 +2886,10 @@ ${history}`
                     )}
                   </div>
                   
-                  {/* 时间同步 */}
+                  {/* 时间感知 */}
                   <div className="flex items-center justify-between py-3 border-t border-gray-100">
                     <div>
-                      <div className="text-sm text-gray-800">时间同步</div>
+                      <div className="text-sm text-gray-800">时间感知</div>
                       <div className="text-xs text-gray-400">AI 知道当前时间</div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -3320,14 +3385,67 @@ ${history}`
           </div>
         </div>
       )}
+
+      {showPersonaSelector && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-end">
+          <div className="w-full bg-white rounded-t-2xl max-h-[60vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <span className="font-semibold text-[#000]">选择我的人设</span>
+              <button type="button" onClick={() => setShowPersonaSelector(false)} className="text-gray-500 text-sm">关闭</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  updateGroup(group.id, { selectedUserPersonaId: null })
+                  setShowPersonaSelector(false)
+                }}
+                className={`w-full text-left p-3 rounded-xl ${
+                  !group.selectedUserPersonaId ? 'bg-[#07C160]/10 border border-[#07C160]' : 'bg-gray-50'
+                }`}
+              >
+                <div className="text-[#000] font-medium">跟随默认人设</div>
+                <div className="text-[11px] text-gray-500 mt-1">当前默认：{getCurrentPersona()?.name || '无'}</div>
+              </button>
+              {userPersonas.map((persona) => (
+                <button
+                  key={persona.id}
+                  type="button"
+                  onClick={() => {
+                    updateGroup(group.id, { selectedUserPersonaId: persona.id })
+                    setShowPersonaSelector(false)
+                  }}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl text-left ${
+                    group.selectedUserPersonaId === persona.id ? 'bg-[#07C160]/10 border border-[#07C160]' : 'bg-gray-50'
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+                    {persona.avatar ? (
+                      <img src={persona.avatar} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white text-sm">
+                        {persona.name[0]}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-medium text-[#000] truncate">{persona.name}</div>
+                    {persona.description && <div className="text-xs text-gray-500 truncate">{persona.description}</div>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       
-      {/* ========== 时间同步弹窗 ========== */}
+      {/* ========== 时间感知弹窗 ========== */}
       {showTimeSyncModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="w-full max-w-[320px] bg-white rounded-2xl shadow-xl">
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
               <button type="button" onClick={() => setShowTimeSyncModal(false)} className="text-gray-500 text-sm">取消</button>
-              <span className="font-semibold text-sm">时间同步</span>
+              <span className="font-semibold text-sm">时间感知</span>
               <button type="button" onClick={handleSaveTimeSync} className="text-green-500 text-sm font-medium">保存</button>
             </div>
             <div className="p-4">

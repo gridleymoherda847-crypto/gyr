@@ -580,8 +580,9 @@ export default function ChatScreen() {
     memoZh?: string
     recentPhotos: string[]
     browserHistory: Array<{ title: string; url: string; snippet?: string; lastVisited: number }>
+    schedule: { currentActivity: string; tasks: Array<{ time: string; content: string; done: boolean }> } | null
   } | null>(null)
-  const [phonePeekTab, setPhonePeekTab] = useState<'home' | 'chats' | 'bills' | 'wallet' | 'memo' | 'photos' | 'browser'>('home')
+  const [phonePeekTab, setPhonePeekTab] = useState<'home' | 'chats' | 'wallet' | 'memo' | 'photos' | 'browser' | 'schedule'>('home')
   const [phonePeekSelectedChat, setPhonePeekSelectedChat] = useState<number | null>(null)
   const [phonePeekBattery] = useState(() => Math.floor(Math.random() * 60) + 30)
   const [phonePeekSignal] = useState(() => Math.floor(Math.random() * 2) + 3)
@@ -1126,6 +1127,11 @@ export default function ChatScreen() {
         const gMsgs = getGroupMessages(g.id)
         for (const m of gMsgs) {
           if (m.type === 'system') continue
+          // 仅允许当前私聊角色读取“自己在群里的发言”以及“用户在该群里的发言”，
+          // 防止把其他私聊角色的群内上下文串到当前角色。
+          const fromCurrentCharacter = m.groupSenderId === character.id
+          const fromUser = !!m.isUser
+          if (!fromCurrentCharacter && !fromUser) continue
           groupMsgs.push({ ...m, _crossChatSource: `group:${g.name}` } as any)
         }
       }
@@ -1863,7 +1869,7 @@ export default function ChatScreen() {
                 // 重要：用户“没发新消息，只是点箭头”时也要算作无新发言（否则会把昨天那条当成“新消息”，错过“消失很久”的追问）
         const hasNewUserMessage = !!(lastMsg && lastMsg.isUser) && !opts?.forceNudge
 
-        // 时间同步场景：给模型一个“口语化时间差标签”，避免跨天还说“刚刚”
+        // 时间感知场景：给模型一个“口语化时间差标签”，避免跨天还说“刚刚”
         const naturalGapLabel = (ms: number) => {
           const x = Math.max(0, Number(ms || 0))
           const m5 = 5 * 60 * 1000
@@ -2105,7 +2111,7 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
 - 这条消息时间：${lastMsg ? new Date(lastMsg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 用户上一条发言时间：${lastUserInHistory ? new Date(lastUserInHistory.timestamp).toLocaleString('zh-CN', { hour12: false }) : '（无）'}
 - 这次是否"用户刚发了新消息"：${hasNewUserMessage ? '是' : '否（用户没有新发言，只是触发你主动回复）'}
-- 【时间同步校验（强制执行，防止“前天当刚刚”）】
+- 【时间感知校验（强制执行，防止“前天当刚刚”）】
   - 用户上一条发言距今（口语标签）：${lastUserGapLabel}
   - 本轮与上一条消息的间隔（口语标签）：${lastTurnGapLabel}
   - 你只能使用与上述标签一致的相对时间词：例如标签为“昨天/前天/前几天”时，绝对禁止说“刚刚/刚才/刚聊完”。
@@ -2124,7 +2130,7 @@ ${timeAwarenessOn ? `【时间感（用自然语言，严禁报数字）】
   - 分享一下自己的日常、今天遇到的事
   - 问问用户那边天气怎么样
   - 随便聊点什么话题、发个表情
-  - 不要总是问"你去哪了"，要像真人一样自然` : '【时间同步已关闭】\\n- 你无法得知当前时间，也无法读取气泡下方的时间戳；禁止主动提及“几点/几号/过了多久/多久没回”。'}
+  - 不要总是问"你去哪了"，要像真人一样自然` : '【时间感知已关闭】\\n- 你无法得知当前时间，也无法读取气泡下方的时间戳；禁止主动提及“几点/几号/过了多久/多久没回”。'}
 
 ${timeAwarenessOn ? `【中国节日感知（按中国日历/节气氛围）】
 - 你需要感知中国节日，并在临近或当天自然提起，不要生硬播报。
@@ -4584,18 +4590,13 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
       updateMessage(m.id, { translationStatus: 'pending' })
     }
 
-    const sys =
-      `你是一个翻译器。把用户给你的内容翻译成"简体中文"（不是繁体中文！）。\n` +
-      `要求：\n` +
-      `- 只输出简体中文翻译，严禁繁体字\n` +
-      `- 保留人名/歌名/专有名词原样\n` +
-      `- 不要添加引号/括号/前后缀\n`
-
-    for (const m of targetMessages) {
+    // 单条直接翻译
+    if (targetMessages.length === 1) {
+      const m = targetMessages[0]
       try {
         const zh = await callLLM(
           [
-            { role: 'system', content: sys },
+            { role: 'system', content: '你是一个翻译器。把用户给你的内容翻译成"简体中文"（不是繁体中文！）。只输出简体中文翻译，严禁繁体字，保留人名/歌名/专有名词原样，不要添加引号/括号/前后缀。' },
             { role: 'user', content: String(m.content || '') },
           ],
           undefined,
@@ -4604,6 +4605,44 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         const cleaned = String(zh || '').trim()
         updateMessage(m.id, { translatedZh: cleaned || '（空）', translationStatus: cleaned ? 'done' : 'error' })
       } catch {
+        updateMessage(m.id, { translationStatus: 'error' })
+      }
+      return
+    }
+
+    // 多条批量翻译：一次 API 调用翻译所有失败的消息
+    const separator = '---SPLIT---'
+    const batchInput = targetMessages.map((m, i) => `[${i + 1}] ${String(m.content || '').replace(/\n/g, ' ')}`).join('\n')
+    try {
+      const batchResult = await callLLM(
+        [
+          {
+            role: 'system',
+            content:
+              `你是一个翻译器。用户会给你多条编号消息，请把每一条都翻译成"简体中文"（不是繁体中文！）。\n` +
+              `要求：\n` +
+              `- 只输出简体中文翻译，严禁繁体字\n` +
+              `- 保留人名/歌名/专有名词原样\n` +
+              `- 不要添加引号/括号/前后缀\n` +
+              `- 每条翻译之间用"${separator}"分隔\n` +
+              `- 按原编号顺序输出，一共 ${targetMessages.length} 条翻译，之间用 ${targetMessages.length - 1} 个"${separator}"分隔\n` +
+              `- 只输出翻译结果，不要输出编号、原文、解释`,
+          },
+          { role: 'user', content: batchInput },
+        ],
+        undefined,
+        { maxTokens: Math.min(4000, targetMessages.length * 500), timeoutMs: 120000, temperature: 0.2 }
+      )
+      const parts = String(batchResult || '').split(separator).map(s => s.trim())
+      for (let i = 0; i < targetMessages.length; i++) {
+        const zh = (parts[i] || '').replace(/^\[\d+\]\s*/, '').trim()
+        updateMessage(targetMessages[i].id, {
+          translatedZh: zh || '（空）',
+          translationStatus: zh ? 'done' : 'error',
+        })
+      }
+    } catch {
+      for (const m of targetMessages) {
         updateMessage(m.id, { translationStatus: 'error' })
       }
     }
@@ -4680,6 +4719,15 @@ ${fullContext}
 === 聊天记录结束 ===
 ${languageRule}
 
+【语言强制规则 - 最高优先级】
+无论角色使用什么语言，以下内容必须全部使用简体中文输出：
+- 账单描述、钱包余额
+- 备忘录内容
+- 照片描述
+- 浏览器历史（标题、摘要）
+- 日程表内容
+只有"聊天记录"部分保持角色的原始语言（聊天界面已有翻译功能）。
+
 【生成原则】
 1. **优先从人设和世界书中提取社交关系**：
    - 如果人设/世界书里提到了朋友、闺蜜、兄弟、同事、家人等，优先使用这些人作为聊天对象
@@ -4734,6 +4782,15 @@ ${languageRule}
 - snippet: 搜索结果摘要/页面简介（1-2句话）
 - 注意：浏览历史也要符合角色人设和当前聊天话题
 
+【日程表】生成角色今天的日程安排：
+- currentActivity: 角色此刻正在做的事情（一句话描述，要生动具体）
+- tasks: 8-12条今日任务，每条包含：
+  - time: 时间段（如 "08:00-09:00"、"14:30"）
+  - content: 任务内容（简短，如"去图书馆自习"、"和小美逛街"、"写策划方案"）
+  - done: 是否已完成（基于当前时间，过去的任务标记为 true）
+- 日程表必须符合角色人设（学生有上课、社团；上班族有会议、工作等）
+- 要自然，不要太满，也不要太空
+
 输出格式（纯JSON，不要markdown）：
 {
   "chats": [
@@ -4754,7 +4811,14 @@ ${languageRule}
   "recentPhotos": ["用中文描述照片1", "用中文描述照片2"],
   "browserHistory": [
     {"title": "网页标题", "url": "https://example.com/...", "snippet": "页面简介"}
-  ]
+  ],
+  "schedule": {
+    "currentActivity": "正在做的事情",
+    "tasks": [
+      {"time": "08:00-09:00", "content": "任务内容", "done": true},
+      {"time": "14:00", "content": "任务内容", "done": false}
+    ]
+  }
 }
 
 ${otherCharacters.length > 0 ? `【同一世界书的已有角色 - 必须优先出现在聊天记录中！】
@@ -4890,6 +4954,14 @@ ${lorebookText}` : ''}
             memoZh: isNonChinese ? (parsed.memoZh || undefined) : undefined,
             recentPhotos: parsed.recentPhotos || [],
             browserHistory,
+            schedule: parsed.schedule ? {
+              currentActivity: String(parsed.schedule.currentActivity || ''),
+              tasks: Array.isArray(parsed.schedule.tasks) ? parsed.schedule.tasks.map((t: any) => ({
+                time: String(t.time || ''),
+                content: String(t.content || ''),
+                done: !!t.done
+              })) : []
+            } : null,
           })
         } catch (e) {
           console.error('Parse phone peek data failed:', e, response)
@@ -4917,41 +4989,66 @@ ${lorebookText}` : ''}
     generateAIRepliesRef.current = generateAIReplies
   }, [generateAIReplies])
 
-  // 转发聊天记录或账单给对方（用户发出的卡片形式）
-  const forwardToCharacter = (type: 'chat' | 'bill' | 'wallet', chatIndex?: number) => {
+  // 转发查手机内容给对方（用户发出的结构化卡片）
+  const forwardToCharacter = (type: 'chat' | 'bill' | 'wallet' | 'schedule' | 'browser', chatIndex?: number, itemIndex?: number) => {
     if (!phonePeekData || !character) return
 
     let cardTitle = ''
-    let cardContent = ''
+    let detailLines: string[] = []
     
     if (type === 'chat' && chatIndex !== undefined && phonePeekData.chats[chatIndex]) {
       const chat = phonePeekData.chats[chatIndex]
       cardTitle = `📱 你和「${chat.remark}」的聊天记录`
-      // 取最后10条消息作为摘要
-      const recentMsgs = chat.messages.slice(-10)
-      cardContent = recentMsgs.map(msg => 
-        `${msg.isUser ? character.name : chat.characterName}: ${msg.content}`
-      ).join('\n')
+      const recentMsgs = chat.messages.slice(-8)
+      detailLines = recentMsgs.map(msg =>
+        `- ${msg.isUser ? character.name : chat.characterName}：${msg.content}`
+      )
     } else if (type === 'bill') {
       cardTitle = `💳 你的消费账单`
-      cardContent = phonePeekData.bills.slice(0, 8).map(bill => {
+      detailLines = phonePeekData.bills.slice(0, 8).map(bill => {
         const time = new Date(bill.timestamp).toLocaleDateString('zh-CN')
-        return `${time} ${bill.type === '收入' ? '+' : '-'}¥${bill.amount.toFixed(2)} ${bill.description}`
-      }).join('\n')
+        return `- ${time} ${bill.type === '收入' ? '+' : '-'}¥${bill.amount.toFixed(2)}｜${bill.description}`
+      })
     } else if (type === 'wallet') {
       cardTitle = `💰 你的钱包余额`
-      cardContent = `余额：¥${phonePeekData.walletBalance.toFixed(2)}`
+      detailLines = [
+        `- 当前余额：¥${phonePeekData.walletBalance.toFixed(2)}`,
+        `- 账单条数：${phonePeekData.bills.length} 条`,
+      ]
+    } else if (type === 'schedule' && phonePeekData.schedule) {
+      cardTitle = '📋 你的今日日程'
+      detailLines = [
+        `- 当前在做：${phonePeekData.schedule.currentActivity}`,
+        ...phonePeekData.schedule.tasks.slice(0, 10).map((task) => `- [${task.done ? '已完成' : '未完成'}] ${task.time} ${task.content}`),
+      ]
+    } else if (type === 'browser') {
+      const picked = typeof itemIndex === 'number' ? phonePeekData.browserHistory[itemIndex] : null
+      if (!picked) return
+      cardTitle = '🌐 你的浏览记录'
+      detailLines = [
+        `- 标题：${picked.title}`,
+        `- 链接：${picked.url}`,
+        picked.snippet ? `- 摘要：${picked.snippet}` : '- 摘要：无',
+        `- 浏览时间：${new Date(picked.lastVisited).toLocaleString('zh-CN')}`,
+      ]
     }
 
-    if (cardTitle && cardContent) {
-      // 用户发出的消息，包含特殊格式标记
+    if (cardTitle && detailLines.length > 0) {
+      const cardContent = [
+        '[手机内容转发卡片]',
+        `卡片标题：${cardTitle}`,
+        `来源说明：以下内容来自 ${character.name} 的手机内数据，不是外部消息。`,
+        '内容明细：',
+        ...detailLines,
+        '请你按“这是你自己手机里的内容”来理解并自然回复。',
+      ].join('\n')
+
       addMessage({
         characterId: character.id,
-        content: `[查手机卡片:${cardTitle}]\n${cardContent}`,
-        isUser: true,  // 用户发出
+        content: cardContent,
+        isUser: true,
         type: 'text',
       })
-      // 关闭查手机窗口
       setShowPhonePeek(false)
       setPhonePeekData(null)
       setPhonePeekSelectedChat(null)
@@ -10533,7 +10630,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                         {[
                           { icon: '💬', label: '消息', badge: phonePeekData.chats.length, tab: 'chats' as const },
                           { icon: '💰', label: '钱包', tab: 'wallet' as const },
-                          { icon: '🧾', label: '账单', tab: 'bills' as const },
+                          { icon: '📋', label: '日程表', tab: 'schedule' as const },
                           { icon: '📝', label: '备忘录', tab: 'memo' as const },
                           { icon: '📷', label: '照片', badge: phonePeekData.recentPhotos.length, tab: 'photos' as const },
                           { icon: '🌐', label: '浏览器', badge: phonePeekData.browserHistory?.length || 0, tab: 'browser' as const },
@@ -10569,7 +10666,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                       主屏
                     </button>
                     <span className="flex-1 text-center text-sm font-medium text-gray-800">
-                      {phonePeekTab === 'chats' ? '消息' : phonePeekTab === 'wallet' ? '钱包' : phonePeekTab === 'bills' ? '账单' : phonePeekTab === 'memo' ? '备忘录' : phonePeekTab === 'photos' ? '照片' : phonePeekTab === 'browser' ? '浏览器' : ''}
+                      {phonePeekTab === 'chats' ? '消息' : phonePeekTab === 'wallet' ? '钱包' : phonePeekTab === 'schedule' ? '日程表' : phonePeekTab === 'memo' ? '备忘录' : phonePeekTab === 'photos' ? '照片' : phonePeekTab === 'browser' ? '浏览器' : ''}
                     </span>
                     <div className="w-12" />
                   </div>
@@ -10654,7 +10751,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                         <div className="text-xs opacity-75">{character?.name}的钱包余额</div>
                       </div>
                       <div className="mt-4 grid grid-cols-4 gap-3">
-                        {[{ icon: '💳', label: '收付款' }, { icon: '🏦', label: '银行卡' }, { icon: '📊', label: '账单' }, { icon: '🎁', label: '红包' }].map((item, idx) => (
+                        {[{ icon: '💳', label: '收付款' }, { icon: '🏦', label: '银行卡' }, { icon: '🎁', label: '红包' }, { icon: '📊', label: '统计' }].map((item, idx) => (
                           <div key={idx} className="flex flex-col items-center gap-1 py-3 bg-gray-50 rounded-xl">
                             <span className="text-xl">{item.icon}</span>
                             <span className="text-xs text-gray-600">{item.label}</span>
@@ -10662,43 +10759,28 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                         ))}
                       </div>
                       <div className="mt-4">
-                        <div className="text-sm font-medium text-gray-800 mb-2">最近交易</div>
-                        <div className="space-y-2">
-                          {phonePeekData.bills.slice(0, 5).map((bill, idx) => (
-                            <div key={idx} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-medium text-gray-800">全部账单</div>
+                          <button type="button" onClick={() => forwardToCharacter('bill')} className="px-2 py-1 rounded text-xs text-pink-600 hover:bg-pink-50">转发全部</button>
+                        </div>
+                        <div className="space-y-0 divide-y divide-gray-100">
+                          {phonePeekData.bills.map((bill, idx) => (
+                            <div key={idx} className="flex items-center justify-between py-2.5">
                               <div className="flex items-center gap-2">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${bill.type === '收入' ? 'bg-green-100' : 'bg-orange-100'}`}>
                                   <span className="text-sm">{bill.type === '收入' ? '📥' : '📤'}</span>
                                 </div>
-                                <div className="text-xs text-gray-600 truncate max-w-[140px]">{bill.description}</div>
+                                <div>
+                                  <div className="text-xs text-gray-600 truncate max-w-[140px]">{bill.description}</div>
+                                  <div className="text-[10px] text-gray-400">{bill.timestamp ? new Date(bill.timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</div>
+                                </div>
                               </div>
                               <span className={`text-sm font-medium ${bill.type === '收入' ? 'text-green-600' : 'text-gray-800'}`}>{bill.type === '收入' ? '+' : '-'}¥{bill.amount.toFixed(2)}</span>
                             </div>
                           ))}
+                          {phonePeekData.bills.length === 0 && (<div className="py-6 text-center text-sm text-gray-400">暂无消费记录</div>)}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 账单列表 */}
-                {phonePeekTab === 'bills' && (
-                  <div className="flex-1 overflow-y-auto bg-white">
-                    <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-800">最近消费</span>
-                      <button type="button" onClick={() => forwardToCharacter('bill')} className="px-2 py-1 rounded text-xs text-pink-600 hover:bg-pink-50">转发全部</button>
-                    </div>
-                    <div className="divide-y divide-gray-100">
-                      {phonePeekData.bills.map((bill, index) => (
-                        <div key={index} className="px-4 py-3">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className={`text-sm font-medium ${bill.type === '收入' ? 'text-green-600' : 'text-red-600'}`}>{bill.type === '收入' ? '+' : '-'}¥{bill.amount.toFixed(2)}</span>
-                            <span className="text-xs text-gray-400">{formatTime(bill.timestamp)}</span>
-                          </div>
-                          <div className="text-xs text-gray-600">{bill.description}</div>
-                        </div>
-                      ))}
-                      {phonePeekData.bills.length === 0 && (<div className="px-4 py-8 text-center text-sm text-gray-400">暂无消费记录</div>)}
                     </div>
                   </div>
                 )}
@@ -10743,7 +10825,16 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                       <div className="space-y-3">
                         {(phonePeekData.browserHistory || []).map((item, idx) => (
                           <div key={idx} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-                            <div className="text-sm font-medium text-blue-600 mb-1 line-clamp-2">{item.title}</div>
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <div className="text-sm font-medium text-blue-600 line-clamp-2">{item.title}</div>
+                              <button
+                                type="button"
+                                onClick={() => forwardToCharacter('browser', undefined, idx)}
+                                className="px-2 py-1 rounded text-[11px] text-pink-600 hover:bg-pink-50 whitespace-nowrap"
+                              >
+                                转发
+                              </button>
+                            </div>
                             <div className="text-[11px] text-green-700 truncate mb-1">{item.url}</div>
                             {item.snippet && <div className="text-xs text-gray-500 line-clamp-2">{item.snippet}</div>}
                             <div className="text-[10px] text-gray-400 mt-1.5">{new Date(item.lastVisited).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
@@ -10753,6 +10844,52 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                           <div className="py-8 text-center text-sm text-gray-400">暂无浏览记录</div>
                         )}
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {phonePeekTab === 'schedule' && (
+                  <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                    <div className="p-4">
+                      {phonePeekData?.schedule ? (
+                        <>
+                          <div className="mb-4 p-3 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100">
+                            <div className="text-[10px] text-blue-400 font-medium mb-1">此刻</div>
+                            <div className="text-[13px] text-blue-800 font-medium">{phonePeekData.schedule.currentActivity}</div>
+                          </div>
+                          
+                          <div className="rounded-2xl border border-gray-200 bg-[#fffef5] overflow-hidden">
+                            <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-semibold text-gray-600">今日日程</span>
+                                <span className="text-[10px] text-gray-400">{phonePeekData.schedule.tasks.filter(t => t.done).length}/{phonePeekData.schedule.tasks.length} 已完成</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => forwardToCharacter('schedule')}
+                                className="px-2 py-1 rounded text-[11px] text-pink-600 hover:bg-pink-50"
+                              >
+                                转发
+                              </button>
+                            </div>
+                            <div className="divide-y divide-dashed divide-gray-200">
+                              {phonePeekData.schedule.tasks.map((task, i) => (
+                                <div key={i} className="flex items-start gap-2.5 px-3 py-2.5">
+                                  <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${task.done ? 'border-green-400 bg-green-50' : 'border-gray-300 bg-white'}`}>
+                                    {task.done && <span className="text-green-500 text-[10px]">✓</span>}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className={`text-[12px] ${task.done ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{task.content}</div>
+                                  </div>
+                                  <div className="text-[10px] text-gray-400 flex-shrink-0 font-mono">{task.time}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center text-gray-400 text-sm py-8">暂无日程数据</div>
+                      )}
                     </div>
                   </div>
                 )}

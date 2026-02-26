@@ -25,6 +25,7 @@ const GAME_LIST = [
   { id: 'liaoliaoYisheng', name: '寥寥一生', route: '/apps/liaoliao-yisheng', icon: '📜', desc: '开始修仙人生' },
   { id: 'scratchCard', name: '刮刮乐', route: '/apps/scratch-card', icon: '🎫', desc: '试试手气' },
   { id: 'minesweeper', name: '扫雷', route: '/apps/minesweeper', icon: '💣', desc: '经典益智' },
+  { id: 'livestream', name: '直播', route: '/apps/livestream', icon: '📺', desc: '敬请期待', disabled: true },
   { id: 'gacha', name: '扭蛋机', route: '/apps/gacha', icon: '🎰', desc: '即将上线', disabled: true },
 ]
 

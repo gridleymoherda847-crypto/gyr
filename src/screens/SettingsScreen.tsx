@@ -12,7 +12,7 @@ import { saveBlobAsFile } from '../utils/saveFile'
 export default function SettingsScreen() {
   const navigate = useNavigate()
   const { llmConfig, iconTheme } = useOS()
-  const { characters, setCharacterTyping } = useWeChat()
+  const { characters, setCharacterTyping, flushPendingWrites } = useWeChat()
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [showClearedTip, setShowClearedTip] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
@@ -195,6 +195,7 @@ export default function SettingsScreen() {
 
   const handleExportData = async () => {
     try {
+      await flushPendingWrites()
       const json = await exportCurrentBackupJsonText()
       const fileName = exportFileName.trim() || `Mina_backup_${new Date().toISOString().slice(0, 10)}`
       const blob = new Blob([json], { type: 'application/json' })
@@ -234,7 +235,6 @@ export default function SettingsScreen() {
         }
         setImportSummary({ written: res.written, skipped: res.skipped.length })
         setShowImportSuccess(true)
-        setTimeout(() => window.location.reload(), 400)
       } catch (err: any) {
         console.error('导入失败:', err)
         setImportError(String(err?.message || '导入失败：请确认备份文件正确，并重试'))

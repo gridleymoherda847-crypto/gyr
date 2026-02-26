@@ -41,6 +41,7 @@ const ALLOW_KEYS_EXACT = new Set<string>([
   'wechat_funds', // 基金数据
   'wechat_fund_holdings', // 基金持仓
   'wechat_groups', // 群聊数据
+  'wechat_livestream_coins', // 直播金币
   'wechat_takeout_history', // 外卖历史订单（袋鼠外卖）
   'wechat_takeout_custom_stores_v1', // 自定义外卖店铺
   'wechat_takeout_pinned_store_ids_v1', // 外卖置顶店铺
@@ -279,7 +280,7 @@ export async function exportCurrentBackupJsonText(): Promise<string> {
   // 2. 从 localStorage 读取数据（兼容旧版存储方式）
   // 某些模块（如创作工坊/世界书）仍然使用 localStorage
   for (const allowedKey of ALLOW_KEYS_EXACT) {
-    if (data[allowedKey]) continue // 已从 IndexedDB 读取过
+    if (allowedKey in data) continue
     try {
       const v = localStorage.getItem(allowedKey)
       if (v != null) {
@@ -305,13 +306,25 @@ export async function exportCurrentBackupJsonText(): Promise<string> {
     }
   }
   
-  return JSON.stringify(
+  const keyCount = Object.keys(data).length
+  console.log(`[Export] 导出 ${keyCount} 个数据项`)
+  if (keyCount < 3) {
+    console.warn('[Export] 警告：导出数据项极少，可能数据未完全加载')
+  }
+
+  const json = JSON.stringify(
     {
       version: '3.0.0',
       exportTime: new Date().toISOString(),
+      keyCount,
       data,
     },
     null,
     2
   )
+
+  const sizeMB = (json.length / 1024 / 1024).toFixed(2)
+  console.log(`[Export] 导出文件大小：${sizeMB} MB`)
+
+  return json
 }

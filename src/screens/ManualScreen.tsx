@@ -46,64 +46,87 @@ const MANUAL_TEXT = `
 
 终极方案：先导出备份 → 清除浏览器网站数据 → 重新导入
 
-【API 消耗详解】
-消耗 API 的操作：
-- 私聊点击播放按钮触发回复（常见 1 次；遇到“半句话截断”托底时可能 2 次）
-- 群聊点击生成按钮
-- 朋友圈点击右上角刷新按钮（当前已改成“尽量 1 次批量生成”）
-- 情侣空间每次进入刷新留言
-- 偷看日记
-- 查手机
-- 聊天记忆总结点击 AI 总结
-- X 推特刷新主页
-- X 推特搜索话题
-- X 推特刷新私信
-- 手动点「重新生成」会再调用一次
-- 自动找我聊天（开启后）：按你设置的“每天最少~最多次数”执行；离线补齐也严格不超过该区间上限
-- 心声/心情按钮（聊天页右上角爱心）：仅查看不额外消耗 API；会在触发 AI 回复时同步刷新
+【API 消耗说明】
+会消耗 API 的操作（每次操作通常 1 次调用）：
+- 私聊点击播放按钮触发 AI 回复：1 次
+- 群聊点击生成按钮：1 次
+- 朋友圈刷新：1 次
+- 情侣空间进入：1 次
+- 偷看日记：1 次
+- 查手机：1 次
+- 聊天记忆 AI 总结：1 次
+- X 推特刷新主页/搜索话题/刷新私信：各 1 次
+- 点击重新生成：1 次
+- 点击重新翻译：1 次（批量翻译所有失败消息）
+- 自动找我聊天：每次自动消息 1 次，每天不超过你设的上限
+- 寥寥一生（修仙模拟器）：游戏本身不消耗，点击「生成这一世的故事」消耗 1 次
+- 心声/心情面板：查看不消耗，跟随 AI 回复同步更新
+
+可能产生额外调用的情况：
+- 回复被截断（半句话结尾）：系统自动续写，变成 2 次
+- 非中文角色 + 开启聊天翻译：如果模型没自带翻译，每条消息额外 1 次翻译
+- 非中文角色 + 开启语音：语音转文字需要翻译，每条语音额外 1 次
 
 不消耗 API 的操作：
-- 日记本查看/编辑
-- 音乐播放器
-- 斗地主
-- 所有设置
-- 创作工坊
-- 壁纸设置
-- 创建/编辑角色
-- 基金模拟
-- 钱包功能
-- 发送消息本身
-- X 私信发送消息
-- X 私信翻译
+- 日记本查看/编辑、音乐播放器、斗地主、刮刮乐、扫雷、寥寥一生（玩游戏不消耗，生成故事消耗）
+- 所有设置、创作工坊、壁纸设置、创建/编辑角色
+- 基金模拟、钱包功能、发送消息本身
+- X 私信发送消息、X 私信翻译、备忘录、纪念日、短信
 
-【版本更新】
-- 本应用不再自动刷新升级；请到 设置 → 系统 → 检测更新 手动更新
-- 检测到新版本后，点击「立即更新」会清缓存并重载到新版本
+省钱设置建议：
+- 角色语言设为中文：避免所有翻译额外调用（最有效）
+- 关闭聊天翻译：非中文角色关闭翻译可以减少调用
+- 语音频率设低：减少语音相关消耗
+- 选择便宜的模型（如 deepseek、gpt-4o-mini）
+- 自动找我聊天的次数上限设低一点
+- 不要频繁点重新生成
 
 【微信功能】
 - 私聊：进入聊天 → 发送消息 → 点击右下角播放按钮让 AI 回复
-- 心声/心情：聊天页右上角点击爱心图标查看；数据会在触发 AI 回复时同步刷新
+- 心声/心情：聊天页右上角点击爱心图标查看；数据跟随 AI 回复同步更新
+- 消息操作：点击消息下方时间 → 编辑/引用/删除/复制
 - 群聊：微信 → 右上角加号 → 发起群聊
-- 朋友圈：微信 → 底部朋友圈 Tab → 右上角刷新
-- 偷看日记：聊天 → 点击「+」→ 偷看日记（生成角色视角的私人日记）
-- 查手机：聊天 → 点击「+」→ 查手机
+- 朋友圈：微信 → 底部朋友圈 Tab → 右上角刷新生成动态；可发布自己的动态、设置可见性、自定义封面
+- 通讯录：微信 → 底部通讯录 Tab → 查看所有角色，可标记特别关心
+- 加号菜单（聊天里点+）：相册/位置/转账/经期/音乐/情侣空间/日记/斗地主/转发/清空记录/偷看日记/查手机/外卖点餐
+- 偷看日记：聊天 → 点击「+」→ 偷看日记（生成角色视角的私人日记，消耗 API）
+- 查手机：聊天 → 点击「+」→ 查手机（生成角色的聊天记录和账单，消耗 API）
 - 情侣空间：聊天 → 点击「+」→ 情侣空间
 - 线下模式：聊天 → 右上角「…」→ 线下模式（小说叙事风格，包含动作神态描写）
+
+【聊天设置（进入聊天 → 右上角 ⋯）】
+- 角色信息：名字、头像、性别、人设提示词、生日、称呼、关系、国家、语言、翻译开关
+- 气泡风格：用户/角色气泡样式、回复条数范围
+- 记忆管理：记忆轮数、AI 总结、长期记忆编辑
+- 时间感知：开关（AI 是否知道当前时间）、手动时间设置
+- 语音设置：开关、音色选择、语音频率
+- 拍一拍：自定义拍一拍文案
+- 表情包：为角色添加/管理专属表情包
+- 线下模式：开关、字体颜色、字数范围
+- 自动找我聊天：开关、每天频率范围
+- 聊天背景：自定义聊天背景图
+- 导出/导入聊天记录
+- 隐藏时间戳：只隐藏气泡下方小时间，不影响时间感知
 
 【其他 App】
 - 日记本：主屏幕 → 日记，写日记不消耗 API，偷看日记消耗 API
 - 音乐：主屏幕 → 音乐，不消耗 API
-- 斗地主：主屏幕 → 斗地主，不消耗 API
+- 斗地主：主屏幕 → 斗地主（或游戏中心），不消耗 API
+- 刮刮乐：主屏幕 → 游戏中心 → 刮刮乐，不消耗 API
+- 扫雷：主屏幕 → 游戏中心 → 扫雷，不消耗 API
+- 寥寥一生：主屏幕 → 游戏中心 → 寥寥一生（修仙模拟器），游戏本身不消耗 API；死亡后点击「生成这一世的故事」消耗 1 次 API
 - X 推特：主屏幕 → X，刷新主页/搜索/刷新私信消耗 API，发送私信/翻译不消耗
-- 创作工坊：主屏幕 → 创作工坊，不消耗 API
+- 创作工坊：主屏幕 → 创作工坊（叙事设置/世界书），不消耗 API
 - 钱包/基金：微信 → 我 → 钱包，不消耗 API
+- 备忘录：主屏幕 → 备忘录，不消耗 API
+- 纪念日：主屏幕 → 纪念日，不消耗 API
+- 短信：主屏幕 → 短信，不消耗 API
 - 设置：主屏幕 → 设置，不消耗 API
+- 个人形象：设置 → 个人形象，设置你的名字/头像/人设描述
 
-【API 配置】
-- 位置：设置 → API 配置 → AI 对话配置
-- 需要填写：Base URL、API Key、选择模型
-- 开发者不提供 API，需要自行获取
-- 可使用 OpenAI 官方或国内中转站
+【版本更新】
+- 本应用不再自动刷新升级；请到 设置 → 系统 → 检测更新 手动更新
+- 检测到新版本后，点击「立即更新」会清缓存并重载到新版本
 
 【角色设置】
 - 创建角色：微信 → 右上角加号 → 新建角色
@@ -113,7 +136,7 @@ const MANUAL_TEXT = `
 
 【API 质量问题】
 以下问题通常与 API 服务商或模型有关，开发者无法解决，请尝试更换模型或联系 API 服务商：
-- AI 回复被截断/不完整：系统会自动补一次“续写托底”，仍被截断通常是服务商限制太严
+- AI 回复被截断/不完整：系统会自动补一次"续写托底"，仍被截断通常是服务商限制太严
 - AI 回复很短/敷衍：模型能力弱或中转站篡改参数，换更强模型如 GPT-4/Claude
 - AI 智商低/不理解上下文：模型版本旧或被偷换便宜模型，升级模型或换可信服务商
 - AI 回复很慢/超时：服务商负载高或网络延迟，换响应快的模型或低延迟服务商
@@ -491,7 +514,7 @@ ${MANUAL_TEXT}
     },
     {
       id: 'api-cost',
-      title: 'API 消耗详解',
+      title: 'API 消耗说明',
       icon: '💰',
       content: (
         <div className="space-y-4">
@@ -499,83 +522,88 @@ ${MANUAL_TEXT}
             <p className="text-sm text-amber-700">
               <strong>⚠️ 重要说明</strong>
               <br />API 费用由你的 API 服务商收取，与本应用无关。
-              <br />请合理使用，避免产生高额费用。
             </p>
           </div>
           
-          <h4 className="font-bold text-lg text-red-600">🔴 会消耗 LLM API 的操作（大白话）</h4>
-          <p className="text-sm text-gray-500 mb-2">多数是 1 次；如果系统发现“半句话被截断”，会自动再补 1 次（变成 2 次）。</p>
+          <h4 className="font-bold text-lg text-red-600">🔴 会消耗 API 的操作</h4>
+          <p className="text-sm text-gray-500 mb-2">以下每个操作通常消耗 1 次 API 调用。</p>
           
           <div className="space-y-2">
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">私聊：点击「▶ 播放按钮」触发回复</div>
-              <div className="text-sm text-red-600">通常 1 次；命中“防截断托底”时 2 次</div>
+              <div className="font-medium text-red-700">私聊：点击「▶ 播放按钮」</div>
+              <div className="text-sm text-red-600">1 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
               <div className="font-medium text-red-700">群聊：点击「▶ 生成按钮」</div>
-              <div className="text-sm text-red-600">通常 1 次；命中“防截断托底”时 2 次</div>
+              <div className="text-sm text-red-600">1 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">朋友圈：点击右上角刷新按钮</div>
-              <div className="text-sm text-red-600">现在尽量 1 次批量生成（动态/评论）</div>
+              <div className="font-medium text-red-700">朋友圈刷新</div>
+              <div className="text-sm text-red-600">1 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">情侣空间：每次进入刷新留言</div>
-              <div className="text-sm text-red-600">每次进入 = 调用 1 次 API（刷新对方留言）</div>
+              <div className="font-medium text-red-700">情侣空间进入</div>
+              <div className="text-sm text-red-600">1 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">偷看日记：点击「偷看日记」按钮</div>
-              <div className="text-sm text-red-600">每次偷看 = 调用 1 次 API（生成日记内容）</div>
+              <div className="font-medium text-red-700">偷看日记</div>
+              <div className="text-sm text-red-600">1 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">查手机：点击「查手机」按钮</div>
-              <div className="text-sm text-red-600">每次查看 = 调用 1 次 API（生成聊天/账单等）</div>
+              <div className="font-medium text-red-700">查手机</div>
+              <div className="text-sm text-red-600">1 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">聊天记忆总结：点击「AI 总结」</div>
-              <div className="text-sm text-red-600">每次总结 = 调用 1 次 API</div>
+              <div className="font-medium text-red-700">聊天记忆 AI 总结</div>
+              <div className="text-sm text-red-600">1 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">X（推特）：点击右上角刷新主页</div>
-              <div className="text-sm text-red-600">每次刷新 = 调用 1 次 API（生成新推文）</div>
+              <div className="font-medium text-red-700">X（推特）刷新主页 / 搜索话题 / 刷新私信</div>
+              <div className="text-sm text-red-600">各 1 次</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">X（推特）：搜索话题</div>
-              <div className="text-sm text-red-600">每次搜索 = 调用 1 次 API（生成相关推文）</div>
+              <div className="font-medium text-red-700">点击「重新生成」</div>
+              <div className="text-sm text-red-600">1 次（重新请求）</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">X（推特）私信：点击右上角刷新</div>
-              <div className="text-sm text-red-600">每次刷新 = 调用 1 次 API（生成新私信）</div>
+              <div className="font-medium text-red-700">点击「重新翻译」</div>
+              <div className="text-sm text-red-600">1 次（批量翻译所有失败消息）</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">你主动点「重新生成」</div>
-              <div className="text-sm text-red-600">每点一次，都会再扣一次（这是新的请求）</div>
+              <div className="font-medium text-red-700">自动找我聊天</div>
+              <div className="text-sm text-red-600">每次自动消息 1 次，每天不超过你设的上限</div>
             </div>
             <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">自动找我聊天（含离线补齐）</div>
-              <div className="text-sm text-red-600">严格按你在聊天设置里填的区间执行，当日 API 调用不会超过区间上限</div>
-            </div>
-            <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-              <div className="font-medium text-red-700">部分复杂流程（如格式修复）</div>
-              <div className="text-sm text-red-600">偶尔会二次调用，用来“修格式/补内容”，避免你看到错误或半句</div>
+              <div className="font-medium text-red-700">寥寥一生（修仙模拟器）</div>
+              <div className="text-sm text-red-600">游戏本身不消耗；死亡后点击「生成这一世的故事」消耗 1 次</div>
             </div>
           </div>
 
-          <div className="p-3 bg-green-50 rounded-xl border border-green-100">
+          <div className="p-3 bg-green-50 rounded-xl border border-green-100 mt-2">
             <div className="font-medium text-green-700">心声/心情面板（右上角爱心）</div>
-            <div className="text-sm text-green-600">查看面板本身不消耗 API；仅在触发 AI 回复时随当次回复同步更新</div>
+            <div className="text-sm text-green-600">查看不消耗 API，跟随 AI 回复同步更新</div>
           </div>
 
-          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 mt-4">
-            <h4 className="font-bold text-blue-700 mb-2">🆕 版本更新方式</h4>
-            <p className="text-sm text-blue-600">
-              已改为手动更新，不会在发布新版本时自动刷新页面。
-              <br />路径：设置 → 系统 → 检测更新
-            </p>
+          <h4 className="font-bold text-lg text-orange-600 mt-6">⚠️ 可能产生额外调用的情况</h4>
+          <p className="text-sm text-gray-500 mb-2">以下情况会在上面 1 次的基础上产生额外调用：</p>
+          
+          <div className="space-y-2">
+            <div className="p-3 bg-orange-50 rounded-xl border border-orange-200">
+              <div className="font-medium text-orange-700">回复被截断（半句话结尾）</div>
+              <div className="text-sm text-orange-600">系统会自动续写，变成 2 次。这是 API 服务商限制输出长度导致的，可以联系服务商调整。</div>
+            </div>
+            <div className="p-3 bg-orange-50 rounded-xl border border-orange-200">
+              <div className="font-medium text-orange-700">非中文角色 + 开启聊天翻译</div>
+              <div className="text-sm text-orange-600">如果模型没有自带翻译，每条消息会额外调用 1 次翻译。例如 AI 回复了 3 条，就可能变成 1+3=4 次。</div>
+            </div>
+            <div className="p-3 bg-orange-50 rounded-xl border border-orange-200">
+              <div className="font-medium text-orange-700">非中文角色 + 开启语音</div>
+              <div className="text-sm text-orange-600">语音消息的「转文字」需要翻译成中文，每条语音额外 1 次翻译调用。</div>
+            </div>
           </div>
           
-          <h4 className="font-bold text-lg text-amber-600 mt-6">🟡 消耗 TTS（语音）API 的操作</h4>
-          <p className="text-sm text-gray-500 mb-2">（需要单独配置语音 API）</p>
+          <h4 className="font-bold text-lg text-amber-600 mt-6">🟡 消耗语音 API 的操作</h4>
+          <p className="text-sm text-gray-500 mb-2">（需要单独配置语音 API，与上面的 LLM API 分开计费）</p>
           
           <div className="space-y-2">
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
@@ -593,7 +621,7 @@ ${MANUAL_TEXT}
           <div className="grid grid-cols-2 gap-2">
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">📔 日记本（查看/编辑）</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🎵 音乐播放器</div>
-            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🃏 斗地主</div>
+            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🃏 斗地主 / 刮刮乐 / 扫雷</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">⚙️ 所有设置</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🎨 创作工坊</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🖼️ 壁纸设置</div>
@@ -601,18 +629,28 @@ ${MANUAL_TEXT}
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">📊 基金模拟</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">💳 钱包功能</div>
             <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">📱 发送消息本身</div>
-            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🐦 X 私信发送消息</div>
-            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🌐 X 私信翻译</div>
+            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">🐦 X 私信发送/翻译</div>
+            <div className="p-2 bg-green-50 rounded-lg text-sm text-green-700">📝 备忘录 / 纪念日 / 短信</div>
           </div>
           
           <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 mt-4">
-            <h4 className="font-bold text-blue-700 mb-2">💡 省钱技巧</h4>
+            <h4 className="font-bold text-blue-700 mb-2">💡 省钱设置建议</h4>
             <ul className="text-sm text-blue-600 space-y-1">
-              <li>• 语音频率设为「偶尔」或「很少」</li>
-              <li>• 选择便宜的模型（如 gpt-4o-mini、deepseek）</li>
-              <li>• 减少朋友圈刷新次数</li>
-              <li>• 聊天时不要频繁点生成按钮</li>
+              <li>• <strong>角色语言设为「中文」</strong>：避免所有翻译相关的额外调用（最有效）</li>
+              <li>• <strong>关闭「聊天翻译」</strong>：非中文角色关闭翻译 = 不会产生翻译调用</li>
+              <li>• <strong>语音频率设为「偶尔」或「很少」</strong>：减少语音相关消耗</li>
+              <li>• 选择便宜的模型（如 deepseek、gpt-4o-mini）</li>
+              <li>• 自动找我聊天的次数上限设低一点</li>
+              <li>• 不要频繁点重新生成按钮</li>
             </ul>
+          </div>
+          
+          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 mt-4">
+            <h4 className="font-bold text-blue-700 mb-2">🆕 版本更新方式</h4>
+            <p className="text-sm text-blue-600">
+              已改为手动更新，不会自动刷新页面。
+              <br />路径：设置 → 系统 → 检测更新
+            </p>
           </div>
         </div>
       ),
@@ -636,8 +674,16 @@ ${MANUAL_TEXT}
               <div className="text-sm text-gray-500">点击输入框右边的粉色「▶」按钮</div>
             </div>
             <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">消息操作</div>
+              <div className="text-sm text-gray-500">点击消息下方的时间 → 可以编辑、引用、删除、复制</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">心声/心情</div>
+              <div className="text-sm text-gray-500">聊天页右上角爱心图标 → 查看角色当前心情和内心想法（跟随回复同步更新）</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
               <div className="font-medium">角色设置</div>
-              <div className="text-sm text-gray-500">聊天界面 → 右上角「⋯」→ 可设置人设、语音、气泡等</div>
+              <div className="text-sm text-gray-500">聊天界面 → 右上角「⋯」→ 可设置人设、语音、气泡、记忆等</div>
             </div>
           </div>
           
@@ -645,7 +691,7 @@ ${MANUAL_TEXT}
           <div className="space-y-2">
             <div className="p-3 bg-gray-50 rounded-xl">
               <div className="font-medium">创建群聊</div>
-              <div className="text-sm text-gray-500">微信主界面 → 右上角「+」→「创建群聊」→ 选择成员</div>
+              <div className="text-sm text-gray-500">微信主界面 → 右上角「+」→「创建群聊」→ 选择成员（需至少 2 个角色）</div>
             </div>
             <div className="p-3 bg-gray-50 rounded-xl">
               <div className="font-medium">生成群友回复</div>
@@ -657,7 +703,7 @@ ${MANUAL_TEXT}
             </div>
           </div>
           
-          <h4 className="font-bold mt-4">加号菜单功能</h4>
+          <h4 className="font-bold mt-4">加号菜单功能（聊天里点「+」）</h4>
           <div className="grid grid-cols-2 gap-2">
             <div className="p-2 bg-gray-50 rounded-lg text-sm">📷 相册 - 发送图片</div>
             <div className="p-2 bg-gray-50 rounded-lg text-sm">📍 位置 - 发送位置</div>
@@ -668,39 +714,81 @@ ${MANUAL_TEXT}
             <div className="p-2 bg-gray-50 rounded-lg text-sm">📔 日记 - 分享日记</div>
             <div className="p-2 bg-gray-50 rounded-lg text-sm">🃏 斗地主 - 邀请玩牌</div>
             <div className="p-2 bg-gray-50 rounded-lg text-sm">↗️ 转发 - 转发消息</div>
-            <div className="p-2 bg-gray-50 rounded-lg text-sm">🗑️ 清空 - 清空记录</div>
+            <div className="p-2 bg-gray-50 rounded-lg text-sm">🗁️ 清空 - 清空记录</div>
+            <div className="p-2 bg-gray-50 rounded-lg text-sm">👀 偷看日记 - 生成角色日记</div>
+            <div className="p-2 bg-gray-50 rounded-lg text-sm">📱 查手机 - 看角色聊天/账单</div>
           </div>
           
-          <h4 className="font-bold mt-4">朋友圈</h4>
-          <div className="p-3 bg-gray-50 rounded-xl text-sm">
-            微信 → 底部「朋友圈」Tab
-            <br />• 下拉刷新生成角色动态（消耗 API）
-            <br />• 可以点赞、评论
+          <h4 className="font-bold mt-4">微信四个 Tab</h4>
+          <div className="space-y-2">
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">消息</div>
+              <div className="text-sm text-gray-500">聊天列表，支持搜索联系人/消息，左滑置顶/删除</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">通讯录</div>
+              <div className="text-sm text-gray-500">查看所有角色，可标记「特别关心」</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">朋友圈</div>
+              <div className="text-sm text-gray-500">右上角刷新生成角色动态；可发布自己的动态、点赞评论、设置可见性、自定义封面</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">我</div>
+              <div className="text-sm text-gray-500">管理用户人设，进入钱包/基金，自定义微信背景</div>
+            </div>
           </div>
           
-          <h4 className="font-bold mt-4">📖 线下模式（小说风格）</h4>
-          <div className="p-3 bg-purple-50 rounded-xl text-sm border border-purple-200">
-            <strong>位置：</strong>聊天 → 右上角「⋯」→ 向下滑找到「线下模式」
-            <br /><br />
-            <strong>什么是线下模式？</strong>
-            <br />• 开启后，AI 的回复会变成小说叙事风格
-            <br />• 包含：动作描写、神态描写、对话描写
-            <br />• 适合喜欢沉浸式 RP 的用户
-            <br /><br />
-            <strong>线下模式设置：</strong>
-            <br />• 字体颜色：可分别设置「我的叙述」「TA的叙述」「引号内对话」颜色
-            <br />• 字数范围：设置 AI 输出的最少~最多字数
-            <br /><br />
-            <strong>注意：</strong>线下模式下 AI 只会输出纯文字叙事，不会发表情包、转账等
-          </div>
-          
-          <h4 className="font-bold mt-4">👀 偷看日记</h4>
-          <div className="p-3 bg-gray-50 rounded-xl text-sm">
-            <strong>位置：</strong>聊天 → 点击「+」→ 偷看日记
-            <br />• 生成角色的私人日记（角色视角）
-            <br />• 写的是角色自己的内心想法和生活
-            <br />• 可以收藏到日记本
-            <br /><span className="text-amber-600">⚡ 每次偷看消耗 API</span>
+          <h4 className="font-bold mt-4">⚙️ 聊天设置详解（聊天 → 右上角「⋯」）</h4>
+          <div className="space-y-2">
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">角色信息</div>
+              <div className="text-sm text-gray-500">名字、头像、性别、人设提示词、生日、称呼、关系、国家、语言、翻译开关</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">气泡风格</div>
+              <div className="text-sm text-gray-500">用户/角色气泡样式、回复条数范围（最少~最多条）</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">记忆管理</div>
+              <div className="text-sm text-gray-500">记忆轮数、AI 总结、长期记忆编辑（AI 总结消耗 1 次 API）</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">时间感知</div>
+              <div className="text-sm text-gray-500">开关：AI 是否知道当前时间；关闭后可手动设置时间</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">语音设置</div>
+              <div className="text-sm text-gray-500">开关、音色选择、语音频率（总是/经常/偶尔/很少）</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">拍一拍</div>
+              <div className="text-sm text-gray-500">自定义拍一拍文案</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">表情包</div>
+              <div className="text-sm text-gray-500">为角色添加/管理专属表情包</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">线下模式</div>
+              <div className="text-sm text-gray-500">小说叙事风格；可设置字体颜色、字数范围</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">自动找我聊天</div>
+              <div className="text-sm text-gray-500">开关、每天频率范围（最少~最多次）</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">聊天背景</div>
+              <div className="text-sm text-gray-500">自定义聊天背景图</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">导出/导入聊天记录</div>
+              <div className="text-sm text-gray-500">备份或迁移单个角色的聊天数据</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <div className="font-medium">隐藏时间戳</div>
+              <div className="text-sm text-gray-500">只隐藏气泡下方小时间，不影响时间感知</div>
+            </div>
           </div>
         </div>
       ),
@@ -719,7 +807,6 @@ ${MANUAL_TEXT}
             <br />• 可以分享日记给角色
             <br />• 收藏角色「偷看日记」的内容
             <br /><span className="text-green-600">✓ 写日记/查看日记不消耗 API</span>
-            <br /><span className="text-amber-600">⚡ 聊天里「偷看日记」消耗 API</span>
           </div>
           
           <h4 className="font-bold mt-4">🎵 音乐</h4>
@@ -727,24 +814,25 @@ ${MANUAL_TEXT}
             <strong>位置：</strong>主屏幕 → 音乐
             <br />• 本地音乐播放器
             <br />• 可导入音频文件或在线 URL
-            <br />• 分享歌曲到聊天
+            <br />• 分享歌曲到聊天，可与角色「一起听」
             <br /><span className="text-green-600">✓ 不消耗 API</span>
           </div>
           
-          <h4 className="font-bold mt-4">🃏 斗地主</h4>
+          <h4 className="font-bold mt-4">🎮 游戏中心</h4>
           <div className="p-3 bg-gray-50 rounded-xl text-sm">
-            <strong>位置：</strong>主屏幕 → 斗地主
-            <br />• 单机模式：与电脑 AI 对战
-            <br />• 好友模式：从聊天里邀请角色一起玩
-            <br />• 金币系统：使用微信钱包余额
-            <br /><span className="text-green-600">✓ 不消耗 API</span>
+            <strong>位置：</strong>主屏幕 → 游戏中心（或直接点对应图标）
+            <br />• <strong>斗地主</strong>：单机模式 / 好友模式（从聊天里邀请角色），使用钱包余额
+            <br />• <strong>刮刮乐</strong>：券类小游戏
+            <br />• <strong>扫雷</strong>：经典扫雷游戏
+            <br />• <strong>寥寥一生</strong>：修仙人生模拟器，游戏本身不消耗 API
+            <br /><span className="text-amber-600">⚡ 寥寥一生：死亡后点击「生成这一世的故事」消耗 1 次 API</span>
+            <br /><span className="text-green-600">✓ 其他游戏全部不消耗 API</span>
           </div>
           
           <h4 className="font-bold mt-4">🐦 X（推特）</h4>
           <div className="p-3 bg-gray-50 rounded-xl text-sm">
             <strong>位置：</strong>主屏幕 → X
-            <br />• 模拟 X/Twitter 界面
-            <br />• 角色会发推文
+            <br />• 模拟 X/Twitter 界面，角色会发推文
             <br /><span className="text-amber-600">⚡ 消耗 API：刷新主页、搜索话题、刷新私信</span>
             <br /><span className="text-green-600">✓ 不消耗 API：发送私信、私信翻译</span>
           </div>
@@ -752,7 +840,7 @@ ${MANUAL_TEXT}
           <h4 className="font-bold mt-4">🎨 创作工坊</h4>
           <div className="p-3 bg-gray-50 rounded-xl text-sm">
             <strong>位置：</strong>主屏幕 → 创作工坊
-            <br />• 叙事设置：调整 AI 回复风格
+            <br />• 叙事设置：调整 AI 回复风格（全局预设）
             <br />• 世界书：创建设定库，关键词触发自动注入
             <br /><span className="text-green-600">✓ 不消耗 API（但会影响每次对话的提示词）</span>
           </div>
@@ -760,35 +848,46 @@ ${MANUAL_TEXT}
           <h4 className="font-bold mt-4">💳 钱包 & 基金</h4>
           <div className="p-3 bg-gray-50 rounded-xl text-sm">
             <strong>位置：</strong>微信 → 底部「我」Tab → 钱包
-            <br />• 模拟微信钱包
-            <br />• 基金模拟投资
-            <br />• 用于斗地主下注
+            <br />• 模拟微信钱包，基金模拟投资，用于斗地主下注
             <br /><span className="text-green-600">✓ 不消耗 API</span>
           </div>
           
           <h4 className="font-bold mt-4">💑 情侣空间</h4>
           <div className="p-3 bg-gray-50 rounded-xl text-sm">
             <strong>位置：</strong>聊天 → 点击「+」→ 情侣空间
-            <br />• 每个角色专属的情侣空间
-            <br />• 留言板互动
+            <br />• 每个角色专属的情侣空间，留言板互动，自定义背景
             <br /><span className="text-amber-600">⚡ 每次进入刷新留言消耗 API</span>
           </div>
           
-          <h4 className="font-bold mt-4">📱 查手机</h4>
+          <h4 className="font-bold mt-4">📝 备忘录</h4>
           <div className="p-3 bg-gray-50 rounded-xl text-sm">
-            <strong>位置：</strong>聊天 → 点击「+」→ 查手机
-            <br />• 查看角色的聊天记录、账单、备忘录等
-            <br />• 展示角色的社交圈
-            <br /><span className="text-amber-600">⚡ 每次查看消耗 API</span>
+            <strong>位置：</strong>主屏幕 → 备忘录
+            <br />• 记录待办事项，支持标记完成
+            <br /><span className="text-green-600">✓ 不消耗 API</span>
+          </div>
+          
+          <h4 className="font-bold mt-4">📅 纪念日</h4>
+          <div className="p-3 bg-gray-50 rounded-xl text-sm">
+            <strong>位置：</strong>主屏幕 → 纪念日
+            <br />• 记录重要日期，自动计算天数
+            <br /><span className="text-green-600">✓ 不消耗 API</span>
+          </div>
+          
+          <h4 className="font-bold mt-4">📨 短信</h4>
+          <div className="p-3 bg-gray-50 rounded-xl text-sm">
+            <strong>位置：</strong>主屏幕 → 短信
+            <br />• 模拟手机短信
+            <br /><span className="text-green-600">✓ 不消耗 API</span>
           </div>
           
           <h4 className="font-bold mt-4">⚙️ 设置</h4>
           <div className="p-3 bg-gray-50 rounded-xl text-sm">
             <strong>位置：</strong>主屏幕 → 设置
             <br />• API 配置（LLM + 语音）
+            <br />• 个人形象：设置你的名字、头像、人设描述
             <br />• 屏幕适配（边距调整、iOS 适配）
-            <br />• 导出/导入数据
-            <br />• 字体、颜色、壁纸等
+            <br />• 导出/导入数据、字体、颜色、壁纸
+            <br />• 系统：检测更新、重启手机、清除数据
             <br /><span className="text-green-600">✓ 不消耗 API</span>
           </div>
         </div>

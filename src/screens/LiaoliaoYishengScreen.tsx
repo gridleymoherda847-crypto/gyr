@@ -981,9 +981,7 @@ function maybeApplyFriendCameo(_rng: ReturnType<typeof makeRng>, g: GameState, p
   )
   const available = _friendList.filter(f => !g.usedFriendNames.includes(f.name))
   if (available.length === 0) return { g, p }
-  // 浼樺厛鎵炬€у埆鍖归厤鐨勫ソ鍙嬶紱娌℃湁鍒欏己鍒惰鐩栨€у埆
-  let friend = available.find(f => f.gender === p.gender)
-  if (!friend) friend = available[0]
+  const friend = available[0]
   if (!friend) return { g, p }
   const p2: Person = { ...p, name: friend.name, gender: friend.gender, flags: [...(p.flags || []), 'cameo_friend_name'] }
   const g2: GameState = { ...g, usedFriendNames: [...g.usedFriendNames, friend.name] }

@@ -2259,6 +2259,8 @@ export function OSProvider({ children }: PropsWithChildren) {
           const proxyStreamAny: any = await callOpenAICompatViaProxy(payload, { stream: true, signal: controller.signal })
           const streamText = typeof proxyStreamAny?.__streamText === 'string' ? proxyStreamAny.__streamText.trim() : ''
           if (streamText) return await maybeContinueOnce(streamText)
+          // 流式返回空内容 → 不再发非流式请求（避免双扣费），直接跳到直连兜底
+          throw new Error('stream_empty_fallback')
         }
 
         const proxyData = await callOpenAICompatViaProxy(payload, { stream: false, signal: controller.signal })

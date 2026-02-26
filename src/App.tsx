@@ -38,6 +38,10 @@ const XScreen = lazy(() => import('./screens/XScreen'))
 const ManualScreen = lazy(() => import('./screens/ManualScreen'))
 const AnniversaryScreen = lazy(() => import('./screens/AnniversaryScreen'))
 const MemoScreen = lazy(() => import('./screens/MemoScreen'))
+const LivestreamHome = lazy(() => import('./screens/livestream/LivestreamHome'))
+const LivestreamRoom = lazy(() => import('./screens/livestream/LivestreamRoom'))
+const LivestreamMeScreen = lazy(() => import('./screens/livestream/LivestreamMeScreen'))
+const LivestreamProfileScreen = lazy(() => import('./screens/livestream/LivestreamProfileScreen'))
 
 // WeChat
 const WeChatScreen = lazy(() => import('./screens/wechat/WeChatScreen'))
@@ -241,6 +245,11 @@ function InnerApp() {
             <Route path="/apps/manual" element={<ManualScreen />} />
             <Route path="/apps/anniversary" element={<AnniversaryScreen />} />
             <Route path="/apps/memo" element={<MemoScreen />} />
+            {/* Livestream Routes */}
+            <Route path="/apps/livestream" element={<LivestreamHome />} />
+            <Route path="/apps/livestream/room/:roomId" element={<LivestreamRoom />} />
+            <Route path="/apps/livestream/me" element={<LivestreamMeScreen />} />
+            <Route path="/apps/livestream/profile/:streamerId" element={<LivestreamProfileScreen />} />
             {/* WeChat Routes */}
             <Route path="/apps/wechat" element={<WeChatScreen />} />
             <Route path="/apps/wechat/create-character" element={<CreateCharacterScreen />} />

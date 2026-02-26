@@ -82,10 +82,10 @@ export type WeChatCharacter = {
   memoryRounds: number // 每次回复附带的历史“回合”数量（按用户发言回合计）
   memorySummary: string // 长期记忆摘要（用户可编辑），每次回复必读
   memorySummaryUpdatedAt: number | null
-  // 时间同步
-  timeSyncEnabled: boolean // 是否与本机时间同步
+  // 时间感知
+  timeSyncEnabled: boolean // 是否开启时间感知
   manualTime: string // 手动时间（ISO字符串），timeSyncEnabled=false 时生效
-  // 仅隐藏气泡下方的时间戳（不影响“时间感知/时间同步”）
+  // 仅隐藏气泡下方的时间戳（不影响“时间感知”）
   hideBubbleTimestamps?: boolean
   // 正在输入（用于离开聊天仍能显示“正在输入中…”）
   isTyping: boolean
@@ -261,7 +261,7 @@ export type GroupChat = {
   hideBubbleTimestamps?: boolean // 仅隐藏群聊消息时间戳（不影响时间感知）
   memoryEnabled?: boolean // 记忆功能
   memorySummary?: string // 长期记忆摘要
-  timeSyncEnabled?: boolean // 时间同步
+  timeSyncEnabled?: boolean // 时间感知
   timeSyncType?: 'realtime' | 'custom' // 同步类型
   customTime?: string // 自定义时间（如 2024-01-01 12:00）
   patEnabled?: boolean // 拍一拍开关
@@ -281,6 +281,7 @@ export type GroupChat = {
   enableCrossChat?: boolean
   unreadCount?: number
   isTyping?: boolean
+  selectedUserPersonaId?: string | null
 }
 
 // 纪念日
@@ -456,6 +457,46 @@ export type WeChatUserSettings = {
   chatListBackground: string
   momentsBackground: string
   wechatBackground: string // 微信整体背景图
+}
+
+export type LivestreamComment = {
+  id: string
+  author: string
+  content: string
+  timestamp: number
+}
+
+export type LivestreamPost = {
+  id: string
+  content: string
+  timestamp: number
+  comments: LivestreamComment[]
+}
+
+export type FollowedStreamerProfile = {
+  id: string
+  name: string
+  avatarUrl: string
+  avatarGradient: string
+  coverUrl: string
+  category: string
+  title?: string
+  desc?: string
+  signature: string
+  lastLiveSummary: string
+  unlocked: boolean
+  followedAt: number
+  lastRefreshedAt?: number
+  posts: LivestreamPost[]
+}
+
+export type MyLivestreamProfile = {
+  avatarUrl: string
+  coverUrl: string
+  signature: string
+  followers: number
+  recentPosts: LivestreamPost[]
+  updatedAt: number
 }
 
 // ==================== Context ====================
@@ -636,6 +677,37 @@ type WeChatContextValue = {
   getFundHolding: (fundId: string) => FundHolding | undefined
   getTotalFundValue: () => number // 获取基金总市值
   
+  // 直播币
+  livestreamCoins: number
+  updateLivestreamCoins: (amount: number) => void
+  exchangeWalletToCoins: (yuanAmount: number) => boolean
+  myLivestreamProfile: MyLivestreamProfile
+  followedStreamers: FollowedStreamerProfile[]
+  isStreamerFollowed: (streamerId: string) => boolean
+  getFollowedStreamer: (streamerId: string) => FollowedStreamerProfile | undefined
+  followStreamer: (streamer: {
+    id: string
+    name: string
+    avatarUrl: string
+    avatarGradient: string
+    coverUrl: string
+    category: string
+    title?: string
+    desc?: string
+  }) => void
+  unfollowStreamer: (streamerId: string) => void
+  updateFollowedStreamer: (streamerId: string, updates: Partial<FollowedStreamerProfile>) => void
+  setFollowedStreamerUnlocked: (streamerId: string, unlocked: boolean) => void
+  appendFollowedStreamerPost: (
+    streamerId: string,
+    post: Omit<LivestreamPost, 'id' | 'timestamp'> & { timestamp?: number }
+  ) => LivestreamPost | null
+  updateFollowedStreamerLastSummary: (streamerId: string, summary: string) => void
+  updateMyLivestreamProfile: (updates: Partial<MyLivestreamProfile>) => void
+  appendMyLivestreamPost: (post: Omit<LivestreamPost, 'id' | 'timestamp'> & { timestamp?: number }) => LivestreamPost
+
+  flushPendingWrites: () => Promise<void>
+
   // 群聊操作
   groups: GroupChat[]
   createGroup: (memberIds: string[], name?: string) => GroupChat
@@ -672,6 +744,9 @@ const STORAGE_KEYS = {
   funds: 'wechat_funds',
   fundHoldings: 'wechat_fund_holdings',
   groups: 'wechat_groups', // 群聊
+  livestreamCoins: 'wechat_livestream_coins',
+  followedStreamers: 'wechat_followed_streamers',
+  myLivestreamProfile: 'wechat_my_livestream_profile',
 }
 
 // 初始化基金列表（带随机初始价格）
@@ -736,6 +811,15 @@ const defaultUserSettings: WeChatUserSettings = {
   chatListBackground: '',
   momentsBackground: '',
   wechatBackground: '',
+}
+
+const defaultMyLivestreamProfile: MyLivestreamProfile = {
+  avatarUrl: '',
+  coverUrl: '',
+  signature: '这个人很懒，还没写签名。',
+  followers: 0,
+  recentPosts: [],
+  updatedAt: Date.now(),
 }
 
 // 兼容迁移：直接读取 localStorage 原始字符串（仅迁移时使用）
@@ -949,6 +1033,11 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   const [funds, setFunds] = useState<Fund[]>(() => [])
   const [fundHoldings, setFundHoldings] = useState<FundHolding[]>(() => [])
   
+  // 直播币
+  const [livestreamCoins, setLivestreamCoins] = useState<number>(() => 0)
+  const [followedStreamers, setFollowedStreamers] = useState<FollowedStreamerProfile[]>(() => [])
+  const [myLivestreamProfile, setMyLivestreamProfile] = useState<MyLivestreamProfile>(() => defaultMyLivestreamProfile)
+
   // 群聊状态
   const [groups, setGroups] = useState<GroupChat[]>(() => [])
 
@@ -1116,6 +1205,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         nextFunds,
         nextFundHoldings,
         nextGroups,
+        nextLivestreamCoins,
+        nextFollowedStreamers,
+        nextMyLivestreamProfile,
       ] = await Promise.all([
         kvGetJSONDeep<WeChatCharacter[]>(STORAGE_KEYS.characters, []),
         kvGetJSONDeep<WeChatMessage[]>(STORAGE_KEYS.messages, []),
@@ -1136,6 +1228,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
         kvGetJSONDeep<Fund[]>(STORAGE_KEYS.funds, []),
         kvGetJSONDeep<FundHolding[]>(STORAGE_KEYS.fundHoldings, []),
         kvGetJSONDeep<GroupChat[]>(STORAGE_KEYS.groups, []),
+        kvGetJSONDeep<number>(STORAGE_KEYS.livestreamCoins, 0),
+        kvGetJSONDeep<FollowedStreamerProfile[]>(STORAGE_KEYS.followedStreamers, []),
+        kvGetJSONDeep<MyLivestreamProfile>(STORAGE_KEYS.myLivestreamProfile, defaultMyLivestreamProfile),
       ])
 
       if (cancelled) return
@@ -1168,6 +1263,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
       setFundHoldings(nextFundHoldings)
       // 群聊
       setGroups(nextGroups)
+      setLivestreamCoins(nextLivestreamCoins)
+      setFollowedStreamers(Array.isArray(nextFollowedStreamers) ? nextFollowedStreamers : [])
+      setMyLivestreamProfile(nextMyLivestreamProfile || defaultMyLivestreamProfile)
       setIsHydrated(true)
       } catch (err) {
         // IndexedDB 读取失败（可能是数据库损坏）
@@ -1213,6 +1311,18 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     }
     messagesPersistLastWriteAtRef.current = Date.now()
   }, [isHydrated])
+
+  const flushPendingWrites = useCallback(async () => {
+    if (!isHydrated) return
+    if (messagesPersistTimerRef.current != null) {
+      window.clearTimeout(messagesPersistTimerRef.current)
+      messagesPersistTimerRef.current = null
+    }
+    const latest = messagesPersistLatestRef.current || []
+    await kvSetJSON(STORAGE_KEYS.messages, latest)
+    await kvSetJSON(STORAGE_KEYS.characters, characters)
+    messagesPersistLastWriteAtRef.current = Date.now()
+  }, [isHydrated, characters])
 
   // 角色和消息额外备份到 localStorage（防止 IndexedDB 被清除导致数据丢失）
   useEffect(() => {
@@ -1307,6 +1417,9 @@ export function WeChatProvider({ children }: PropsWithChildren) {
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.funds, funds) }, [funds, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.fundHoldings, fundHoldings) }, [fundHoldings, isHydrated])
   useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.groups, groups) }, [groups, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.livestreamCoins, livestreamCoins) }, [livestreamCoins, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.followedStreamers, followedStreamers) }, [followedStreamers, isHydrated])
+  useEffect(() => { if (!canPersist()) return; void kvSetJSON(STORAGE_KEYS.myLivestreamProfile, myLivestreamProfile) }, [myLivestreamProfile, isHydrated])
   // 群聊额外备份到 localStorage（IndexedDB 可能在私密模式/iOS 下不稳定）
   useEffect(() => {
     if (!canPersist()) return
@@ -2075,6 +2188,146 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     setWalletBalance(prev => Math.max(0, prev + amount))
   }
   
+  // ==================== 直播币操作 ====================
+
+  const updateLivestreamCoins = (amount: number) => {
+    setLivestreamCoins(prev => Math.max(0, prev + amount))
+  }
+
+  const exchangeWalletToCoins = (yuanAmount: number): boolean => {
+    if (yuanAmount <= 0 || walletBalance < yuanAmount) return false
+    const coins = yuanAmount * 10
+    setWalletBalance(prev => Math.max(0, prev - yuanAmount))
+    setLivestreamCoins(prev => prev + coins)
+    addWalletBill({ type: 'shopping', amount: yuanAmount, description: `兑换${coins}直播币` })
+    return true
+  }
+
+  const isStreamerFollowed = useCallback((streamerId: string) => {
+    return followedStreamers.some(s => s.id === streamerId)
+  }, [followedStreamers])
+
+  const getFollowedStreamer = useCallback((streamerId: string) => {
+    return followedStreamers.find(s => s.id === streamerId)
+  }, [followedStreamers])
+
+  const followStreamer = useCallback((streamer: {
+    id: string
+    name: string
+    avatarUrl: string
+    avatarGradient: string
+    coverUrl: string
+    category: string
+    title?: string
+    desc?: string
+  }) => {
+    setFollowedStreamers(prev => {
+      const idx = prev.findIndex(s => s.id === streamer.id)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = {
+          ...next[idx],
+          ...streamer,
+        }
+        return next
+      }
+      const now = Date.now()
+      return [{
+        ...streamer,
+        signature: '',
+        lastLiveSummary: '',
+        unlocked: false,
+        followedAt: now,
+        lastRefreshedAt: now,
+        posts: [],
+      }, ...prev]
+    })
+  }, [])
+
+  const unfollowStreamer = useCallback((streamerId: string) => {
+    setFollowedStreamers(prev => prev.filter(s => s.id !== streamerId))
+  }, [])
+
+  const updateFollowedStreamer = useCallback((streamerId: string, updates: Partial<FollowedStreamerProfile>) => {
+    setFollowedStreamers(prev => prev.map(s => (
+      s.id === streamerId ? { ...s, ...updates } : s
+    )))
+  }, [])
+
+  const setFollowedStreamerUnlocked = useCallback((streamerId: string, unlocked: boolean) => {
+    setFollowedStreamers(prev => prev.map(s => (
+      s.id === streamerId ? { ...s, unlocked } : s
+    )))
+  }, [])
+
+  const appendFollowedStreamerPost = useCallback((
+    streamerId: string,
+    post: Omit<LivestreamPost, 'id' | 'timestamp'> & { timestamp?: number }
+  ): LivestreamPost | null => {
+    let added: LivestreamPost | null = null
+    setFollowedStreamers(prev => prev.map(s => {
+      if (s.id !== streamerId) return s
+      added = {
+        id: `live_post_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        content: String(post.content || '').trim(),
+        timestamp: post.timestamp || Date.now(),
+        comments: Array.isArray(post.comments)
+          ? post.comments.map((c) => ({
+            id: c.id || `live_comment_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            author: String(c.author || '路人'),
+            content: String(c.content || ''),
+            timestamp: Number(c.timestamp || Date.now()),
+          }))
+          : [],
+      }
+      if (!added.content) return s
+      return {
+        ...s,
+        posts: [added, ...s.posts].slice(0, 100),
+        lastRefreshedAt: Date.now(),
+      }
+    }))
+    return added
+  }, [])
+
+  const updateFollowedStreamerLastSummary = useCallback((streamerId: string, summary: string) => {
+    setFollowedStreamers(prev => prev.map(s => (
+      s.id === streamerId
+        ? { ...s, lastLiveSummary: String(summary || '').trim() }
+        : s
+    )))
+  }, [])
+
+  const updateMyLivestreamProfile = useCallback((updates: Partial<MyLivestreamProfile>) => {
+    setMyLivestreamProfile(prev => ({
+      ...prev,
+      ...updates,
+      updatedAt: Date.now(),
+    }))
+  }, [])
+
+  const appendMyLivestreamPost = useCallback((post: Omit<LivestreamPost, 'id' | 'timestamp'> & { timestamp?: number }) => {
+    const nextPost: LivestreamPost = {
+      id: `my_live_post_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      content: String(post.content || '').trim(),
+      timestamp: post.timestamp || Date.now(),
+      comments: Array.isArray(post.comments)
+        ? post.comments.map((c) => ({
+          id: c.id || `my_live_comment_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          author: String(c.author || '路人'),
+          content: String(c.content || ''),
+          timestamp: Number(c.timestamp || Date.now()),
+        }))
+        : [],
+    }
+    setMyLivestreamProfile(prev => ({
+      ...prev,
+      recentPosts: nextPost.content ? [nextPost, ...prev.recentPosts].slice(0, 100) : prev.recentPosts,
+      updatedAt: Date.now(),
+    }))
+    return nextPost
+  }, [])
+
   // ==================== 基金操作 ====================
   
   // 刷新所有基金价格（10分钟冷却）
@@ -2302,11 +2555,18 @@ export function WeChatProvider({ children }: PropsWithChildren) {
     // 钱包
     walletBalance, walletInitialized, walletBills,
     initializeWallet, addWalletBill, updateWalletBalance,
+    // 直播币
+    livestreamCoins, updateLivestreamCoins, exchangeWalletToCoins,
+    myLivestreamProfile, followedStreamers,
+    isStreamerFollowed, getFollowedStreamer, followStreamer, unfollowStreamer, updateFollowedStreamer,
+    setFollowedStreamerUnlocked, appendFollowedStreamerPost, updateFollowedStreamerLastSummary,
+    updateMyLivestreamProfile, appendMyLivestreamPost,
     // 基金
     funds, fundHoldings, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue,
     // 群聊
     groups, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages,
-  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, funds, fundHoldings, groups, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages, setCurrentGroupChatId, updateFavoriteDiaryNote])
+    flushPendingWrites,
+  }), [isHydrated, characters, messages, stickers, favoriteDiaries, myDiaries, stickerCategories, moments, userSettings, userPersonas, transfers, anniversaries, periods, listenTogether, walletBalance, walletInitialized, walletBills, livestreamCoins, myLivestreamProfile, followedStreamers, funds, fundHoldings, groups, getMessagesByCharacter, getLastMessage, getStickersByCharacter, getMessagesPage, isStreamerFollowed, getFollowedStreamer, followStreamer, unfollowStreamer, updateFollowedStreamer, setFollowedStreamerUnlocked, appendFollowedStreamerPost, updateFollowedStreamerLastSummary, updateMyLivestreamProfile, appendMyLivestreamPost, refreshFunds, getNextRefreshTime, buyFund, sellFund, getFundHolding, getTotalFundValue, createGroup, updateGroup, deleteGroup, getGroup, addGroupMember, removeGroupMember, getGroupMessages, setCurrentGroupChatId, updateFavoriteDiaryNote, flushPendingWrites])
 
   return <WeChatContext.Provider value={value}>{children}</WeChatContext.Provider>
 }

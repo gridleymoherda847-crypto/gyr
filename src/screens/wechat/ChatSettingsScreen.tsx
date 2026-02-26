@@ -144,7 +144,7 @@ export default function ChatSettingsScreen() {
   const [summaryRoundsDraft, setSummaryRoundsDraft] = useState<number>(50)
   const [summarizing, setSummarizing] = useState(false)
 
-  // 时间同步状态（草稿）
+  // 时间感知状态（草稿）
   const [timeSyncEnabledDraft, setTimeSyncEnabledDraft] = useState<boolean>(character?.timeSyncEnabled !== false)
   const [manualTimeDraft, setManualTimeDraft] = useState<string>(character?.manualTime || '')
   
@@ -1605,7 +1605,7 @@ export default function ChatSettingsScreen() {
               </div>
             </div>
 
-            {/* 时间同步 */}
+            {/* 时间感知 */}
             <div
               className="flex items-center justify-between px-4 py-4 border-t border-gray-100 cursor-pointer active:bg-gray-50"
               onClick={() => {
@@ -1615,7 +1615,7 @@ export default function ChatSettingsScreen() {
               }}
             >
               <div className="flex flex-col">
-                <span className="text-[#000]">时间同步</span>
+                <span className="text-[#000]">时间感知</span>
                 <span className="text-xs text-gray-400 mt-0.5">影响TA的作息/对白时间感</span>
               </div>
               <div className="flex items-center gap-2">
@@ -1630,7 +1630,7 @@ export default function ChatSettingsScreen() {
             <div className="flex items-center justify-between px-4 py-4 border-t border-gray-100">
               <div className="flex flex-col">
                 <span className="text-[#000]">隐藏时间戳</span>
-                <span className="text-xs text-gray-400 mt-0.5">只隐藏气泡下方的小时间，不影响“时间同步/时间感知”</span>
+                <span className="text-xs text-gray-400 mt-0.5">只隐藏气泡下方的小时间，不影响“时间感知”</span>
               </div>
               <button
                 type="button"
@@ -2553,12 +2553,12 @@ ${history}`
         </div>
       )}
 
-      {/* 时间同步设置弹窗 */}
+      {/* 时间感知设置弹窗 */}
       {showTimeSyncSettings && (
         <div className="absolute inset-0 z-50 flex flex-col bg-white">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <button type="button" onClick={() => setShowTimeSyncSettings(false)} className="text-gray-500">取消</button>
-            <span className="font-medium text-[#000]">时间同步</span>
+            <span className="font-medium text-[#000]">时间感知</span>
             <button
               type="button"
               onClick={() => {
@@ -2577,7 +2577,7 @@ ${history}`
             <div className="bg-gray-50 rounded-xl p-4">
               <div className="flex items-center justify-between">
                 <div className="flex flex-col">
-                  <div className="text-sm font-medium text-[#000]">与当前时间同步</div>
+                  <div className="text-sm font-medium text-[#000]">与当前时间感知同步</div>
                   <div className="text-xs text-gray-500 mt-0.5">默认开启。关闭后可手动设置“当前时间”。</div>
                 </div>
                 <button
@@ -2587,7 +2587,7 @@ ${history}`
                       // 从开启切换到关闭时，弹出确认对话框
                       setDialog({
                         open: true,
-                        title: '关闭时间同步',
+                        title: '关闭时间感知',
                         message: `关闭后，${character.name}将失去时间感知，例如不会询问你"那么久去做什么了"`,
                         confirmText: '确认关闭',
                         cancelText: '取消',
