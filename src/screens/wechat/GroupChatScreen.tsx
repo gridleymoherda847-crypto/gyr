@@ -772,8 +772,10 @@ ${getCurrentTimeStr()}
 ${params.recentMessages || '（暂无消息）'}
 ${group.enableCrossChat ? `
 【私聊记忆互通（被动记忆）】
-- 上下文中标注了 <私聊:XXX> 的内容是各成员的私聊记录。
+- 上下文中标注了 <私聊:仅XXX可见> 的内容是该成员与用户之间的私聊记录。
 - 每个成员只知道自己的私聊内容，不知道其他成员的私聊。
+- 如果某条信息只出现在「A的私聊」而没有在群里公开，则B/C绝对不能说“我知道”“是我说的”“我当时也在”。
+- 严禁冒领来源：谁在私聊里说过的话，就只能由对应成员承认；其他成员最多说“不知道/没听过”。
 - 这些是各成员的自然记忆背景，不要在群聊中主动提起私聊内容，除非话题自然关联。
 ` : ''}`
     
@@ -944,7 +946,7 @@ ${group.enableCrossChat ? `
             if (!content.trim()) continue
             mergedForContext.push({
               timestamp: pm.timestamp || 0,
-              text: `<私聊:${member.name}> ${sender}: ${content}`
+              text: `<私聊:仅${member.name}可见> ${sender}: ${content}`
             })
           }
         }
