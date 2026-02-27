@@ -1813,7 +1813,9 @@ export function OSProvider({ children }: PropsWithChildren) {
     const apiInterface = cfg.apiInterface ?? 'openai_compatible'
     const base = normalizeApiBaseUrl(cfg.apiBaseUrl, apiInterface)
     const key = (cfg.apiKey || '').trim()
-    const wantStream = cfg.useStreaming !== false
+    // Billing stability first: force single non-stream request path to avoid
+    // stream/proxy fallbacks causing unexpected extra upstream requests.
+    const wantStream = false
     if (!base || !key) throw new Error('请先在「设置 -> API 配置」中填写 Base URL 和 API Key')
 
     const callCore = async (selectedModel: string): Promise<string> => {

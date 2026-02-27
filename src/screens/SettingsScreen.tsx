@@ -33,6 +33,7 @@ export default function SettingsScreen() {
   const [importSummary, setImportSummary] = useState<{ written: number; skipped: number } | null>(null)
   const [importing, setImporting] = useState(false)
   const [showThemeTip, setShowThemeTip] = useState(false)
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showScreenFit, setShowScreenFit] = useState(false)
@@ -253,19 +254,18 @@ export default function SettingsScreen() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      setPendingImportFile(file)
       setShowImportConfirm(true)
     }
+    if (e.target) e.target.value = ''
   }
 
   const confirmImport = () => {
-    const file = fileInputRef.current?.files?.[0]
-    if (file) {
-      handleImportData(file)
+    if (pendingImportFile) {
+      handleImportData(pendingImportFile)
     }
     setShowImportConfirm(false)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+    setPendingImportFile(null)
   }
 
   return (
@@ -373,7 +373,12 @@ export default function SettingsScreen() {
             />
             <SettingsItem
               label="导入旧备份（迁移）"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                const inp = fileInputRef.current
+                if (!inp) return
+                inp.value = ''
+                inp.click()
+              }}
               showArrow={false}
             />
           </SettingsGroup>
@@ -396,13 +401,13 @@ export default function SettingsScreen() {
             />
           </SettingsGroup>
           
-          {/* 隐藏的文件输入 */}
+          {/* 隐藏的文件输入 — 用离屏定位而非 display:none，兼容夸克等浏览器 */}
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json"
+            accept=".json,application/json"
             onChange={handleFileSelect}
-            className="hidden"
+            style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0 }}
           />
 
           <SettingsGroup title="关于">
@@ -629,7 +634,7 @@ export default function SettingsScreen() {
           <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
             <div
               className="absolute inset-0 bg-black/35"
-              onClick={() => { setShowImportConfirm(false); if (fileInputRef.current) fileInputRef.current.value = '' }}
+              onClick={() => { setShowImportConfirm(false); setPendingImportFile(null) }}
               role="presentation"
             />
             <div className="relative w-full max-w-[320px] rounded-[22px] border border-white/35 bg-white/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
@@ -643,7 +648,7 @@ export default function SettingsScreen() {
               <div className="mt-4 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => { setShowImportConfirm(false); if (fileInputRef.current) fileInputRef.current.value = '' }}
+                  onClick={() => { setShowImportConfirm(false); setPendingImportFile(null) }}
                   className="flex-1 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-[13px] font-medium text-[#333] active:scale-[0.98]"
                 >
                   取消

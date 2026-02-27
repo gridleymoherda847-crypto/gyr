@@ -1118,6 +1118,9 @@ export default function ChatScreen() {
     safeSetTyping(true)
     setCharacterTyping(character.id, true)
     const workingMessages = messagesOverride || messages
+    // Cost guardrail: keep one main LLM call per reply wave.
+    // Post-rewrite / per-message translation / supplement extra LLM calls are disabled.
+    const singleCallMode = true
 
     const crossChatGroups = groups.filter(g => g.enableCrossChat && g.memberIds.includes(character.id))
     const buildMergedTimeline = (privateMsgs: typeof messages) => {
@@ -2597,7 +2600,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         const timeAckRe = pickTimeAckRegex(shouldForceNudge ? silenceSinceUserMs : gapMs)
 
         // 给模型更硬的“首句行为”要求（仍可能被忽略，因此后面还会做校验）
-        if (shouldForceAcknowledge) {
+        if (!singleCallMode && shouldForceAcknowledge) {
           llmMessages.unshift({
             role: 'system',
             content:
@@ -2791,7 +2794,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
         // 语言强校验：非中文语言时，气泡内容不得出现中文
         // 注意：若开启“聊天翻译”，模型会输出 `外语 ||| 中文翻译`，中文翻译部分不参与校验
-        if (characterLanguage !== 'zh') {
+        if (!singleCallMode && characterLanguage !== 'zh') {
           const stripForCheck = (s: string) => (s || '').split('|||')[0] || ''
           const hasChinese = /[\u4e00-\u9fff]/.test(stripForCheck(response || ''))
           if (hasChinese) {
@@ -2850,7 +2853,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
           if (/(看着你|轻轻|沉默了|叹了口气|眼神|神情|动作|说道|问道|他笑|她笑|他看|她看)/.test(t)) return true
           return false
         }
-        if (!character.offlineMode && (justSwitchedToOnline || looksLikeOfflineNarrationInOnline(response))) {
+        if (!singleCallMode && !character.offlineMode && (justSwitchedToOnline || looksLikeOfflineNarrationInOnline(response))) {
           try {
             const forceOnlinePrompt =
               `把你上一条回复改写成“纯线上聊天气泡文本”：\n` +
@@ -2881,7 +2884,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
 
               // 心声面板属于用户可见信息：无论角色主语言是什么，统一保证中文显示。
               const hasChinese = (s: string) => /[\u4e00-\u9fff]/.test(String(s || ''))
-              if ((mood && !hasChinese(mood)) || (innerVoice && !hasChinese(innerVoice))) {
+              if (!singleCallMode && ((mood && !hasChinese(mood)) || (innerVoice && !hasChinese(innerVoice)))) {
                 try {
                   const translatePrompt =
                     `把以下内容翻成自然中文，并且只输出严格 JSON：` +
@@ -2949,7 +2952,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
         // 兜底：如果模型输出条数不足（且用户输入不敷衍），再补一些短消息（不拆半句、不重复）
         {
           const lastUserText = getLastUserText(workingMessages)
-          if (!character.offlineMode && replies.length < 3 && !isTrivialUserInput(lastUserText)) {
+          if (!singleCallMode && !character.offlineMode && replies.length < 3 && !isTrivialUserInput(lastUserText)) {
             try {
               const need = Math.max(1, Math.min(4, 3 - replies.length))
               const supplementPrompt =
@@ -3893,7 +3896,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 
                 // 如果是外文，异步翻译并更新显示文字（无论是否开启翻译模式，语音转文字都带中文翻译）
                 // 若 dual 已经提供中文翻译，就不需要再翻译
-                if (!isChinese && !dualZh) {
+                if (!singleCallMode && !isChinese && !dualZh) {
                   ;(async () => {
                     try {
                       const sys =
@@ -3950,6 +3953,11 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                 
                 // 翻译策略：只有没有伪翻译时才需要真翻译
                 if (translationMode && !dual) {
+                  if (singleCallMode) {
+                    // Do not trigger per-message translation calls.
+                    // Let user retry once with batch translation.
+                    updateMessage(msg.id, { translationStatus: 'error' })
+                  } else {
                   safeTimeoutEx(() => {
                     ;(async () => {
                       try {
@@ -3974,6 +3982,7 @@ ${isLongForm ? `由于字数要求较多：更细腻地描写神态、表情、�
                       }
                     })()
                   }, 200 + Math.random() * 250, { background: true })
+                  }
                 }
               }
               

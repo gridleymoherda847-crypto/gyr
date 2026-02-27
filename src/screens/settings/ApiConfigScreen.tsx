@@ -1047,7 +1047,7 @@ export default function ApiConfigScreen() {
                     <div className="flex items-center gap-2">
                       <span className="opacity-60 w-16" style={{ color: fontColor.value }}>响应模式：</span>
                       <span style={{ color: fontColor.value }}>
-                        {currentConfig.useStreaming !== false ? '流式' : '非流式'}
+                        非流式（固定）
                       </span>
                     </div>
                     {currentConfig.advanced && (
@@ -1234,19 +1234,19 @@ export default function ApiConfigScreen() {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => { setUseStreaming(true); setLLMConfig({ useStreaming: true }) }}
-                  className={`flex-1 px-3 py-2 rounded-2xl text-xs sm:text-sm border transition-all ${useStreaming ? 'bg-blue-500/20 border-blue-400/50 font-medium' : 'bg-white/30 border-white/20 opacity-60'}`}
+                  disabled
+                  className="flex-1 px-3 py-2 rounded-2xl text-xs sm:text-sm border transition-all bg-white/30 border-white/20 opacity-40 cursor-not-allowed"
                   style={{ color: fontColor.value }}
-                >流式（推荐）</button>
+                >流式（已关闭）</button>
                 <button
                   type="button"
                   onClick={() => { setUseStreaming(false); setLLMConfig({ useStreaming: false }) }}
-                  className={`flex-1 px-3 py-2 rounded-2xl text-xs sm:text-sm border transition-all ${!useStreaming ? 'bg-blue-500/20 border-blue-400/50 font-medium' : 'bg-white/30 border-white/20 opacity-60'}`}
+                  className="flex-1 px-3 py-2 rounded-2xl text-xs sm:text-sm border transition-all bg-blue-500/20 border-blue-400/50 font-medium"
                   style={{ color: fontColor.value }}
-                >非流式（稳定）</button>
+                >非流式（固定）</button>
               </div>
               <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
-                流式更快出字；非流式更稳定，适合查手机/日记等复杂生成。
+                为避免异常重复扣费，当前版本固定使用非流式单次请求。
               </div>
             </div>
           
@@ -2155,16 +2155,19 @@ export default function ApiConfigScreen() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setEditUseStreaming(true)}
-                    className={`flex-1 px-3 py-2 rounded-xl text-xs border transition-all ${editUseStreaming ? 'bg-blue-500/15 border-blue-400/40 font-medium' : 'bg-white border-black/10 opacity-60'}`}
+                    disabled
+                    className="flex-1 px-3 py-2 rounded-xl text-xs border transition-all bg-white border-black/10 opacity-40 cursor-not-allowed"
                     style={{ color: fontColor.value }}
-                  >流式（推荐）</button>
+                  >流式（已关闭）</button>
                   <button
                     type="button"
                     onClick={() => setEditUseStreaming(false)}
-                    className={`flex-1 px-3 py-2 rounded-xl text-xs border transition-all ${!editUseStreaming ? 'bg-blue-500/15 border-blue-400/40 font-medium' : 'bg-white border-black/10 opacity-60'}`}
+                    className="flex-1 px-3 py-2 rounded-xl text-xs border transition-all bg-blue-500/15 border-blue-400/40 font-medium"
                     style={{ color: fontColor.value }}
-                  >非流式（稳定）</button>
+                  >非流式（固定）</button>
+                </div>
+                <div className="text-[11px] opacity-50 leading-relaxed" style={{ color: fontColor.value }}>
+                  当前固定非流式，避免流式回退导致重复请求。
                 </div>
               </div>
               <div className="space-y-1.5">
